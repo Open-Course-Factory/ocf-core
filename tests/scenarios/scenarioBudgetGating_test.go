@@ -116,3 +116,46 @@ func TestGetAvailableScenarios_BudgetMode_AllowsWhenFits(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, fits, "L (4000 mCPU/2g) fits in 8000 mCPU/4g budget with no existing sessions")
 }
+
+// A size larger than the plan's own ceiling never fits, whatever the learner
+// stops — so it must not be reported as an exhausted budget. Découverte is
+// exactly one XS machine, and a learner with nothing running was told their
+// "budget is fully used by your current sessions" for a scenario needing S.
+func TestPlanAllowsSize_SeparatesPlanCeilingFromCurrentUsage(t *testing.T) {
+	db := scenarioBudgetTestDB(t)
+	eps := paymentServices.NewEffectivePlanService(db)
+	quotaSvc := paymentServices.NewQuotaService(db, eps)
+
+	// A plan the size of one XS, with nothing running.
+	plan := budgetTestPlanInMem(500, 256)
+
+	fits, err := quotaSvc.RemainingBudgetFits("u-plan-ceiling", nil, plan, "L")
+	require.NoError(t, err)
+	assert.False(t, fits, "L cannot fit a plan capped at XS")
+
+	allowed, err := quotaSvc.PlanAllowsSize(plan, "L")
+	require.NoError(t, err)
+	assert.False(t, allowed, "the cause is the plan's ceiling, not what is running")
+
+	allowed, err = quotaSvc.PlanAllowsSize(plan, "XS")
+	require.NoError(t, err)
+	assert.True(t, allowed, "the size the plan is built for is allowed when nothing runs")
+}
+
+// The distinction only means something if a busy budget still reports as busy.
+func TestPlanAllowsSize_TrueWhenOnlyCurrentUsageBlocks(t *testing.T) {
+	db := scenarioBudgetTestDB(t)
+	eps := paymentServices.NewEffectivePlanService(db)
+	quotaSvc := paymentServices.NewQuotaService(db, eps)
+
+	plan := budgetTestPlanInMem(4000, 4096)
+	insertExistingTerminalBudget(t, db, "u-busy-budget", nil, "running", 4000, 2048)
+
+	fits, err := quotaSvc.RemainingBudgetFits("u-busy-budget", nil, plan, "L")
+	require.NoError(t, err)
+	assert.False(t, fits, "no room left right now")
+
+	allowed, err := quotaSvc.PlanAllowsSize(plan, "L")
+	require.NoError(t, err)
+	assert.True(t, allowed, "the plan could host this size — stopping something would free it")
+}

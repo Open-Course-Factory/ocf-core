@@ -2,8 +2,10 @@ package scenarios_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/stretchr/testify/require"
 
@@ -18,9 +20,9 @@ import (
 // run — so the card and the button cannot disagree about whether a launch is
 // possible. They disagreed once, and the learner met a 500 on a card that
 // still offered Launch.
-func startScenarioWithLiveTerminal(t *testing.T, name string) (svc *services.ScenarioSessionService, scenario models.Scenario, userID string) {
+func startScenarioWithLiveTerminal(t *testing.T, name string) (db *gorm.DB, svc *services.ScenarioSessionService, scenario models.Scenario, userID string) {
 	t.Helper()
-	db := setupTestDB(t)
+	db = setupTestDB(t)
 
 	scenario = models.Scenario{
 		Name:         name,
@@ -36,21 +38,25 @@ func startScenarioWithLiveTerminal(t *testing.T, name string) (svc *services.Sce
 	}).Error)
 
 	// The rule turns on whether the terminal behind the session is still
-	// running, so the fixture has to carry a real terminal row.
+	// alive, so the fixture has to carry a real terminal row — running AND
+	// inside its TTL. An expires_at left at its zero value is a terminal that
+	// died in year 1: it used to read as live here only because the rule
+	// ignored expiry.
 	require.NoError(t, db.Create(&terminalModels.Terminal{
 		SessionID: "live-terminal",
 		UserID:    "student-1",
 		State:     terminalModels.StateRunning,
+		ExpiresAt: time.Now().Add(time.Hour),
 	}).Error)
 
 	svc = services.NewScenarioSessionService(db, &mockFlagService{}, &bgTrackingVerificationService{})
 	_, err := svc.StartScenario("student-1", scenario.ID, "live-terminal", "")
 	require.NoError(t, err)
-	return svc, scenario, "student-1"
+	return db, svc, scenario, "student-1"
 }
 
 func TestStartScenarioWithLiveRunReturnsTypedConflict(t *testing.T) {
-	svc, scenario, userID := startScenarioWithLiveTerminal(t, "dup-launch-conflict")
+	_, svc, scenario, userID := startScenarioWithLiveTerminal(t, "dup-launch-conflict")
 
 	_, err := svc.StartScenario(userID, scenario.ID, "", "")
 
@@ -59,11 +65,52 @@ func TestStartScenarioWithLiveRunReturnsTypedConflict(t *testing.T) {
 }
 
 func TestResumableSessionsReportTheRunThatBlocksALaunch(t *testing.T) {
-	svc, scenario, userID := startScenarioWithLiveTerminal(t, "dup-launch-listing")
+	_, svc, scenario, userID := startScenarioWithLiveTerminal(t, "dup-launch-listing")
 
 	resumable, err := svc.GetResumableSessions(userID, []uuid.UUID{scenario.ID})
 
 	require.NoError(t, err)
 	require.NotNil(t, resumable[scenario.ID],
 		"the listing must see the same run the launch path refuses for")
+}
+
+// The other half of the same rule, and the one that actually reached learners:
+// a terminal that reached its TTL keeps `state = "running"` because nothing
+// tears it down, so a state-only check reported the run as live forever. The
+// learner saw "a run is already in progress" for a container deleted hours
+// earlier, and could neither resume it nor start another.
+func startScenarioThenExpireItsTerminal(t *testing.T, name string) (*services.ScenarioSessionService, models.Scenario, string) {
+	t.Helper()
+	db, svc, scenario, userID := startScenarioWithLiveTerminal(t, name)
+
+	require.NoError(t, db.Model(&terminalModels.Terminal{}).
+		Where("session_id = ?", "live-terminal").
+		Update("expires_at", time.Now().Add(-time.Hour)).Error)
+
+	return svc, scenario, userID
+}
+
+func TestStartScenarioAfterTerminalExpiredIsAllowed(t *testing.T) {
+	svc, scenario, userID := startScenarioThenExpireItsTerminal(t, "relaunch-after-expiry")
+
+	_, err := svc.StartScenario(userID, scenario.ID, "", "")
+	require.NoError(t, err, "a run whose terminal has expired must not block the next one")
+}
+
+func TestResumableSessionsOmitsRunOnExpiredTerminal(t *testing.T) {
+	svc, scenario, userID := startScenarioThenExpireItsTerminal(t, "resumable-after-expiry")
+
+	resumable, err := svc.GetResumableSessions(userID, []uuid.UUID{scenario.ID})
+	require.NoError(t, err)
+	require.Empty(t, resumable, "an expired terminal leaves nothing to resume")
+}
+
+func TestMySessionsReportsExpiredRunAsNotResumable(t *testing.T) {
+	svc, _, userID := startScenarioThenExpireItsTerminal(t, "my-sessions-after-expiry")
+
+	sessions, err := svc.GetMySessions(userID)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	require.False(t, sessions[0].Resumable,
+		"the launcher offers Resume from this flag; a dead terminal must not set it")
 }

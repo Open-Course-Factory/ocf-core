@@ -575,7 +575,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 				slog.Warn("budget fit check failed for scenario", "scenario", s.Name, "err", fitErr)
 			} else if !fits {
 				item.Launchable = false
-				item.BlockReason = blockReasonBudgetExhausted
+				item.BlockReason = blockReasonForBudgetMiss(quotaSvc, resolvedPlan, resolvedSize, s.Name)
 			}
 		}
 
@@ -679,8 +679,30 @@ const (
 	blockReasonNoDistribution       = "no_distribution"
 	blockReasonDeclaredImageUnavail = "declared_image_unavailable"
 	blockReasonBudgetExhausted      = "budget_exhausted"
+	blockReasonSizeOverPlan         = "size_over_plan"
 	blockReasonSessionExists        = "session_exists"
 )
+
+// blockReasonForBudgetMiss names WHY the machine does not fit. A size larger
+// than the plan's own maximum never fits, however much the learner stops, so
+// reporting it as an exhausted budget sent them hunting for sessions they did
+// not have — the launcher told a learner with nothing running that their
+// "budget is fully used by your current sessions".
+//
+// The plan-capacity question belongs to the quota service, which owns the
+// arithmetic; this only chooses which of its two answers to name. A failure to
+// decide keeps the conservative, older reason.
+func blockReasonForBudgetMiss(quotaSvc paymentServices.QuotaService, plan *paymentModels.SubscriptionPlan, sizeKey string, scenarioName string) string {
+	allowed, err := quotaSvc.PlanAllowsSize(plan, sizeKey)
+	if err != nil {
+		slog.Warn("plan capacity check failed for scenario", "scenario", scenarioName, "err", err)
+		return blockReasonBudgetExhausted
+	}
+	if !allowed {
+		return blockReasonSizeOverPlan
+	}
+	return blockReasonBudgetExhausted
+}
 
 func resolveDistribution(scenario models.Scenario, distributions []terminalDto.TTDistribution, sizes []terminalDto.TTSize) (distName string, size string, features map[string]bool, err error) {
 	requiredFeatures, featErr := scenario.GetRequiredFeatures()

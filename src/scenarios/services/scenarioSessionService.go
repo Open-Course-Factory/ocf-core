@@ -1711,6 +1711,11 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 		return nil, fmt.Errorf("failed to fetch sessions: %w", err)
 	}
 
+	terminals, err := terminalsForSessions(s.db, sessions)
+	if err != nil {
+		return nil, err
+	}
+
 	result := make([]dto.MySessionResponse, 0, len(sessions))
 	for _, session := range sessions {
 		totalSteps := len(session.StepProgress)
@@ -1735,6 +1740,7 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			StartedAt:         session.StartedAt,
 			CompletedAt:       session.CompletedAt,
 			TerminalSessionID: session.TerminalSessionID,
+			Resumable:         sessionIsResumable(&session, terminalFor(terminals, &session)),
 		}
 		result = append(result, resp)
 	}
@@ -2246,16 +2252,58 @@ func findExistingSession(db *gorm.DB, userID string, scenarioID uuid.UUID) (*mod
 	return &existing, sessionIsResumable(&existing, terminal), nil
 }
 
+// terminalsForSessions loads the terminals backing a set of sessions, keyed by
+// terminal session id, in one query. Both surfaces that judge resumability over
+// a list — the launcher's availability answer and the learner's own session
+// list — need exactly this context, so they load it the same way rather than
+// each writing the join.
+func terminalsForSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[string]*terminalModels.Terminal, error) {
+	byID := make(map[string]*terminalModels.Terminal, len(sessions))
+
+	ids := make([]string, 0, len(sessions))
+	for i := range sessions {
+		if sessions[i].TerminalSessionID != nil {
+			ids = append(ids, *sessions[i].TerminalSessionID)
+		}
+	}
+	if len(ids) == 0 {
+		return byID, nil
+	}
+
+	var terminals []terminalModels.Terminal
+	if err := db.Where("session_id IN ?", ids).Find(&terminals).Error; err != nil {
+		return nil, fmt.Errorf("failed to list session terminals: %w", err)
+	}
+	for i := range terminals {
+		byID[terminals[i].SessionID] = &terminals[i]
+	}
+	return byID, nil
+}
+
+// terminalFor returns the terminal backing a session, or nil when it has none
+// or its row is gone — both of which sessionIsResumable reads as "not a run".
+func terminalFor(terminals map[string]*terminalModels.Terminal, session *models.ScenarioSession) *terminalModels.Terminal {
+	if session.TerminalSessionID == nil {
+		return nil
+	}
+	return terminals[*session.TerminalSessionID]
+}
+
 // sessionIsResumable is the rule itself, expressed once over data both callers
 // already hold. A session in a blocking status is only a real run when its
-// terminal is still running; setup_failed is never resumable because the
+// terminal is still alive; setup_failed is never resumable because the
 // environment it describes is broken, and a session with no terminal — or one
-// whose terminal has been deleted — has nothing left to return to.
+// whose terminal is gone — has nothing left to return to.
+//
+// "Alive" is Terminal.IsLive, not `State == StateRunning`: nothing moves the
+// state column off "running" when a terminal merely reaches its TTL, so the
+// shortcut kept a learner's run resumable months after its container had gone,
+// blocking every relaunch of that scenario with "a run is already in progress".
 func sessionIsResumable(session *models.ScenarioSession, terminal *terminalModels.Terminal) bool {
 	if session.Status == "setup_failed" || session.TerminalSessionID == nil {
 		return false
 	}
-	return terminal != nil && terminal.State == terminalModels.StateRunning
+	return terminal.IsLive()
 }
 
 // GetResumableSession returns the live run of this scenario for this learner, or
@@ -2293,30 +2341,14 @@ func (s *ScenarioSessionService) GetResumableSessions(userID string, scenarioIDs
 		return resumable, nil
 	}
 
-	terminalIDs := make([]string, 0, len(sessions))
-	for _, session := range sessions {
-		if session.TerminalSessionID != nil {
-			terminalIDs = append(terminalIDs, *session.TerminalSessionID)
-		}
-	}
-	terminalsByID := make(map[string]*terminalModels.Terminal, len(terminalIDs))
-	if len(terminalIDs) > 0 {
-		var terminals []terminalModels.Terminal
-		if err := s.db.Where("session_id IN ?", terminalIDs).Find(&terminals).Error; err != nil {
-			return nil, fmt.Errorf("failed to list session terminals: %w", err)
-		}
-		for i := range terminals {
-			terminalsByID[terminals[i].SessionID] = &terminals[i]
-		}
+	terminalsByID, err := terminalsForSessions(s.db, sessions)
+	if err != nil {
+		return nil, err
 	}
 
 	for i := range sessions {
 		session := &sessions[i]
-		var terminal *terminalModels.Terminal
-		if session.TerminalSessionID != nil {
-			terminal = terminalsByID[*session.TerminalSessionID]
-		}
-		if sessionIsResumable(session, terminal) {
+		if sessionIsResumable(session, terminalFor(terminalsByID, session)) {
 			resumable[session.ScenarioID] = session
 		}
 	}

@@ -10,33 +10,33 @@ import (
 	"gorm.io/gorm"
 )
 
-// CleanupZombieScenarioSessions finds active scenario sessions whose terminal
-// has been stopped or deleted (or is no longer in the table), and marks them
-// as abandoned. Returns the number of sessions abandoned.
+// CleanupZombieScenarioSessions abandons runs whose environment is gone, and
+// returns how many it abandoned.
 //
-// SSOT: Terminal.State is the canonical lifecycle field. A scenario session
-// is "zombie" if its linked terminal is no longer running — i.e. State is
-// StateStopped, StateDeleted or StateRevoked (billing revocation, #388) — or
-// the terminal row has been removed entirely.
+// It asks the complement of the question sessionIsResumable asks — "is this
+// session's terminal still alive?" — so the two must agree, and both defer to
+// the same rule: models.RunningDisplayScope, the SQL form of Terminal.IsLive.
+// Selecting the live terminals and abandoning every session outside that set
+// also covers the session whose terminal row has vanished entirely, without a
+// second subquery.
+//
+// The previous version enumerated dead states instead (deleted / stopped /
+// revoked). That missed the most common corpse of all: a terminal past its TTL
+// whose state column still reads "running", because nothing moves that column
+// when a session simply reaches its deadline. Such sessions stayed "active"
+// indefinitely and blocked every relaunch of their scenario.
 func CleanupZombieScenarioSessions(db *gorm.DB) (int64, error) {
 	now := time.Now()
 
-	// Subquery: terminal session IDs that are no longer running
-	deadTerminals := db.Model(&terminalModels.Terminal{}).
+	// Subquery: the terminals a learner could still be attached to.
+	liveTerminals := db.Model(&terminalModels.Terminal{}).
 		Select("session_id").
-		Where("state IN ?", []terminalModels.TerminalState{terminalModels.StateDeleted, terminalModels.StateStopped, terminalModels.StateRevoked})
-
-	// Subquery: all known terminal session IDs (GORM auto-filters soft-deleted)
-	knownTerminals := db.Model(&terminalModels.Terminal{}).
-		Select("session_id")
+		Scopes(terminalModels.RunningDisplayScope)
 
 	result := db.Model(&models.ScenarioSession{}).
 		Where("status IN ?", []string{"active", "in_progress"}).
 		Where("terminal_session_id IS NOT NULL").
-		Where(
-			db.Where("terminal_session_id IN (?)", deadTerminals).
-				Or("terminal_session_id NOT IN (?)", knownTerminals),
-		).
+		Where("terminal_session_id NOT IN (?)", liveTerminals).
 		Updates(map[string]any{
 			"status":     "abandoned",
 			"updated_at": now,

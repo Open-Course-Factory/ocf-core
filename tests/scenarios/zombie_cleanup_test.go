@@ -307,3 +307,50 @@ func TestCleanupStuckProvisioningSessions_SparesAStepInsideItsDeclaredBudget(t *
 	assert.Equal(t, "provisioning", sessionStatus(t, db, atCeiling.ID),
 		"a step still inside the budget it was allowed to declare is not stuck")
 }
+
+// TestCleanupZombieScenarioSessions_AbandonsRunOnExpiredButRunningTerminal is
+// the case the state-only rule missed, and the one learners actually hit: a
+// terminal that simply reached its TTL. Nothing moves the state column then, so
+// the row still reads "running" while its container is long gone — one such
+// session stayed "active" for 21 hours and left the learner staring at a Resume
+// button into nothing, with no way to start the scenario again.
+func TestCleanupZombieScenarioSessions_AbandonsRunOnExpiredButRunningTerminal(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "cleanup-expired-running",
+		Title:        "Cleanup Expired Running",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	utk := terminalModels.UserTerminalKey{
+		UserID: "student-expired-running", APIKey: "key-er", KeyName: "k-er", IsActive: true,
+	}
+	require.NoError(t, db.Create(&utk).Error)
+
+	terminal := terminalModels.Terminal{
+		SessionID: "terminal-expired-running", UserID: "student-expired-running",
+		State: terminalModels.StateRunning, ExpiresAt: time.Now().Add(-21 * time.Hour),
+		InstanceType: "ubuntu:22.04", UserTerminalKeyID: utk.ID,
+	}
+	require.NoError(t, db.Create(&terminal).Error)
+
+	terminalID := "terminal-expired-running"
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-expired-running",
+		TerminalSessionID: &terminalID,
+		CurrentStep:       0, Status: "active", StartedAt: time.Now().Add(-22 * time.Hour),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	count, err := services.CleanupZombieScenarioSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	var reloaded models.ScenarioSession
+	require.NoError(t, db.First(&reloaded, "id = ?", session.ID).Error)
+	assert.Equal(t, "abandoned", reloaded.Status,
+		"a run whose terminal is past its TTL is not a run the learner can return to")
+}

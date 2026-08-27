@@ -258,3 +258,60 @@ func TestGetGroupCommandHistoryStats_ExcludesPastExpiry(t *testing.T) {
 	assert.Equal(t, float64(0), summary["total_sessions"],
 		"Past-expiry terminals must not contribute to total_sessions when includeStopped=false")
 }
+
+// TestIsLiveMatchesRunningDisplayScope pins the two forms of the one rule
+// together. Terminal.IsLive answers "is this terminal alive RIGHT NOW?" for a
+// row already in memory, RunningDisplayScope answers it in SQL; they cannot be
+// the same expression, so this runs both over the same rows and fails if they
+// ever disagree.
+func TestIsLiveMatchesRunningDisplayScope(t *testing.T) {
+	db := freshTestDB(t)
+
+	userKey, err := createTestUserKey(db, "user-islive")
+	require.NoError(t, err)
+
+	cases := []struct {
+		name    string
+		state   models.TerminalState
+		expires time.Duration
+	}{
+		{"running and unexpired", models.StateRunning, time.Hour},
+		{"running but past expiry", models.StateRunning, -time.Hour},
+		{"stopped and unexpired", models.StateStopped, time.Hour},
+		{"stopped and past expiry", models.StateStopped, -time.Hour},
+		{"deleted and unexpired", models.StateDeleted, time.Hour},
+		{"starting and unexpired", models.StateStarting, time.Hour},
+		{"revoked and unexpired", models.StateRevoked, time.Hour},
+	}
+
+	for _, c := range cases {
+		terminal := &models.Terminal{
+			SessionID:         "islive-" + c.name,
+			UserID:            "user-islive",
+			State:             c.state,
+			ExpiresAt:         time.Now().Add(c.expires),
+			InstanceType:      "ubuntu:22.04",
+			UserTerminalKeyID: userKey.ID,
+		}
+		require.NoError(t, db.Create(terminal).Error)
+	}
+
+	var live []models.Terminal
+	require.NoError(t, db.Table("terminals").Scopes(models.RunningDisplayScope).
+		Where("terminals.user_id = ?", "user-islive").Find(&live).Error)
+
+	liveBySessionID := make(map[string]bool, len(live))
+	for i := range live {
+		liveBySessionID[live[i].SessionID] = true
+	}
+
+	var all []models.Terminal
+	require.NoError(t, db.Where("user_id = ?", "user-islive").Find(&all).Error)
+	require.Len(t, all, len(cases))
+
+	for i := range all {
+		row := &all[i]
+		assert.Equal(t, liveBySessionID[row.SessionID], row.IsLive(),
+			"IsLive and RunningDisplayScope disagree about %s", row.SessionID)
+	}
+}

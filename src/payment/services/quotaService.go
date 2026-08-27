@@ -111,6 +111,14 @@ type QuotaService interface {
 	// one container of the given size key fits in the remaining budget.
 	RemainingBudgetFits(userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, sizeKey string) (bool, error)
 
+	// PlanAllowsSize answers the same question against an empty budget: could
+	// this size EVER fit this plan? It separates "your budget is busy right
+	// now" from "this plan is too small for this machine" — two causes a
+	// caller must not report with one message, since only the first can be
+	// resolved by stopping something. No DB access: the plan's caps and the
+	// size catalog are the whole answer.
+	PlanAllowsSize(plan *models.SubscriptionPlan, sizeKey string) (bool, error)
+
 	// GetBudgetUsage returns the user's (or org's) current CPU + RAM
 	// footprint under the budget counting rule (D6). It is a thin
 	// passthrough over sumActiveResources for callers that need to
@@ -479,6 +487,19 @@ func (s *quotaService) RemainingBudgetFits(
 		return false, err
 	}
 	return check.Allowed, nil
+}
+
+// PlanAllowsSize — see interface doc. Evaluated through evaluateBudget with a
+// zero footprint, so the "does it fit" arithmetic stays written once.
+func (s *quotaService) PlanAllowsSize(plan *models.SubscriptionPlan, sizeKey string) (bool, error) {
+	if plan == nil {
+		return false, fmt.Errorf("PlanAllowsSize: plan is nil")
+	}
+	size, ok := catalog.LookupSize(sizeKey)
+	if !ok {
+		return false, fmt.Errorf("PlanAllowsSize: unknown size %q", sizeKey)
+	}
+	return evaluateBudget(plan, 0, 0, size.CPU, size.MemoryMB).Allowed, nil
 }
 
 // GetBudgetUsage — see interface doc.

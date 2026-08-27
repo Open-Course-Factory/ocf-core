@@ -428,4 +428,11 @@ type MySessionResponse struct {
 	StartedAt         time.Time  `json:"started_at"`
 	CompletedAt       *time.Time `json:"completed_at,omitempty"`
 	TerminalSessionID *string    `json:"terminal_session_id,omitempty"`
+	// Resumable answers the only question the launcher actually asks of this
+	// list: can the learner still return to this run? Status alone cannot say
+	// so — a session stays "active" in the database until something notices its
+	// terminal is gone — and a client re-deriving it from Status offered a
+	// Resume button into a container deleted the day before, with no way to
+	// start a fresh run. Computed with the same rule the launch path enforces.
+	Resumable         bool       `json:"resumable"`
 }

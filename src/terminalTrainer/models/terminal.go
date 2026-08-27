@@ -190,6 +190,27 @@ func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
 	)
 }
 
+// IsLive is RunningDisplayScope applied to a row already in memory: the same
+// "is this terminal alive RIGHT NOW?" question, asked of a struct instead of a
+// query. Callers that hold a Terminal must use this rather than testing
+// `State == StateRunning` themselves — that shortcut ignores expiry, and
+// `state` is only moved off "running" when something explicitly tears the
+// container down. A terminal that simply reached its TTL keeps `state =
+// "running"` indefinitely, so the shortcut reports long-dead containers as
+// alive.
+//
+// The two forms are mechanically different (Go predicate vs SQL clause) but
+// state one rule; TestIsLiveMatchesRunningDisplayScope runs both over the same
+// rows and fails if they ever disagree.
+func (t *Terminal) IsLive() bool {
+	if t == nil {
+		return false
+	}
+	return t.State == StateRunning &&
+		!t.DeletedAt.Valid &&
+		t.ExpiresAt.After(time.Now())
+}
+
 // SupervisableByGroupOrgScope is the SINGLE home of the org-context supervision
 // visibility rule on the terminals table: a session is supervisable by a
 // class-group ONLY when the terminal's organization_id is NON-NULL and equals the
