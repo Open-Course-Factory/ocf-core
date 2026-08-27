@@ -309,4 +309,24 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	)
 
 	log.Println("=== Scenario permissions setup completed ===")
+
+	// A platform operator carries `administrator` and not `member` — that is what
+	// the role is for, since every real user is a member instead. The gateway
+	// matches on the role alone, so a member-only policy locks the operator out
+	// of routes the product plainly expects them to use.
+	//
+	// That is not hypothetical: seeding a scenario is an administrator route,
+	// writing the vocabulary those scenario's scripts then depend on was not, so
+	// a seed succeeded, its vocabulary was refused, and the scenario was left
+	// referencing names that nothing defined.
+	//
+	// Only the gateway is widened here. Layer 2 still runs the member rule these
+	// routes declare above, and the controller still verifies CanManageScenario.
+	for _, route := range []struct{ path, method string }{
+		{"/api/v1/scenarios/:id/lexicon", "GET"},
+		{"/api/v1/scenarios/:id/lexicon", "PUT"},
+		{"/api/v1/scenarios/:id/translation-coverage", "GET"},
+	} {
+		access.ReconcilePolicy(enforcer, access.RoleAdministrator, route.path, route.method)
+	}
 }

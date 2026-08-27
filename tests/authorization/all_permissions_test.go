@@ -650,3 +650,43 @@ func TestSetupScenarioPermissions_SubmitQuizMemberPolicy(t *testing.T) {
 
 	assertPolicy(t, ps, "member", "/api/v1/scenario-sessions/:id/submit-quiz", "POST")
 }
+
+// ---------------------------------------------------------------------------
+// Scenario vocabulary: reachable by a platform operator
+// ---------------------------------------------------------------------------
+
+// A platform operator holds `administrator` and not `member`, so a member-only
+// policy shuts them out of the gateway entirely.
+//
+// This is the pairing that broke production: /scenarios/seed is an
+// administrator route, and the vocabulary that a seeded scenario's scripts then
+// read was member-only. The seed landed, the vocabulary was refused, and the
+// scenario was left referencing names nothing defined — a world built from
+// empty variables.
+func TestSetupScenarioPermissions_OperatorCanWriteTheVocabulary(t *testing.T) {
+	mock := mocks.NewMockEnforcer()
+	scenarioController.RegisterScenarioPermissions(mock)
+	ps := collectPolicies(mock)
+
+	// Whoever can seed a scenario must be able to write its vocabulary.
+	assertPolicy(t, ps, "administrator", "/api/v1/scenarios/seed", "POST")
+
+	operatorRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/scenarios/:id/lexicon", "GET"},
+		{"/api/v1/scenarios/:id/lexicon", "PUT"},
+		{"/api/v1/scenarios/:id/translation-coverage", "GET"},
+	}
+	for _, r := range operatorRoutes {
+		t.Run("administrator "+r.method+" "+r.path, func(t *testing.T) {
+			assertPolicy(t, ps, "administrator", r.path, r.method)
+		})
+		// The member grant stays: a trainer manages their own scenario's
+		// vocabulary, and widening the gateway must not narrow that.
+		t.Run("member "+r.method+" "+r.path, func(t *testing.T) {
+			assertPolicy(t, ps, "member", r.path, r.method)
+		})
+	}
+}
