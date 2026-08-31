@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -520,7 +521,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 		}
 		// The scenario-level setup script is not a step and has no "current"
 		// flag; crash_traps scenarios hand it the whole set through config.json.
-		if _, err := s.executeBackgroundScript(terminalSessionID, setupStep, provisioningLocaleEnv(locale)); err != nil {
+		if _, err := s.executeBackgroundScript(terminalSessionID, setupStep, provisioningEnv(scenario, locale)); err != nil {
 			slog.Error("scenario setup script failed", "session_id", sessionID, "err", err)
 			s.db.Model(&models.ScenarioSession{}).
 				Where("id = ? AND status = ?", sessionID, "provisioning").
@@ -679,6 +680,10 @@ const ocfFlagCurrentEnv = "OCF_FLAG_CURRENT"
 // ocfLocaleEnv names the language a session's world is built in.
 const ocfLocaleEnv = "OCF_LANG"
 
+// ocfSessionUserEnv names the uid the learner's console will run as, for the
+// benefit of the scripts that build the world before it does.
+const ocfSessionUserEnv = "OCF_SESSION_USER"
+
 // stepProvisioningEnv builds the environment a step's background script runs
 // with: its own flag, and nothing else.
 //
@@ -690,7 +695,7 @@ const ocfLocaleEnv = "OCF_LANG"
 // Returns nil when there is nothing to pass, so a scenario without flags sends
 // exactly the request it sends today rather than an empty, confusing variable.
 func stepProvisioningEnv(scenario *models.Scenario, flags []models.ScenarioFlag, stepOrder int, locale string) map[string]string {
-	env := provisioningLocaleEnv(locale)
+	env := provisioningEnv(scenario, locale)
 	if scenario == nil || !scenario.FlagsEnabled {
 		return env
 	}
@@ -733,19 +738,33 @@ func (s *ScenarioSessionService) lexiconInstall(scenarioID uuid.UUID, locale str
 	return fmt.Sprintf("cat > %s <<'OCF_LEXICON'\n%sOCF_LEXICON\n", LexiconContainerPath, body), nil
 }
 
-// provisioningLocaleEnv tells the container which language it is being built
-// in. Content reads it to pick the right world vocabulary, so it has to reach
-// the scenario's setup script as well as each step's — the setup script is
-// where the world's names are installed, and a locale that arrived one step
+// provisioningEnv tells the container what it is being built as: which
+// language, and who the learner will be.
+//
+// Content reads the locale to pick the right world vocabulary, so it has to
+// reach the scenario's setup script as well as each step's — the setup script
+// is where the world's names are installed, and a locale that arrived one step
 // late would build an English world for a French session.
 //
-// Nil rather than an empty map when there is no locale: callers pass this
-// straight through, and every session that exists today has none.
-func provisioningLocaleEnv(locale string) map[string]string {
-	if locale == "" {
+// Nil rather than an empty map when there is nothing to say: callers pass this
+// straight through, and every session that exists today has neither.
+func provisioningEnv(scenario *models.Scenario, locale string) map[string]string {
+	env := map[string]string{}
+	if locale != "" {
+		env[ocfLocaleEnv] = locale
+	}
+	// The scripts that build the world need the same uid the console will
+	// attach as, or they cannot hand the learner anything they own. Told here
+	// rather than written a second time in a setup script: two copies of one
+	// uid disagree eventually, and the day they do the learner owns nothing in
+	// their own world and every mission fails on a permission error.
+	if scenario != nil && scenario.SessionUser != nil {
+		env[ocfSessionUserEnv] = strconv.Itoa(*scenario.SessionUser)
+	}
+	if len(env) == 0 {
 		return nil
 	}
-	return map[string]string{ocfLocaleEnv: locale}
+	return env
 }
 
 // stepAnswerMarker lets a background script tell OCF what the answer to its own
