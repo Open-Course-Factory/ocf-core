@@ -120,6 +120,10 @@ type KillerCodaOCF struct {
 	// needs without granting the learner a session's worth of egress, and
 	// without being locked out of every plan that has no internet access.
 	BuildFeatures    []string `json:"build_features,omitempty"`
+	// SessionUser is the uid the learner's console runs as. Absent leaves the
+	// distribution's own, which is root: a scenario only names one when being
+	// root would defeat what it teaches, as it does for file permissions.
+	SessionUser      *int     `json:"session_user,omitempty"`
 }
 
 // KillerCodaAssets describes files to copy into the environment
@@ -326,12 +330,14 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	// Determine OCF extensions
 	flagsEnabled := false
 	crashTraps := false
+	var sessionUser *int
 	var compatibleInstanceTypes []models.ScenarioInstanceType
 	requiredFeatures := ""
 	buildFeatures := ""
 	if index.Extensions != nil && index.Extensions.OCF != nil {
 		flagsEnabled = index.Extensions.OCF.Flags
 		crashTraps = index.Extensions.OCF.CrashTraps
+		sessionUser = index.Extensions.OCF.SessionUser
 		compatibleInstanceTypes = BuildCompatibleInstanceTypes(index.Extensions.OCF.CompatibleInstanceTypes)
 
 		var featErr error
@@ -387,6 +393,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		FlagsEnabled:   flagsEnabled,
 		FlagSecret:     flagSecret,
 		CrashTraps:     crashTraps,
+		SessionUser:    sessionUser,
 		IntroText:      introText,
 		FinishText:     finishText,
 		SetupScript:    setupScript,

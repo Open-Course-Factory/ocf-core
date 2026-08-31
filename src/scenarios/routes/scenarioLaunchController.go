@@ -820,6 +820,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		Hostname:         scenario.Hostname,
 		Backend:          provisioning.Backend,
 		RecordingEnabled: 1,
+		SessionUser:      scenario.SessionUser,
 	}
 	if orgID != nil {
 		composedInput.OrganizationID = orgID.String()
@@ -1062,6 +1063,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		Hostname:         scenario.Hostname,
 		Backend:          provisioning.Backend,
 		RecordingEnabled: 1,
+		SessionUser:      scenario.SessionUser,
 	}
 	if scenario.OrganizationID != nil {
 		composedInput.OrganizationID = scenario.OrganizationID.String()

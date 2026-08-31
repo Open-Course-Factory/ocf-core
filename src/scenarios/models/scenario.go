@@ -47,6 +47,17 @@ type Scenario struct {
 	// that does not grant internet access.
 	BuildFeatures  string     `gorm:"type:text" json:"build_features,omitempty" mapstructure:"build_features"`
 
+	// SessionUser is the uid the learner's console runs as, when the scenario
+	// needs one of its own. Nil means the distribution decides, which is root
+	// for every image we ship.
+	//
+	// A scenario asks for this when its subject is the kernel refusing access:
+	// root holds CAP_DAC_OVERRIDE, so it reads a mode-000 file and walks into a
+	// mode-000 directory, and a mission about `chmod` is then a mission about
+	// nothing. Pointer rather than int because 0 is a uid — a scenario that
+	// says "root" and one that says nothing are different scenarios.
+	SessionUser *int `gorm:"" json:"session_user,omitempty" mapstructure:"session_user"`
+
 	// DefaultLocale names the language the scenario's own fields are written
 	// in. Empty means the content is simply itself — which is every scenario
 	// that exists today, and stays valid.

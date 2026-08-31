@@ -731,6 +731,13 @@ func (c *terminalComposer) startComposedSession(
 	if input.IdleWindowSeconds != nil {
 		ttReqBody["idle_window_seconds"] = *input.IdleWindowSeconds
 	}
+	// A scenario whose subject is file permissions cannot be played as root:
+	// root reads a mode-000 file and enters a mode-000 directory, so the
+	// missions teach nothing. Sent only when the scenario asked, so every other
+	// session's request is byte-for-byte what it was.
+	if input.SessionUser != nil {
+		ttReqBody["session_user"] = *input.SessionUser
+	}
 	// Forward the plan's storage quota so tt-backend sizes the persistent
 	// volume. Only meaningful for a persistent session; a zero/absent quota
 	// keeps tt-backend's unsized default, so the key is omitted then (same

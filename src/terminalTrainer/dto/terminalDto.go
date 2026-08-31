@@ -495,6 +495,11 @@ type CreateComposedSessionInput struct {
 	Packages         []string        `json:"packages,omitempty"`
 	RecordingEnabled int             `json:"recording_enabled,omitempty"`
 	ExternalRef      string          `json:"external_ref,omitempty"`
+	// SessionUser is the uid the console runs as, when the caller wants one
+	// other than the distribution's own (root, for every image we ship). Set by
+	// the service layer from the scenario, never accepted from a public request
+	// body: choosing your own uid is choosing your own privileges.
+	SessionUser *int `json:"-"`
 	// PersistenceMode requests an "ephemeral" (default) or "persistent" session.
 	// Tier enforcement (free tier cannot request persistent) is applied by
 	// StartComposedSession. The value is forwarded to tt-backend.
