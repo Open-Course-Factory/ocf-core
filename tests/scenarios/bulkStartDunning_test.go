@@ -87,14 +87,13 @@ func TestBulkStartScenario_ActiveTrainerPassesGate(t *testing.T) {
 	// means the trainer got through it.
 	//
 	// Past the gate the handler resolves how the scenario's container must be
-	// built, against a tt-backend this test has none of, so the request ends in
-	// 409 "no compatible environment" — the same refusal a single learner's
-	// launch gives in the same situation. Asserting 200 here would only be
-	// asserting that the handler never asks what it is about to build, which is
-	// precisely the omission that shipped containers with no network.
+	// built, and this test runs without a tt-backend, so the resolution cannot
+	// read any catalog and the request ends in 503. Asserting 200 here would
+	// only be asserting that the handler never asks what it is about to build,
+	// which is precisely the omission that shipped containers with no network.
 	assert.NotEqual(t, http.StatusPaymentRequired, w.Code,
 		"an active trainer must pass the dunning gate. Got %d. Body: %s", w.Code, w.Body.String())
-	assert.Equal(t, http.StatusConflict, w.Code,
-		"with no backend catalog reachable, the launch must refuse rather than "+
-			"guess a composition. Got %d. Body: %s", w.Code, w.Body.String())
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code,
+		"an unreachable backend catalog is an outage, not a scenario nobody can "+
+			"run. Got %d. Body: %s", w.Code, w.Body.String())
 }

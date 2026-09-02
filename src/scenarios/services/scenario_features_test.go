@@ -1,4 +1,4 @@
-package scenarioController
+package services
 
 import (
 	"testing"

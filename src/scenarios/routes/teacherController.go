@@ -20,10 +20,11 @@ import (
 
 // TeacherController handles teacher-facing dashboard endpoints
 type TeacherController struct {
-	db               *gorm.DB
-	dashboardService *services.TeacherDashboardService
-	sessionService   *services.ScenarioSessionService
-	terminalService  ttServices.TerminalTrainerService
+	db                  *gorm.DB
+	dashboardService    *services.TeacherDashboardService
+	sessionService      *services.ScenarioSessionService
+	terminalService     ttServices.TerminalTrainerService
+	provisioningService *services.ScenarioProvisioningService
 }
 
 // NewTeacherController creates a new teacher controller
@@ -33,10 +34,11 @@ func NewTeacherController(db *gorm.DB) *TeacherController {
 	terminalService := ttServices.NewTerminalTrainerService(db)
 	sessionService := services.NewScenarioSessionService(db, flagService, verificationService)
 	return &TeacherController{
-		db:               db,
-		dashboardService: services.NewTeacherDashboardService(db, terminalService, sessionService),
-		sessionService:   sessionService,
-		terminalService:  terminalService,
+		db:                  db,
+		dashboardService:    services.NewTeacherDashboardService(db, terminalService, sessionService),
+		sessionService:      sessionService,
+		terminalService:     terminalService,
+		provisioningService: services.NewScenarioProvisioningService(db, terminalService),
 	}
 }
 
@@ -463,6 +465,14 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 
 	trainerID := c.GetString("userId")
 
+	// Loaded once, and before the gate: the organization it belongs to decides
+	// which plan the gate reads.
+	scenario, err := tc.provisioningService.ScenarioForProvisioning(scenarioID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
+
 	// Dunning gate (MANDATORY on every new session-creation route): bulk-start
 	// provisions terminals for the whole class on the TEACHER's initiative, so
 	// the TEACHER's past_due subscription blocks the launch — members are
@@ -471,39 +481,23 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 	// resolved against the scenario's org, mirroring the per-member resolution
 	// inside BulkStartScenario; a failed resolution does not block (the
 	// service reports its own errors).
-	var scenarioOrg struct{ OrganizationID *uuid.UUID }
-	if err := tc.db.Model(&scenarioModels.Scenario{}).
-		Select("organization_id").
-		Where("id = ?", scenarioID).
-		First(&scenarioOrg).Error; err == nil {
-		planResult, planErr := paymentServices.NewEffectivePlanService(tc.db).
-			GetUserEffectivePlan(trainerID, scenarioOrg.OrganizationID)
-		if planErr == nil && paymentMiddleware.GatePastDueBeyondGraceForResult(c, planResult) {
-			return
-		}
-	}
-
-	// How the container must be built is the scenario's answer, not the caller's:
-	// the same resolver the single-learner launch uses reads the scenario's
-	// declared image, size, features and build-time features against the chosen
-	// backend's catalog. Bulk-start used to take only the distribution the
-	// teacher picked and fill in the rest itself — size hardcoded to "S", no
-	// features and, fatally, no build features, so a scenario whose setup
-	// installs packages got a container with no network and failed at step 0.
-	//
-	// req.InstanceType is therefore no longer read: a scenario naming its images
-	// has stated a requirement, and substituting one the author never approved is
-	// precisely what resolveDistribution refuses. req.Backend is still honoured,
-	// as which host to build on is the teacher's call, not the author's.
-	var scenario scenarioModels.Scenario
-	if err := tc.db.Preload("CompatibleInstanceTypes").First(&scenario, "id = ?", scenarioID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+	planResult, planErr := paymentServices.NewEffectivePlanService(tc.db).
+		GetUserEffectivePlan(trainerID, scenario.OrganizationID)
+	if planErr == nil && paymentMiddleware.GatePastDueBeyondGraceForResult(c, planResult) {
 		return
 	}
-	provisioning, resolveErr := resolveScenarioProvisioning(tc.db, tc.terminalService, scenario, scenarioOrg.OrganizationID, req.Backend)
+
+	// What to build is the scenario's answer, not the caller's. Deliberately
+	// after the gate: a trainer who owes money is refused for that reason, not
+	// told the terminal service is unavailable.
+	//
+	// req.InstanceType is not read: a scenario naming its images has stated a
+	// requirement, and substituting one its author never approved is what the
+	// resolution refuses. req.Backend is honoured, since which host to build on
+	// is the teacher's call.
+	provisioning, resolveErr := tc.provisioningService.Resolve(scenario, scenario.OrganizationID, req.Backend)
 	if resolveErr != nil {
-		slog.Error("no compatible distribution for bulk start", "scenario", scenario.Name, "err", resolveErr)
-		c.JSON(http.StatusConflict, gin.H{"error": "no compatible environment available for this scenario"})
+		respondProvisioningFailure(c, scenario.Name, resolveErr)
 		return
 	}
 

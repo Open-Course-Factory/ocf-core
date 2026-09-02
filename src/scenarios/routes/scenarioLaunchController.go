@@ -37,8 +37,9 @@ import (
 // (hasAdminRole, buildScenarioOutput).
 type scenarioLaunchController struct {
 	scenarioControllerBase
-	sessionService  *services.ScenarioSessionService
-	terminalService terminalServices.TerminalTrainerService
+	sessionService      *services.ScenarioSessionService
+	terminalService     terminalServices.TerminalTrainerService
+	provisioningService *services.ScenarioProvisioningService
 }
 
 // NewScenarioLaunchController creates a launch controller with its service
@@ -61,6 +62,7 @@ func NewScenarioLaunchController(db *gorm.DB) *scenarioLaunchController {
 
 	return &scenarioLaunchController{
 		scenarioControllerBase: scenarioControllerBase{db: db},
+		provisioningService:    services.NewScenarioProvisioningService(db, terminalService),
 		sessionService:         sessionService,
 		terminalService:        terminalService,
 	}
@@ -137,9 +139,7 @@ func (sc *scenarioLaunchController) StartScenario(ctx *gin.Context) {
 	requiredSize := scenario.InstanceType // stores size like "M", "XL"
 	machineSize := terminal.MachineSize   // actual terminal size like "L"
 	if requiredSize != "" && machineSize != "" {
-		requiredOrder, reqOk := sizeOrder[requiredSize]
-		machineOrder, machOk := sizeOrder[machineSize]
-		if reqOk && machOk && machineOrder < requiredOrder {
+		if services.SizeIsSmallerThan(machineSize, requiredSize) {
 			ctx.JSON(http.StatusConflict, &errors.APIError{
 				ErrorCode:    http.StatusConflict,
 				ErrorMessage: fmt.Sprintf("This scenario requires a %s machine or larger, but this terminal is %s", requiredSize, machineSize),
@@ -546,7 +546,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 
 		// Determine launchability by checking distribution compatibility.
-		provisioning, resolveErr := resolveScenarioProvisioning(sc.db, sc.terminalService, s, orgID, "")
+		provisioning, resolveErr := sc.provisioningService.Resolve(s, orgID, "")
 		item.Launchable = resolveErr == nil && provisioning.CreatesTerminal()
 		item.ResolvedDistribution = provisioning.Distribution
 		item.ResolvedSize = provisioning.Size
@@ -555,7 +555,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			// declared image is "install it on this backend", while
 			// no_distribution is "nothing here fits this scenario at all".
 			item.BlockReason = blockReasonNoDistribution
-			if stderrors.Is(resolveErr, errDeclaredImageUnavailable) {
+			if stderrors.Is(resolveErr, services.ErrDeclaredImageUnavailable) {
 				item.BlockReason = blockReasonDeclaredImageUnavail
 			}
 		}
@@ -591,79 +591,9 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, output)
 }
 
-// sizeOrder maps size labels to numeric order for comparison.
-// A larger number means a more powerful machine.
-var sizeOrder = map[string]int{
-	"XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5, "XXL": 6,
-}
 
-// resolveSizeOrFallback returns a valid size key, falling back when the
-// requested size is not in the catalog. Returns the canonical key from the
-// catalog and a bool indicating whether a fallback was applied.
-//
-// Resolution order:
-//  1. Requested matches a catalog entry (case-insensitive) → use canonical key
-//  2. Distribution default matches a catalog entry → use it
-//  3. Smallest size in catalog (lowest SortOrder)
-//  4. Catalog unavailable (nil/empty) → pass requested through unchanged
-//     (preserves prior behavior when the catalog fetch fails)
-func resolveSizeOrFallback(requested string, dist terminalDto.TTDistribution, sizes []terminalDto.TTSize) (string, bool) {
-	for _, s := range sizes {
-		if strings.EqualFold(s.Key, requested) {
-			return s.Key, false
-		}
-	}
-	if dist.DefaultSizeKey != "" {
-		for _, s := range sizes {
-			if strings.EqualFold(s.Key, dist.DefaultSizeKey) {
-				return s.Key, true
-			}
-		}
-	}
-	if len(sizes) > 0 {
-		smallest := sizes[0]
-		for _, s := range sizes[1:] {
-			if s.SortOrder < smallest.SortOrder {
-				smallest = s
-			}
-		}
-		return smallest.Key, true
-	}
-	return requested, false
-}
 
-// applySizeFallback resolves the requested size against the catalog and logs
-// a warning when a fallback is applied, so the two return sites in
-// resolveDistribution stay terse and consistent.
-func applySizeFallback(scenario models.Scenario, requested string, dist terminalDto.TTDistribution, sizes []terminalDto.TTSize) string {
-	final, fellBack := resolveSizeOrFallback(requested, dist, sizes)
-	if fellBack {
-		slog.Warn("scenario size fallback",
-			"scenario_id", scenario.ID,
-			"requested", requested,
-			"resolved", final,
-		)
-	}
-	return final
-}
 
-// resolveDistribution finds a compatible distribution for a scenario.
-// Returns the distribution name, the size key, and the features map.
-//
-// The `sizes` parameter is the live tt-backend size catalog used to validate
-// the scenario's stored InstanceType and apply launch-time fallback when it
-// is unknown (typo, stale import, key from another tt-backend instance). When
-// `sizes` is nil/empty (catalog fetch failed), the requested size is passed
-// through unchanged — tt-backend's `validateComposition()` remains the final
-// authority and will reject truly invalid sizes.
-// errDeclaredImageUnavailable marks a scenario that named the images it needs
-// when none of them exist on the chosen backend.
-//
-// It is deliberately distinct from the generic "nothing matched" failure: the
-// two are different operator problems. This one means "install the missing
-// distribution on this backend"; the generic one means "no image anywhere fits
-// this scenario's os_type, size and features".
-var errDeclaredImageUnavailable = stderrors.New("declared instance type unavailable")
 
 // Block reasons are a contract with the launcher, which switches its copy on
 // them. Named here so the endpoint that emits one and the endpoint that refuses
@@ -675,6 +605,29 @@ const (
 	blockReasonSizeOverPlan         = "size_over_plan"
 	blockReasonSessionExists        = "session_exists"
 )
+
+// respondProvisioningFailure turns a failed resolution into the right refusal.
+//
+// A catalog nobody would serve is an outage the caller can retry (503); a
+// catalog that simply holds nothing suitable is a conflict no retry fixes
+// (409). Named once so the three endpoints that provision a scenario cannot
+// disagree about which of the two just happened — before this, an unreachable
+// tt-backend was reported to a learner as "no compatible environment".
+func respondProvisioningFailure(ctx *gin.Context, scenarioName string, err error) {
+	if stderrors.Is(err, services.ErrBackendCatalogUnavailable) {
+		slog.Error("backend catalog unavailable for scenario", "scenario", scenarioName, "err", err)
+		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+			ErrorCode:    http.StatusServiceUnavailable,
+			ErrorMessage: "Terminal service unavailable",
+		})
+		return
+	}
+	slog.Error("no compatible distribution for scenario", "scenario", scenarioName, "err", err)
+	ctx.JSON(http.StatusConflict, &errors.APIError{
+		ErrorCode:    http.StatusConflict,
+		ErrorMessage: "No compatible environment available for this scenario",
+	})
+}
 
 // blockReasonForBudgetMiss names WHY the machine does not fit. A size larger
 // than the plan's own maximum never fits, however much the learner stops, so
@@ -697,167 +650,8 @@ func blockReasonForBudgetMiss(quotaSvc paymentServices.QuotaService, plan *payme
 	return blockReasonBudgetExhausted
 }
 
-func resolveDistribution(scenario models.Scenario, distributions []terminalDto.TTDistribution, sizes []terminalDto.TTSize) (distName string, size string, features map[string]bool, err error) {
-	requiredFeatures, featErr := scenario.GetRequiredFeatures()
-	if featErr != nil {
-		return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featErr)
-	}
-	requiredSize := scenario.InstanceType // This is actually a SIZE like "M"
 
-	// Priority path: if CompatibleInstanceTypes is populated, try matching by name first
-	if len(scenario.CompatibleInstanceTypes) > 0 {
-		sorted := services.SortInstanceTypesByPriority(scenario.CompatibleInstanceTypes)
 
-		for _, cit := range sorted {
-			for _, dist := range distributions {
-				if strings.EqualFold(cit.InstanceType, dist.Name) {
-					// Match found — use scenario size if set, otherwise distribution default
-					resolvedSize := requiredSize
-					if resolvedSize == "" {
-						resolvedSize = dist.DefaultSizeKey
-					}
-					featuresMap, featMapErr := scenarioFeatures(scenario)
-					if featMapErr != nil {
-						return "", "", nil, featMapErr
-					}
-					return dist.Name, applySizeFallback(scenario, resolvedSize, dist, sizes), featuresMap, nil
-				}
-			}
-		}
-		// Nothing the scenario named is available here. Naming images is a
-		// statement of requirement, so substituting one the author never
-		// approved is refused: that silent substitution is how a challenge ran
-		// on the generic Debian base for months, in production, unnoticed.
-		//
-		// A scenario naming several images has already said which substitutions
-		// are acceptable — they are simply lower-priority entries in this list,
-		// and one of them would have matched above.
-		wanted := make([]string, 0, len(sorted))
-		for _, cit := range sorted {
-			wanted = append(wanted, cit.InstanceType)
-		}
-		return "", "", nil, fmt.Errorf("%w: scenario requires one of [%s]",
-			errDeclaredImageUnavailable, strings.Join(wanted, ", "))
-	}
-
-	for _, dist := range distributions {
-		// Match OS type
-		if scenario.OsType != "" && dist.OsType != scenario.OsType {
-			continue
-		}
-		// Check distribution supports all required features
-		if !distributionSupportsFeatures(dist, requiredFeatures) {
-			continue
-		}
-		// Check distribution's min_size_key allows the requested size
-		if requiredSize != "" && dist.MinSizeKey != "" {
-			reqOrder, reqOk := sizeOrder[strings.ToUpper(requiredSize)]
-			minOrder, minOk := sizeOrder[strings.ToUpper(dist.MinSizeKey)]
-			if reqOk && minOk && reqOrder < minOrder {
-				continue // requested size is smaller than distribution's minimum
-			}
-		}
-		// Found a compatible distribution
-		size = requiredSize
-		if size == "" && dist.DefaultSizeKey != "" {
-			size = dist.DefaultSizeKey
-		}
-		featuresMap, featMapErr := scenarioFeatures(scenario)
-		if featMapErr != nil {
-			return "", "", nil, featMapErr
-		}
-		return dist.Name, applySizeFallback(scenario, size, dist, sizes), featuresMap, nil
-	}
-	return "", "", nil, fmt.Errorf("no compatible distribution found for scenario (os_type=%s, size=%s)", scenario.OsType, requiredSize)
-}
-
-// distributionSupportsFeatures checks if a distribution supports all required features
-func distributionSupportsFeatures(dist terminalDto.TTDistribution, required []string) bool {
-	if len(required) == 0 {
-		return true
-	}
-	supported := make(map[string]bool, len(dist.SupportedFeatures))
-	for _, f := range dist.SupportedFeatures {
-		supported[f] = true
-	}
-	for _, req := range required {
-		if !supported[req] {
-			return false
-		}
-	}
-	return true
-}
-
-// resolveScenarioBackendAndDistribution determines the best backend and distribution
-// for a scenario, taking into account the user's organization context. It tries
-// org-allowed backends first (defaultBackend has priority), then falls back to the
-// system default backend.
-func resolveScenarioProvisioning(
-	db *gorm.DB,
-	terminalService terminalServices.TerminalTrainerService,
-	scenario models.Scenario,
-	orgID *uuid.UUID,
-	preferredBackend string,
-) (services.ScenarioProvisioning, error) {
-	// Determine candidate backends. A caller that already knows which backend it
-	// wants — the teacher picking one for a whole class — gets it tried first;
-	// the org's own backends follow, then the system default.
-	var candidateBackends []string
-	if preferredBackend != "" {
-		candidateBackends = append(candidateBackends, preferredBackend)
-	}
-	if orgID != nil {
-		var org orgModels.Organization
-		if err := db.First(&org, "id = ?", *orgID).Error; err == nil {
-			if org.DefaultBackend != "" && org.DefaultBackend != preferredBackend {
-				candidateBackends = append(candidateBackends, org.DefaultBackend)
-			}
-			for _, b := range org.AllowedBackends {
-				if b != org.DefaultBackend && b != preferredBackend {
-					candidateBackends = append(candidateBackends, b)
-				}
-			}
-		}
-	}
-	if len(candidateBackends) == 0 {
-		candidateBackends = []string{""} // system default
-	}
-
-	// Fetch the size catalog once (cached 60s in the service) so resolveDistribution
-	// can apply launch-time fallback for scenarios with unknown InstanceType values
-	// (typos, stale imports, keys from another tt-backend instance). On fetch
-	// failure we pass nil — resolveDistribution then preserves prior behavior
-	// and tt-backend's validateComposition() remains the final authority.
-	sizes, sizesErr := terminalService.GetCatalogSizes()
-	if sizesErr != nil {
-		slog.Warn("failed to fetch sizes catalog, scenario size fallback disabled", "err", sizesErr)
-		sizes = nil
-	}
-
-	// Try each candidate backend
-	var lastErr error
-	for _, b := range candidateBackends {
-		distributions, distErr := terminalService.GetDistributions(b)
-		if distErr != nil {
-			lastErr = distErr
-			continue
-		}
-		resolvedDist, resolvedSize, resolvedFeatures, resolveErr := resolveDistribution(scenario, distributions, sizes)
-		if resolveErr != nil {
-			lastErr = resolveErr
-			continue
-		}
-		return services.ScenarioProvisioning{
-			Backend:       b,
-			Distribution:  resolvedDist,
-			Size:          resolvedSize,
-			Features:      resolvedFeatures,
-			BuildFeatures: scenarioBuildFeatures(scenario),
-		}, nil
-	}
-
-	return services.ScenarioProvisioning{}, fmt.Errorf("no compatible distribution on any backend: %v", lastErr)
-}
 
 // LaunchScenario godoc
 // @Summary Launch a scenario with auto-provisioned terminal
@@ -947,13 +741,9 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	}
 
 	// Resolve backend + distribution using org-aware logic
-	provisioning, distErr := resolveScenarioProvisioning(sc.db, sc.terminalService, scenario, orgID, "")
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, "")
 	if distErr != nil {
-		slog.Error("no compatible distribution for scenario", "scenario", scenario.Name, "err", distErr)
-		ctx.JSON(http.StatusConflict, &errors.APIError{
-			ErrorCode:    http.StatusConflict,
-			ErrorMessage: "No compatible environment available for this scenario",
-		})
+		respondProvisioningFailure(ctx, scenario.Name, distErr)
 		return
 	}
 
@@ -1081,22 +871,6 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	})
 }
 
-// scenarioBuildFeatures reads the features a scenario needs only while its
-// container is being provisioned.
-//
-// A bad declaration is a scenario-authoring error, not a reason to refuse the
-// launch: the run proceeds without them and whatever the setup needed them for
-// fails visibly during provisioning, where the trainer can see it, rather than
-// as an opaque refusal here.
-func scenarioBuildFeatures(scenario models.Scenario) map[string]bool {
-	features, err := scenario.GetBuildFeaturesMap()
-	if err != nil {
-		slog.Error("scenario has an unreadable build_features declaration; provisioning without it",
-			"scenario", scenario.Name, "err", err)
-		return nil
-	}
-	return features
-}
 
 // checkScenarioAccess checks if a user has access to a scenario via group or org assignments
 func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioID uuid.UUID) (bool, error) {
@@ -1206,33 +980,11 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		backend = body.Backend
 	}
 
-	// Get available distributions from tt-backend
-	distributions, err := sc.terminalService.GetDistributions(backend)
-	if err != nil {
-		slog.Error("failed to get distributions from tt-backend", "err", err)
-		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-			ErrorCode:    http.StatusServiceUnavailable,
-			ErrorMessage: "Terminal service unavailable",
-		})
-		return
-	}
-
-	// Fetch the size catalog (cached 60s) to enable launch-time size fallback
-	// for scenarios with unknown InstanceType values. Non-fatal on failure.
-	previewSizes, previewSizesErr := sc.terminalService.GetCatalogSizes()
-	if previewSizesErr != nil {
-		slog.Warn("failed to fetch sizes catalog, scenario size fallback disabled", "err", previewSizesErr)
-		previewSizes = nil
-	}
-
-	// Find a compatible distribution for the scenario
-	distName, size, features, distErr := resolveDistribution(scenario, distributions, previewSizes)
+	// A preview builds the same machine the learners will get, so it asks the
+	// same question of the same owner rather than composing one of its own.
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, scenario.OrganizationID, backend)
 	if distErr != nil {
-		slog.Error("no compatible distribution for scenario preview", "scenario", scenario.Name, "err", distErr)
-		ctx.JSON(http.StatusConflict, &errors.APIError{
-			ErrorCode:    http.StatusConflict,
-			ErrorMessage: "No compatible environment available for this scenario",
-		})
+		respondProvisioningFailure(ctx, scenario.Name, distErr)
 		return
 	}
 
@@ -1301,14 +1053,14 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 
 	// Create terminal session via composed session flow (distribution + size + features)
 	composedInput := terminalDto.CreateComposedSessionInput{
-		Distribution:     distName,
-		Size:             size,
-		Features:         features,
-		BuildFeatures:    scenarioBuildFeatures(scenario),
+		Distribution:     provisioning.Distribution,
+		Size:             provisioning.Size,
+		Features:         provisioning.Features,
+		BuildFeatures:    provisioning.BuildFeatures,
 		Terms:            terms,
 		Name:             fmt.Sprintf("preview-%s", scenario.Title),
 		Hostname:         scenario.Hostname,
-		Backend:          backend,
+		Backend:          provisioning.Backend,
 		RecordingEnabled: 1,
 	}
 	if scenario.OrganizationID != nil {
@@ -1353,40 +1105,4 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	})
 }
 
-// scenarioFeatures is everything the scenario's machine has to provide: the
-// features the scenario declares, plus the renderer that a configured banner
-// cannot be drawn without.
-//
-// The renderer is derived rather than declared — a trainer fills in an intro
-// and an outro, not a capability list — and it is derived here, where the
-// feature set is built, so that every caller gets the complete answer. Adding
-// it at the call sites instead meant each one had to remember, and the launch
-// and the preview are not the only two places that resolve a scenario.
-//
-// Before this, whether a banner animated depended on the image the scenario
-// happened to land on: it worked where somebody had baked a renderer in, and
-// printed plain text with no explanation anywhere else.
-func scenarioFeatures(scenario models.Scenario) (map[string]bool, error) {
-	features, err := scenario.GetFeaturesMap()
-	if err != nil {
-		return nil, fmt.Errorf("invalid scenario configuration: %w", err)
-	}
-	if !services.EffectsEnabled() {
-		// A scenario may also name the feature itself. Dropping it here keeps the
-		// switch's promise: off means no renderer is installed, whatever asked
-		// for it, since with banners silenced nothing would ever use it.
-		delete(features, effectsFeatureKey)
-		return features, nil
-	}
-	if !services.ScenarioUsesEffects(&scenario) {
-		return features, nil
-	}
-	if features == nil {
-		features = map[string]bool{}
-	}
-	features[effectsFeatureKey] = true
-	return features, nil
-}
 
-// effectsFeatureKey is tt-backend's catalog key for the banner renderer.
-const effectsFeatureKey = "effects"

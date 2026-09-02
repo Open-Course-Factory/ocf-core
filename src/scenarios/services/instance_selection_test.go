@@ -1,4 +1,4 @@
-package scenarioController
+package services
 
 import (
 	stderrors "errors"
@@ -217,7 +217,7 @@ func TestResolveDistribution_CompatibleInstanceTypes_UnavailableIsRefused(t *tes
 	require.Error(t, err,
 		"a scenario that declares rogueLite must not silently launch on debian")
 	assert.Empty(t, distName, "no distribution may be returned alongside the error")
-	assert.True(t, stderrors.Is(err, errDeclaredImageUnavailable),
+	assert.True(t, stderrors.Is(err, ErrDeclaredImageUnavailable),
 		"the failure must be distinguishable from 'nothing matched at all' — a "+
 			"missing declared image means install it on this backend, while "+
 			"no_distribution means nothing here fits the scenario. Got %v", err)
