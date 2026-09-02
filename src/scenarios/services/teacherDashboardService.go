@@ -737,13 +737,18 @@ func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID st
 	return terminalResp.SessionID, ""
 }
 
-// ResetGroupScenarioSessions abandons all active sessions for a group+scenario combination.
-// Used to clean up orphaned sessions (e.g., created without terminal keys).
+// ResetGroupScenarioSessions abandons every open run of this scenario held by
+// the class's learners, so the class can be started again cleanly. Used to
+// clear orphaned runs (e.g. created without terminal keys) and failed launches.
+//
+// Learners only, the mirror of BulkStartScenario: the runs a reset clears are
+// the ones a start creates, and groupModels.LearnerRoles is the one definition
+// of who that is.
 func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, scenarioID uuid.UUID) (int64, error) {
-	// Get active group member user IDs
 	var memberUserIDs []string
 	if err := s.db.Model(&groupModels.GroupMember{}).
 		Where("group_id = ? AND is_active = ?", groupID, true).
+		Scopes(groupModels.LearnerRoleScope("group_members")).
 		Pluck("user_id", &memberUserIDs).Error; err != nil {
 		return 0, fmt.Errorf("failed to load group members: %w", err)
 	}

@@ -218,3 +218,34 @@ func TestResetGroupScenarioSessions_ClearsFailedRuns(t *testing.T) {
 	require.NoError(t, db.First(&reloaded, "id = ?", failed.ID).Error)
 	assert.Equal(t, "abandoned", reloaded.Status)
 }
+
+// TestResetGroupScenarioSessions_LearnersOnly verifies that a class reset is
+// the mirror of a class start: it clears the learners' runs and leaves the
+// staff's alone. A manager previewing the scenario in their own session must
+// not lose it because a colleague reset the class.
+func TestResetGroupScenarioSessions_LearnersOnly(t *testing.T) {
+	db := setupTestDB(t)
+	groupID, scenarioID := uuid.New(), uuid.New()
+
+	for uid, role := range map[string]string{"reset-only-learner": "member", "reset-only-manager": "manager"} {
+		require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+			GroupID: groupID, UserID: uid, Role: groupModels.GroupMemberRole(role),
+			JoinedAt: time.Now(), IsActive: true,
+		}).Error)
+		require.NoError(t, db.Create(&models.ScenarioSession{
+			BaseModel:  entityManagementModels.BaseModel{ID: uuid.New()},
+			ScenarioID: scenarioID, UserID: uid, Status: "active",
+		}).Error)
+	}
+
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	dashSvc := services.NewTeacherDashboardService(db, newCapturingTTService(), sessionSvc)
+
+	count, err := dashSvc.ResetGroupScenarioSessions(groupID, scenarioID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "only the learner's run is the class's to reset")
+
+	var managerRun models.ScenarioSession
+	require.NoError(t, db.First(&managerRun, "user_id = ?", "reset-only-manager").Error)
+	assert.Equal(t, "active", managerRun.Status, "a manager's own run is not the class's")
+}
