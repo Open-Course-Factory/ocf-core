@@ -454,8 +454,9 @@ func (s *TeacherDashboardService) assignmentsProgressByGroup(groupIDs []uuid.UUI
 		       AVG(CASE WHEN ss.status = 'completed' THEN ss.grade END) as avg_grade
 		FROM scenario_sessions ss
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id IN ? AND gm.is_active = true
-		     AND gm.role IN ?
+		     AND gm.role IN ? AND gm.deleted_at IS NULL
 		WHERE ss.is_preview = false
+		  AND ss.deleted_at IS NULL
 		GROUP BY gm.group_id, ss.scenario_id
 		ORDER BY gm.group_id, ss.scenario_id
 	`, groupIDs, groupModels.LearnerRoles).Scan(&rows).Error

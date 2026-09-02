@@ -171,6 +171,53 @@ func TestGetManagedGroupsOverview_StaffOnlyClass_ReportsZeroLearners(t *testing.
 	assert.Zero(t, row.Assignments[0].ClassCompletionRate, "no apprenant means no rate, not a division by zero")
 }
 
+// TestGetManagedGroupsOverview_DeletedSessions_AreNotStarted verifies that a
+// scenario session which has been deleted stops counting as started.
+//
+// assignmentsProgressByGroup is raw SQL, so GORM's soft-delete scope never
+// reaches it, and the query named no deleted_at of its own. After clearing a bad
+// class launch the card still read "3 started" while every learner's row in the
+// progression table read not_started — the same question answered two ways,
+// which is exactly the drift the raw-SQL comment warns about.
+func TestGetManagedGroupsOverview_DeletedSessions_AreNotStarted(t *testing.T) {
+	db := setupTestDB(t)
+	const teacher = "deleted-sessions-teacher"
+
+	orgID := uuid.New()
+	group := createClassGroup(t, db, "deleted-sessions", teacher, &orgID)
+	addGroupMember(t, db, group.ID, teacher, groupModels.GroupMemberRoleOwner)
+	addGroupMember(t, db, group.ID, "deleted-sessions-learner", groupModels.GroupMemberRoleMember)
+
+	scenario := createTestScenarioNoOrg(t, db, "deleted-sessions-scenario")
+	createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
+
+	session := &models.ScenarioSession{
+		ScenarioID: scenario.ID,
+		UserID:     "deleted-sessions-learner",
+		Status:     "abandoned",
+		StartedAt:  time.Now().Add(-time.Hour),
+	}
+	require.NoError(t, db.Create(session).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	before, err := svc.GetManagedGroupsOverview(teacher)
+	require.NoError(t, err)
+	require.Len(t, before, 1)
+	require.Len(t, before[0].Assignments, 1)
+	require.Equal(t, 1, before[0].Assignments[0].StartedCount,
+		"a live session counts as started")
+
+	require.NoError(t, db.Delete(session).Error)
+
+	after, err := svc.GetManagedGroupsOverview(teacher)
+	require.NoError(t, err)
+	require.Len(t, after, 1)
+	require.Len(t, after[0].Assignments, 1)
+	assert.Equal(t, 0, after[0].Assignments[0].StartedCount,
+		"a deleted session must stop counting, or the class card contradicts the "+
+			"progression table it sits above")
+}
+
 // TestGetManagedGroupsOverview_PlainStudent_ReturnsEmptyList verifies a learner
 // who is a member of real classes gets an EMPTY list — not an error, and above
 // all not the classes they merely attend.
