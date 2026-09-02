@@ -52,16 +52,9 @@ func NewScenarioProgressControllerWithTerminalService(db *gorm.DB, terminalServi
 	verificationService := services.NewVerificationService()
 	sessionService := services.NewScenarioSessionService(db, flagService, verificationService)
 
-	// Wire terminal stop callback so the session service can stop terminals on setup failure
-	sessionService.SetTerminalStopFunc(func(terminalSessionID string) error {
-		return terminalService.StopSession(terminalSessionID)
-	})
-
-	// Same reason and same direction: the session service must be able to close
-	// a container's provisioning window without importing terminalTrainer.
-	sessionService.SetTerminalBuildCompleteFunc(func(terminalSessionID string) error {
-		return terminalService.BuildComplete(terminalSessionID)
-	})
+	// Stop-on-failure and close-the-build-window, wired in one place so no
+	// constructor can ship with half the pair (see WireTerminalCallbacks).
+	services.WireTerminalCallbacks(sessionService, terminalService)
 
 	return &scenarioProgressController{
 		scenarioControllerBase: scenarioControllerBase{db: db},
