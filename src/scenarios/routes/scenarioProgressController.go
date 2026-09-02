@@ -348,6 +348,7 @@ func (pc *scenarioProgressController) RevealHint(ctx *gin.Context) {
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
+// @Failure 409 {object} errors.APIError "Session already finished or abandoned"
 // @Failure 500 {object} errors.APIError
 // @Router /scenario-sessions/{id}/abandon [post]
 // @Security BearerAuth
@@ -358,6 +359,16 @@ func (pc *scenarioProgressController) AbandonSession(ctx *gin.Context) {
 	}
 
 	err = pc.sessionService.AbandonSession(session.ID)
+	if stderrors.Is(err, services.ErrSessionNotAbandonable) {
+		// The run is already over. That is a state the client can read — the
+		// session it holds is stale — not a server failure: as a 500 it made an
+		// abandon that had in fact succeeded look like one to retry.
+		ctx.JSON(http.StatusConflict, &errors.APIError{
+			ErrorCode:    http.StatusConflict,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
 	if err != nil {
 		slog.Error("failed to abandon session", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{

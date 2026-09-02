@@ -327,7 +327,9 @@ func TestAbandonSession_StillRefusedForFinishedSessions(t *testing.T) {
 	}
 	require.NoError(t, db.Create(session).Error)
 
-	assert.Error(t, svc.AbandonSession(session.ID),
-		"a completed session must stay completed — abandon applies to active, "+
-			"provisioning and setup_failed sessions only")
+	err := svc.AbandonSession(session.ID)
+	assert.ErrorIs(t, err, services.ErrSessionNotAbandonable,
+		"a completed session must stay completed, and the refusal must be the "+
+			"sentinel the controller answers 409 with — as a 500 it made an abandon "+
+			"that had already succeeded look like one to retry")
 }
