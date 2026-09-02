@@ -51,11 +51,14 @@ func bulkStartFixture(t *testing.T, name string, membersByRole map[string][]stri
 		}).Error)
 	}
 
+	// Persistence is on, as it is on the tier that runs classes: a test that
+	// asks whether the container came out persistent needs a plan that allows it.
 	plan := paymentModels.SubscriptionPlan{
 		Name:                        name + "-plan",
 		IsActive:                    true,
 		MaxSessionDurationMinutes:   240,
 		CommandHistoryRetentionDays: 30,
+		DataPersistenceEnabled:      true,
 	}
 	require.NoError(t, db.Create(&plan).Error)
 
@@ -125,6 +128,9 @@ func TestBulkStartScenario_BuildsTheContainerTheScenarioAsked(t *testing.T) {
 	assert.Equal(t, map[string]bool{"network": true}, got.BuildFeatures,
 		"a scenario whose setup installs packages needs its build-time network")
 	assert.Equal(t, map[string]bool{"effects": true}, got.Features)
+	assert.Equal(t, "persistent", got.PersistenceMode,
+		"the plan allows persistence, so the class's containers must be pausable "+
+			"like the same learner's own launch — an empty mode resolves to ephemeral")
 }
 
 // TestBulkStartScenario_ClosesTheProvisioningWindow verifies that a class launch

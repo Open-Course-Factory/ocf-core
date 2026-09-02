@@ -683,6 +683,24 @@ func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID st
 	utils.Debug("BulkStartScenario - Creating terminal for member %s (distribution=%s size=%s)",
 		userID, run.provisioning.Distribution, run.provisioning.Size)
 
+	// Resolve the member's effective subscription plan, scoping it to the
+	// scenario's organization when present so the plan matches the org context
+	// the bulk-start is running in (#334 — gate/display SSOT).
+	// scenario.OrganizationID is nil for platform-wide scenarios, which
+	// correctly falls back to the member's globally highest-priority plan.
+	//
+	// Resolved before the composition because the persistence mode depends on
+	// it: an empty mode resolves to ephemeral, and this path used to leave it
+	// empty unless crash traps forced it — so a class started from the button
+	// got containers it could not pause while the same learner, launching
+	// alone, got persistent ones from the same plan.
+	planResult, planErr := paymentServices.NewEffectivePlanService(s.db).
+		GetUserEffectivePlan(userID, run.scenario.OrganizationID)
+	if planErr != nil {
+		utils.Warn("BulkStartScenario - Failed to resolve plan for user %s: %v", userID, planErr)
+		return "", "failed to resolve subscription plan"
+	}
+
 	orgID := ""
 	if run.scenario.OrganizationID != nil {
 		orgID = run.scenario.OrganizationID.String()
@@ -700,22 +718,10 @@ func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID st
 		OrganizationID: orgID,
 		// RecordingEnabled: recording is always on (RGPD Art. 6.1.f — legitimate interest)
 		RecordingEnabled: 1,
-	}
-	// Scenarios with crash_traps must run ephemeral: trap mechanics rely on container destruction.
-	if ttServices.ScenarioForcesEphemeral(run.scenario.CrashTraps) {
-		composedInput.PersistenceMode = "ephemeral"
-	}
-
-	// Resolve the member's effective subscription plan, scoping it to the
-	// scenario's organization when present so the plan matches the org context
-	// the bulk-start is running in (#334 — gate/display SSOT).
-	// scenario.OrganizationID is nil for platform-wide scenarios, which
-	// correctly falls back to the member's globally highest-priority plan.
-	planResult, planErr := paymentServices.NewEffectivePlanService(s.db).
-		GetUserEffectivePlan(userID, run.scenario.OrganizationID)
-	if planErr != nil {
-		utils.Warn("BulkStartScenario - Failed to resolve plan for user %s: %v", userID, planErr)
-		return "", "failed to resolve subscription plan"
+		// Persistence: SSOT lives in ResolveScenarioPersistenceMode, shared
+		// with the single-learner launch (crash_traps → ephemeral, otherwise
+		// whatever the plan allows).
+		PersistenceMode: ttServices.ResolveScenarioPersistenceMode(run.scenario.CrashTraps, planResult.Plan),
 	}
 
 	terminalResp, termErr := s.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
