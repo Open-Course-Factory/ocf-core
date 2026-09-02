@@ -416,6 +416,9 @@ func (tc *TeacherController) GetSessionCommands(c *gin.Context) {
 
 // BulkStartRequest is the request body for bulk starting a scenario
 type BulkStartRequest struct {
+	// Deprecated: ignored. The distribution comes from the scenario's own
+	// declaration, resolved the same way a single learner's launch resolves it.
+	// Kept so existing clients keep parsing; ocf-front's picker can go.
 	InstanceType           string `json:"instance_type"`
 	Backend                string `json:"backend,omitempty"`
 	Hostname               string `json:"hostname,omitempty"`
@@ -480,7 +483,31 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 		}
 	}
 
-	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, req.InstanceType, req.Backend, req.SessionDurationMinutes, trainerID)
+	// How the container must be built is the scenario's answer, not the caller's:
+	// the same resolver the single-learner launch uses reads the scenario's
+	// declared image, size, features and build-time features against the chosen
+	// backend's catalog. Bulk-start used to take only the distribution the
+	// teacher picked and fill in the rest itself — size hardcoded to "S", no
+	// features and, fatally, no build features, so a scenario whose setup
+	// installs packages got a container with no network and failed at step 0.
+	//
+	// req.InstanceType is therefore no longer read: a scenario naming its images
+	// has stated a requirement, and substituting one the author never approved is
+	// precisely what resolveDistribution refuses. req.Backend is still honoured,
+	// as which host to build on is the teacher's call, not the author's.
+	var scenario scenarioModels.Scenario
+	if err := tc.db.Preload("CompatibleInstanceTypes").First(&scenario, "id = ?", scenarioID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
+	provisioning, resolveErr := resolveScenarioProvisioning(tc.db, tc.terminalService, scenario, scenarioOrg.OrganizationID, req.Backend)
+	if resolveErr != nil {
+		slog.Error("no compatible distribution for bulk start", "scenario", scenario.Name, "err", resolveErr)
+		c.JSON(http.StatusConflict, gin.H{"error": "no compatible environment available for this scenario"})
+		return
+	}
+
+	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, provisioning, req.SessionDurationMinutes, trainerID)
 	if err != nil {
 		if errors.Is(err, scenarioModels.ErrScenarioArchived) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})

@@ -26,9 +26,14 @@ import (
 // so we can assert on the fields sent to the terminal trainer.
 
 type capturingTTService struct {
-	keys             map[string]*ttModels.UserTerminalKey
-	capturedInputs   []ttDto.CreateComposedSessionInput
-	capturedUserIDs  []string
+	keys            map[string]*ttModels.UserTerminalKey
+	capturedInputs  []ttDto.CreateComposedSessionInput
+	capturedUserIDs []string
+
+	// Sessions whose provisioning window was closed, so a test can tell a
+	// container that gave its build-time features back from one still holding
+	// them.
+	buildCompleted []string
 }
 
 func newCapturingTTService() *capturingTTService {
@@ -251,7 +256,7 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	dashSvc := services.NewTeacherDashboardService(db, ttMock, sessionSvc)
 
 	// Call BulkStartScenario WITH an instanceType (distribution) so terminal creation triggers
-	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, "ubuntu:22.04", "", 0, "")
+	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{Distribution: "ubuntu:22.04", Size: "xs"}, 0, "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -275,6 +280,8 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	assert.Empty(t, result.Errors, "should have no errors")
 }
 
-// BuildComplete satisfies TerminalTrainerService. These tests never exercise
-// the provisioning window, so the stub reports success without recording.
-func (m *capturingTTService) BuildComplete(sessionID string) error { return nil }
+// BuildComplete records that the provisioning window was closed for a session.
+func (m *capturingTTService) BuildComplete(sessionID string) error {
+	m.buildCompleted = append(m.buildCompleted, sessionID)
+	return nil
+}

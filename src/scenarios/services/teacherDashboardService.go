@@ -204,6 +204,11 @@ type TeacherDashboardService struct {
 
 // NewTeacherDashboardService creates a new teacher dashboard service
 func NewTeacherDashboardService(db *gorm.DB, terminalService ttServices.TerminalTrainerService, sessionService *ScenarioSessionService) *TeacherDashboardService {
+	// Bulk-start provisions containers through this session service, so it needs
+	// the terminal callbacks — most of all the one that closes the provisioning
+	// window. Wiring them here, where both halves are already in hand, is what
+	// stops a caller forgetting them: see WireTerminalCallbacks.
+	WireTerminalCallbacks(sessionService, terminalService)
 	return &TeacherDashboardService{
 		db:              db,
 		sessionRepo:     repositories.NewScenarioSessionRepository(db),
@@ -447,12 +452,17 @@ func (s *TeacherDashboardService) CalculateGrade(sessionID uuid.UUID) float64 {
 	return grade
 }
 
-// BulkStartScenario creates terminal sessions and scenario sessions for group members.
-// Auto-provisions terminal keys for members who don't have one.
-// If instanceType is empty, only creates scenario sessions (no terminals).
+// BulkStartScenario creates terminal sessions and scenario sessions for group
+// members. Auto-provisions terminal keys for those who lack one.
+//
+// provisioning says how each container must be built; it is resolved once by the
+// caller from the scenario's own declaration, so a class launch and a single
+// learner's launch build the same machine. A provisioning that creates no
+// terminal records scenario sessions only.
+//
 // sessionDurationMinutes controls terminal session lifetime (default: 240 = 4 hours).
 // trainerID identifies the trainer who initiated the bulk start (for Qualiopi traceability).
-func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioID uuid.UUID, instanceType, backend string, sessionDurationMinutes int, trainerID string) (*BulkStartResult, error) {
+func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioID uuid.UUID, provisioning ScenarioProvisioning, sessionDurationMinutes int, trainerID string) (*BulkStartResult, error) {
 	var members []groupModels.GroupMember
 	if err := s.db.Where("group_id = ? AND is_active = ?", groupID, true).Find(&members).Error; err != nil {
 		return nil, fmt.Errorf("failed to load group members: %w", err)
@@ -483,7 +493,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 
 	// Fetch terms from tt-backend for session creation
 	var terms string
-	if instanceType != "" {
+	if provisioning.CreatesTerminal() {
 		var termsErr error
 		terms, termsErr = s.terminalService.GetTerms()
 		if termsErr != nil {
@@ -548,18 +558,20 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 				}
 			}
 
-			// Create terminal session if instance type (distribution) is provided
+			// Create the container this scenario asked for, when it asked for one
 			var terminalSessionID *string
-			if instanceType != "" {
-				utils.Debug("BulkStartScenario - Creating terminal for member %s (distribution=%s)", member.UserID, instanceType)
+			if provisioning.CreatesTerminal() {
+				utils.Debug("BulkStartScenario - Creating terminal for member %s (distribution=%s size=%s)", member.UserID, provisioning.Distribution, provisioning.Size)
 				composedInput := ttDto.CreateComposedSessionInput{
-					Distribution: instanceType, // instanceType now maps to distribution name
-					Size:         "S",          // Default size for bulk scenario creation
-					Terms:        terms,
-					Backend:      backend,
-					Name:         fmt.Sprintf("scenario-%s", scenario.Title),
-					Expiry:       sessionExpirySecs,
-					Hostname:     scenario.Hostname,
+					Distribution:  provisioning.Distribution,
+					Size:          provisioning.Size,
+					Features:      provisioning.Features,
+					BuildFeatures: provisioning.BuildFeatures,
+					Terms:         terms,
+					Backend:       provisioning.Backend,
+					Name:          fmt.Sprintf("scenario-%s", scenario.Title),
+					Expiry:        sessionExpirySecs,
+					Hostname:      scenario.Hostname,
 					OrganizationID: func() string {
 						if scenario.OrganizationID != nil {
 							return scenario.OrganizationID.String()
@@ -606,7 +618,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 				utils.Debug("BulkStartScenario - Terminal created for member %s: sessionID=%s", member.UserID, terminalResp.SessionID)
 				terminalSessionID = &terminalResp.SessionID
 			} else {
-				utils.Debug("BulkStartScenario - No instanceType provided, skipping terminal creation for member %s", member.UserID)
+				utils.Debug("BulkStartScenario - No distribution resolved, skipping terminal creation for member %s", member.UserID)
 			}
 
 			// Use ScenarioSessionService.StartScenario to create session, step progress,

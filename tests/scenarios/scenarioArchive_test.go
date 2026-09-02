@@ -271,7 +271,7 @@ func TestArchivedScenario_RefusesBulkStartForAClass(t *testing.T) {
 
 	svc := services.NewTeacherDashboardService(db, newCapturingTTService(),
 		services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{}))
-	_, err := svc.BulkStartScenario(groupID, scenario.ID, "", "", 0, "org-manager")
+	_, err := svc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{}, 0, "org-manager")
 
 	assert.ErrorIs(t, err, models.ErrScenarioArchived,
 		"bulk-start is a launch path like any other")

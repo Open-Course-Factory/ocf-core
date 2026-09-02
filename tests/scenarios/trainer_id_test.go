@@ -50,7 +50,7 @@ func TestScenarioSession_TrainerID_SetOnBulkStart(t *testing.T) {
 	dashSvc := services.NewTeacherDashboardService(db, ttMock, sessionSvc)
 
 	// Bulk start as trainer (no terminal creation — empty instanceType)
-	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, "", "", 0, trainerUserID)
+	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{}, 0, trainerUserID)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, 2, result.Created)

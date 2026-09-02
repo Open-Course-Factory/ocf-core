@@ -232,7 +232,7 @@ func TestBulkStartScenario_ReplacesExistingActiveSessions(t *testing.T) {
 	dashSvc := services.NewTeacherDashboardService(db, ttMock, sessionSvc)
 
 	// Call BulkStartScenario with empty instanceType (no terminal creation)
-	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, "", "", 0, "")
+	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{}, 0, "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -307,7 +307,7 @@ func TestBulkStartScenario_ReplacesInProgressSessions(t *testing.T) {
 	dashSvc := services.NewTeacherDashboardService(db, ttMock, sessionSvc)
 
 	// Call BulkStartScenario
-	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, "", "", 0, "")
+	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{}, 0, "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 

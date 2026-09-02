@@ -546,10 +546,10 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 
 		// Determine launchability by checking distribution compatibility.
-		_, resolvedDist, resolvedSize, _, resolveErr := sc.resolveScenarioBackendAndDistribution(s, orgID)
-		item.Launchable = resolveErr == nil && resolvedDist != ""
-		item.ResolvedDistribution = resolvedDist
-		item.ResolvedSize = resolvedSize
+		provisioning, resolveErr := resolveScenarioProvisioning(sc.db, sc.terminalService, s, orgID, "")
+		item.Launchable = resolveErr == nil && provisioning.CreatesTerminal()
+		item.ResolvedDistribution = provisioning.Distribution
+		item.ResolvedSize = provisioning.Size
 		if resolveErr != nil {
 			// Separate reasons because they need different fixes: a missing
 			// declared image is "install it on this backend", while
@@ -562,13 +562,13 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 
 		// Budget gate: the scenario's required size must fit in the user's
 		// remaining CPU/RAM budget.
-		if budgetGateActive && item.Launchable && resolvedSize != "" {
-			fits, fitErr := quotaSvc.RemainingBudgetFits(userID, budgetScope, resolvedPlan, resolvedSize)
+		if budgetGateActive && item.Launchable && provisioning.Size != "" {
+			fits, fitErr := quotaSvc.RemainingBudgetFits(userID, budgetScope, resolvedPlan, provisioning.Size)
 			if fitErr != nil {
 				slog.Warn("budget fit check failed for scenario", "scenario", s.Name, "err", fitErr)
 			} else if !fits {
 				item.Launchable = false
-				item.BlockReason = blockReasonForBudgetMiss(quotaSvc, resolvedPlan, resolvedSize, s.Name)
+				item.BlockReason = blockReasonForBudgetMiss(quotaSvc, resolvedPlan, provisioning.Size, s.Name)
 			}
 		}
 
@@ -792,20 +792,28 @@ func distributionSupportsFeatures(dist terminalDto.TTDistribution, required []st
 // for a scenario, taking into account the user's organization context. It tries
 // org-allowed backends first (defaultBackend has priority), then falls back to the
 // system default backend.
-func (sc *scenarioLaunchController) resolveScenarioBackendAndDistribution(
+func resolveScenarioProvisioning(
+	db *gorm.DB,
+	terminalService terminalServices.TerminalTrainerService,
 	scenario models.Scenario,
 	orgID *uuid.UUID,
-) (backend string, distName string, size string, features map[string]bool, err error) {
-	// Determine candidate backends
+	preferredBackend string,
+) (services.ScenarioProvisioning, error) {
+	// Determine candidate backends. A caller that already knows which backend it
+	// wants — the teacher picking one for a whole class — gets it tried first;
+	// the org's own backends follow, then the system default.
 	var candidateBackends []string
+	if preferredBackend != "" {
+		candidateBackends = append(candidateBackends, preferredBackend)
+	}
 	if orgID != nil {
 		var org orgModels.Organization
-		if err := sc.db.First(&org, "id = ?", *orgID).Error; err == nil {
-			if org.DefaultBackend != "" {
+		if err := db.First(&org, "id = ?", *orgID).Error; err == nil {
+			if org.DefaultBackend != "" && org.DefaultBackend != preferredBackend {
 				candidateBackends = append(candidateBackends, org.DefaultBackend)
 			}
 			for _, b := range org.AllowedBackends {
-				if b != org.DefaultBackend {
+				if b != org.DefaultBackend && b != preferredBackend {
 					candidateBackends = append(candidateBackends, b)
 				}
 			}
@@ -820,7 +828,7 @@ func (sc *scenarioLaunchController) resolveScenarioBackendAndDistribution(
 	// (typos, stale imports, keys from another tt-backend instance). On fetch
 	// failure we pass nil — resolveDistribution then preserves prior behavior
 	// and tt-backend's validateComposition() remains the final authority.
-	sizes, sizesErr := sc.terminalService.GetCatalogSizes()
+	sizes, sizesErr := terminalService.GetCatalogSizes()
 	if sizesErr != nil {
 		slog.Warn("failed to fetch sizes catalog, scenario size fallback disabled", "err", sizesErr)
 		sizes = nil
@@ -829,7 +837,7 @@ func (sc *scenarioLaunchController) resolveScenarioBackendAndDistribution(
 	// Try each candidate backend
 	var lastErr error
 	for _, b := range candidateBackends {
-		distributions, distErr := sc.terminalService.GetDistributions(b)
+		distributions, distErr := terminalService.GetDistributions(b)
 		if distErr != nil {
 			lastErr = distErr
 			continue
@@ -839,10 +847,16 @@ func (sc *scenarioLaunchController) resolveScenarioBackendAndDistribution(
 			lastErr = resolveErr
 			continue
 		}
-		return b, resolvedDist, resolvedSize, resolvedFeatures, nil
+		return services.ScenarioProvisioning{
+			Backend:       b,
+			Distribution:  resolvedDist,
+			Size:          resolvedSize,
+			Features:      resolvedFeatures,
+			BuildFeatures: scenarioBuildFeatures(scenario),
+		}, nil
 	}
 
-	return "", "", "", nil, fmt.Errorf("no compatible distribution on any backend: %v", lastErr)
+	return services.ScenarioProvisioning{}, fmt.Errorf("no compatible distribution on any backend: %v", lastErr)
 }
 
 // LaunchScenario godoc
@@ -933,7 +947,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	}
 
 	// Resolve backend + distribution using org-aware logic
-	backend, distName, size, features, distErr := sc.resolveScenarioBackendAndDistribution(scenario, orgID)
+	provisioning, distErr := resolveScenarioProvisioning(sc.db, sc.terminalService, scenario, orgID, "")
 	if distErr != nil {
 		slog.Error("no compatible distribution for scenario", "scenario", scenario.Name, "err", distErr)
 		ctx.JSON(http.StatusConflict, &errors.APIError{
@@ -952,7 +966,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	// a size in the request body. Mirrors commit 951b69c (resume path).
 	if planVal, exists := ctx.Get("subscription_plan"); exists && planVal != nil {
 		if plan, ok := planVal.(*paymentModels.SubscriptionPlan); ok {
-			if terminalServices.EnforceLaunchCapacity(ctx, plan, size, sc.terminalService) {
+			if terminalServices.EnforceLaunchCapacity(ctx, plan, provisioning.Size, sc.terminalService) {
 				return
 			}
 		}
@@ -1007,14 +1021,14 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 
 	// Create terminal session via composed session flow (distribution + size + features)
 	composedInput := terminalDto.CreateComposedSessionInput{
-		Distribution:     distName,
-		Size:             size,
-		Features:         features,
-		BuildFeatures:    scenarioBuildFeatures(scenario),
+		Distribution:     provisioning.Distribution,
+		Size:             provisioning.Size,
+		Features:         provisioning.Features,
+		BuildFeatures:    provisioning.BuildFeatures,
 		Terms:            terms,
 		Name:             fmt.Sprintf("scenario-%s", scenario.Title),
 		Hostname:         scenario.Hostname,
-		Backend:          backend,
+		Backend:          provisioning.Backend,
 		RecordingEnabled: 1,
 	}
 	if orgID != nil {

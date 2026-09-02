@@ -70,8 +70,7 @@ func TestBulkStartScenario_402sWhenTrainerPastDueBeyondGrace(t *testing.T) {
 func TestBulkStartScenario_ActiveTrainerPassesGate(t *testing.T) {
 	db := freshTestDB(t)
 	trainerID := "bulk-active-trainer"
-	// Active (not past_due) plan: the gate must NOT reject; with an empty
-	// group the request completes with zero members processed.
+	// Active (not past_due) plan: the gate must NOT reject.
 	seedBudgetExhaustedUser(t, db, trainerID, "bulk-active-test")
 
 	router := setupBulkStartRouter(t, db, trainerID)
@@ -84,7 +83,18 @@ func TestBulkStartScenario_ActiveTrainerPassesGate(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code,
-		"an active trainer must pass the dunning gate (empty group → 200 with "+
-			"zero members). Got %d. Body: %s", w.Code, w.Body.String())
+	// The gate is what is under test, and the gate answers 402. Anything else
+	// means the trainer got through it.
+	//
+	// Past the gate the handler resolves how the scenario's container must be
+	// built, against a tt-backend this test has none of, so the request ends in
+	// 409 "no compatible environment" — the same refusal a single learner's
+	// launch gives in the same situation. Asserting 200 here would only be
+	// asserting that the handler never asks what it is about to build, which is
+	// precisely the omission that shipped containers with no network.
+	assert.NotEqual(t, http.StatusPaymentRequired, w.Code,
+		"an active trainer must pass the dunning gate. Got %d. Body: %s", w.Code, w.Body.String())
+	assert.Equal(t, http.StatusConflict, w.Code,
+		"with no backend catalog reachable, the launch must refuse rather than "+
+			"guess a composition. Got %d. Body: %s", w.Code, w.Body.String())
 }
