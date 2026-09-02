@@ -9,6 +9,26 @@ import (
 	"gorm.io/gorm"
 )
 
+// AbandonableSessionStatuses are the statuses a run can be abandoned from: it
+// has started and has not finished. Completed and abandoned runs are final and
+// stay refused.
+//
+// One list, because four sites used to carry their own and drifted: the
+// learner's abandon accepted setup_failed but not the historical in_progress,
+// the class reset and the unassign hook accepted in_progress but not
+// setup_failed, and the terminal delete had a third variant — so a failed run
+// could be abandoned by its learner but not reset by its trainer.
+//
+//   - in_progress is the historical name for a running session and still
+//     appears on rows created before the rename.
+//   - provisioning belongs here: leaving one behind hands the learner a
+//     session they cannot use, and the unique partial index (which covers
+//     'provisioning') then blocks a fresh start.
+//   - setup_failed is terminal for the setup goroutine, which gates every
+//     write on WHERE status='provisioning', so nothing can resurrect the row
+//     after it flips.
+var AbandonableSessionStatuses = []string{"active", "in_progress", "provisioning", "setup_failed"}
+
 // ScenarioSession represents a user's active session working through a scenario
 type ScenarioSession struct {
 	entityManagementModels.BaseModel

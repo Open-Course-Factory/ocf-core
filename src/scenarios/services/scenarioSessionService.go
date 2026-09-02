@@ -1747,29 +1747,30 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 	return result, nil
 }
 
-// AbandonSession marks a session as abandoned. Applies to active,
-// provisioning AND setup_failed sessions.
-//
-// Provisioning counts because the overlay's cancel button is an abandon, and
-// refusing it left the user with an unkillable setup. setup_failed counts for
-// the same reason one step further on: a run whose setup died is exactly the
-// one a user most wants rid of, and refusing it made a failed session
-// unreachable by any supported path — the only way to clear five of them after
-// a bad class launch was to edit the table by hand.
+// ErrSessionNotAbandonable marks an abandon refused because the run is already
+// over — completed or abandoned — or does not exist. It is a state conflict
+// the caller can read, not a failure: answered as a 500 it made an abandon
+// that had already succeeded look like one that had not, and the natural
+// reaction to that is to retry a call that will refuse again for the same
+// reason.
+var ErrSessionNotAbandonable = errors.New("session is not abandonable")
+
+// AbandonSession marks a session as abandoned. Which statuses qualify is
+// owned by models.AbandonableSessionStatuses; see there for why each one is in.
 //
 // The running setup goroutine is safe against this: all its status writes are
 // gated on WHERE status='provisioning', so once we flip to abandoned here it
 // can no longer resurrect the session.
 func (s *ScenarioSessionService) AbandonSession(sessionID uuid.UUID) error {
 	result := s.db.Model(&models.ScenarioSession{}).
-		Where("id = ? AND status IN ?", sessionID, []string{"active", "provisioning", "setup_failed"}).
+		Where("id = ? AND status IN ?", sessionID, models.AbandonableSessionStatuses).
 		Update("status", "abandoned")
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to abandon session: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("session not found or not abandonable")
+		return fmt.Errorf("%w: session not found, already finished or already abandoned", ErrSessionNotAbandonable)
 	}
 
 	return nil

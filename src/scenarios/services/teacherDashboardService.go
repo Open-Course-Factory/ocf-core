@@ -749,12 +749,13 @@ func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, 
 	}
 
 	// Abandon every session these users could still resume on this scenario.
-	// Same status list as the unassign hook in scenarioAssignmentHooks.go —
-	// a reset that skipped 'provisioning' would leave the learner unable to
-	// restart, the unique partial index covering that status too.
+	// The status list is models.AbandonableSessionStatuses: a reset that
+	// skipped one would leave the learner unable to restart — 'provisioning'
+	// because the unique partial index covers it, 'setup_failed' because a
+	// class whose launch died is exactly the one a trainer resets.
 	result := s.db.Model(&models.ScenarioSession{}).
 		Where("user_id IN ? AND scenario_id = ? AND status IN ?",
-			memberUserIDs, scenarioID, []string{"active", "in_progress", "provisioning"}).
+			memberUserIDs, scenarioID, models.AbandonableSessionStatuses).
 		Updates(map[string]any{"status": "abandoned"})
 
 	if result.Error != nil {

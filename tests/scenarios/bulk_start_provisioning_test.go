@@ -184,3 +184,37 @@ func TestBulkStartScenario_StartsLearnersOnly(t *testing.T) {
 		ttMock.capturedUserIDs,
 		"neither the class owner nor a co-manager should be handed a container")
 }
+
+// TestResetGroupScenarioSessions_ClearsFailedRuns verifies that a trainer's
+// class reset reaches a run whose setup died.
+//
+// The reset carried its own status list, and it lacked setup_failed while the
+// learner's abandon had just gained it — so after the class launch that broke
+// in production, the five failed sessions could each be abandoned by their
+// learner but not reset by the trainer who had created them. The list now has
+// one owner, models.AbandonableSessionStatuses.
+func TestResetGroupScenarioSessions_ClearsFailedRuns(t *testing.T) {
+	db := setupTestDB(t)
+	groupID, scenarioID := uuid.New(), uuid.New()
+
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "reset-learner", Role: groupModels.GroupMemberRole("member"),
+		JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+	failed := models.ScenarioSession{
+		BaseModel:  entityManagementModels.BaseModel{ID: uuid.New()},
+		ScenarioID: scenarioID, UserID: "reset-learner", Status: "setup_failed",
+	}
+	require.NoError(t, db.Create(&failed).Error)
+
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	dashSvc := services.NewTeacherDashboardService(db, newCapturingTTService(), sessionSvc)
+
+	count, err := dashSvc.ResetGroupScenarioSessions(groupID, scenarioID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "a failed run is exactly the one a class reset exists to clear")
+
+	var reloaded models.ScenarioSession
+	require.NoError(t, db.First(&reloaded, "id = ?", failed.ID).Error)
+	assert.Equal(t, "abandoned", reloaded.Status)
+}

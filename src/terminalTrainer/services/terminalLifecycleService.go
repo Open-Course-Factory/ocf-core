@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
 	"soli/formations/src/utils"
@@ -241,9 +242,11 @@ func (l *terminalLifecycleService) DeleteSession(sessionID string) error {
 		return err
 	}
 
-	// Auto-abandon any active scenario sessions linked to this terminal
+	// Auto-abandon any scenario run linked to this terminal. The status list
+	// is owned by the scenarios package: a run whose setup failed is still a
+	// run on this container, and used to be the one left behind here.
 	result := l.db.Model(&struct{}{}).Table("scenario_sessions").
-		Where("terminal_session_id = ? AND status IN ?", sessionID, []string{"active", "provisioning", "in_progress"}).
+		Where("terminal_session_id = ? AND status IN ?", sessionID, scenarioModels.AbandonableSessionStatuses).
 		Update("status", "abandoned")
 	if result.Error != nil {
 		utils.Warn("failed to abandon scenario sessions for terminal %s: %v", sessionID, result.Error)
