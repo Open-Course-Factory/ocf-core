@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	orgModels "soli/formations/src/organizations/models"
+	"soli/formations/src/payment/catalog"
 	"soli/formations/src/scenarios/models"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
 	ttServices "soli/formations/src/terminalTrainer/services"
@@ -209,8 +210,9 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 		}
 		// Check distribution's min_size_key allows the requested size
 		if requiredSize != "" && dist.MinSizeKey != "" {
-			reqOrder, reqOk := sizeOrder[strings.ToUpper(requiredSize)]
-			minOrder, minOk := sizeOrder[strings.ToUpper(dist.MinSizeKey)]
+			ranks := sizeRanks()
+			reqOrder, reqOk := sizeRank(ranks, requiredSize)
+			minOrder, minOk := sizeRank(ranks, dist.MinSizeKey)
 			if reqOk && minOk && reqOrder < minOrder {
 				continue // requested size is smaller than distribution's minimum
 			}
@@ -246,10 +248,32 @@ func distributionSupportsFeatures(dist terminalDto.TTDistribution, required []st
 	return true
 }
 
-// sizeOrder maps size labels to numeric order for comparison.
-// A larger number means a more powerful machine.
-var sizeOrder = map[string]int{
-	"XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5, "XXL": 6,
+// sizeRanks maps each size key to its place in the catalog's increasing
+// footprint order.
+//
+// The order is not restated here. src/payment/catalog is the single source of
+// truth for sizes: it is hydrated at startup from tt-backend's /sizes and
+// reports any disagreement with its own cold-start fallback as drift, so the
+// budget engine, the session-options endpoint and this all rank sizes the same
+// way and cannot come apart when a size is added or reordered.
+//
+// The hardcoded map this replaces had already drifted — it ranked an "XXL"
+// that no catalog has ever contained.
+func sizeRanks() map[string]int {
+	keys := catalog.CanonicalSizeKeys()
+	ranks := make(map[string]int, len(keys))
+	for i, key := range keys {
+		ranks[key] = i
+	}
+	return ranks
+}
+
+// sizeRank returns a size's place in that order, and whether the catalog knows
+// the key at all. Keys are compared in the catalog's own lowercase form, so a
+// scenario storing "M" and a distribution storing "m" rank alike.
+func sizeRank(ranks map[string]int, key string) (int, bool) {
+	rank, ok := ranks[strings.ToLower(strings.TrimSpace(key))]
+	return rank, ok
 }
 
 // resolveSizeOrFallback returns a valid size key, falling back when the
@@ -363,7 +387,8 @@ const effectsFeatureKey = "effects"
 // is not evidence of a machine being too small, and refusing a launch on that
 // basis would turn a typo in a scenario into an unrunnable scenario.
 func SizeIsSmallerThan(machine, required string) bool {
-	requiredOrder, reqOk := sizeOrder[required]
-	machineOrder, machOk := sizeOrder[machine]
+	ranks := sizeRanks()
+	requiredOrder, reqOk := sizeRank(ranks, required)
+	machineOrder, machOk := sizeRank(ranks, machine)
 	return reqOk && machOk && machineOrder < requiredOrder
 }
