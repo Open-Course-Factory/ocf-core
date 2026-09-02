@@ -40,12 +40,24 @@ func (h *ScenarioStepTranslationStampHook) IsEnabled() bool       { return h.ena
 func (h *ScenarioStepTranslationStampHook) GetPriority() int      { return h.priority }
 
 func (h *ScenarioStepTranslationStampHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate}
+	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.AfterUpdate}
 }
 
 func (h *ScenarioStepTranslationStampHook) Execute(ctx *hooks.HookContext) error {
+	if ctx.HookType == hooks.AfterUpdate {
+		id, ok := ctx.EntityID.(uuid.UUID)
+		if !ok {
+			return nil
+		}
+		return h.stampSavedRow(id)
+	}
+
 	translation, ok := ctx.NewEntity.(*models.ScenarioStepTranslation)
 	if !ok {
+		// A PATCH arrives as its input DTO, not as the model — the generic
+		// service passes the request body straight through as NewEntity. There
+		// is nothing to stamp in place here, and the DTO deliberately carries
+		// no hash field, so the update is stamped afterwards instead.
 		return nil
 	}
 
@@ -59,6 +71,34 @@ func (h *ScenarioStepTranslationStampHook) Execute(ctx *hooks.HookContext) error
 
 	translation.SourceHash = services.StepSourceHash(step)
 	return nil
+}
+
+// stampSavedRow re-stamps a translation that has just been written through the
+// generic update path.
+//
+// Saving a translation is what marks it current — that is the rule the create
+// path already keeps. Update kept it only in appearance: the hook ran, found a
+// DTO instead of a model, and returned, so a translation rewritten to match new
+// source text stayed stamped with the old one. It then reported as stale for
+// ever, and a stale language is one the launcher stops offering: re-seeding a
+// scenario whose prose had changed silently took its other languages off the
+// card, with nothing anywhere saying so.
+func (h *ScenarioStepTranslationStampHook) stampSavedRow(id uuid.UUID) error {
+	var translation models.ScenarioStepTranslation
+	if err := h.db.First(&translation, "id = ?", id).Error; err != nil {
+		return fmt.Errorf("cannot re-stamp translation %s: %w", id, err)
+	}
+
+	var step models.ScenarioStep
+	if err := h.db.First(&step, "id = ?", translation.StepID).Error; err != nil {
+		return fmt.Errorf("cannot translate step %s: %w", translation.StepID, err)
+	}
+
+	hash := services.StepSourceHash(step)
+	if translation.SourceHash == hash {
+		return nil
+	}
+	return h.db.Model(&translation).Update("source_hash", hash).Error
 }
 
 // =============================================================================

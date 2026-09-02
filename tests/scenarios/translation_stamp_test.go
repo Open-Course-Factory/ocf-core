@@ -125,3 +125,79 @@ func TestTranslationStamp_StampedTranslation_ReadsAsCurrent(t *testing.T) {
 	assert.Equal(t, 0, coverage.Stale)
 	assert.True(t, coverage.Complete)
 }
+
+// The path the product actually takes.
+//
+// TestTranslationStamp_UpdateRestamps above hands the hook a model, and that is
+// not what a PATCH delivers: the generic service passes the request body
+// through as NewEntity, so the hook found an input DTO, failed its type
+// assertion and returned. Every translation rewritten through the API kept the
+// hash of the source it was first written against.
+//
+// That is not a cosmetic report being wrong. A locale with a stale step is not
+// "complete", and LaunchableLocales offers only complete ones — so re-seeding a
+// scenario whose English prose had changed silently took French off the
+// launcher card, with the French text sitting correct and current in the
+// database.
+func TestTranslationStamp_PatchRestampsTheStoredRow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
+	hook := scenarioHooks.NewScenarioStepTranslationStampHook(db)
+
+	for _, step := range steps {
+		// Every translatable field the step carries, or the locale reads as
+		// partial for a reason that has nothing to do with what is under test.
+		require.NoError(t, db.Create(&models.ScenarioStepTranslation{
+			StepID:      step.ID,
+			Locale:      "fr",
+			Title:       "Etape",
+			TextContent: nonEmpty(step.TextContent, "Texte"),
+			HintContent: nonEmpty(step.HintContent, "Indice"),
+			SourceHash:  services.StepSourceHash(step),
+		}).Error)
+	}
+
+	// The English moves on, and the French is rewritten to match it — exactly
+	// what a re-seed does.
+	require.NoError(t, db.Model(&steps[0]).Update("text_content", "The cellar has moved.").Error)
+	var translation models.ScenarioStepTranslation
+	require.NoError(t, db.First(&translation, "step_id = ? AND locale = ?", steps[0].ID, "fr").Error)
+	require.NoError(t, db.Model(&translation).Update("text_content", "La cave a bouge.").Error)
+
+	// NewEntity is the request body, not the model: that is the whole point.
+	require.NoError(t, hook.Execute(&hooks.HookContext{
+		EntityName: "ScenarioStepTranslation",
+		HookType:   hooks.AfterUpdate,
+		EntityID:   translation.ID,
+		NewEntity:  map[string]any{"text_content": "La cave a bouge."},
+	}))
+
+	var edited models.ScenarioStep
+	require.NoError(t, db.First(&edited, "id = ?", steps[0].ID).Error)
+	var stored models.ScenarioStepTranslation
+	require.NoError(t, db.First(&stored, "id = ?", translation.ID).Error)
+	assert.Equal(t, services.StepSourceHash(edited), stored.SourceHash,
+		"a translation rewritten for new source text must be stamped against it")
+
+	// And the consequence that matters: the language is still offered.
+	coverage, err := services.TranslationCoverage(db, scenario.ID)
+	require.NoError(t, err)
+	for _, locale := range coverage {
+		if locale.Locale == "fr" {
+			assert.Equal(t, 0, locale.Stale, "no step may read as stale")
+			assert.True(t, locale.Complete,
+				"an up-to-date French must stay complete, or the launcher stops offering it")
+		}
+	}
+}
+
+// nonEmpty mirrors a source field: translated when there is something to
+// translate, empty when there is not.
+func nonEmpty(source, translation string) string {
+	if source == "" {
+		return ""
+	}
+	return translation
+}
