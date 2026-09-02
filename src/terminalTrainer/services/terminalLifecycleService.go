@@ -246,7 +246,7 @@ func (l *terminalLifecycleService) DeleteSession(sessionID string) error {
 	// is owned by the scenarios package: a run whose setup failed is still a
 	// run on this container, and used to be the one left behind here.
 	result := l.db.Model(&struct{}{}).Table("scenario_sessions").
-		Where("terminal_session_id = ? AND status IN ?", sessionID, scenarioModels.AbandonableSessionStatuses).
+		Where("terminal_session_id = ? AND status IN ?", sessionID, scenarioModels.OpenSessionStatuses).
 		Update("status", "abandoned")
 	if result.Error != nil {
 		utils.Warn("failed to abandon scenario sessions for terminal %s: %v", sessionID, result.Error)

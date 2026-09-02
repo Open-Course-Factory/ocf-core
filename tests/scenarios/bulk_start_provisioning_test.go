@@ -192,7 +192,7 @@ func TestBulkStartScenario_StartsLearnersOnly(t *testing.T) {
 // learner's abandon had just gained it — so after the class launch that broke
 // in production, the five failed sessions could each be abandoned by their
 // learner but not reset by the trainer who had created them. The list now has
-// one owner, models.AbandonableSessionStatuses.
+// one owner, models.OpenSessionStatuses.
 func TestResetGroupScenarioSessions_ClearsFailedRuns(t *testing.T) {
 	db := setupTestDB(t)
 	groupID, scenarioID := uuid.New(), uuid.New()

@@ -1756,14 +1756,14 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 var ErrSessionNotAbandonable = errors.New("session is not abandonable")
 
 // AbandonSession marks a session as abandoned. Which statuses qualify is
-// owned by models.AbandonableSessionStatuses; see there for why each one is in.
+// owned by models.OpenSessionStatuses; see there for why each one is in.
 //
 // The running setup goroutine is safe against this: all its status writes are
 // gated on WHERE status='provisioning', so once we flip to abandoned here it
 // can no longer resurrect the session.
 func (s *ScenarioSessionService) AbandonSession(sessionID uuid.UUID) error {
 	result := s.db.Model(&models.ScenarioSession{}).
-		Where("id = ? AND status IN ?", sessionID, models.AbandonableSessionStatuses).
+		Where("id = ? AND status IN ?", sessionID, models.OpenSessionStatuses).
 		Update("status", "abandoned")
 
 	if result.Error != nil {
@@ -2242,7 +2242,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 func findExistingSession(db *gorm.DB, userID string, scenarioID uuid.UUID) (*models.ScenarioSession, bool, error) {
 	var existing models.ScenarioSession
 	err := db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
-		userID, scenarioID, blockingSessionStatuses).First(&existing).Error
+		userID, scenarioID, models.OpenSessionStatuses).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, false, nil
 	}
@@ -2325,11 +2325,6 @@ func (s *ScenarioSessionService) GetResumableSession(userID string, scenarioID u
 	return existing, nil
 }
 
-// blockingSessionStatuses are the statuses that occupy the one-run-per-scenario
-// slot. Anything else (completed, abandoned, expired) leaves the learner free to
-// start again.
-var blockingSessionStatuses = []string{"in_progress", "active", "provisioning", "setup_failed"}
-
 // GetResumableSessions answers GetResumableSession for many scenarios at once,
 // in two queries. The availability endpoint lists every scenario a learner can
 // see, so asking per scenario would reproduce the per-row lookup that made the
@@ -2342,7 +2337,7 @@ func (s *ScenarioSessionService) GetResumableSessions(userID string, scenarioIDs
 
 	var sessions []models.ScenarioSession
 	if err := s.db.Where("user_id = ? AND scenario_id IN ? AND status IN ?",
-		userID, scenarioIDs, blockingSessionStatuses).Find(&sessions).Error; err != nil {
+		userID, scenarioIDs, models.OpenSessionStatuses).Find(&sessions).Error; err != nil {
 		return nil, fmt.Errorf("failed to list existing sessions: %w", err)
 	}
 	if len(sessions) == 0 {

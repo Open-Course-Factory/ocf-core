@@ -632,14 +632,18 @@ func (s *TeacherDashboardService) startScenarioForMember(run bulkStartRun, userI
 // abandonExistingRun clears whatever run the learner still holds on this
 // scenario, so the class can be restarted without each learner cleaning up
 // first. Reports whether one was actually replaced.
+//
+// The lookup and the abandon are both the session service's: the same
+// definition of "open" the launch path resumes against, and the same abandon
+// the learner's own button performs.
 func (s *TeacherDashboardService) abandonExistingRun(scenarioID uuid.UUID, userID string) (bool, error) {
 	var existing models.ScenarioSession
 	err := s.db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
-		userID, scenarioID, []string{"active", "in_progress", "provisioning", "setup_failed"}).First(&existing).Error
+		userID, scenarioID, models.OpenSessionStatuses).First(&existing).Error
 	if err != nil {
 		return false, nil // nothing to replace
 	}
-	if abandonErr := s.db.Model(&existing).Update("status", "abandoned").Error; abandonErr != nil {
+	if abandonErr := s.sessionService.AbandonSession(existing.ID); abandonErr != nil {
 		utils.Warn("BulkStartScenario - Failed to abandon existing session %s for user %s: %v", existing.ID, userID, abandonErr)
 		return false, abandonErr
 	}
@@ -749,13 +753,13 @@ func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, 
 	}
 
 	// Abandon every session these users could still resume on this scenario.
-	// The status list is models.AbandonableSessionStatuses: a reset that
+	// The status list is models.OpenSessionStatuses: a reset that
 	// skipped one would leave the learner unable to restart — 'provisioning'
 	// because the unique partial index covers it, 'setup_failed' because a
 	// class whose launch died is exactly the one a trainer resets.
 	result := s.db.Model(&models.ScenarioSession{}).
 		Where("user_id IN ? AND scenario_id = ? AND status IN ?",
-			memberUserIDs, scenarioID, models.AbandonableSessionStatuses).
+			memberUserIDs, scenarioID, models.OpenSessionStatuses).
 		Updates(map[string]any{"status": "abandoned"})
 
 	if result.Error != nil {

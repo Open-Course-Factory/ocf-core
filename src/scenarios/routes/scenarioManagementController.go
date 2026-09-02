@@ -978,9 +978,11 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 
 	// Delete in a transaction: abandon active sessions, delete assignments, then scenario
 	if err := sc.db.Transaction(func(tx *gorm.DB) error {
-		// Auto-abandon all active/provisioning sessions before deletion
+		// Abandon every open run before deletion. The status list is
+		// models.OpenSessionStatuses — this copy used to lack in_progress, the
+		// historical name still on older rows, which the delete then left behind.
 		if err := tx.Model(&models.ScenarioSession{}).
-			Where("scenario_id = ? AND status IN ?", scenarioID, []string{"active", "provisioning", "setup_failed"}).
+			Where("scenario_id = ? AND status IN ?", scenarioID, models.OpenSessionStatuses).
 			Updates(map[string]any{"status": "abandoned"}).Error; err != nil {
 			return fmt.Errorf("abandon sessions: %w", err)
 		}
