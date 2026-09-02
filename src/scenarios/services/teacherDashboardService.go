@@ -511,157 +511,25 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 		}
 	}
 
-	var mu sync.Mutex
 	g, _ := errgroup.WithContext(context.Background())
 	g.SetLimit(10)
 
+	run := bulkStartRun{
+		scenarioID:        scenarioID,
+		scenario:          scenario,
+		provisioning:      provisioning,
+		terms:             terms,
+		sessionExpirySecs: sessionExpirySecs,
+		trainerID:         trainerID,
+	}
+
+	var mu sync.Mutex
 	for _, member := range members {
 		member := member // capture range variable
 		g.Go(func() error {
-			utils.Debug("BulkStartScenario - Processing member %s (role=%s)", member.UserID, member.Role)
-
-			// Check for existing active session — abandon it and create a new one
-			var existing models.ScenarioSession
-			err := s.db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
-				member.UserID, scenarioID, []string{"active", "in_progress", "provisioning", "setup_failed"}).First(&existing).Error
-			if err == nil {
-				utils.Debug("BulkStartScenario - Member %s has existing session %s (status=%s), abandoning it", member.UserID, existing.ID, existing.Status)
-				if abandonErr := s.db.Model(&existing).Update("status", "abandoned").Error; abandonErr != nil {
-					utils.Warn("BulkStartScenario - Failed to abandon existing session %s for user %s: %v", existing.ID, member.UserID, abandonErr)
-					mu.Lock()
-					result.Errors = append(result.Errors, BulkStartError{
-						UserID: member.UserID,
-						Error:  "failed to abandon existing session",
-					})
-					mu.Unlock()
-					return nil
-				}
-				mu.Lock()
-				result.Replaced++
-				mu.Unlock()
-				// Fall through to create a new session
-			}
-
-			// Auto-provision terminal key if missing
-			_, keyErr := s.terminalService.GetUserKey(member.UserID)
-			if keyErr != nil {
-				user, userErr := casdoorsdk.GetUserByUserId(member.UserID)
-				keyName := "auto-" + member.UserID
-				if userErr == nil && user != nil && user.Email != "" {
-					keyName = "auto-" + user.Email
-				}
-				if createErr := s.terminalService.CreateUserKey(member.UserID, keyName); createErr != nil {
-					// Cannot create key — skip and report
-					missing := UserKeyMissing{UserID: member.UserID}
-					if userErr == nil && user != nil {
-						missing.UserName = user.DisplayName
-						if missing.UserName == "" {
-							missing.UserName = user.Name
-						}
-						missing.UserEmail = user.Email
-					}
-					mu.Lock()
-					result.NoKey++
-					result.NoKeyUsers = append(result.NoKeyUsers, missing)
-					mu.Unlock()
-					return nil
-				}
-			}
-
-			// Create the container this scenario asked for, when it asked for one
-			var terminalSessionID *string
-			if provisioning.CreatesTerminal() {
-				utils.Debug("BulkStartScenario - Creating terminal for member %s (distribution=%s size=%s)", member.UserID, provisioning.Distribution, provisioning.Size)
-				composedInput := ttDto.CreateComposedSessionInput{
-					Distribution:  provisioning.Distribution,
-					Size:          provisioning.Size,
-					Features:      provisioning.Features,
-					BuildFeatures: provisioning.BuildFeatures,
-					Terms:         terms,
-					Backend:       provisioning.Backend,
-					Name:          fmt.Sprintf("scenario-%s", scenario.Title),
-					Expiry:        sessionExpirySecs,
-					Hostname:      scenario.Hostname,
-					OrganizationID: func() string {
-						if scenario.OrganizationID != nil {
-							return scenario.OrganizationID.String()
-						}
-						return ""
-					}(),
-					// RecordingEnabled: recording is always on (RGPD Art. 6.1.f — legitimate interest)
-					RecordingEnabled: 1,
-				}
-				// Scenarios with crash_traps must run ephemeral: trap mechanics rely on container destruction.
-				if ttServices.ScenarioForcesEphemeral(scenario.CrashTraps) {
-					composedInput.PersistenceMode = "ephemeral"
-				}
-
-				// Resolve the member's effective subscription plan, scoping it to
-				// the scenario's organization when present so the plan matches the
-				// org context the bulk-start is running in (#334 — gate/display
-				// SSOT). scenario.OrganizationID is nil for platform-wide scenarios,
-				// which correctly falls back to the member's globally highest-priority
-				// plan.
-				planResult, planErr := paymentServices.NewEffectivePlanService(s.db).GetUserEffectivePlan(member.UserID, scenario.OrganizationID)
-				if planErr != nil {
-					utils.Warn("BulkStartScenario - Failed to resolve plan for user %s: %v", member.UserID, planErr)
-					mu.Lock()
-					result.Errors = append(result.Errors, BulkStartError{
-						UserID: member.UserID,
-						Error:  "failed to resolve subscription plan",
-					})
-					mu.Unlock()
-					return nil
-				}
-
-				terminalResp, termErr := s.terminalService.StartComposedSession(member.UserID, composedInput, planResult.Plan)
-				if termErr != nil {
-					utils.Warn("BulkStartScenario - Failed to create terminal for user %s: %v", member.UserID, termErr)
-					mu.Lock()
-					result.Errors = append(result.Errors, BulkStartError{
-						UserID: member.UserID,
-						Error:  "failed to create terminal session",
-					})
-					mu.Unlock()
-					return nil
-				}
-				utils.Debug("BulkStartScenario - Terminal created for member %s: sessionID=%s", member.UserID, terminalResp.SessionID)
-				terminalSessionID = &terminalResp.SessionID
-			} else {
-				utils.Debug("BulkStartScenario - No distribution resolved, skipping terminal creation for member %s", member.UserID)
-			}
-
-			// Use ScenarioSessionService.StartScenario to create session, step progress,
-			// generate flags, and deploy them to the container
-			termSessionID := ""
-			if terminalSessionID != nil {
-				termSessionID = *terminalSessionID
-			}
-
-			// A bulk start has no per-learner language yet; each session gets the
-			// scenario's own content until the launcher can offer a choice.
-			session, startErr := s.sessionService.StartScenario(member.UserID, scenarioID, termSessionID, "")
-			if startErr != nil {
-				utils.Warn("BulkStartScenario - Failed to start scenario for user %s: %v", member.UserID, startErr)
-				mu.Lock()
-				result.Errors = append(result.Errors, BulkStartError{
-					UserID: member.UserID,
-					Error:  "failed to start scenario",
-				})
-				mu.Unlock()
-				return nil
-			}
-			// Set trainer ID for Qualiopi traceability
-			if trainerID != "" {
-				if updateErr := s.db.Model(session).Update("trainer_id", trainerID).Error; updateErr != nil {
-					utils.Warn("BulkStartScenario - Failed to set trainer_id for session %s: %v", session.ID, updateErr)
-				}
-			}
-
-			utils.Debug("BulkStartScenario - ScenarioSession created for member %s: sessionID=%s terminalSessionID=%v", member.UserID, session.ID, terminalSessionID)
-
+			outcome := s.startScenarioForMember(run, member.UserID)
 			mu.Lock()
-			result.Created++
+			result.record(outcome)
 			mu.Unlock()
 			return nil
 		})
@@ -672,6 +540,191 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 		result.Created, result.Skipped, result.NoKey, len(result.Errors))
 
 	return result, nil
+}
+
+// bulkStartRun is what every learner in one bulk start shares: the scenario,
+// how its container must be built, and the terms and lifetime that go with it.
+// Passed whole so starting one member reads as one argument plus who it is for.
+type bulkStartRun struct {
+	scenarioID        uuid.UUID
+	scenario          models.Scenario
+	provisioning      ScenarioProvisioning
+	terms             string
+	sessionExpirySecs int
+	trainerID         string
+}
+
+// memberOutcome is what starting one learner produced. Exactly one of its
+// fields is meaningful per member, which is what lets the caller hold the lock
+// once and in one place, instead of around six scattered appends.
+type memberOutcome struct {
+	replaced bool
+	created  bool
+	noKey    *UserKeyMissing
+	failure  string // non-empty: the error to report for this learner
+	userID   string
+}
+
+// record folds one learner's outcome into the tally. Caller holds the lock.
+func (r *BulkStartResult) record(o memberOutcome) {
+	if o.replaced {
+		r.Replaced++
+	}
+	switch {
+	case o.noKey != nil:
+		r.NoKey++
+		r.NoKeyUsers = append(r.NoKeyUsers, *o.noKey)
+	case o.failure != "":
+		r.Errors = append(r.Errors, BulkStartError{UserID: o.userID, Error: o.failure})
+	case o.created:
+		r.Created++
+	}
+}
+
+// startScenarioForMember gives one learner their run: it clears any session
+// they still hold on this scenario, makes sure they have a terminal key, builds
+// the container, and starts the scenario on it.
+//
+// Returns what happened rather than recording it, so the concurrency lives at
+// the one call site and this reads top to bottom.
+func (s *TeacherDashboardService) startScenarioForMember(run bulkStartRun, userID string) memberOutcome {
+	out := memberOutcome{userID: userID}
+
+	replaced, err := s.abandonExistingRun(run.scenarioID, userID)
+	if err != nil {
+		out.failure = "failed to abandon existing session"
+		return out
+	}
+	out.replaced = replaced
+
+	if missing := s.ensureTerminalKey(userID); missing != nil {
+		out.noKey = missing
+		return out
+	}
+
+	terminalSessionID, failure := s.createRunContainer(run, userID)
+	if failure != "" {
+		out.failure = failure
+		return out
+	}
+
+	// A bulk start has no per-learner language yet; each session gets the
+	// scenario's own content until the launcher can offer a choice.
+	session, startErr := s.sessionService.StartScenario(userID, run.scenarioID, terminalSessionID, "")
+	if startErr != nil {
+		utils.Warn("BulkStartScenario - Failed to start scenario for user %s: %v", userID, startErr)
+		out.failure = "failed to start scenario"
+		return out
+	}
+
+	// Trainer id for Qualiopi traceability. A failure here loses an audit
+	// attribution, not the learner's run, so it is logged and not reported.
+	if run.trainerID != "" {
+		if updateErr := s.db.Model(session).Update("trainer_id", run.trainerID).Error; updateErr != nil {
+			utils.Warn("BulkStartScenario - Failed to set trainer_id for session %s: %v", session.ID, updateErr)
+		}
+	}
+
+	out.created = true
+	return out
+}
+
+// abandonExistingRun clears whatever run the learner still holds on this
+// scenario, so the class can be restarted without each learner cleaning up
+// first. Reports whether one was actually replaced.
+func (s *TeacherDashboardService) abandonExistingRun(scenarioID uuid.UUID, userID string) (bool, error) {
+	var existing models.ScenarioSession
+	err := s.db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
+		userID, scenarioID, []string{"active", "in_progress", "provisioning", "setup_failed"}).First(&existing).Error
+	if err != nil {
+		return false, nil // nothing to replace
+	}
+	if abandonErr := s.db.Model(&existing).Update("status", "abandoned").Error; abandonErr != nil {
+		utils.Warn("BulkStartScenario - Failed to abandon existing session %s for user %s: %v", existing.ID, userID, abandonErr)
+		return false, abandonErr
+	}
+	return true, nil
+}
+
+// ensureTerminalKey gives the learner a terminal key if they have none.
+// Returns who to report when one cannot be made, nil when they are ready.
+func (s *TeacherDashboardService) ensureTerminalKey(userID string) *UserKeyMissing {
+	if _, err := s.terminalService.GetUserKey(userID); err == nil {
+		return nil
+	}
+	user, userErr := casdoorsdk.GetUserByUserId(userID)
+	keyName := "auto-" + userID
+	if userErr == nil && user != nil && user.Email != "" {
+		keyName = "auto-" + user.Email
+	}
+	if createErr := s.terminalService.CreateUserKey(userID, keyName); createErr == nil {
+		return nil
+	}
+	missing := &UserKeyMissing{UserID: userID}
+	if userErr == nil && user != nil {
+		missing.UserName = user.DisplayName
+		if missing.UserName == "" {
+			missing.UserName = user.Name
+		}
+		missing.UserEmail = user.Email
+	}
+	return missing
+}
+
+// createRunContainer builds the learner's machine, or returns "" when the
+// scenario needs none. The second value is non-empty when it could not be
+// built, and is the error to report for this learner.
+func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID string) (string, string) {
+	if !run.provisioning.CreatesTerminal() {
+		utils.Debug("BulkStartScenario - No distribution resolved, skipping terminal creation for member %s", userID)
+		return "", ""
+	}
+
+	utils.Debug("BulkStartScenario - Creating terminal for member %s (distribution=%s size=%s)",
+		userID, run.provisioning.Distribution, run.provisioning.Size)
+
+	orgID := ""
+	if run.scenario.OrganizationID != nil {
+		orgID = run.scenario.OrganizationID.String()
+	}
+	composedInput := ttDto.CreateComposedSessionInput{
+		Distribution:   run.provisioning.Distribution,
+		Size:           run.provisioning.Size,
+		Features:       run.provisioning.Features,
+		BuildFeatures:  run.provisioning.BuildFeatures,
+		Terms:          run.terms,
+		Backend:        run.provisioning.Backend,
+		Name:           fmt.Sprintf("scenario-%s", run.scenario.Title),
+		Expiry:         run.sessionExpirySecs,
+		Hostname:       run.scenario.Hostname,
+		OrganizationID: orgID,
+		// RecordingEnabled: recording is always on (RGPD Art. 6.1.f — legitimate interest)
+		RecordingEnabled: 1,
+	}
+	// Scenarios with crash_traps must run ephemeral: trap mechanics rely on container destruction.
+	if ttServices.ScenarioForcesEphemeral(run.scenario.CrashTraps) {
+		composedInput.PersistenceMode = "ephemeral"
+	}
+
+	// Resolve the member's effective subscription plan, scoping it to the
+	// scenario's organization when present so the plan matches the org context
+	// the bulk-start is running in (#334 — gate/display SSOT).
+	// scenario.OrganizationID is nil for platform-wide scenarios, which
+	// correctly falls back to the member's globally highest-priority plan.
+	planResult, planErr := paymentServices.NewEffectivePlanService(s.db).
+		GetUserEffectivePlan(userID, run.scenario.OrganizationID)
+	if planErr != nil {
+		utils.Warn("BulkStartScenario - Failed to resolve plan for user %s: %v", userID, planErr)
+		return "", "failed to resolve subscription plan"
+	}
+
+	terminalResp, termErr := s.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
+	if termErr != nil {
+		utils.Warn("BulkStartScenario - Failed to create terminal for user %s: %v", userID, termErr)
+		return "", "failed to create terminal session"
+	}
+	utils.Debug("BulkStartScenario - Terminal created for member %s: sessionID=%s", userID, terminalResp.SessionID)
+	return terminalResp.SessionID, ""
 }
 
 // ResetGroupScenarioSessions abandons all active sessions for a group+scenario combination.
