@@ -452,8 +452,8 @@ func (s *TeacherDashboardService) CalculateGrade(sessionID uuid.UUID) float64 {
 	return grade
 }
 
-// BulkStartScenario creates terminal sessions and scenario sessions for group
-// members. Auto-provisions terminal keys for those who lack one.
+// BulkStartScenario creates terminal sessions and scenario sessions for the
+// LEARNERS of a group. Auto-provisions terminal keys for those who lack one.
 //
 // provisioning says how each container must be built; it is resolved once by the
 // caller from the scenario's own declaration, so a class launch and a single
@@ -463,8 +463,18 @@ func (s *TeacherDashboardService) CalculateGrade(sessionID uuid.UUID) float64 {
 // sessionDurationMinutes controls terminal session lifetime (default: 240 = 4 hours).
 // trainerID identifies the trainer who initiated the bulk start (for Qualiopi traceability).
 func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioID uuid.UUID, provisioning ScenarioProvisioning, sessionDurationMinutes int, trainerID string) (*BulkStartResult, error) {
+	// Learners only. Starting a scenario for a class means starting it for the
+	// people being taught, not for the colleague who co-manages the class and
+	// not for its owner — who is typically the trainer clicking the button, and
+	// who would get a container they never asked for. groupModels.LearnerRoles
+	// is the single definition of who counts as an apprenant; the class card's
+	// own learner_count is computed from it, which is why a class of three
+	// showed three learners and produced five sessions.
 	var members []groupModels.GroupMember
-	if err := s.db.Where("group_id = ? AND is_active = ?", groupID, true).Find(&members).Error; err != nil {
+	if err := s.db.
+		Where("group_id = ? AND is_active = ?", groupID, true).
+		Scopes(groupModels.LearnerRoleScope("group_members")).
+		Find(&members).Error; err != nil {
 		return nil, fmt.Errorf("failed to load group members: %w", err)
 	}
 

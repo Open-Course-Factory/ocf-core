@@ -150,3 +150,31 @@ func TestBulkStartScenario_ClosesTheProvisioningWindow(t *testing.T) {
 	assert.Equal(t, []string{"terminal-buildwindow-learner"}, ttMock.buildCompleted,
 		"the provisioning window must be closed for every container the class launch built")
 }
+
+// TestBulkStartScenario_StartsLearnersOnly verifies that starting a scenario for
+// a class starts it for the people being taught.
+//
+// The query filtered on is_active alone, so the class owner and any co-manager
+// got a session too — a class of three learners produced five containers, two
+// of them for trainers who never asked. groupModels.LearnerRoles already owns
+// the definition of who counts as an apprenant; the class card's learner_count
+// is computed from it, which is exactly why the two figures disagreed.
+func TestBulkStartScenario_StartsLearnersOnly(t *testing.T) {
+	dashSvc, ttMock, scenario, groupID := bulkStartFixture(t, "learners", map[string][]string{
+		"owner":   {"learners-owner-acct"},
+		"manager": {"learners-manager"},
+		"member":  {"learners-s1", "learners-s2", "learners-s3"},
+	})
+
+	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{
+		Distribution: "Debian", Size: "xs",
+	}, 0, "trainer")
+	require.NoError(t, err)
+	require.Empty(t, result.Errors)
+
+	assert.Equal(t, 3, result.Created, "only the three learners should be started")
+	assert.ElementsMatch(t,
+		[]string{"learners-s1", "learners-s2", "learners-s3"},
+		ttMock.capturedUserIDs,
+		"neither the class owner nor a co-manager should be handed a container")
+}
