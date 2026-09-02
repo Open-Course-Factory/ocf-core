@@ -287,6 +287,34 @@ func TestAbandonSession_AllowedDuringProvisioning(t *testing.T) {
 	assert.Equal(t, "abandoned", reloaded.Status)
 }
 
+// TestAbandonSession_AllowedAfterSetupFailed covers the state a user most wants
+// rid of: a run whose setup script died.
+//
+// Refusing it made a failed session unreachable — the abandon endpoint answered
+// "session not found or not abandonable" and deleting the terminal failed too,
+// tt-backend having already dropped its side. After a class launch went wrong,
+// clearing five of them meant editing the table by hand.
+func TestAbandonSession_AllowedAfterSetupFailed(t *testing.T) {
+	db := freshTestDB(t)
+	svc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+
+	session := &models.ScenarioSession{
+		BaseModel:  entityManagementModels.BaseModel{ID: uuid.New()},
+		ScenarioID: uuid.New(),
+		UserID:     "abandon-setup-failed-user",
+		Status:     "setup_failed",
+	}
+	require.NoError(t, db.Create(session).Error)
+
+	require.NoError(t, svc.AbandonSession(session.ID),
+		"a run whose setup failed must be abandonable — it is the one the user "+
+			"most wants to be rid of")
+
+	var reloaded models.ScenarioSession
+	require.NoError(t, db.First(&reloaded, "id = ?", session.ID).Error)
+	assert.Equal(t, "abandoned", reloaded.Status)
+}
+
 func TestAbandonSession_StillRefusedForFinishedSessions(t *testing.T) {
 	db := freshTestDB(t)
 	svc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
@@ -300,6 +328,6 @@ func TestAbandonSession_StillRefusedForFinishedSessions(t *testing.T) {
 	require.NoError(t, db.Create(session).Error)
 
 	assert.Error(t, svc.AbandonSession(session.ID),
-		"a completed session must stay completed — abandon only applies to "+
-			"active and provisioning sessions")
+		"a completed session must stay completed — abandon applies to active, "+
+			"provisioning and setup_failed sessions only")
 }
