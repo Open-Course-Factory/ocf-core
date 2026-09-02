@@ -31,6 +31,10 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	scenarioRoutes.POST("/:id/duplicate", middleware.AuthManagement(), controller.DuplicateScenario)
 	scenarioRoutes.POST("/:id/preview", middleware.AuthManagement(), launchController.PreviewScenario)
 	scenarioRoutes.GET("/:id/translation-coverage", middleware.AuthManagement(), controller.GetTranslationCoverage)
+	// Catalogue-wide, so it sits beside the scenarios rather than under one of
+	// them: the faults it reports are the kind nobody goes looking for on a
+	// scenario they already believe is fine.
+	scenarioRoutes.GET("/health", middleware.AuthManagement(), controller.GetScenarioHealth)
 	scenarioRoutes.GET("/:id/lexicon", middleware.AuthManagement(), controller.GetLexicon)
 	scenarioRoutes.PUT("/:id/lexicon", middleware.AuthManagement(), controller.ReplaceLexicon)
 	scenarioRoutes.POST("/:id/archive", middleware.AuthManagement(), controller.ArchiveScenario)

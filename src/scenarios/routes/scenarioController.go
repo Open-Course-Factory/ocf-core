@@ -37,6 +37,7 @@ type ScenarioController interface {
 	ImportJSON(ctx *gin.Context)
 	DuplicateScenario(ctx *gin.Context)
 	GetTranslationCoverage(ctx *gin.Context)
+	GetScenarioHealth(ctx *gin.Context)
 	GetLexicon(ctx *gin.Context)
 	ReplaceLexicon(ctx *gin.Context)
 	ArchiveScenario(ctx *gin.Context)
@@ -869,4 +870,46 @@ func (sc *scenarioController) setScenarioArchivedAt(ctx *gin.Context, at *time.T
 
 	scenario.ArchivedAt = at
 	ctx.JSON(http.StatusOK, sc.buildScenarioOutput(scenario))
+}
+
+// GetScenarioHealth godoc
+// @Summary Report what every scenario claims but cannot deliver
+// @Description One entry per scenario with something wrong: a language declared
+// @Description and not offered, a vocabulary a language cannot build a world
+// @Description from, a step with no way to pass it. Scenarios with nothing wrong
+// @Description are absent — the report is a list of things to fix.
+// @Tags scenarios
+// @Produce json
+// @Success 200 {array} services.ScenarioHealth
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenarios/health [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetScenarioHealth(ctx *gin.Context) {
+	var scenarios []models.Scenario
+	if err := sc.db.Order("name ASC").Find(&scenarios).Error; err != nil {
+		slog.Error("failed to list scenarios for the health report", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to read the scenarios",
+		})
+		return
+	}
+
+	report := []services.ScenarioHealth{}
+	for _, scenario := range scenarios {
+		health, err := services.CheckScenarioHealth(sc.db, scenario)
+		if err != nil {
+			// One unreadable scenario must not hide the faults in every other
+			// one: the report says so and carries on. A page that fails whole
+			// is a page nobody opens twice.
+			slog.Warn("could not check a scenario's health", "scenario", scenario.Name, "err", err)
+			continue
+		}
+		if len(health.Findings) > 0 {
+			report = append(report, health)
+		}
+	}
+
+	ctx.JSON(http.StatusOK, report)
 }

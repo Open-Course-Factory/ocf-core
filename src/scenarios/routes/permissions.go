@@ -267,6 +267,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Report translation coverage per locale (controller verifies CanManageScenario: creator, org manager, group manager, or admin)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/scenarios/health", Method: "GET",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Report what every scenario claims but cannot deliver (platform operators)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/archive", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Archive a scenario (controller verifies CanManageScenario: creator, org manager, group manager, or admin)",
@@ -326,6 +331,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/scenarios/:id/lexicon", "GET"},
 		{"/api/v1/scenarios/:id/lexicon", "PUT"},
 		{"/api/v1/scenarios/:id/translation-coverage", "GET"},
+		{"/api/v1/scenarios/health", "GET"},
 	} {
 		access.ReconcilePolicy(enforcer, access.RoleAdministrator, route.path, route.method)
 	}
