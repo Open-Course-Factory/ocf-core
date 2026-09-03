@@ -3,6 +3,7 @@ package scenarioHooks
 import (
 	"fmt"
 
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/scenarios/models"
 
@@ -68,7 +69,10 @@ func (h *ScenarioAssignmentArchivedHook) Execute(ctx *hooks.HookContext) error {
 	}
 
 	if scenario.IsArchived() {
-		return models.ErrScenarioArchived
+		// Structured so the generic create answers 409 with the scenario
+		// wording, not the hook-failure 500; the sentinel stays reachable
+		// through errors.Is for the callers that match on it.
+		return entityErrors.NewStateConflictError("ScenarioAssignment", models.ErrScenarioArchived)
 	}
 	return nil
 }

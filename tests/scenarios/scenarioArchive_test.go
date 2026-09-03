@@ -62,6 +62,7 @@ func setupArchiveRouter(t *testing.T, db *gorm.DB, userID string, roles []string
 	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
 	scenarioController.RegisterScenarioPermissions(mockEnforcer)
 	scenarioRegistration.RegisterScenario(ems.GlobalEntityRegistrationService)
+	scenarioRegistration.RegisterScenarioAssignment(ems.GlobalEntityRegistrationService)
 	access.RegisterBuiltinEnforcers(nil, access.NewGormMembershipChecker(db))
 
 	hooks.GlobalHookRegistry.ClearAllHooks()
@@ -486,4 +487,46 @@ func TestArchiveScenario_ResponseHasTheShapeOfAListRow(t *testing.T) {
 	assert.Equal(t, listed, archived,
 		"the archive response must be the same object the list returns for "+
 			"that row, key for key, so the front can splice it in place")
+}
+
+func TestArchivedScenario_AssignmentViaGenericCreate_Answers409StateConflict(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "org-owner")
+	groupID := createTestGroupInOrg(t, db, orgID, "org-owner")
+	scenario := createTestScenarioForOrg(t, db, orgID, "assign-archived-http")
+	now := time.Now()
+	require.NoError(t, db.Model(&models.Scenario{}).
+		Where("id = ?", scenario.ID).Update("archived_at", now).Error)
+
+	router := setupArchiveRouter(t, db, "platform-admin", []string{"administrator"})
+
+	body, _ := json.Marshal(map[string]any{
+		"scenario_id": scenario.ID.String(),
+		"group_id":    groupID.String(),
+		"scope":       "group",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scenario-assignments", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusConflict, w.Code,
+		"an archived scenario refusing an assignment is a state rule, not a "+
+			"crash: the client must read 409, never the hook-failure 500. Body: %s",
+		w.Body.String())
+	var payload struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	assert.Equal(t, "ENT012", payload.Error.Code)
+	assert.Equal(t, models.ErrScenarioArchived.Error(), payload.Error.Details["reason"],
+		"the one learner-facing wording must reach the client unchanged")
+
+	var count int64
+	require.NoError(t, db.Model(&models.ScenarioAssignment{}).
+		Where("scenario_id = ?", scenario.ID).Count(&count).Error)
+	assert.Zero(t, count, "a refused assignment must not be persisted")
 }
