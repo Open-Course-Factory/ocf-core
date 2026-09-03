@@ -3,9 +3,11 @@ package utils
 import (
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -16,18 +18,20 @@ import (
 	"golang.org/x/text/transform"
 )
 
-// columnAliases maps alternative column names to their canonical names.
-// Keys must be lowercase (headerMap is already lowercased).
 var columnAliases = map[string]string{
-	"e-mail":          "email",
-	"mail":            "email",
-	"nom":             "name",
-	"prénom":          "first_name",
-	"prenom":          "first_name",
-	"nom de famille":  "last_name",
+	"e-mail":         "email",
+	"mail":           "email",
+	"nom":            "name",
+	"prénom":         "first_name",
+	"prenom":         "first_name",
+	"nom de famille": "last_name",
 }
 
-// resolveColumnAliases replaces alias column names with their canonical equivalents.
+// candidateDelimiters are tried on the header line; the one that splits it
+// into the most fields wins, comma first on a tie so a plain one-column file
+// keeps the RFC 4180 default.
+var candidateDelimiters = []rune{',', ';', '\t'}
+
 func resolveColumnAliases(headerMap map[string]int) {
 	for alias, canonical := range columnAliases {
 		if idx, exists := headerMap[alias]; exists {
@@ -39,9 +43,28 @@ func resolveColumnAliases(headerMap map[string]int) {
 	}
 }
 
-// openAndDecodeCSV opens a multipart file, strips UTF-8 BOM if present,
-// and converts non-UTF-8 content (assumed Windows-1252) to UTF-8.
-func openAndDecodeCSV(file *multipart.FileHeader) (io.Reader, error) {
+// aliasesFor lists the accepted spellings of a canonical column, derived from
+// columnAliases so the error message can never drift from what the parser accepts.
+func aliasesFor(canonical string) []string {
+	var aliases []string
+	for alias, target := range columnAliases {
+		if target == canonical {
+			aliases = append(aliases, alias)
+		}
+	}
+	sort.Strings(aliases)
+	return aliases
+}
+
+func describeExpectedColumn(canonical string) string {
+	aliases := aliasesFor(canonical)
+	if len(aliases) == 0 {
+		return canonical
+	}
+	return fmt.Sprintf("%s (or %s)", canonical, strings.Join(aliases, ", "))
+}
+
+func openAndDecodeCSV(file *multipart.FileHeader) ([]byte, error) {
 	f, err := file.Open()
 	if err != nil {
 		return nil, err
@@ -53,12 +76,10 @@ func openAndDecodeCSV(file *multipart.FileHeader) (io.Reader, error) {
 		return nil, err
 	}
 
-	// Strip UTF-8 BOM (EF BB BF)
 	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
 		data = data[3:]
 	}
 
-	// Check if valid UTF-8; if not, convert from Windows-1252
 	if !utf8.Valid(data) {
 		decoder := charmap.Windows1252.NewDecoder()
 		utf8Data, _, err := transform.Bytes(decoder, data)
@@ -68,290 +89,286 @@ func openAndDecodeCSV(file *multipart.FileHeader) (io.Reader, error) {
 		data = utf8Data
 	}
 
-	return bytes.NewReader(data), nil
+	return data, nil
 }
 
-// ParseUsersCSV parses the users.csv file
-func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.ImportError, []dto.ImportWarning) {
-	r, err := openAndDecodeCSV(file)
+func detectDelimiter(data []byte) rune {
+	headerLine, _, _ := bytes.Cut(data, []byte("\n"))
+	best := candidateDelimiters[0]
+	bestCount := 0
+	for _, candidate := range candidateDelimiters {
+		if count := bytes.Count(headerLine, []byte(string(candidate))); count > bestCount {
+			best, bestCount = candidate, count
+		}
+	}
+	return best
+}
+
+// csvTable is an opened CSV file positioned after its header row.
+type csvTable struct {
+	fileName  string
+	reader    *csv.Reader
+	delimiter rune
+	header    []string
+	columns   map[string]int
+	rowNum    int
+}
+
+func headerError(fileName, field, message string) *dto.ImportError {
+	return &dto.ImportError{
+		Row:     0,
+		File:    fileName,
+		Field:   field,
+		Message: message,
+		Code:    dto.ErrCodeValidation,
+	}
+}
+
+func openCSVTable(file *multipart.FileHeader, fileName string) (*csvTable, *dto.ImportError) {
+	data, err := openAndDecodeCSV(file)
 	if err != nil {
-		return nil, []dto.ImportError{{
-			Row:     0,
-			File:    "users",
-			Message: fmt.Sprintf("Could not open users file: %v", err),
-			Code:    dto.ErrCodeValidation,
-		}}, nil
+		return nil, headerError(fileName, "", fmt.Sprintf("Could not open %s file: %v", fileName, err))
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, headerError(fileName, "", fmt.Sprintf("The %s file is empty", fileName))
 	}
 
-	reader := csv.NewReader(r)
+	delimiter := detectDelimiter(data)
+	reader := csv.NewReader(bytes.NewReader(data))
+	reader.Comma = delimiter
 	reader.TrimLeadingSpace = true
 
-	// Read header
 	header, err := reader.Read()
 	if err != nil {
-		return nil, []dto.ImportError{{
-			Row:     0,
-			File:    "users",
-			Message: fmt.Sprintf("Could not read CSV header: %v", err),
-			Code:    dto.ErrCodeValidation,
-		}}, nil
+		return nil, headerError(fileName, "", fmt.Sprintf("Could not read CSV header: %v", err))
 	}
 
-	// Build header map and resolve aliases
-	headerMap := make(map[string]int)
+	columns := make(map[string]int, len(header))
 	for i, col := range header {
-		headerMap[strings.TrimSpace(strings.ToLower(col))] = i
-	}
-	resolveColumnAliases(headerMap)
-
-	// Validate required columns: email + (first_name AND last_name) OR name
-	if _, hasEmail := headerMap["email"]; !hasEmail {
-		return nil, []dto.ImportError{{
-			Row:     0,
-			File:    "users",
-			Field:   "email",
-			Message: "Missing required column: email",
-			Code:    dto.ErrCodeValidation,
-		}}, nil
+		columns[strings.TrimSpace(strings.ToLower(col))] = i
 	}
 
-	_, hasFirstName := headerMap["first_name"]
-	_, hasLastName := headerMap["last_name"]
-	_, hasName := headerMap["name"]
+	return &csvTable{
+		fileName:  fileName,
+		reader:    reader,
+		delimiter: delimiter,
+		header:    header,
+		columns:   columns,
+		rowNum:    1, // header errors report row 0; data rows count from 2, matching spreadsheet line numbers
+	}, nil
+}
 
-	if !(hasFirstName && hasLastName) && !hasName {
-		return nil, []dto.ImportError{{
-			Row:     0,
-			File:    "users",
-			Field:   "name",
-			Message: "Missing required columns: need (first_name AND last_name) or name",
-			Code:    dto.ErrCodeValidation,
-		}}, nil
+func (t *csvTable) has(column string) bool {
+	_, exists := t.columns[column]
+	return exists
+}
+
+func (t *csvTable) foundColumns() string {
+	trimmed := make([]string, len(t.header))
+	for i, col := range t.header {
+		trimmed[i] = strings.TrimSpace(col)
+	}
+	return "[" + strings.Join(trimmed, "; ") + "]"
+}
+
+func (t *csvTable) missingColumnError(field, missing, expected string) *dto.ImportError {
+	return headerError(t.fileName, field,
+		fmt.Sprintf("%s. Found columns: %s. Expected: %s", missing, t.foundColumns(), expected))
+}
+
+func (t *csvTable) requireColumns(required ...string) *dto.ImportError {
+	for _, column := range required {
+		if !t.has(column) {
+			return t.missingColumnError(column,
+				fmt.Sprintf("Missing required column: %s", column),
+				describeExpectedColumn(column))
+		}
+	}
+	return nil
+}
+
+// nextRow returns the next data row; ok is false once the file is exhausted.
+// A malformed row yields an ImportError naming the row and its content so the
+// caller can report it instead of silently dropping a line.
+func (t *csvTable) nextRow() (record []string, rowErr *dto.ImportError, ok bool) {
+	record, err := t.reader.Read()
+	if err == io.EOF {
+		return nil, nil, false
+	}
+	t.rowNum++
+	if err == nil {
+		return record, nil, true
+	}
+
+	message := fmt.Sprintf("Row %d could not be read: %v", t.rowNum, err)
+	if errors.Is(err, csv.ErrFieldCount) {
+		message = fmt.Sprintf("Row %d has %d field(s) but the header has %d (separator %q): %q",
+			t.rowNum, len(record), len(t.header), t.delimiter, t.joinRow(record))
+	}
+	return nil, &dto.ImportError{
+		Row:     t.rowNum,
+		File:    t.fileName,
+		Message: message,
+		Code:    dto.ErrCodeValidation,
+	}, true
+}
+
+func (t *csvTable) joinRow(record []string) string {
+	return strings.Join(record, string(t.delimiter))
+}
+
+func (t *csvTable) value(record []string, column string) string {
+	return getColumnValue(record, t.columns, column)
+}
+
+func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.ImportError, []dto.ImportWarning) {
+	table, headerErr := openCSVTable(file, "users")
+	if headerErr != nil {
+		return nil, []dto.ImportError{*headerErr}, nil
+	}
+	resolveColumnAliases(table.columns)
+
+	if !table.has("email") {
+		return nil, []dto.ImportError{*table.missingColumnError("email",
+			"Missing required column: email",
+			describeExpectedColumn("email"))}, nil
+	}
+
+	hasSplitName := table.has("first_name") && table.has("last_name")
+	if !hasSplitName && !table.has("name") {
+		return nil, []dto.ImportError{*table.missingColumnError("name",
+			"Missing required columns: need (first_name AND last_name) or name",
+			fmt.Sprintf("%s, or %s + %s",
+				describeExpectedColumn("name"),
+				describeExpectedColumn("first_name"),
+				describeExpectedColumn("last_name")))}, nil
 	}
 
 	users := make([]dto.UserImportRow, 0, 100)
-	errors := make([]dto.ImportError, 0, 10)
+	importErrors := make([]dto.ImportError, 0, 10)
 	warnings := make([]dto.ImportWarning, 0, 10)
-	rowNum := 1 // Header is row 0
 
 	for {
-		record, err := reader.Read()
-		if err == io.EOF {
+		record, rowErr, ok := table.nextRow()
+		if !ok {
 			break
 		}
-		rowNum++
-		if err != nil {
-			errors = append(errors, dto.ImportError{
-				Row:     rowNum,
-				File:    "users",
-				Message: fmt.Sprintf("Error reading row: %v", err),
-				Code:    dto.ErrCodeValidation,
-			})
+		if rowErr != nil {
+			importErrors = append(importErrors, *rowErr)
 			continue
 		}
 
-		// Parse row
 		user := dto.UserImportRow{
-			Email:          getColumnValue(record, headerMap, "email"),
-			FirstName:      getColumnValue(record, headerMap, "first_name"),
-			LastName:       getColumnValue(record, headerMap, "last_name"),
-			Password:       getColumnValue(record, headerMap, "password"),
-			Role:           getColumnValue(record, headerMap, "role"),
-			ExternalID:     getColumnValue(record, headerMap, "external_id"),
-			ForceReset:     getColumnValue(record, headerMap, "force_reset"),
-			UpdateIfExists: getColumnValue(record, headerMap, "update_existing"),
-			Name:           getColumnValue(record, headerMap, "name"),
+			Email:          table.value(record, "email"),
+			FirstName:      table.value(record, "first_name"),
+			LastName:       table.value(record, "last_name"),
+			Password:       table.value(record, "password"),
+			Role:           table.value(record, "role"),
+			ExternalID:     table.value(record, "external_id"),
+			ForceReset:     table.value(record, "force_reset"),
+			UpdateIfExists: table.value(record, "update_existing"),
+			Name:           table.value(record, "name"),
 		}
 
-		// Validate required fields (may mutate user for name splitting)
-		rowErrors, rowWarnings := validateUserRow(&user, rowNum)
+		rowErrors, rowWarnings := validateUserRow(&user, table.rowNum, table.joinRow(record))
 		if len(rowWarnings) > 0 {
 			warnings = append(warnings, rowWarnings...)
 		}
 		if len(rowErrors) > 0 {
-			errors = append(errors, rowErrors...)
+			importErrors = append(importErrors, rowErrors...)
 			continue
 		}
 
 		users = append(users, user)
 	}
 
-	return users, errors, warnings
+	return users, importErrors, warnings
 }
 
-// ParseGroupsCSV parses the groups.csv file
 func ParseGroupsCSV(file *multipart.FileHeader) ([]dto.GroupImportRow, []dto.ImportError) {
-	r, err := openAndDecodeCSV(file)
-	if err != nil {
-		return nil, []dto.ImportError{{
-			Row:     0,
-			File:    "groups",
-			Message: fmt.Sprintf("Could not open groups file: %v", err),
-			Code:    dto.ErrCodeValidation,
-		}}
+	table, headerErr := openCSVTable(file, "groups")
+	if headerErr != nil {
+		return nil, []dto.ImportError{*headerErr}
 	}
-
-	reader := csv.NewReader(r)
-	reader.TrimLeadingSpace = true
-
-	// Read header
-	header, err := reader.Read()
-	if err != nil {
-		return nil, []dto.ImportError{{
-			Row:     0,
-			File:    "groups",
-			Message: fmt.Sprintf("Could not read CSV header: %v", err),
-			Code:    dto.ErrCodeValidation,
-		}}
-	}
-
-	// Validate header
-	requiredColumns := []string{"group_name", "display_name"}
-	headerMap := make(map[string]int)
-	for i, col := range header {
-		headerMap[strings.TrimSpace(strings.ToLower(col))] = i
-	}
-
-	for _, required := range requiredColumns {
-		if _, exists := headerMap[required]; !exists {
-			return nil, []dto.ImportError{{
-				Row:     0,
-				File:    "groups",
-				Field:   required,
-				Message: fmt.Sprintf("Missing required column: %s", required),
-				Code:    dto.ErrCodeValidation,
-			}}
-		}
+	if missing := table.requireColumns("group_name", "display_name"); missing != nil {
+		return nil, []dto.ImportError{*missing}
 	}
 
 	groups := make([]dto.GroupImportRow, 0, 50)
-	errors := make([]dto.ImportError, 0, 10)
-	rowNum := 1
+	importErrors := make([]dto.ImportError, 0, 10)
 
 	for {
-		record, err := reader.Read()
-		if err == io.EOF {
+		record, rowErr, ok := table.nextRow()
+		if !ok {
 			break
 		}
-		rowNum++
-		if err != nil {
-			errors = append(errors, dto.ImportError{
-				Row:     rowNum,
-				File:    "groups",
-				Message: fmt.Sprintf("Error reading row: %v", err),
-				Code:    dto.ErrCodeValidation,
-			})
+		if rowErr != nil {
+			importErrors = append(importErrors, *rowErr)
 			continue
 		}
 
 		group := dto.GroupImportRow{
-			GroupName:   getColumnValue(record, headerMap, "group_name"),
-			DisplayName: getColumnValue(record, headerMap, "display_name"),
-			Description: getColumnValue(record, headerMap, "description"),
-			ParentGroup: getColumnValue(record, headerMap, "parent_group"),
-			MaxMembers:  getColumnValue(record, headerMap, "max_members"),
-			ExpiresAt:   getColumnValue(record, headerMap, "expires_at"),
-			ExternalID:  getColumnValue(record, headerMap, "external_id"),
+			GroupName:   table.value(record, "group_name"),
+			DisplayName: table.value(record, "display_name"),
+			Description: table.value(record, "description"),
+			ParentGroup: table.value(record, "parent_group"),
+			MaxMembers:  table.value(record, "max_members"),
+			ExpiresAt:   table.value(record, "expires_at"),
+			ExternalID:  table.value(record, "external_id"),
 		}
 
-		// Validate required fields
-		rowErrors := validateGroupRow(group, rowNum)
+		rowErrors := validateGroupRow(group, table.rowNum)
 		if len(rowErrors) > 0 {
-			errors = append(errors, rowErrors...)
+			importErrors = append(importErrors, rowErrors...)
 			continue
 		}
 
 		groups = append(groups, group)
 	}
 
-	return groups, errors
+	return groups, importErrors
 }
 
-// ParseMembershipsCSV parses the memberships.csv file
 func ParseMembershipsCSV(file *multipart.FileHeader) ([]dto.MembershipImportRow, []dto.ImportError) {
-	r, err := openAndDecodeCSV(file)
-	if err != nil {
-		return nil, []dto.ImportError{{
-			Row:     0,
-			File:    "memberships",
-			Message: fmt.Sprintf("Could not open memberships file: %v", err),
-			Code:    dto.ErrCodeValidation,
-		}}
+	table, headerErr := openCSVTable(file, "memberships")
+	if headerErr != nil {
+		return nil, []dto.ImportError{*headerErr}
 	}
-
-	reader := csv.NewReader(r)
-	reader.TrimLeadingSpace = true
-
-	// Read header
-	header, err := reader.Read()
-	if err != nil {
-		return nil, []dto.ImportError{{
-			Row:     0,
-			File:    "memberships",
-			Message: fmt.Sprintf("Could not read CSV header: %v", err),
-			Code:    dto.ErrCodeValidation,
-		}}
-	}
-
-	// Validate header
-	requiredColumns := []string{"user_email", "group_name", "role"}
-	headerMap := make(map[string]int)
-	for i, col := range header {
-		headerMap[strings.TrimSpace(strings.ToLower(col))] = i
-	}
-
-	for _, required := range requiredColumns {
-		if _, exists := headerMap[required]; !exists {
-			return nil, []dto.ImportError{{
-				Row:     0,
-				File:    "memberships",
-				Field:   required,
-				Message: fmt.Sprintf("Missing required column: %s", required),
-				Code:    dto.ErrCodeValidation,
-			}}
-		}
+	if missing := table.requireColumns("user_email", "group_name", "role"); missing != nil {
+		return nil, []dto.ImportError{*missing}
 	}
 
 	memberships := make([]dto.MembershipImportRow, 0, 200)
-	errors := make([]dto.ImportError, 0, 20)
-	rowNum := 1
+	importErrors := make([]dto.ImportError, 0, 20)
 
 	for {
-		record, err := reader.Read()
-		if err == io.EOF {
+		record, rowErr, ok := table.nextRow()
+		if !ok {
 			break
 		}
-		rowNum++
-		if err != nil {
-			errors = append(errors, dto.ImportError{
-				Row:     rowNum,
-				File:    "memberships",
-				Message: fmt.Sprintf("Error reading row: %v", err),
-				Code:    dto.ErrCodeValidation,
-			})
+		if rowErr != nil {
+			importErrors = append(importErrors, *rowErr)
 			continue
 		}
 
 		membership := dto.MembershipImportRow{
-			UserEmail: getColumnValue(record, headerMap, "user_email"),
-			GroupName: getColumnValue(record, headerMap, "group_name"),
-			Role:      getColumnValue(record, headerMap, "role"),
+			UserEmail: table.value(record, "user_email"),
+			GroupName: table.value(record, "group_name"),
+			Role:      table.value(record, "role"),
 		}
 
-		// Validate required fields
-		rowErrors := validateMembershipRow(membership, rowNum)
+		rowErrors := validateMembershipRow(membership, table.rowNum)
 		if len(rowErrors) > 0 {
-			errors = append(errors, rowErrors...)
+			importErrors = append(importErrors, rowErrors...)
 			continue
 		}
 
 		memberships = append(memberships, membership)
 	}
 
-	return memberships, errors
+	return memberships, importErrors
 }
 
-// Helper function to get column value by name
 func getColumnValue(record []string, headerMap map[string]int, columnName string) string {
 	if idx, exists := headerMap[columnName]; exists && idx < len(record) {
 		return strings.TrimSpace(record[idx])
@@ -362,16 +379,17 @@ func getColumnValue(record []string, headerMap map[string]int, columnName string
 // validateUserRow validates a user row and performs name splitting if needed.
 // It accepts a pointer so it can set FirstName/LastName from the Name field.
 // Returns (errors, warnings).
-func validateUserRow(user *dto.UserImportRow, rowNum int) ([]dto.ImportError, []dto.ImportWarning) {
+func validateUserRow(user *dto.UserImportRow, rowNum int, rowContent string) ([]dto.ImportError, []dto.ImportWarning) {
 	var errors []dto.ImportError
 	var warnings []dto.ImportWarning
+	rowRef := fmt.Sprintf(" (row %d: %q)", rowNum, rowContent)
 
 	if user.Email == "" {
 		errors = append(errors, dto.ImportError{
 			Row:     rowNum,
 			File:    "users",
 			Field:   "email",
-			Message: "Email is required",
+			Message: "Email is required" + rowRef,
 			Code:    dto.ErrCodeValidation,
 		})
 	}
@@ -398,7 +416,7 @@ func validateUserRow(user *dto.UserImportRow, rowNum int) ([]dto.ImportError, []
 			Row:     rowNum,
 			File:    "users",
 			Field:   "name",
-			Message: "Name is required: provide first_name and last_name, or name",
+			Message: "Name is required: provide first_name and last_name, or name" + rowRef,
 			Code:    dto.ErrCodeValidation,
 		})
 	}
