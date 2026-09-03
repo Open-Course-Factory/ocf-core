@@ -506,8 +506,11 @@ func TestOrgDuplicateScenarioController_NotInOrg(t *testing.T) {
 	db := freshTestDB(t)
 	orgID := createTestOrg(t, db, "org-manager")
 	addOrgMember(t, db, orgID, "org-manager", orgModels.OrgRoleManager)
-	// Create scenario WITHOUT org
+	// A scenario WITHOUT org that is not in the public catalogue either: the
+	// fixture is public by default, and a public source may be copied.
 	source := createFullSourceScenario(t, db, nil)
+	require.NoError(t, db.Model(&models.Scenario{}).
+		Where("id = ?", source.ID).Update("is_public", false).Error)
 
 	router := setupDuplicateTestRouter(t, db, "org-manager", []string{"member"})
 

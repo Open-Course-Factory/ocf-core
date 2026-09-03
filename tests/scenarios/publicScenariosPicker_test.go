@@ -132,3 +132,63 @@ func TestGroupPicker_PrivateScenarioOfAnotherOrgStaysHidden(t *testing.T) {
 	assert.NotContains(t, sources, "orphan-private")
 }
 
+// --- OrgDuplicateScenario: copying a public scenario into an organisation ---
+
+func postOrgDuplicate(t *testing.T, router *gin.Engine, orgID, scenarioID uuid.UUID) *httptest.ResponseRecorder {
+	t.Helper()
+	url := "/api/v1/organizations/" + orgID.String() + "/scenarios/" + scenarioID.String() + "/duplicate"
+	req := httptest.NewRequest(http.MethodPost, url, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestOrgDuplicateScenario_CopiesAPublicScenarioIntoTheOrg(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "org-manager")
+	addOrgMember(t, db, orgID, "org-manager", orgModels.OrgRoleManager)
+	source := createTestScenarioNoOrg(t, db, "catalogue-to-copy")
+	markScenarioPublic(t, db, source.ID)
+
+	router := setupDuplicateTestRouter(t, db, "org-manager", []string{"member"})
+	w := postOrgDuplicate(t, router, orgID, source.ID)
+
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body.String())
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, orgID.String(), resp["organization_id"],
+		"the copy belongs to the organisation that asked for it")
+
+	var copied models.Scenario
+	require.NoError(t, db.First(&copied, "id = ?", resp["id"]).Error)
+	require.NotNil(t, copied.OrganizationID)
+	assert.Equal(t, orgID, *copied.OrganizationID)
+	assert.NotEqual(t, source.ID, copied.ID)
+}
+
+func TestOrgDuplicateScenario_RefusesAnArchivedPublicScenario(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "org-manager")
+	addOrgMember(t, db, orgID, "org-manager", orgModels.OrgRoleManager)
+	source := createTestScenarioNoOrg(t, db, "retired-catalogue")
+	markScenarioPublic(t, db, source.ID)
+	archiveScenarioRow(t, db, source.ID)
+
+	router := setupDuplicateTestRouter(t, db, "org-manager", []string{"member"})
+	w := postOrgDuplicate(t, router, orgID, source.ID)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestOrgDuplicateScenario_StillRefusesAPrivateScenarioOfAnotherOrg(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "org-manager")
+	addOrgMember(t, db, orgID, "org-manager", orgModels.OrgRoleManager)
+	otherOrgID := createTestOrg(t, db, "other-org-owner")
+	source := createTestScenarioForOrg(t, db, otherOrgID, "foreign-private")
+
+	router := setupDuplicateTestRouter(t, db, "org-manager", []string{"member"})
+	w := postOrgDuplicate(t, router, orgID, source.ID)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
