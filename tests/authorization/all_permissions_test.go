@@ -148,6 +148,10 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/class-groups/:id/bulk-create-terminals", "POST"},
 		{"/api/v1/class-groups/:id/command-history", "GET"},
 		{"/api/v1/class-groups/:id/command-history-stats", "GET"},
+		// NOTE: the class archiving routes (/api/v1/class-groups/:id/archive,
+		// /unarchive, /archive-preview) are entity actions on the ClassGroup
+		// registration, not terminal-module routes; they are pinned by
+		// class_archive_actions_test.go.
 		// Supervision (#425) — group-scoped session list (GroupRole manager,
 		// declared in the terminal module's permissions.go) + per-session
 		// supervise WS broker (SelfScoped: controller derives the group from

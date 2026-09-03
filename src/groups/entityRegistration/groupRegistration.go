@@ -2,11 +2,16 @@ package groupRegistration
 
 import (
 	"net/http"
+	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/groups/dto"
 	"soli/formations/src/groups/models"
+	groupRoutes "soli/formations/src/groups/routes"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func RegisterGroup(service *ems.EntityRegistrationService) {
@@ -94,6 +99,23 @@ func RegisterGroup(service *ems.EntityRegistrationService) {
 			// BeforeUnarchive. archived_at is deliberately absent from
 			// EditGroupInput: the actions are its only writers.
 			Archivable: true,
+			Actions: []entityManagementInterfaces.ActionConfig{
+				{
+					Name:   "archive-preview",
+					Method: http.MethodGet,
+					Scope:  entityManagementInterfaces.ActionScopeItem,
+					Handler: func(db *gorm.DB) gin.HandlerFunc {
+						return groupRoutes.NewArchivePreviewController(db).Preview
+					},
+					Role: string(authModels.Member),
+					// SelfScoped like PATCH: the handler itself checks
+					// GroupService.CanUserManageGroup, the one owner of "may this
+					// caller act on this class".
+					Access:      access.AccessRule{Type: access.SelfScoped},
+					Description: "Preview what archiving this class means for its members (group owner, manager or organization manager)",
+					ResponseDTO: dto.ArchivePreviewOutput{},
+				},
+			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
 				Tag:        "class-groups",
 				EntityName: "ClassGroup",
