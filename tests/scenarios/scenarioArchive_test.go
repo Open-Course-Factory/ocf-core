@@ -25,11 +25,15 @@ import (
 	"gorm.io/gorm"
 
 	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/mocks"
-	entityManagementModels "soli/formations/src/entityManagement/models"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
+	entityManagementModels "soli/formations/src/entityManagement/models"
+	"soli/formations/src/entityManagement/swagger"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
+	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
@@ -38,17 +42,39 @@ import (
 
 // setupArchiveRouter wires the platform archive/unarchive routes as production
 // registers them, behind the same Layer 2 enforcement.
+// setupArchiveRouter mounts the Scenario entity the way production does —
+// generated CRUD and archive/unarchive actions, live scenario hooks, Layer 2
+// enforcement — so the tests below exercise the framework's archive route and
+// the ScenarioArchiveAuthorizationHook, not a hand-written controller.
 func setupArchiveRouter(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
 	t.Helper()
 	access.RouteRegistry.Reset()
 	access.ResetEnforcers()
+
+	mockEnforcer := mocks.NewMockEnforcer()
+	mockEnforcer.EnforceFunc = func(params ...any) (bool, error) { return true, nil }
+	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
+	mockEnforcer.LoadPolicyFunc = func() error { return nil }
+	originalEnforcer := casdoor.Enforcer
+	casdoor.Enforcer = mockEnforcer
+
+	originalSvc := ems.GlobalEntityRegistrationService
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	scenarioController.RegisterScenarioPermissions(mockEnforcer)
+	scenarioRegistration.RegisterScenario(ems.GlobalEntityRegistrationService)
+	access.RegisterBuiltinEnforcers(nil, access.NewGormMembershipChecker(db))
+
+	hooks.GlobalHookRegistry.ClearAllHooks()
+	hooks.GlobalHookRegistry.DisableAllHooks(false)
+	scenarioHooks.InitScenarioHooks(db)
+
 	t.Cleanup(func() {
+		hooks.GlobalHookRegistry.ClearAllHooks()
+		ems.GlobalEntityRegistrationService = originalSvc
+		casdoor.Enforcer = originalEnforcer
 		access.RouteRegistry.Reset()
 		access.ResetEnforcers()
 	})
-
-	scenarioController.RegisterScenarioPermissions(mocks.NewMockEnforcer())
-	access.RegisterBuiltinEnforcers(nil, access.NewGormMembershipChecker(db))
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -60,9 +86,8 @@ func setupArchiveRouter(t *testing.T, db *gorm.DB, userID string, roles []string
 	})
 	api.Use(access.Layer2Enforcement())
 
-	controller := scenarioController.NewScenarioController(db)
-	api.POST("/scenarios/:id/archive", controller.ArchiveScenario)
-	api.POST("/scenarios/:id/unarchive", controller.UnarchiveScenario)
+	passthrough := func(c *gin.Context) { c.Next() }
+	swagger.NewSwaggerRouteGenerator(db).RegisterDocumentedRoutes(api, passthrough, passthrough)
 	return r
 }
 
@@ -350,4 +375,78 @@ func TestArchivingKeepsPastResultsAndRunningSessionsIntact(t *testing.T) {
 	require.NoError(t, db.First(&reloadedRunning, "id = ?", running.ID).Error)
 	assert.Equal(t, "active", reloadedRunning.Status,
 		"archiving stops new runs only — a session already in flight finishes")
+}
+
+func TestArchiveScenario_ViaGeneratedAction_RefusedForSomeoneWhoCannotManageIt(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "org-owner")
+	addOrgMember(t, db, orgID, "plain-member", orgModels.OrgRoleMember)
+	scenario := createTestScenarioForOrg(t, db, orgID, "archive-generated-authz")
+
+	router := setupArchiveRouter(t, db, "plain-member", []string{"member"})
+
+	w := postArchive(t, router, scenario.ID, "archive")
+	require.Equal(t, http.StatusForbidden, w.Code,
+		"the generated action is open to every member at Layer 2; the "+
+			"BeforeArchive hook must refuse with the permission error so the "+
+			"route answers 403, not the 409 kept for state refusals. Body: %s",
+		w.Body.String())
+
+	var reloaded models.Scenario
+	require.NoError(t, db.First(&reloaded, "id = ?", scenario.ID).Error)
+	assert.False(t, reloaded.IsArchived(), "a refused archive must leave the row untouched")
+}
+
+func TestScenarioList_HidesArchivedByDefault_AndIncludeArchivedShowsThem(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "org-owner")
+	addOrgMember(t, db, orgID, "org-manager", orgModels.OrgRoleManager)
+	createTestScenarioForOrg(t, db, orgID, "list-active")
+	archived := createTestScenarioForOrg(t, db, orgID, "list-archived")
+	now := time.Now()
+	require.NoError(t, db.Model(&models.Scenario{}).
+		Where("id = ?", archived.ID).Update("archived_at", now).Error)
+
+	router := setupArchiveRouter(t, db, "org-manager", []string{"member"})
+
+	listNames := func(query string) []string {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios"+query, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+		var body struct {
+			Data []map[string]any `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		names := make([]string, 0, len(body.Data))
+		for _, item := range body.Data {
+			names = append(names, item["name"].(string))
+		}
+		return names
+	}
+
+	assert.ElementsMatch(t, []string{"list-active"}, listNames(""),
+		"the generic list hides archived scenarios unless asked")
+	assert.ElementsMatch(t, []string{"list-active", "list-archived"}, listNames("?include_archived=true"),
+		"the admin scenarios page relies on include_archived to offer Restore")
+}
+
+func TestPermissionSetup_ScenarioArchiveRoute_DeclaredOnce(t *testing.T) {
+	db := freshTestDB(t)
+	setupArchiveRouter(t, db, "anyone", []string{"member"})
+
+	declarations := map[string][]string{}
+	for _, category := range access.RouteRegistry.GetReference().Categories {
+		for _, route := range category.Routes {
+			key := route.Method + " " + route.Path
+			declarations[key] = append(declarations[key], category.Name)
+		}
+	}
+	for _, action := range []string{"archive", "unarchive"} {
+		key := http.MethodPost + " /api/v1/scenarios/:id/" + action
+		assert.Equal(t, []string{"Scenario"}, declarations[key],
+			"%s must be declared exactly once, by the generated action — a "+
+				"second declaration in scenarios/routes/permissions.go would "+
+				"be a parallel rule waiting to drift", key)
+	}
 }

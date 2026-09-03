@@ -272,16 +272,6 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Report what every scenario claims but cannot deliver (platform operators)",
 		},
 		access.RoutePermission{
-			Path: "/api/v1/scenarios/:id/archive", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Archive a scenario (controller verifies CanManageScenario: creator, org manager, group manager, or admin)",
-		},
-		access.RoutePermission{
-			Path: "/api/v1/scenarios/:id/unarchive", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Unarchive a scenario (controller verifies CanManageScenario: creator, org manager, group manager, or admin)",
-		},
-		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/duplicate", Method: "POST",
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Duplicate a scenario at platform level (admin only)",
