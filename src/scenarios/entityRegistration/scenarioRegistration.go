@@ -252,6 +252,10 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 			},
 			SubEntities: []any{models.ScenarioStep{}, models.ScenarioInstanceType{}},
 			DefaultIncludes: []string{"Steps.Questions", "CompatibleInstanceTypes"},
+			// Archiving retires a scenario without deleting it; the
+			// ScenarioArchiveAuthorizationHook gates it on the same manage rule
+			// as PATCH and DELETE.
+			Archivable: true,
 			Roles: entityManagementInterfaces.EntityRoles{
 				// Member can GET / PATCH / DELETE — the ScenarioAuthorizationHook
 				// gates writes to scenarios the user can manage (creator /

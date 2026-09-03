@@ -37,8 +37,6 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	scenarioRoutes.GET("/health", middleware.AuthManagement(), controller.GetScenarioHealth)
 	scenarioRoutes.GET("/:id/lexicon", middleware.AuthManagement(), controller.GetLexicon)
 	scenarioRoutes.PUT("/:id/lexicon", middleware.AuthManagement(), controller.ReplaceLexicon)
-	scenarioRoutes.POST("/:id/archive", middleware.AuthManagement(), controller.ArchiveScenario)
-	scenarioRoutes.POST("/:id/unarchive", middleware.AuthManagement(), controller.UnarchiveScenario)
 
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
