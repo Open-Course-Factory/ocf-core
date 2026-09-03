@@ -30,15 +30,34 @@ type UserController interface {
 type userController struct {
 	service         services.UserService
 	settingsService services.UserSettingsService
+	deletionService services.UserDeletionService
 }
 
+// NewUserController wires the production collaborators (real Casdoor client,
+// Stripe-backed payment helper, global DB).
 func NewUserController() UserController {
+	userService := services.NewUserService(
+		services.NewCasdoorUserClient(),
+		paymentServices.NewPaymentDeletionHelper(sqldb.DB),
+	)
+	return NewUserControllerWithServices(
+		userService,
+		services.NewUserSettingsService(),
+		services.NewUserDeletionService(sqldb.DB, userService),
+	)
+}
+
+// NewUserControllerWithServices builds the controller from explicit
+// collaborators so tests can substitute the identity, billing and erasure seams.
+func NewUserControllerWithServices(
+	userService services.UserService,
+	settingsService services.UserSettingsService,
+	deletionService services.UserDeletionService,
+) UserController {
 	return &userController{
-		service: services.NewUserService(
-			services.NewCasdoorUserClient(),
-			paymentServices.NewPaymentDeletionHelper(sqldb.DB),
-		),
-		settingsService: services.NewUserSettingsService(),
+		service:         userService,
+		settingsService: settingsService,
+		deletionService: deletionService,
 	}
 }
 
