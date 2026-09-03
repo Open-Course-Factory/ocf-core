@@ -20,6 +20,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrUserNotFound is returned when the identity provider knows no user with
+// the given id; handlers map it to 404.
+var ErrUserNotFound = errors.New("user not found")
+
 type UserService interface {
 	AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutput, error)
 	GetUserById(id string) (*dto.UserOutput, error)
@@ -236,7 +240,7 @@ func (us *userService) GetUserById(id string) (*dto.UserOutput, error) {
 		return nil, errUser
 	}
 	if user == nil {
-		return nil, errors.New("user not found")
+		return nil, ErrUserNotFound
 	}
 
 	return dto.UserModelToUserOutput(user), nil
@@ -284,7 +288,7 @@ func (us *userService) DeleteUser(id string) error {
 		return errUser
 	}
 	if user == nil {
-		return errors.New("user not found")
+		return ErrUserNotFound
 	}
 
 	// Step 1: cancel active Stripe subscriptions BEFORE touching Casdoor.

@@ -1,9 +1,11 @@
 package userController
 
 import (
+	goerrors "errors"
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/auth/services"
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
@@ -12,8 +14,9 @@ import (
 
 // Delete user godoc
 //
-//	@Summary		Suppression user
-//	@Description	Suppression d'un user dans la base de données
+//	@Summary		Delete a user (administrator)
+//	@Description	Permanently erases a user: Stripe cancellation, Casdoor identity, RBAC policies and all OCF-side data (memberships, personal organization, sessions, settings).
+//	@Description	Same erasure flow and same ownership rule as the self-service deletion: a user who still owns a non-personal organization or a group must transfer ownership first.
 //	@Tags			users
 //	@Accept			json
 //	@Produce		json
@@ -23,8 +26,11 @@ import (
 //
 //	@Success		204	{object}	string
 //
-//	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
-//	@Failure		404	{object}	errors.APIError	"User non trouvé - Impossible de le supprimer "
+//	@Failure		400	{object}	errors.APIError	"Invalid user id"
+//	@Failure		403	{object}	errors.APIError	"Admin access required"
+//	@Failure		404	{object}	errors.APIError	"User not found"
+//	@Failure		409	{object}	errors.APIError	"User still owns organizations or groups"
+//	@Failure		500	{object}	errors.APIError	"Erasure failed (retryable)"
 //
 //	@Router			/users/{id} [delete]
 func (u userController) DeleteUser(ctx *gin.Context) {
@@ -58,12 +64,14 @@ func (u userController) DeleteUser(ctx *gin.Context) {
 		return
 	}
 
-	errorDelete := u.service.DeleteUser(id.String())
-	if errorDelete != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "User not found",
-		})
+	// Same erasure flow as the self-service deletion (issue #490): the OCF
+	// cascade must run whoever triggers the deletion.
+	if err := u.deletionService.EraseUser(id.String()); err != nil {
+		status, message := erasureErrorResponse(err)
+		if status == http.StatusInternalServerError {
+			utils.Error("Admin erasure failed for user %s: %v", id, err)
+		}
+		ctx.JSON(status, &errors.APIError{ErrorCode: status, ErrorMessage: message})
 		ctx.Abort()
 		return
 	}
@@ -74,4 +82,18 @@ func (u userController) DeleteUser(ctx *gin.Context) {
 	utils.RemovePolicy(casdoor.Enforcer, id.String(), "", "", opts)
 
 	ctx.JSON(http.StatusNoContent, "Done")
+}
+
+// erasureErrorResponse maps an EraseUser failure to the HTTP status the admin
+// should see. Ownership refusals carry the service message so the admin knows
+// ownership must be transferred first; anything else is retryable.
+func erasureErrorResponse(err error) (int, string) {
+	switch {
+	case goerrors.Is(err, services.ErrUserNotFound):
+		return http.StatusNotFound, "User not found"
+	case goerrors.Is(err, services.ErrOwnsOrganizations), goerrors.Is(err, services.ErrOwnsGroups):
+		return http.StatusConflict, err.Error()
+	default:
+		return http.StatusInternalServerError, "User erasure failed"
+	}
 }

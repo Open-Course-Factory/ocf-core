@@ -5,8 +5,6 @@ import (
 	"net/http"
 
 	"soli/formations/src/auth/services"
-	sqldb "soli/formations/src/db"
-	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
@@ -65,14 +63,7 @@ func (uc *userController) DeleteMyAccount(ctx *gin.Context) {
 	// userService.DeleteUser (Stripe cancel → pseudonymize → Casdoor delete →
 	// RBAC removal) before the OCF-side cascade, so the handler no longer does
 	// any Casdoor / RBAC work itself.
-	deletionService := services.NewUserDeletionService(
-		sqldb.DB,
-		services.NewUserService(
-			services.NewCasdoorUserClient(),
-			paymentServices.NewPaymentDeletionHelper(sqldb.DB),
-		),
-	)
-	err := deletionService.DeleteMyAccount(userID)
+	err := uc.deletionService.DeleteMyAccount(userID)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrOwnsOrganizations):

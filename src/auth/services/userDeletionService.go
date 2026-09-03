@@ -24,8 +24,14 @@ var (
 	ErrDeletionFailed    = errors.New("account deletion failed")
 )
 
-// UserDeletionService handles RGPD right-to-erasure account deletion
+// UserDeletionService handles RGPD right-to-erasure account deletion.
+//
+// EraseUser is the single erasure flow; every entry point (self-service,
+// admin DELETE /users/:id, and future org-owner / cron erasure) goes through
+// it so the pre-flight, the identity/billing teardown and the OCF cascade can
+// never drift apart.
 type UserDeletionService interface {
+	EraseUser(userID string) error
 	DeleteMyAccount(userID string) error
 }
 
@@ -45,7 +51,13 @@ func NewUserDeletionService(db *gorm.DB, userSvc UserService) UserDeletionServic
 }
 
 // DeleteMyAccount performs the self-service RGPD right-to-erasure flow for the
-// authenticated user.
+// authenticated user. The self-service specifics (confirmation body,
+// impersonation guard) live in the handler; the erasure itself is EraseUser.
+func (s *userDeletionService) DeleteMyAccount(userID string) error {
+	return s.EraseUser(userID)
+}
+
+// EraseUser permanently erases a user, whoever asks for it.
 //
 // Ordering is load-bearing:
 //  1. Pre-flight 409 gates: refuse if the user still owns a non-personal org or
@@ -58,7 +70,7 @@ func NewUserDeletionService(db *gorm.DB, userSvc UserService) UserDeletionServic
 //  3. OCF-side cascade: tear down terminals, delete scenario sessions, remove
 //     memberships, delete the personal org, anonymize authorship and audit logs,
 //     and delete auth tokens / settings / SSH keys.
-func (s *userDeletionService) DeleteMyAccount(userID string) error {
+func (s *userDeletionService) EraseUser(userID string) error {
 	if err := s.assertNoOwnedOrgsOrGroups(userID); err != nil {
 		return err
 	}
