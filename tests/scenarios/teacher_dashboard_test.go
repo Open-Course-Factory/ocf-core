@@ -257,7 +257,7 @@ func TestGetScenarioResults_Paginated_HTTPController(t *testing.T) {
 	db := setupTestDB(t)
 
 	group := groupModels.ClassGroup{
-		Name: "pag-http-group", DisplayName: "Pag HTTP", OwnerUserID: "teacher-pag", IsActive: true,
+		Name: "pag-http-group", DisplayName: "Pag HTTP", OwnerUserID: "teacher-pag",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -561,7 +561,7 @@ func TestTeacherController_AccessDenied_NonTeacher(t *testing.T) {
 	db := setupTestDB(t)
 
 	group := groupModels.ClassGroup{
-		Name: "deny-group", DisplayName: "Deny Group", OwnerUserID: "teacher-owner", IsActive: true,
+		Name: "deny-group", DisplayName: "Deny Group", OwnerUserID: "teacher-owner",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 
@@ -579,7 +579,7 @@ func TestTeacherController_PlatformAdminAccess(t *testing.T) {
 	db := setupTestDB(t)
 
 	group := groupModels.ClassGroup{
-		Name: "admin-group", DisplayName: "Admin Group", OwnerUserID: "owner-1", IsActive: true,
+		Name: "admin-group", DisplayName: "Admin Group", OwnerUserID: "owner-1",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 
@@ -597,7 +597,7 @@ func TestTeacherController_GroupOwnerAccess(t *testing.T) {
 	db := setupTestDB(t)
 
 	group := groupModels.ClassGroup{
-		Name: "owner-group", DisplayName: "Owner Group", OwnerUserID: "teacher-own", IsActive: true,
+		Name: "owner-group", DisplayName: "Owner Group", OwnerUserID: "teacher-own",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 
@@ -1044,7 +1044,7 @@ func TestTeacherController_ResetSessions_ReturnsCount(t *testing.T) {
 	db := setupTestDB(t)
 
 	group := groupModels.ClassGroup{
-		Name: "reset-ctrl-group", DisplayName: "Reset Controller", OwnerUserID: "teacher-reset", IsActive: true,
+		Name: "reset-ctrl-group", DisplayName: "Reset Controller", OwnerUserID: "teacher-reset",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 
@@ -1090,7 +1090,7 @@ func TestTeacherController_ResetSessions_AccessDenied(t *testing.T) {
 	db := setupTestDB(t)
 
 	group := groupModels.ClassGroup{
-		Name: "reset-deny-group", DisplayName: "Reset Deny", OwnerUserID: "teacher-deny", IsActive: true,
+		Name: "reset-deny-group", DisplayName: "Reset Deny", OwnerUserID: "teacher-deny",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 

@@ -10,6 +10,13 @@ import (
 // ClassGroup represents a collection of users (class, team, organization unit)
 type ClassGroup struct {
 	entityManagementModels.BaseModel
+	// ArchivedAt is the ONE flag saying a class is retired (#491). It replaces
+	// the former is_active column: an archived class grants nothing — no new
+	// member, assignment, launch, supervision or consent policy — while its
+	// roster and results stay readable as evidence. Written only through the
+	// generated archive/unarchive actions, the expiry cron and the organization
+	// deletion cascade, never through PATCH.
+	entityManagementModels.Archivable
 	Name               string     `gorm:"type:varchar(255);not null;index" json:"name"`
 	DisplayName        string     `gorm:"type:varchar(255);not null" json:"display_name"`
 	Description        string     `gorm:"type:text" json:"description,omitempty"`
@@ -20,7 +27,6 @@ type ClassGroup struct {
 	MaxMembers         int        `gorm:"default:50" json:"max_members"`                                // Group size limit
 	ExpiresAt          *time.Time `json:"expires_at,omitempty"`                                         // Optional expiration (for temporary classes)
 	CasdoorGroupName   *string    `gorm:"type:varchar(255);unique" json:"casdoor_group_name,omitempty"` // Sync reference to Casdoor group
-	IsActive           bool       `gorm:"default:true" json:"is_active"`
 
 	// Recording consent policy: overrides org-level setting when non-nil.
 	// nil = inherit from organization, true = consent handled by contract, false = require per-session consent.
@@ -52,8 +58,10 @@ func (ClassGroup) TableName() string {
 	return "class_groups"
 }
 
-
-// IsExpired checks if the group has expired
+// IsExpired reports whether the class has passed its expires_at. An expired
+// class is "archive pending": the hourly cron (cron.ArchiveExpiredClasses)
+// archives it, so the flag is a hint for the UI, never a gate — gates read
+// ArchivedAt.
 func (g *ClassGroup) IsExpired() bool {
 	if g.ExpiresAt == nil {
 		return false

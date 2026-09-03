@@ -5,7 +5,11 @@ import (
 	"time"
 
 	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/casdoor"
+	authMocks "soli/formations/src/auth/mocks"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
+	groupRegistration "soli/formations/src/groups/entityRegistration"
 	groupModels "soli/formations/src/groups/models"
 	organizationHooks "soli/formations/src/organizations/hooks"
 	organizationModels "soli/formations/src/organizations/models"
@@ -29,8 +33,21 @@ import (
 // because each is carried by a different flag and any one of them regressing
 // silently changes who can see a deleted organization's classes.
 
+// archiveTestDB also registers ClassGroup in the global registration service:
+// the cascade archives through the generic service, which resolves the entity
+// by name.
 func archiveTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	origEnforcer := casdoor.Enforcer
+	casdoor.Enforcer = authMocks.NewMockEnforcer()
+	access.RouteRegistry.Reset()
+	groupRegistration.RegisterGroup(ems.GlobalEntityRegistrationService)
+	t.Cleanup(func() {
+		ems.GlobalEntityRegistrationService.UnregisterEntity("ClassGroup")
+		access.RouteRegistry.Reset()
+		casdoor.Enforcer = origEnforcer
+	})
+
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
@@ -66,7 +83,6 @@ func seedOrgWithClass(t *testing.T, db *gorm.DB) (organizationModels.Organizatio
 		OwnerUserID:    owner,
 		OrganizationID: &org.ID,
 		MaxMembers:     20,
-		IsActive:       true,
 	}
 	require.NoError(t, db.Omit("Metadata", "Members", "SubGroups", "ParentGroup").Create(&group).Error)
 
@@ -108,8 +124,8 @@ func TestDeleteOrganization_ArchivesItsClasses(t *testing.T) {
 	var archived groupModels.ClassGroup
 	require.NoError(t, db.First(&archived, "id = ?", group.ID).Error,
 		"the class must survive its organization — past results name it")
-	assert.False(t, archived.IsActive,
-		"a class whose organization is gone must be archived, not left active")
+	assert.NotNil(t, archived.ArchivedAt,
+		"a class whose organization is gone must be archived, not left open")
 }
 
 func TestDeleteOrganization_LeavesTheClassReadableToAdmins(t *testing.T) {
@@ -186,7 +202,7 @@ func TestDeleteOrganization_LeavesOtherOrganizationsClassesAlone(t *testing.T) {
 
 	var survivor groupModels.ClassGroup
 	require.NoError(t, db.First(&survivor, "id = ?", otherClass.ID).Error)
-	assert.True(t, survivor.IsActive, "another organization's class must be untouched")
+	assert.Nil(t, survivor.ArchivedAt, "another organization's class must be untouched")
 
 	checker := access.NewGormMembershipChecker(db)
 	allowed, err := checker.CheckGroupRole(otherClass.ID.String(), otherOwner, "manager")

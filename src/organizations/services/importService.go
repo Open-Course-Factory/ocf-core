@@ -507,7 +507,6 @@ func (s *importService) processGroup(group dto.GroupImportRow, orgID uuid.UUID, 
 		ParentGroupID:  parentID,
 		MaxMembers:     maxMembers,
 		ExpiresAt:      expiresAt,
-		IsActive:       true,
 	}
 
 	if err := s.db.Create(&newGroup).Error; err != nil {

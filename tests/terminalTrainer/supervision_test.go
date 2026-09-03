@@ -33,6 +33,7 @@ package terminalTrainer_tests
 // client-supplied group id — that is the IDOR guard the first test pins.
 
 import (
+	"time"
 	"encoding/json"
 	"net/url"
 	"strings"
@@ -117,7 +118,6 @@ func newSupervisedSession(t *testing.T, db *gorm.DB, groupName, ownerUserID, lea
 		Name:           groupName,
 		DisplayName:    groupName,
 		OwnerUserID:    ownerUserID,
-		IsActive:       true,
 		MaxMembers:     50,
 		OrganizationID: &orgID,
 	}
@@ -313,7 +313,6 @@ func TestSupervision_LearnerInMultipleGroups_ResolvesManagingGroup(t *testing.T)
 		Name:        "group-2",
 		DisplayName: "group-2",
 		OwnerUserID: "other-trainer",
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	require.NoError(t, db.Omit("Metadata").Create(group2).Error)
@@ -529,9 +528,7 @@ func TestSupervision_InactiveManagingGroup_Denied(t *testing.T) {
 	trainer := "trainer-A"
 	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
 
-	// Deactivate after creation to bypass GORM's zero-value skip on a
-	// bool column with default:true.
-	require.NoError(t, db.Model(group).Update("is_active", false).Error)
+	require.NoError(t, db.Model(group).Update("archived_at", time.Now()).Error)
 
 	groupID, ok := terminalController.HasSupervisionAccess(db, trainer, false, sessionID)
 

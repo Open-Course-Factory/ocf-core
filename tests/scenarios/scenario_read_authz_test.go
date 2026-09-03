@@ -215,7 +215,6 @@ func makeGroupWithOwner(t *testing.T, db *gorm.DB, ownerID string) uuid.UUID {
 		DisplayName: "Read Authz Group",
 		OwnerUserID: ownerID,
 		MaxMembers:  50,
-		IsActive:    true,
 	}
 	group.ID = groupID
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)

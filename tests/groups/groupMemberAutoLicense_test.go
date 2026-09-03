@@ -33,7 +33,6 @@ func TestAutoLicense_MemberAddedWithLinkedBatch_LicenseAssigned(t *testing.T) {
 		Name:        "test-group",
 		DisplayName: "Test Group",
 		OwnerUserID: purchaserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	group.ID = groupID
@@ -106,7 +105,6 @@ func TestAutoLicense_NoLinkedBatch_NoEffect(t *testing.T) {
 		Name:        "test-group",
 		DisplayName: "Test Group",
 		OwnerUserID: "owner-1",
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	group.ID = groupID
@@ -153,7 +151,6 @@ func TestAutoLicense_AllLicensesAssigned_NoError(t *testing.T) {
 		Name:        "test-group",
 		DisplayName: "Test Group",
 		OwnerUserID: purchaserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	group.ID = groupID
@@ -228,7 +225,6 @@ func TestAutoLicense_InactiveBatch_NoEffect(t *testing.T) {
 		Name:        "test-group",
 		DisplayName: "Test Group",
 		OwnerUserID: purchaserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	group.ID = groupID
@@ -302,7 +298,6 @@ func TestAutoLicense_OwnerRole_SkipsAutoAssign(t *testing.T) {
 		Name:        "test-group",
 		DisplayName: "Test Group",
 		OwnerUserID: purchaserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	group.ID = groupID

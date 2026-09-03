@@ -107,7 +107,6 @@ func createGroup(t *testing.T, db *gorm.DB, _ services.GenericService, ownerID s
 		Description: "A test group",
 		OwnerUserID: ownerID,
 		MaxMembers:  50,
-		IsActive:    true,
 	}
 	group.ID = groupID
 

@@ -34,7 +34,6 @@ func TestScenarioAssignmentAuth_BeforeUpdate_GroupManagerCanUpdate(t *testing.T)
 		DisplayName: "Update Test Group",
 		OwnerUserID: ownerID,
 		MaxMembers:  50,
-		IsActive:    true,
 	}
 	group.ID = groupID
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)
@@ -91,7 +90,7 @@ func TestScenarioAssignmentAuth_BeforeUpdate_NonManagerBlocked(t *testing.T) {
 	require.NoError(t, err)
 	group := &groupModels.ClassGroup{
 		Name: "Update Block Test Group", DisplayName: "Update Block Test Group",
-		OwnerUserID: ownerID, MaxMembers: 50, IsActive: true,
+		OwnerUserID: ownerID, MaxMembers: 50,
 	}
 	group.ID = groupID
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)
@@ -150,7 +149,7 @@ func TestScenarioAssignmentAuth_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 	require.NoError(t, err)
 	group := &groupModels.ClassGroup{
 		Name: "Admin Update Test Group", DisplayName: "Admin Update Test Group",
-		OwnerUserID: ownerID, MaxMembers: 50, IsActive: true,
+		OwnerUserID: ownerID, MaxMembers: 50,
 	}
 	group.ID = groupID
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)

@@ -73,7 +73,7 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 								Name:        group.Name,
 								DisplayName: group.DisplayName,
 								MemberCount: group.GetMemberCount(),
-								IsActive:    group.IsActive,
+								IsActive:    !group.IsArchived(),
 							})
 						}
 						output.Groups = &groups

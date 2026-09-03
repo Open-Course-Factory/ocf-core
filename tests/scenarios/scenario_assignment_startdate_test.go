@@ -58,7 +58,7 @@ func TestScenarioAssignment_StartDate_BeforeStartDate_NotAvailable(t *testing.T)
 	// Create a group and add the user as member
 	group := groupModels.ClassGroup{
 		Name: "start-date-test-group", DisplayName: "Start Date Test Group",
-		OwnerUserID: "teacher-1", IsActive: true,
+		OwnerUserID: "teacher-1",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 
@@ -117,7 +117,7 @@ func TestScenarioAssignment_StartDate_AfterStartDate_Available(t *testing.T) {
 	// Create a group and add the user as member
 	group := groupModels.ClassGroup{
 		Name: "start-date-past-group", DisplayName: "Start Date Past Group",
-		OwnerUserID: "teacher-1", IsActive: true,
+		OwnerUserID: "teacher-1",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 
@@ -180,7 +180,7 @@ func TestScenarioAssignment_StartDate_Nil_Available(t *testing.T) {
 	// Create a group and add the user as member
 	group := groupModels.ClassGroup{
 		Name: "start-date-nil-group", DisplayName: "Start Date Nil Group",
-		OwnerUserID: "teacher-1", IsActive: true,
+		OwnerUserID: "teacher-1",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 

@@ -34,7 +34,6 @@ func RegisterGroup(service *ems.EntityRegistrationService) {
 						MaxMembers:         maxMembers,
 						ExpiresAt:          input.ExpiresAt,
 						Metadata:           input.Metadata,
-						IsActive:           true,
 					}
 				},
 				DtoToMap: func(input dto.EditGroupInput) map[string]any {
@@ -59,9 +58,6 @@ func RegisterGroup(service *ems.EntityRegistrationService) {
 					}
 					if input.ExpiresAt != nil {
 						updates["expires_at"] = *input.ExpiresAt
-					}
-					if input.IsActive != nil {
-						updates["is_active"] = *input.IsActive
 					}
 					if input.Metadata != nil {
 						updates["metadata"] = *input.Metadata
@@ -92,6 +88,12 @@ func RegisterGroup(service *ems.EntityRegistrationService) {
 				ManagerRoles:     []string{"owner", "manager"},
 			},
 			DefaultIncludes: []string{"Members"},
+			// Archiving (#491): the generated archive/unarchive actions derive
+			// their Layer 1/2 rule from PATCH above (SelfScoped), so the real
+			// authority is GroupWriteAuthorizationHook on BeforeArchive /
+			// BeforeUnarchive. archived_at is deliberately absent from
+			// EditGroupInput: the actions are its only writers.
+			Archivable: true,
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
 				Tag:        "class-groups",
 				EntityName: "ClassGroup",

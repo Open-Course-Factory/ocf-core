@@ -88,5 +88,6 @@ type GroupSummary struct {
 	Name        string    `json:"name"`
 	DisplayName string    `json:"display_name"`
 	MemberCount int       `json:"member_count"`
-	IsActive    bool      `json:"is_active"`
+	// IsActive is derived from the class's archived_at; see groups/dto.GroupOutput.IsActive.
+	IsActive bool `json:"is_active"`
 }

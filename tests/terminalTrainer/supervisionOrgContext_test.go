@@ -59,7 +59,6 @@ func newOrgSupervisedSession(t *testing.T, db *gorm.DB, groupName, ownerUserID, 
 		Name:           groupName,
 		DisplayName:    groupName,
 		OwnerUserID:    ownerUserID,
-		IsActive:       true,
 		MaxMembers:     50,
 		OrganizationID: groupOrg,
 	}

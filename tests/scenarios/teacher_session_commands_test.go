@@ -267,7 +267,7 @@ func TestGetSessionCommands_AsNonManager_Forbidden(t *testing.T) {
 
 	// Group exists with an owner, but the requester is NOT a member at all.
 	group := groupModels.ClassGroup{
-		Name: "cmd-deny", DisplayName: "Cmd Deny", OwnerUserID: "owner-1", IsActive: true,
+		Name: "cmd-deny", DisplayName: "Cmd Deny", OwnerUserID: "owner-1",
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 

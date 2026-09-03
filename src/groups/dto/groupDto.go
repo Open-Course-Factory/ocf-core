@@ -29,7 +29,6 @@ type EditGroupInput struct {
 	SubscriptionPlanID *uuid.UUID      `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
 	MaxMembers         *int            `json:"max_members,omitempty" mapstructure:"max_members" binding:"omitempty,gte=0"`
 	ExpiresAt          *time.Time      `json:"expires_at,omitempty" mapstructure:"expires_at"`
-	IsActive           *bool           `json:"is_active,omitempty" mapstructure:"is_active"`
 	Metadata           *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
@@ -47,6 +46,10 @@ type GroupOutput struct {
 	MemberCount        int            `json:"member_count"`
 	ExpiresAt          *time.Time     `json:"expires_at,omitempty"`
 	CasdoorGroupName   *string        `json:"casdoor_group_name,omitempty"`
+	ArchivedAt         *time.Time     `json:"archived_at,omitempty"`
+	// IsActive is DERIVED from ArchivedAt (archived_at == nil). Transitional:
+	// it keeps the deployed front working until ocf-front #330 reads archived_at,
+	// after which it goes.
 	IsActive           bool           `json:"is_active"`
 	IsExpired          bool           `json:"is_expired"`
 	IsFull             bool           `json:"is_full"`
@@ -68,10 +71,34 @@ type GroupListOutput struct {
 	OwnerUserID string     `json:"owner_user_id"`
 	MemberCount int        `json:"member_count"`
 	MaxMembers  int        `json:"max_members"`
+	ArchivedAt  *time.Time `json:"archived_at,omitempty"`
+	// IsActive is derived from ArchivedAt; see GroupOutput.IsActive.
 	IsActive    bool       `json:"is_active"`
 	IsExpired   bool       `json:"is_expired"`
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// ArchivePreviewOutput is what a teacher sees before archiving a class: who is
+// on the roster and whether each of them continues elsewhere in the
+// organization, so the "and then?" of every learner is visible up front.
+type ArchivePreviewOutput struct {
+	Members []ArchivePreviewMember `json:"members"`
+}
+
+// ArchivePreviewMember is one roster line of the preview.
+type ArchivePreviewMember struct {
+	UserID      string `json:"user_id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	Role        string `json:"role"`
+	// OtherActiveClassesInOrg counts the member's OTHER non-archived classes in
+	// the same organization: 0 means archiving this class leaves them in none.
+	OtherActiveClassesInOrg int `json:"other_active_classes_in_org"`
+	// OrgMemberState is the member's standing in the class's organization:
+	// "active", "removed" (membership row stood down), or "none" (no row, or
+	// the class has no organization).
+	OrgMemberState string `json:"org_member_state"`
 }
 
 // CreateGroupMemberInput - DTO for creating a single group member (generic POST)
@@ -138,7 +165,8 @@ func GroupModelToGroupOutput(group *models.ClassGroup) *GroupOutput {
 		MemberCount:        group.GetMemberCount(),
 		ExpiresAt:          group.ExpiresAt,
 		CasdoorGroupName:   group.CasdoorGroupName,
-		IsActive:           group.IsActive,
+		ArchivedAt:         group.ArchivedAt,
+		IsActive:           !group.IsArchived(),
 		IsExpired:          group.IsExpired(),
 		IsFull:             group.IsFull(),
 		Metadata:           group.Metadata,
@@ -181,7 +209,8 @@ func GroupModelToGroupListOutput(group *models.ClassGroup) *GroupListOutput {
 		OwnerUserID: group.OwnerUserID,
 		MemberCount: group.GetMemberCount(),
 		MaxMembers:  group.MaxMembers,
-		IsActive:    group.IsActive,
+		ArchivedAt:  group.ArchivedAt,
+		IsActive:    !group.IsArchived(),
 		IsExpired:   group.IsExpired(),
 		ExpiresAt:   group.ExpiresAt,
 		CreatedAt:   group.CreatedAt,

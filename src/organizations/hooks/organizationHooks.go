@@ -1,6 +1,7 @@
 package organizationHooks
 
 import (
+	entityServices "soli/formations/src/entityManagement/services"
 	"fmt"
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
@@ -258,17 +259,18 @@ func (h *OrganizationCleanupHook) Execute(ctx *hooks.HookContext) error {
 // answering. Deleting them outright is the other extreme — past results name the
 // class they were earned in, and that has to keep resolving.
 //
-// Archiving is expressed with the flags that already mean it, rather than a new
-// column:
+// Two things happen, and they are different rules:
 //
-//   - class_groups.is_active = false is what "archived" already means for a
-//     class; ManagedByScope's contract is that authority ANDs this flag, so an
-//     archived class grants nothing.
+//   - the class is archived through the generic service, the same path as a
+//     teacher's click or the expiry cron, so the ClassGroup archive hooks run
+//     and archived_at — the one flag meaning "archived" — is stamped;
 //   - group_members.is_active = false stands the roster down, and that is what
 //     makes the classes admin-only: CheckGroupRole only counts memberships with
 //     is_active = true, so every non-administrator now fails the group gate,
 //     while platform admins bypass Layer 2 entirely. The same flag drops the
-//     class out of GetGroupsByUserID, so it also stops being listed.
+//     class out of GetGroupsByUserID, so it also stops being listed. A plain
+//     class archive does NOT do this — its roster stays evidence — but here
+//     the organization the roster belonged to is gone.
 //
 // Nothing is deleted: the rows, the roster and the results all survive for the
 // administrator who has to answer for them later.
@@ -283,10 +285,14 @@ func (h *OrganizationCleanupHook) archiveOrganizationClasses(orgID uuid.UUID) er
 		return nil
 	}
 
-	if err := h.db.Model(&groupModels.ClassGroup{}).
-		Where("id IN ?", groupIDs).
-		Update("is_active", false).Error; err != nil {
-		return fmt.Errorf("failed to archive classes: %w", err)
+	now := time.Now()
+	genericService := entityServices.NewGenericService(h.db, nil)
+	for _, groupID := range groupIDs {
+		// No acting user: this is a cascade, and the class authorization hook
+		// has nobody to refuse.
+		if _, err := genericService.SetArchived("ClassGroup", groupID, &now, "", nil); err != nil {
+			return fmt.Errorf("failed to archive class %s: %w", groupID, err)
+		}
 	}
 
 	// Deactivate rather than delete: who was in the class stays answerable.

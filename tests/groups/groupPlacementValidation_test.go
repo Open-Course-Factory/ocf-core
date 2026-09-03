@@ -257,7 +257,6 @@ func TestGroupPlacement_RejectsWhenOrganizationIsAtItsGroupLimit(t *testing.T) {
 		DisplayName:    "Existing",
 		OwnerUserID:    placementTrainerID,
 		OrganizationID: &orgID,
-		IsActive:       true,
 	}).Error)
 
 	err := runPlacementCreate(t, db, placementTrainerID, &orgID)
@@ -400,7 +399,6 @@ func TestGroupPlacementUpdate_DoesNotCountTheGroupAgainstItsOwnLimit(t *testing.
 		DisplayName:    "Only One",
 		OwnerUserID:    placementTrainerID,
 		OrganizationID: &orgID,
-		IsActive:       true,
 	}).Error)
 
 	require.NoError(t, runPlacementUpdate(t, db, placementTrainerID, groupID, map[string]any{

@@ -132,7 +132,6 @@ func seedGroup(t *testing.T, db *gorm.DB, name, ownerID string) uuid.UUID {
 		DisplayName: name,
 		OwnerUserID: ownerID,
 		MaxMembers:  50,
-		IsActive:    true,
 	}
 	g.ID = id
 	require.NoError(t, db.Omit("Metadata", "OwnerIDs", "Members", "SubGroups", "ParentGroup").Create(g).Error,

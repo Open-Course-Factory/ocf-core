@@ -76,7 +76,6 @@ func seedGroupRoleCap(
 		OwnerUserID:    ownerUserID,
 		OrganizationID: orgID,
 		MaxMembers:     50,
-		IsActive:       true,
 	}
 	group.ID = groupID
 	err := db.Omit("Metadata", "Members", "SubGroups", "ParentGroup").Create(group).Error

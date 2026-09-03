@@ -52,7 +52,6 @@ func newGroupWithMemberSessions(t *testing.T, db *gorm.DB, groupName, ownerUserI
 		Name:           groupName,
 		DisplayName:    groupName,
 		OwnerUserID:    ownerUserID,
-		IsActive:       true,
 		MaxMembers:     50,
 		OrganizationID: &orgID,
 	}
@@ -216,7 +215,7 @@ func TestGetUserSessionsGroupFilterAsNonMemberIsRefused(t *testing.T) {
 func TestGetUserSessionsGroupFilterOfInactiveGroupIsRefused(t *testing.T) {
 	db := freshTestDB(t)
 	group, _ := newGroupWithMemberSessions(t, db, "group-inactive-refused", "trainer-A", "learner-A")
-	require.NoError(t, db.Model(&groupModels.ClassGroup{}).Where("id = ?", group.ID).Update("is_active", false).Error)
+	require.NoError(t, db.Model(&groupModels.ClassGroup{}).Where("id = ?", group.ID).Update("archived_at", time.Now()).Error)
 
 	w := getUserSessionsAs(t, db, "trainer-A", []string{"member"}, "?group_id="+group.ID.String())
 

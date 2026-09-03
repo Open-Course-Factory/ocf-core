@@ -261,8 +261,8 @@ func seedPersonalOrg(t *testing.T, db *gorm.DB, ownerUserID string) uuid.UUID {
 func seedOwnedGroup(t *testing.T, db *gorm.DB, ownerUserID string) {
 	t.Helper()
 	require.NoError(t, db.Exec(
-		"INSERT INTO class_groups (id, name, display_name, owner_user_id, max_members, is_active) VALUES (?, ?, ?, ?, ?, ?)",
-		uuid.New(), "owned-group-"+uuid.NewString()[:8], "Owned Group", ownerUserID, 50, true,
+		"INSERT INTO class_groups (id, name, display_name, owner_user_id, max_members) VALUES (?, ?, ?, ?, ?)",
+		uuid.New(), "owned-group-"+uuid.NewString()[:8], "Owned Group", ownerUserID, 50,
 	).Error)
 }
 
@@ -271,8 +271,8 @@ func seedGroupMembership(t *testing.T, db *gorm.DB, userID string) {
 	groupOwner := "group-owner-" + uuid.NewString()[:8]
 	gID := uuid.New()
 	require.NoError(t, db.Exec(
-		"INSERT INTO class_groups (id, name, display_name, owner_user_id, max_members, is_active) VALUES (?, ?, ?, ?, ?, ?)",
-		gID, "member-group-"+uuid.NewString()[:8], "Member Group", groupOwner, 50, true,
+		"INSERT INTO class_groups (id, name, display_name, owner_user_id, max_members) VALUES (?, ?, ?, ?, ?)",
+		gID, "member-group-"+uuid.NewString()[:8], "Member Group", groupOwner, 50,
 	).Error)
 	require.NoError(t, db.Exec(
 		"INSERT INTO group_members (id, group_id, user_id, role, joined_at, is_active) VALUES (?, ?, ?, ?, ?, ?)",

@@ -12,7 +12,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// GroupWriteAuthorizationHook decides WHO may modify or delete an existing group.
+// GroupWriteAuthorizationHook decides WHO may modify, delete, archive or
+// unarchive an existing group.
 //
 // It is the enforcement half of #459. The Casbin policy previously gave Member
 // only GET and POST on class-groups, so a trainer could create a class and then
@@ -55,7 +56,9 @@ func NewGroupWriteAuthorizationHook(db *gorm.DB) hooks.Hook {
 func (h *GroupWriteAuthorizationHook) GetName() string       { return "group_write_authorization" }
 func (h *GroupWriteAuthorizationHook) GetEntityName() string { return "ClassGroup" }
 func (h *GroupWriteAuthorizationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeUpdate, hooks.BeforeDelete}
+	// Archive and unarchive derive their Layer 2 rule from PATCH (SelfScoped),
+	// so this hook IS their authority — the same one as for an edit.
+	return []hooks.HookType{hooks.BeforeUpdate, hooks.BeforeDelete, hooks.BeforeArchive, hooks.BeforeUnarchive}
 }
 func (h *GroupWriteAuthorizationHook) IsEnabled() bool  { return h.enabled }
 func (h *GroupWriteAuthorizationHook) GetPriority() int { return h.priority }
@@ -94,8 +97,8 @@ func (h *GroupWriteAuthorizationHook) Execute(ctx *hooks.HookContext) error {
 
 // targetGroupID resolves which group is being written.
 //
-// EntityID is set by the generic service for both update and delete. The delete
-// path also carries the loaded entity, which is used as a fallback so the hook
+// EntityID is set by the generic service for update, delete and archive. The
+// delete and archive paths also carry the loaded entity, which is used as a fallback so the hook
 // does not depend on one field being populated by a single code path.
 func (h *GroupWriteAuthorizationHook) targetGroupID(ctx *hooks.HookContext) (uuid.UUID, error) {
 	if id, ok := ctx.EntityID.(uuid.UUID); ok && id != uuid.Nil {

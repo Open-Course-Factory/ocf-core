@@ -30,8 +30,8 @@ func setupBulkCreateTestDB(t *testing.T) *gorm.DB {
 func createTestGroup(t *testing.T, db *gorm.DB, ownerUserID string) *groupModels.ClassGroup {
 	id := uuid.New()
 	err := db.Exec(
-		`INSERT INTO class_groups (id, created_at, updated_at, name, display_name, owner_user_id, max_members, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id.String(), time.Now(), time.Now(), "test-group", "Test Group", ownerUserID, 50, true,
+		`INSERT INTO class_groups (id, created_at, updated_at, name, display_name, owner_user_id, max_members) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id.String(), time.Now(), time.Now(), "test-group", "Test Group", ownerUserID, 50,
 	).Error
 	require.NoError(t, err)
 

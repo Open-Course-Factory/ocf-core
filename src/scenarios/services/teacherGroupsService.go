@@ -20,9 +20,10 @@ import (
 // shows for a class the caller owns or manages, without the member roster (the
 // per-group endpoints serve that once a class is opened).
 //
-// Archived (IsActive=false) and expired (IsExpired=true) classes are listed and
-// flagged rather than hidden: a class a teacher closed must stay visible so it
-// can be reviewed or reopened. Layer 2 still refuses to act on them.
+// Archived (ArchivedAt set) and expired (IsExpired=true, archive pending)
+// classes are listed and flagged rather than hidden: a class a teacher closed
+// must stay visible so it can be reviewed or reopened. The hooks still refuse
+// to act on them.
 type TeacherGroupSummary struct {
 	GroupID        uuid.UUID  `json:"group_id"`
 	Name           string     `json:"name"`
@@ -33,8 +34,11 @@ type TeacherGroupSummary struct {
 	// membership role. It mirrors what the caller may DO — deleting a class is
 	// owner-only — not which group_members row they happen to hold.
 	CallerRole string     `json:"caller_role"`
-	IsActive   bool       `json:"is_active"`
-	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
+	// IsActive is DERIVED from ArchivedAt. Transitional until ocf-front #330
+	// reads archived_at; see groups/dto.GroupOutput.IsActive.
+	IsActive  bool       `json:"is_active"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	IsExpired  bool       `json:"is_expired"`
 	// MemberCount counts the WHOLE active roster, teaching staff included. It is
 	// the capacity figure — what fills against ClassGroup.MaxMembers and what an
@@ -138,7 +142,7 @@ func (s *TeacherDashboardService) GetManagedGroupsOverview(callerUserID string) 
 	var groups []groupModels.ClassGroup
 	if err := s.db.Model(&groupModels.ClassGroup{}).
 		Scopes(groupModels.ManagedByScope(callerUserID)).
-		Order("is_active DESC, display_name ASC").
+		Order("archived_at IS NULL DESC, display_name ASC").
 		Find(&groups).Error; err != nil {
 		return nil, err
 	}
@@ -267,7 +271,8 @@ func buildTeacherGroupSummary(
 		DisplayName:      group.DisplayName,
 		OrganizationID:   group.OrganizationID,
 		CallerRole:       callerRole,
-		IsActive:         group.IsActive,
+		ArchivedAt:       group.ArchivedAt,
+		IsActive:         !group.IsArchived(),
 		ExpiresAt:        group.ExpiresAt,
 		IsExpired:        group.IsExpired(),
 		MemberCount:          counts.members,

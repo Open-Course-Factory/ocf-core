@@ -148,7 +148,6 @@ func createTestGroupInOrg(t *testing.T, db *gorm.DB, orgID uuid.UUID, ownerUserI
 		OwnerUserID:    ownerUserID,
 		OrganizationID: &orgID,
 		MaxMembers:     50,
-		IsActive:       true,
 	}
 	group.ID = groupID
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)

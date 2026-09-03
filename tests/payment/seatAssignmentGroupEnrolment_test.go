@@ -43,7 +43,6 @@ func seedGroupWithOwner(
 		OwnerUserID: ownerID,
 		MaxMembers:  maxMembers,
 		ExpiresAt:   expiresAt,
-		IsActive:    true,
 	}
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)
 

@@ -140,7 +140,6 @@ func TestScenarioStep_CreateAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) 
 		DisplayName: "Step Group Manager Allowed",
 		OwnerUserID: groupOwnerID,
 		MaxMembers:  50,
-		IsActive:    true,
 	}
 	group.ID = groupID
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)
@@ -421,7 +420,6 @@ func TestScenarioStepQuestion_DeleteAsGroupManagerOfAssignedGroup_Allowed(t *tes
 		DisplayName: "StepQ Group Manager Allowed",
 		OwnerUserID: groupOwnerID,
 		MaxMembers:  50,
-		IsActive:    true,
 	}
 	group.ID = groupID
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)

@@ -152,6 +152,7 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Group entities
 	db.AutoMigrate(&groupModels.ClassGroup{})
+	MigrateInactiveClassesToArchived(db)
 	db.AutoMigrate(&groupModels.GroupMember{})
 
 	// Organization entities (Phase 1)
@@ -657,6 +658,28 @@ func BackfillGroupManagementEntitlement(db *gorm.DB) {
 			Update("group_management_enabled", true).Error; err != nil {
 			log.Printf("Warning: BackfillGroupManagementEntitlement failed for plan %s: %v\n", r.ID, err)
 		}
+	}
+}
+
+// MigrateInactiveClassesToArchived carries the classes retired under the old
+// class_groups.is_active flag over to archived_at, the one flag that now means
+// "archived" (#491). The old column is left in place — GORM never drops
+// columns — and skipped entirely on a database that never had it.
+//
+// updated_at is the best evidence of when such a class was retired: its only
+// writer was the organization-deletion cascade, which touched nothing else.
+// Idempotent: a row already stamped keeps its stamp.
+func MigrateInactiveClassesToArchived(db *gorm.DB) {
+	if !db.Migrator().HasColumn(&groupModels.ClassGroup{}, "is_active") {
+		return
+	}
+	res := db.Exec("UPDATE class_groups SET archived_at = updated_at WHERE is_active = ? AND archived_at IS NULL", false)
+	if res.Error != nil {
+		log.Printf("[MIGRATION] MigrateInactiveClassesToArchived failed: %v", res.Error)
+		return
+	}
+	if res.RowsAffected > 0 {
+		log.Printf("[MIGRATION] archived %d class(es) that were inactive under the legacy flag", res.RowsAffected)
 	}
 }
 

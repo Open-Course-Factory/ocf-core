@@ -33,7 +33,6 @@ func seedGroup(t *testing.T, db *gorm.DB, ownerUserID string) groupModels.ClassG
 		DisplayName: "Import Created Class",
 		OwnerUserID: ownerUserID,
 		MaxMembers:  20,
-		IsActive:    true,
 	}
 	// Omit the jsonb map: the SQLite driver these tests run on cannot bind one,
 	// which is the same reason every other group fixture here omits it.

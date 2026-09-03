@@ -1,8 +1,15 @@
 package models
 
 import (
+	"errors"
+
 	"gorm.io/gorm"
 )
+
+// ErrClassArchived is the single refusal reason shared by every path that an
+// archived class must refuse: enrolling a member, assigning a scenario,
+// starting it for the class. Controllers map it to 409 Conflict.
+var ErrClassArchived = errors.New("this class has been archived and can no longer be changed")
 
 // ManagerRoles are the group_members roles that carry authority over a class-group.
 // Exported so every surface asking "is this caller a manager+ of that group?" spells
@@ -43,11 +50,12 @@ func LearnerRoleScope(alias string) func(*gorm.DB) *gorm.DB {
 // the group (ClassGroup.OwnerUserID) or holds an ACTIVE manager/owner membership
 // row. A plain member never manages.
 //
-// The scope deliberately says nothing about the group's own is_active flag, so
-// the two questions stay separable:
+// The scope deliberately says nothing about whether the group itself is
+// archived, so the two questions stay separable:
 //
 //   - AUTHORITY ("may this caller act on the group?") ANDs it with
-//     `is_active = true` — an archived class grants nothing.
+//     entityManagementModels.NotArchived("class_groups") — an archived class
+//     grants nothing.
 //   - LISTING ("which classes are mine?") uses it bare, so a teacher still sees
 //     the classes they archived, flagged rather than vanished.
 //
@@ -61,7 +69,7 @@ func LearnerRoleScope(alias string) func(*gorm.DB) *gorm.DB {
 //
 //	db.Model(&models.ClassGroup{}).Scopes(models.ManagedByScope(userID)).Find(&groups)
 //	db.Model(&models.ClassGroup{}).Scopes(models.ManagedByScope(userID)).
-//	    Where("class_groups.is_active = ?", true).Pluck("id", &ids)
+//	    Scopes(entityManagementModels.NotArchived("class_groups")).Pluck("id", &ids)
 func ManagedByScope(callerUserID string) func(*gorm.DB) *gorm.DB {
 	return func(tx *gorm.DB) *gorm.DB {
 		return tx.Where(

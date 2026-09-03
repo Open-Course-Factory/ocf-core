@@ -32,7 +32,6 @@ func TestAssignLicense_WithGroupID_AddsUserToGroup(t *testing.T) {
 		Name:        "test-group",
 		DisplayName: "Test Group",
 		OwnerUserID: purchaserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	group.ID = groupID
@@ -147,7 +146,7 @@ func TestAssignLicense_UserAlreadyInGroup_NoDuplicate(t *testing.T) {
 
 	group := &groupModels.ClassGroup{
 		Name: "test-group", DisplayName: "Test Group",
-		OwnerUserID: purchaserID, IsActive: true, MaxMembers: 50,
+		OwnerUserID: purchaserID, MaxMembers: 50,
 	}
 	group.ID = groupID
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)
@@ -255,7 +254,6 @@ func TestRevokeLicense_UserStaysInGroup(t *testing.T) {
 		Name:        "test-group",
 		DisplayName: "Test Group",
 		OwnerUserID: purchaserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	group.ID = groupID

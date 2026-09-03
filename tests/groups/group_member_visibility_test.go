@@ -131,7 +131,6 @@ func seedFixture(t *testing.T, db *gorm.DB) (orgOneID, orgOtherID, groupGID uuid
 		OwnerUserID:    "userTeacher",
 		OrganizationID: &orgOneID,
 		MaxMembers:     50,
-		IsActive:       true,
 	}
 	group.ID = groupGID
 	err = db.Omit("Metadata", "Members", "SubGroups", "ParentGroup").Create(group).Error

@@ -139,7 +139,7 @@ func TestPreviewScenario_ExcludedFromResults(t *testing.T) {
 	db := freshTestDB(t)
 
 	// Create a group with a member
-	group := groupModels.ClassGroup{Name: "test-group", DisplayName: "Test Group", OwnerUserID: "creator-1", IsActive: true}
+	group := groupModels.ClassGroup{Name: "test-group", DisplayName: "Test Group", OwnerUserID: "creator-1"}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
 		GroupID:  group.ID,

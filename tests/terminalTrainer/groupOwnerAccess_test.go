@@ -1,6 +1,7 @@
 package terminalTrainer_tests
 
 import (
+	"time"
 	"testing"
 
 	groupModels "soli/formations/src/groups/models"
@@ -32,7 +33,6 @@ func TestGroupOwnerAccess_OwnerGetsOwnerAccess(t *testing.T) {
 		Name:        "devops-class",
 		DisplayName: "DevOps Class",
 		OwnerUserID: trainerUserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	err = db.Omit("Metadata").Create(group).Error
@@ -67,7 +67,6 @@ func TestGroupOwnerAccess_OwnerAlsoGetsGroupAccess(t *testing.T) {
 		Name:        "devops-class",
 		DisplayName: "DevOps Class",
 		OwnerUserID: trainerUserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	err = db.Omit("Metadata").Create(group).Error
@@ -103,7 +102,6 @@ func TestGroupOwnerAccess_RegularMemberNoAccess(t *testing.T) {
 		Name:        "devops-class",
 		DisplayName: "DevOps Class",
 		OwnerUserID: trainerUserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	err = db.Omit("Metadata").Create(group).Error
@@ -139,13 +137,11 @@ func TestGroupOwnerAccess_InactiveGroup_NoAccess(t *testing.T) {
 		Name:        "archived-class",
 		DisplayName: "Archived Class",
 		OwnerUserID: trainerUserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	err = db.Omit("Metadata").Create(group).Error
 	require.NoError(t, err)
-	// Deactivate after creation to bypass GORM zero-value skip
-	err = db.Model(group).Update("is_active", false).Error
+	err = db.Model(group).Update("archived_at", time.Now()).Error
 	require.NoError(t, err)
 
 	// Add student as an active member of the inactive group
@@ -178,7 +174,6 @@ func TestGroupOwnerAccess_UserNotInGroup_NoAccess(t *testing.T) {
 		Name:        "devops-class",
 		DisplayName: "DevOps Class",
 		OwnerUserID: trainerUserID,
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	err = db.Omit("Metadata").Create(group).Error

@@ -60,7 +60,6 @@ func seedWallGroup(t *testing.T, db *gorm.DB, groupName, learnerID string) *grou
 		Name:        groupName,
 		DisplayName: groupName,
 		OwnerUserID: "wall-owner",
-		IsActive:    true,
 		MaxMembers:  50,
 	}
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)

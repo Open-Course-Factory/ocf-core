@@ -26,7 +26,7 @@ func createClassGroup(t *testing.T, db *gorm.DB, name, ownerUserID string, orgID
 	t.Helper()
 	group := groupModels.ClassGroup{
 		Name: name, DisplayName: name, OwnerUserID: ownerUserID,
-		OrganizationID: orgID, MaxMembers: 50, IsActive: true,
+		OrganizationID: orgID, MaxMembers: 50,
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 	return group
@@ -267,7 +267,7 @@ func TestGetManagedGroupsOverview_InactiveAndExpiredGroups_AreListedAndFlagged(t
 
 	archived := createClassGroup(t, db, "b-archived", teacher, nil)
 	require.NoError(t, db.Model(&groupModels.ClassGroup{}).Where("id = ?", archived.ID).
-		Update("is_active", false).Error)
+		Update("archived_at", time.Now()).Error)
 
 	past := time.Now().Add(-24 * time.Hour)
 	expired := createClassGroup(t, db, "c-expired", teacher, nil)
@@ -280,18 +280,20 @@ func TestGetManagedGroupsOverview_InactiveAndExpiredGroups_AreListedAndFlagged(t
 	require.Len(t, items, 3)
 
 	byID := summaryByGroupID(items)
+	assert.Nil(t, byID[live.ID].ArchivedAt)
 	assert.True(t, byID[live.ID].IsActive)
 	assert.False(t, byID[live.ID].IsExpired)
 
-	assert.False(t, byID[archived.ID].IsActive, "archived class listed with is_active=false")
+	assert.NotNil(t, byID[archived.ID].ArchivedAt, "archived class listed with archived_at set")
+	assert.False(t, byID[archived.ID].IsActive, "the transitional is_active follows archived_at")
 	assert.False(t, byID[archived.ID].IsExpired)
 
-	assert.True(t, byID[expired.ID].IsActive, "expiry is independent of the is_active switch")
+	assert.Nil(t, byID[expired.ID].ArchivedAt, "expiry is archive PENDING, not archived: the cron stamps it")
 	assert.True(t, byID[expired.ID].IsExpired)
 	require.NotNil(t, byID[expired.ID].ExpiresAt)
 
-	// Active groups sort before archived ones.
-	assert.False(t, items[len(items)-1].IsActive, "the archived class sorts last")
+	// Open groups sort before archived ones.
+	assert.NotNil(t, items[len(items)-1].ArchivedAt, "the archived class sorts last")
 }
 
 // TestGetManagedGroupsOverview_GroupWithNoActivity_ReturnsZeroedRow pins the

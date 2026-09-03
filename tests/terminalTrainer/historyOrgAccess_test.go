@@ -341,7 +341,6 @@ func createTestGroupForHistory(t *testing.T, db *gorm.DB, ownerUserID string, or
 		OwnerUserID:    ownerUserID,
 		OrganizationID: orgID,
 		MaxMembers:     50,
-		IsActive:       true,
 	}
 	err := db.Omit("Metadata").Create(group).Error
 	require.NoError(t, err)
