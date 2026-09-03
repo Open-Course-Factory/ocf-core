@@ -427,6 +427,9 @@ func TestScenarioList_HidesArchivedByDefault_AndIncludeArchivedShowsThem(t *test
 
 	assert.ElementsMatch(t, []string{"list-active"}, listNames(""),
 		"the generic list hides archived scenarios unless asked")
+	assert.ElementsMatch(t, []string{"list-active"}, listNames("?include_archived=false"),
+		"include_archived is a list option, not a column filter: false must "+
+			"answer 200 with the default scope, never 404")
 	assert.ElementsMatch(t, []string{"list-active", "list-archived"}, listNames("?include_archived=true"),
 		"the admin scenarios page relies on include_archived to offer Restore")
 }
@@ -449,4 +452,38 @@ func TestPermissionSetup_ScenarioArchiveRoute_DeclaredOnce(t *testing.T) {
 				"second declaration in scenarios/routes/permissions.go would "+
 				"be a parallel rule waiting to drift", key)
 	}
+}
+
+func TestArchiveScenario_ResponseHasTheShapeOfAListRow(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "org-owner")
+	addOrgMember(t, db, orgID, "org-manager", orgModels.OrgRoleManager)
+	scenario := createTestScenarioForOrg(t, db, orgID, "archive-shape")
+	require.NoError(t, db.Model(&models.Scenario{}).Where("id = ?", scenario.ID).
+		Updates(map[string]any{"git_branch": "main", "git_repository": "https://example.org/labs.git"}).Error)
+
+	router := setupArchiveRouter(t, db, "org-manager", []string{"member"})
+
+	w := postArchive(t, router, scenario.ID, "archive")
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	var archived map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &archived))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios?include_archived=true", nil)
+	list := httptest.NewRecorder()
+	router.ServeHTTP(list, req)
+	require.Equal(t, http.StatusOK, list.Code, "body: %s", list.Body.String())
+	var body struct {
+		Data []map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(list.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	listed := body.Data[0]
+
+	assert.Equal(t, "main", archived["git_branch"],
+		"the old hand-written handler answered a different DTO (git_branch "+
+			"blank), which made the card shrink after archiving")
+	assert.Equal(t, listed, archived,
+		"the archive response must be the same object the list returns for "+
+			"that row, key for key, so the front can splice it in place")
 }
