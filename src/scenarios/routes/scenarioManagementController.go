@@ -1140,7 +1140,7 @@ func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Con
 
 // OrgDuplicateScenario godoc
 // @Summary Duplicate an organization scenario
-// @Description Create a deep copy of a scenario within an organization
+// @Description Create a deep copy of an organization scenario, or of a public catalogue scenario, into the organization
 // @Tags scenarios
 // @Produce json
 // @Param id path string true "Organization ID"
@@ -1171,9 +1171,11 @@ func (sc *scenarioManagementController) OrgDuplicateScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Verify scenario belongs to this organization
+	// The source is either the organisation's own scenario or one from the
+	// public catalogue — an org may copy the seeded catalogue to adapt it
 	var scenario models.Scenario
-	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
+	ownedOrPublic := sc.db.Where("organization_id = ?", orgID).Or(models.PublicCatalogue(sc.db))
+	if err := sc.db.Where("id = ?", scenarioID).Where(ownedOrPublic).First(&scenario).Error; err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "Scenario not found in this organization",
