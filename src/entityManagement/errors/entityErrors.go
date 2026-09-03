@@ -171,6 +171,16 @@ var (
 		Message:    "Cannot delete: foreign key constraint violation, entity is referenced by other records",
 		HTTPStatus: http.StatusConflict,
 	}
+
+	// ErrStateConflict indicates the current state of an entity forbids the
+	// requested write (an archived class enrolling a member, for instance).
+	// A hook returning it reaches the client as 409 instead of the generic
+	// hook-failure 500, which reads as "we broke" rather than "not any more".
+	ErrStateConflict = &EntityError{
+		Code:       "ENT012",
+		Message:    "The entity's current state forbids this operation",
+		HTTPStatus: http.StatusConflict,
+	}
 )
 
 // Helper constructors for common error scenarios
@@ -301,6 +311,19 @@ func NewInvalidCursorError(cursor string, reason string) *EntityError {
 	err.Details = map[string]any{
 		"cursor": cursor,
 		"reason": reason,
+	}
+	return &err
+}
+
+// NewStateConflictError wraps the domain reason (a sentinel such as
+// groupModels.ErrClassArchived) so errors.Is still finds it, and carries its
+// text in the details for the client.
+func NewStateConflictError(entityName string, reason error) *EntityError {
+	err := *ErrStateConflict
+	err.Err = reason
+	err.Details = map[string]any{
+		"entityName": entityName,
+		"reason":     reason.Error(),
 	}
 	return &err
 }
