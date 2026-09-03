@@ -242,7 +242,7 @@ func seedAssignedLicence(t *testing.T, db *gorm.DB, purchaserID, userID string) 
 
 func seedClassWithMember(t *testing.T, db *gorm.DB, orgID uuid.UUID, teacherID, studentID string) uuid.UUID {
 	t.Helper()
-	class := &groupModels.ClassGroup{Name: "class-" + uuid.NewString()[:8], DisplayName: "Class", OwnerUserID: teacherID, OrganizationID: &orgID, IsActive: true}
+	class := &groupModels.ClassGroup{Name: "class-" + uuid.NewString()[:8], DisplayName: "Class", OwnerUserID: teacherID, OrganizationID: &orgID}
 	class.ID = uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(class).Error)
 	gm := &groupModels.GroupMember{GroupID: class.ID, UserID: studentID, Role: groupModels.GroupMemberRoleMember, JoinedAt: time.Now(), IsActive: true}
