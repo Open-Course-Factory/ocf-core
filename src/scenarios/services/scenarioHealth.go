@@ -99,12 +99,17 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 	}
 
 	// A step with no way to pass it is a dead end the learner reaches with no
-	// warning: no check, no flag, and the adventure stops there.
+	// warning. What counts as "a way" depends on what kind of step it is, and
+	// asking only about verify scripts and flags called every quiz in the
+	// catalogue a dead end — six questions each, all answerable. A report that
+	// cries wolf on working content is one people learn to scroll past, which
+	// costs more than not having it.
 	stranded := []string{}
 	for _, step := range steps {
-		if step.VerifyScript == "" && step.VerifyScriptID == nil && !step.HasFlag {
-			stranded = append(stranded, fmt.Sprintf("%d", step.Order))
+		if stepHasAWayThrough(db, step) {
+			continue
 		}
+		stranded = append(stranded, fmt.Sprintf("%d", step.Order))
 	}
 	if len(stranded) > 0 {
 		report.Findings = append(report.Findings, ScenarioHealthFinding{
@@ -172,6 +177,32 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 	}
 
 	return report, nil
+}
+
+// stepHasAWayThrough answers the only question that matters about a step: can
+// the learner get past it?
+//
+// Each kind of step answers differently, and the answer belongs with the kinds
+// rather than with the health check — a second opinion about what makes a quiz
+// passable is exactly the drift this report exists to catch.
+func stepHasAWayThrough(db *gorm.DB, step models.ScenarioStep) bool {
+	switch normalizeStepType(step.StepType) {
+	case "quiz":
+		// Answering is the way through, so a quiz needs questions and nothing
+		// else. One with none is a dead end wearing a different hat.
+		var questions int64
+		if err := db.Model(&models.ScenarioStepQuestion{}).
+			Where("step_id = ?", step.ID).Count(&questions).Error; err != nil {
+			// Unreadable is not the same as absent: say nothing rather than
+			// accuse a step on the strength of a failed query.
+			return true
+		}
+		return questions > 0
+	case "info":
+		// Nothing to do but read it.
+		return true
+	}
+	return step.VerifyScript != "" || step.VerifyScriptID != nil || step.HasFlag
 }
 
 // coverageDetail says, in numbers, why a language is not offered.
