@@ -189,6 +189,7 @@ func main() {
 	cron.StartAuditLogCleanupJob(sqldb.DB) // Start audit log cleanup (retention management)
 	cron.StartEmailVerificationCleanupJob(sqldb.DB)    // Clean up expired email verification tokens
 	cron.StartScenarioSessionCleanupJob(sqldb.DB)      // Abandon zombie scenario sessions with dead terminals
+	cron.StartClassAutoArchiveJob(sqldb.DB)            // Archive classes past their expires_at (#491)
 
 	// Background job: close idle impersonation sessions every minute. Mirrors
 	// the safety net described in src/auth/services/impersonationService.go.
