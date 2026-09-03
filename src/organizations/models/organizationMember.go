@@ -1,12 +1,14 @@
 package models
 
 import (
+	"errors"
 	"time"
 
 	access "soli/formations/src/auth/access"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // OrganizationMemberRole represents the role of a member within an organization
@@ -28,6 +30,14 @@ type OrganizationMember struct {
 	JoinedAt       time.Time              `gorm:"not null" json:"joined_at"`
 	IsActive       bool                   `gorm:"default:true" json:"is_active"`
 
+	// Offboarding state. A member is *active* (is_active), *removed*
+	// (!is_active, left_at NULL — plain deactivation) or *offboarded*
+	// (left_at set). left_at is evidence, never a gate: every entitlement
+	// check keeps reading is_active, so "offboarded grants nothing" has no
+	// predicate of its own.
+	LeftAt             *time.Time `json:"left_at,omitempty"`
+	ScheduledErasureAt *time.Time `gorm:"index" json:"scheduled_erasure_at,omitempty"`
+
 	// Optional metadata (custom fields per member)
 	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
 
@@ -47,6 +57,26 @@ func (om OrganizationMember) GetReferenceObject() string {
 // TableName specifies the table name
 func (OrganizationMember) TableName() string {
 	return "organization_members"
+}
+
+// ErrMemberOffboarded is returned when a write targets a membership that is
+// offboarded and must go through the reinstate action instead.
+var ErrMemberOffboarded = errors.New("this user was offboarded from the organization; reinstate the membership instead of adding it again")
+
+// IsOffboarded reports whether the member left through offboarding (as
+// opposed to a plain deactivation).
+func (om *OrganizationMember) IsOffboarded() bool {
+	return om.LeftAt != nil
+}
+
+// DueForErasureScope is the single owner of "which departed members are due
+// for erasure": offboarded, and past their scheduled erasure date. The daily
+// job is its only reader; the members list exposes scheduled_erasure_at and
+// never recomputes due-ness.
+func DueForErasureScope(now time.Time) func(*gorm.DB) *gorm.DB {
+	return func(tx *gorm.DB) *gorm.DB {
+		return tx.Where("left_at IS NOT NULL AND scheduled_erasure_at IS NOT NULL AND scheduled_erasure_at <= ?", now)
+	}
 }
 
 // IsOwner checks if this member is the organization owner

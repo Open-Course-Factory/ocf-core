@@ -26,6 +26,13 @@ func InitOrganizationHooks(db *gorm.DB) {
 		log.Println("✅ Organization plan protection hook registered")
 	}
 
+	retentionHook := NewOrganizationRetentionAuthorizationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(retentionHook); err != nil {
+		log.Printf("❌ Failed to register organization retention authorization hook: %v", err)
+	} else {
+		log.Println("✅ Organization retention authorization hook registered")
+	}
+
 	// Hook for setting up organization owner and creating owner member
 	ownerSetupHook := NewOrganizationOwnerSetupHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(ownerSetupHook); err != nil {

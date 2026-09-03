@@ -36,6 +36,10 @@ type EditOrganizationInput struct {
 	IdleWindowEphemeralSeconds  *int `json:"idle_window_ephemeral_seconds,omitempty" mapstructure:"idle_window_ephemeral_seconds"`
 	IdleWindowPersistentSeconds *int `json:"idle_window_persistent_seconds,omitempty" mapstructure:"idle_window_persistent_seconds"`
 	IdleWindowHardCapSeconds    *int `json:"idle_window_hard_cap_seconds,omitempty" mapstructure:"idle_window_hard_cap_seconds"`
+
+	// Retention of a departed member's data, in days. Owner-only (enforced by
+	// OrganizationRetentionAuthorizationHook); nil/omitted = platform default.
+	RetentionDays *int `json:"retention_days,omitempty" mapstructure:"retention_days"`
 }
 
 // OrganizationOutput represents the output for an organization
@@ -60,6 +64,9 @@ type OrganizationOutput struct {
 	IdleWindowEphemeralSeconds  *int `json:"idle_window_ephemeral_seconds,omitempty"`
 	IdleWindowPersistentSeconds *int `json:"idle_window_persistent_seconds,omitempty"`
 	IdleWindowHardCapSeconds    *int `json:"idle_window_hard_cap_seconds,omitempty"`
+
+	// Retention of a departed member's data (nil = platform default)
+	RetentionDays *int `json:"retention_days,omitempty"`
 
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`

@@ -40,6 +40,7 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 						IdleWindowEphemeralSeconds:  org.IdleWindowEphemeralSeconds,
 						IdleWindowPersistentSeconds: org.IdleWindowPersistentSeconds,
 						IdleWindowHardCapSeconds:    org.IdleWindowHardCapSeconds,
+						RetentionDays:               org.RetentionDays,
 						CreatedAt:                   org.CreatedAt,
 						UpdatedAt:                   org.UpdatedAt,
 					}
@@ -172,6 +173,9 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 					}
 					if input.IdleWindowHardCapSeconds != nil {
 						updates["idle_window_hard_cap_seconds"] = *input.IdleWindowHardCapSeconds
+					}
+					if input.RetentionDays != nil {
+						updates["retention_days"] = *input.RetentionDays
 					}
 					return updates
 				},

@@ -31,6 +31,8 @@ func RegisterOrganizationMember(service *ems.EntityRegistrationService) {
 						Metadata:       member.Metadata,
 						CreatedAt:      member.CreatedAt,
 						UpdatedAt:      member.UpdatedAt,
+						LeftAt:             member.LeftAt,
+						ScheduledErasureAt: member.ScheduledErasureAt,
 					}
 
 					// Include organization if loaded

@@ -37,6 +37,11 @@ type EditOrganizationMemberInput struct {
 	Metadata *map[string]any        `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
+// OffboardMembersInput selects the members to offboard from an organization
+type OffboardMembersInput struct {
+	UserIDs []string `json:"user_ids" binding:"required"`
+}
+
 // OrganizationMemberOutput represents the output for an organization member
 type OrganizationMemberOutput struct {
 	ID             uuid.UUID                     `json:"id"`
@@ -49,6 +54,13 @@ type OrganizationMemberOutput struct {
 	Metadata       map[string]any        `json:"metadata,omitempty"`
 	CreatedAt      time.Time                     `json:"created_at"`
 	UpdatedAt      time.Time                     `json:"updated_at"`
+
+	// Offboarding state (set only for offboarded members). erasure_blocked_reason
+	// is computed when the list is built, never stored: it is the reason the
+	// erasure would refuse with today (still active elsewhere, still owns groups).
+	LeftAt               *time.Time `json:"left_at,omitempty"`
+	ScheduledErasureAt   *time.Time `json:"scheduled_erasure_at,omitempty"`
+	ErasureBlockedReason string     `json:"erasure_blocked_reason,omitempty"`
 
 	// Optional organization details (loaded via ?include=Organization)
 	Organization *OrganizationOutput `json:"organization,omitempty"`

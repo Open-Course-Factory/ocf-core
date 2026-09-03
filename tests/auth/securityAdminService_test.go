@@ -854,7 +854,8 @@ func createTestServiceWithEntityDB(t *testing.T, mockEnforcer *mocks.MockEnforce
 	err = db.Exec(`CREATE TABLE organizations (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
-		display_name TEXT NOT NULL DEFAULT ''
+		display_name TEXT NOT NULL DEFAULT '',
+		retention_days INTEGER
 	)`).Error
 	require.NoError(t, err)
 

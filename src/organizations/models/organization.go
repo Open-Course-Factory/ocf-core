@@ -1,6 +1,7 @@
 package models
 
 import (
+	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupModels "soli/formations/src/groups/models"
 
@@ -78,6 +79,11 @@ type Organization struct {
 	IdleWindowPersistentSeconds *int `json:"idle_window_persistent_seconds,omitempty"`
 	IdleWindowHardCapSeconds    *int `json:"idle_window_hard_cap_seconds,omitempty"`
 
+	// How long a departed member's data is kept before erasure. The organization
+	// is the data controller and owns this figure; nil means the platform default
+	// (config.DefaultRetentionDays). Read it through EffectiveRetentionDays.
+	RetentionDays *int `json:"retention_days,omitempty"`
+
 	// Relations
 	Groups  []groupModels.ClassGroup `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"groups,omitempty"`
 	Members []OrganizationMember     `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`
@@ -142,6 +148,15 @@ func (o *Organization) CanUserManageOrganization(userID string) bool {
 	// Check if user is a manager
 	role := o.GetMemberRole(userID)
 	return role == OrgRoleOwner || role == OrgRoleManager
+}
+
+// EffectiveRetentionDays is the single owner of "how long after leaving is a
+// member erased": the organization's own figure, else the platform default.
+func (o *Organization) EffectiveRetentionDays() int {
+	if o.RetentionDays != nil {
+		return *o.RetentionDays
+	}
+	return config.DefaultRetentionDays()
 }
 
 // IsFull checks if the organization has reached its member limit
