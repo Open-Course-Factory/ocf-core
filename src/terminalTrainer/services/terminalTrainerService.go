@@ -1,6 +1,7 @@
 package services
 
 import (
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"context"
 	"fmt"
 	"os"
@@ -1072,7 +1073,8 @@ func (tts *terminalTrainerService) GetUserConsentStatus(userID string) (bool, st
 
 	for _, member := range groupMembers {
 		var group groupModels.ClassGroup
-		if err := tts.db.Where("id = ? AND is_active = ?", member.GroupID, true).First(&group).Error; err != nil {
+		if err := tts.db.Where("id = ?", member.GroupID).
+			Scopes(entityManagementModels.NotArchived("class_groups")).First(&group).Error; err != nil {
 			continue
 		}
 		// Group-level override: explicit true means consent handled

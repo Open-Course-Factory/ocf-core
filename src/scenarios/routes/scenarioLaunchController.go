@@ -1,6 +1,7 @@
 package scenarioController
 
 import (
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	stderrors "errors"
 	"fmt"
 	"log/slog"
@@ -171,10 +172,8 @@ func (sc *scenarioLaunchController) StartScenario(ctx *gin.Context) {
 	if scenario.IsPublic {
 		// Public scenarios are available to everyone, skip assignment check
 	} else if !sc.hasAdminRole(ctx) {
-		var groupIDs []uuid.UUID
-		if err := sc.db.Model(&groupModels.GroupMember{}).
-			Where("user_id = ? AND is_active = true", userID).
-			Pluck("group_id", &groupIDs).Error; err != nil {
+		groupIDs, err := sc.openClassMembershipIDs(userID)
+		if err != nil {
 			slog.Error("failed to check group membership", "err", err)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
@@ -350,6 +349,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			if err := sc.db.Model(&groupModels.GroupMember{}).
 				Joins("JOIN class_groups cg ON cg.id = group_members.group_id").
 				Where("group_members.user_id = ? AND group_members.is_active = true AND cg.organization_id = ?", userID, *orgID).
+				Scopes(entityManagementModels.NotArchived("cg")).
 				Pluck("group_members.group_id", &groupIDs).Error; err != nil {
 				slog.Error("failed to get user group memberships for org", "err", err)
 			}
@@ -365,6 +365,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			if err := sc.db.Model(&groupModels.GroupMember{}).
 				Joins("JOIN class_groups cg ON cg.id = group_members.group_id").
 				Where("group_members.user_id = ? AND group_members.is_active = true AND cg.organization_id IS NULL", userID).
+				Scopes(entityManagementModels.NotArchived("cg")).
 				Pluck("group_members.group_id", &groupIDs).Error; err != nil {
 				slog.Error("failed to get user personal group memberships", "err", err)
 			}
@@ -415,10 +416,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	assignedScenarioIDs := make(map[uuid.UUID]bool)
 	isAdmin := sc.hasAdminRole(ctx)
 	if isAdmin {
-		var groupIDs []uuid.UUID
-		sc.db.Model(&groupModels.GroupMember{}).
-			Where("user_id = ? AND is_active = true", userID).
-			Pluck("group_id", &groupIDs)
+		groupIDs, _ := sc.openClassMembershipIDs(userID)
 		var orgIDs []uuid.UUID
 		sc.db.Model(&orgModels.OrganizationMember{}).
 			Where("user_id = ? AND is_active = true", userID).
@@ -873,6 +871,19 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 }
 
 
+// openClassMembershipIDs lists the classes userID is an active member of,
+// skipping archived ones: an assignment on an archived class authorises
+// nothing, which is why every access decision below reads its groups here.
+func (sc *scenarioLaunchController) openClassMembershipIDs(userID string) ([]uuid.UUID, error) {
+	var groupIDs []uuid.UUID
+	err := sc.db.Model(&groupModels.GroupMember{}).
+		Joins("JOIN class_groups ON class_groups.id = group_members.group_id AND class_groups.deleted_at IS NULL").
+		Where("group_members.user_id = ? AND group_members.is_active = true", userID).
+		Scopes(entityManagementModels.NotArchived("class_groups")).
+		Pluck("group_members.group_id", &groupIDs).Error
+	return groupIDs, err
+}
+
 // checkScenarioAccess checks if a user has access to a scenario via group or org assignments
 func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioID uuid.UUID) (bool, error) {
 	// Public scenarios are accessible to everyone
@@ -881,11 +892,8 @@ func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioI
 		return true, nil
 	}
 
-	// Get user's group IDs
-	var groupIDs []uuid.UUID
-	if err := sc.db.Model(&groupModels.GroupMember{}).
-		Where("user_id = ? AND is_active = true", userID).
-		Pluck("group_id", &groupIDs).Error; err != nil {
+	groupIDs, err := sc.openClassMembershipIDs(userID)
+	if err != nil {
 		return false, err
 	}
 

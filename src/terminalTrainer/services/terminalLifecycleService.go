@@ -1,6 +1,7 @@
 package services
 
 import (
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"fmt"
 	"strings"
 	"time"
@@ -287,8 +288,8 @@ func (l *terminalLifecycleService) HasTerminalAccess(terminalIDOrSessionID, user
 	return false, nil
 }
 
-// checkGroupOwnerAccess checks if requestingUserID is the owner of any active group
-// that terminalOwnerUserID is an active member of.
+// checkGroupOwnerAccess checks if requestingUserID is the owner of any open
+// (not archived) group that terminalOwnerUserID is an active member of.
 func (l *terminalLifecycleService) checkGroupOwnerAccess(terminalOwnerUserID, requestingUserID string) (bool, error) {
 	var count int64
 	err := l.db.Table("class_groups").
@@ -296,7 +297,7 @@ func (l *terminalLifecycleService) checkGroupOwnerAccess(terminalOwnerUserID, re
 		Where("class_groups.owner_user_id = ?", requestingUserID).
 		Where("group_members.user_id = ?", terminalOwnerUserID).
 		Where("group_members.is_active = ?", true).
-		Where("class_groups.is_active = ?", true).
+		Scopes(entityManagementModels.NotArchived("class_groups")).
 		Count(&count).Error
 	if err != nil {
 		return false, err

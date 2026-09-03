@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm"
 
 	access "soli/formations/src/auth/access"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupModels "soli/formations/src/groups/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 )
@@ -52,9 +53,12 @@ func callerManagesAnyGroup(db *gorm.DB, candidateIDs []uuid.UUID, callerUserID s
 		return "", false
 	}
 	// Restrict to ACTIVE groups (L1): an inactive class-group grants no authority.
+	// Live supervision is a grant, so an archived class is out; its past
+	// sessions stay reachable through the teacher dashboard.
 	var activeIDs []uuid.UUID
 	if err := db.Model(&groupModels.ClassGroup{}).
-		Where("id IN ? AND is_active = ?", candidateIDs, true).
+		Where("id IN ?", candidateIDs).
+		Scopes(entityManagementModels.NotArchived("class_groups")).
 		Pluck("id", &activeIDs).Error; err != nil || len(activeIDs) == 0 {
 		return "", false
 	}
