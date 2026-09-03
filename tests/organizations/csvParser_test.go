@@ -636,3 +636,47 @@ func TestParseUsersCSV_HeaderOnly_SemicolonDelimiter(t *testing.T) {
 	assert.Empty(t, errors)
 	assert.Empty(t, users)
 }
+
+func TestParseUsersCSV_ClassroomExportShape_BOMEmptyHeaderColumnTrailingSeparator(t *testing.T) {
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	body := "name;Né(e) le;Sexe;email;Heures manquées;;Entrée;Sortie\n" +
+		"DURAND Alice;12/03/2005;F;alice.durand@lycee-exemple.fr;0;;01/09/2025;\n" +
+		"MARTIN Bob;25/07/2004;M;bob.martin@lycee-exemple.fr;2;;01/09/2025;\n" +
+		"DE LA TOUR Chloé;03/11/2005;F;chloe.delatour@lycee-exemple.fr;1;;01/09/2025;\n"
+
+	fileHeader := createMultipartFileHeaderFromBytes(t, "users.csv", append(bom, body...))
+	users, errors, warnings := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "A BOM, an empty header column and a trailing separator must all be tolerated")
+	assert.Empty(t, warnings)
+	require.Len(t, users, 3)
+
+	assert.Equal(t, "alice.durand@lycee-exemple.fr", users[0].Email)
+	assert.Equal(t, "DURAND", users[0].LastName)
+	assert.Equal(t, "Alice", users[0].FirstName)
+
+	assert.Equal(t, "bob.martin@lycee-exemple.fr", users[1].Email)
+	assert.Equal(t, "MARTIN", users[1].LastName)
+	assert.Equal(t, "Bob", users[1].FirstName)
+
+	assert.Equal(t, "chloe.delatour@lycee-exemple.fr", users[2].Email)
+	assert.Equal(t, "DE LA TOUR", users[2].LastName)
+	assert.Equal(t, "Chloé", users[2].FirstName)
+}
+
+func TestParseUsersCSV_ClassroomExportShape_CommaConvertedCopy(t *testing.T) {
+	content := "name,Né(e) le,Sexe,email,Heures manquées,,Entrée,Sortie\n" +
+		"DURAND Alice,12/03/2005,F,alice.durand@lycee-exemple.fr,0,,01/09/2025,\n" +
+		"MARTIN Bob,25/07/2004,M,bob.martin@lycee-exemple.fr,2,,01/09/2025,\n"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors)
+	require.Len(t, users, 2)
+	assert.Equal(t, "alice.durand@lycee-exemple.fr", users[0].Email)
+	assert.Equal(t, "DURAND", users[0].LastName)
+	assert.Equal(t, "Alice", users[0].FirstName)
+	assert.Equal(t, "MARTIN", users[1].LastName)
+	assert.Equal(t, "Bob", users[1].FirstName)
+}
