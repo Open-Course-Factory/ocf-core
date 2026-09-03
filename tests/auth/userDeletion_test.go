@@ -134,6 +134,22 @@ func (m *mockCasdoorUserClient) DeleteUser(user *casdoorsdk.User) (bool, error) 
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *mockCasdoorUserClient) GetUserByEmail(email string) (*casdoorsdk.User, error) {
+	args := m.Called(email)
+	u, _ := args.Get(0).(*casdoorsdk.User)
+	return u, args.Error(1)
+}
+
+func (m *mockCasdoorUserClient) UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error) {
+	args := m.Called(user, columns)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *mockCasdoorUserClient) SetForbidden(userID string, forbidden bool) error {
+	args := m.Called(userID, forbidden)
+	return args.Error(0)
+}
+
 type mockPaymentDeletionHelper struct {
 	mock.Mock
 	recorder *callRecorder
