@@ -37,6 +37,14 @@ const (
 	AfterUpdate  HookType = "after_update"  // Executed after entity update (synchronous)
 	BeforeDelete HookType = "before_delete" // Executed before entity deletion (synchronous)
 	AfterDelete  HookType = "after_delete"  // Executed after entity deletion (synchronous)
+
+	// Archive lifecycle, fired by genericService.SetArchived for entities
+	// registered with Archivable: true. NewEntity is the loaded model,
+	// OldEntity is nil. A Before* error aborts the write.
+	BeforeArchive   HookType = "before_archive"
+	AfterArchive    HookType = "after_archive"
+	BeforeUnarchive HookType = "before_unarchive"
+	AfterUnarchive  HookType = "after_unarchive"
 )
 
 // HookContext contains all information available to a hook during execution.

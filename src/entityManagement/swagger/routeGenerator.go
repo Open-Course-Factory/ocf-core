@@ -547,6 +547,18 @@ func (dg *DocumentationGenerator) generateUpdateOperationSpec(operation *entityM
 func (dg *DocumentationGenerator) generateGetAllOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]any {
 	spec := dg.generateBaseOperationSpec(operation)
 
+	if ems.GlobalEntityRegistrationService.IsArchivable(entityName) {
+		spec["parameters"] = []map[string]any{
+			{
+				"name":        "include_archived",
+				"in":          "query",
+				"required":    false,
+				"description": "Also return archived rows (hidden by default)",
+				"schema":      map[string]any{"type": "boolean"},
+			},
+		}
+	}
+
 	spec["responses"] = map[string]any{
 		"200": map[string]any{
 			"description": fmt.Sprintf("List of %s", strings.ToLower(ems.Pluralize(entityName))),

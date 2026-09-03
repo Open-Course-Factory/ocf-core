@@ -68,6 +68,19 @@
 //   - Many-to-many: GET /courses?tagIDs=1,2,3
 //   - Nested relations: GET /pages?courseId=123 (via RelationshipFilter)
 //
+// # Archiving
+//
+// An entity opts into archiving by embedding models.Archivable next to
+// BaseModel and setting Archivable: true on its registration. The framework
+// then mounts POST /{entities}/:id/archive and /unarchive (access derived from
+// the entity's PATCH rule), fires BeforeArchive/AfterArchive and
+// BeforeUnarchive/AfterUnarchive hooks around an explicit archived_at write,
+// and hides archived rows from GET /{entities} unless ?include_archived=true.
+// GET /{entities}/:id still returns an archived row. Hand-written queries use
+// models.NotArchived(table) — the same predicate the list filter emits. Who may
+// archive, and what an archived row still permits, is enforced by the entity's
+// own BeforeArchive hook; startup warns when an archivable entity has none.
+//
 // # Permissions
 //
 // Integrates with Casbin for role-based access control. Permissions are

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"soli/formations/src/auth/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	filterStrategies "soli/formations/src/entityManagement/repositories/filters"
 	"soli/formations/src/utils"
 	"strconv"
 	"strings"
@@ -71,7 +72,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 
 	// Extract filter parameters (all query params except pagination and include params)
 	filters := make(map[string]any)
-	excludedParams := map[string]bool{"page": true, "size": true, "cursor": true, "limit": true, "include": true}
+	excludedParams := map[string]bool{"page": true, "size": true, "cursor": true, "limit": true, "include": true, "include_archived": true}
 	for key, values := range ctx.Request.URL.Query() {
 		if !excludedParams[key] && len(values) > 0 {
 			// Handle comma-separated values for array filters
@@ -142,6 +143,12 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	if vis := visibilityScope(ctx, entityName); vis != nil {
 		column := genericController.db.Config.NamingStrategy.ColumnName("", vis.Field)
 		filters[column] = true
+	}
+
+	// Archive scope: list only. An archivable entity hides its archived rows
+	// unless the caller asks for them; get-by-id never hides one.
+	if archiveReadScope(ctx, entityName) {
+		filters[filterStrategies.NotArchivedKey] = true
 	}
 
 	// Use cursor pagination if cursor param is present (even if empty for first page)
