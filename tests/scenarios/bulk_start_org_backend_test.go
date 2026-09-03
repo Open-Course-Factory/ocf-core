@@ -285,3 +285,18 @@ func (m *capturingTTService) BuildComplete(sessionID string) error {
 	m.buildCompleted = append(m.buildCompleted, sessionID)
 	return nil
 }
+
+// Exposed-ports stubs satisfy TerminalTrainerService. These tests never
+// exercise port exposure.
+func (m *capturingTTService) CreateExposedPort(sessionID string, containerPort int) (*ttDto.ExposedPortResponse, error) {
+	return nil, nil
+}
+func (m *capturingTTService) ListExposedPorts(sessionID string) ([]ttDto.ExposedPortResponse, error) {
+	return nil, nil
+}
+func (m *capturingTTService) DeleteExposedPort(sessionID string, exposedPortID uuid.UUID) error {
+	return nil
+}
+func (m *capturingTTService) GetActiveExposedPortsForTraefik() ([]ttModels.ExposedPort, error) {
+	return nil, nil
+}

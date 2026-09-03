@@ -54,6 +54,26 @@ type TerminalRepository interface {
 
 	// Cleanup methods
 	CleanupExpiredSessions() error
+
+	// Exposed ports (public port publication via Traefik, opt-in feature).
+	CreateExposedPort(exposedPort *models.ExposedPort) error
+	GetExposedPortsBySessionID(sessionID string) (*[]models.ExposedPort, error)
+	GetExposedPortByID(id uuid.UUID) (*models.ExposedPort, error)
+	CountExposedPortsBySessionID(sessionID string) (int64, error)
+	DeleteExposedPort(id uuid.UUID) error
+	// DeleteExposedPortsBySessionID removes every exposure for a session —
+	// called when a terminal is stopped/deleted so a Traefik route never
+	// outlives the container it points to.
+	DeleteExposedPortsBySessionID(sessionID string) error
+	// GetActiveExposedPortsForTraefik returns every exposure whose owning
+	// terminal is currently running (models.RunningDisplayScope) and whose
+	// own ExpiresAt has not passed — the exact set the Traefik dynamic-config
+	// endpoint must publish. A session that stopped or expired drops out
+	// automatically without any explicit cleanup call.
+	GetActiveExposedPortsForTraefik() (*[]models.ExposedPort, error)
+	// CleanupExpiredExposedPorts hard-deletes exposures past their ExpiresAt,
+	// called from the same sweep as CleanupExpiredSessions.
+	CleanupExpiredExposedPorts() error
 }
 
 type terminalRepository struct {
@@ -319,9 +339,18 @@ func (r *terminalRepository) CleanupExpiredSessions() error {
 	// State is the SSOT — past-expiry rows that aren't already marked as
 	// terminated get flipped to StateDeleted so they stop appearing in active
 	// queries and the slot accounting is correct.
-	return r.db.Model(&models.Terminal{}).
+	if err := r.db.Model(&models.Terminal{}).
 		Where("expires_at < NOW() AND state NOT IN ?", []models.TerminalState{models.StateDeleted, models.StateStopped}).
-		Update("state", models.StateDeleted).Error
+		Update("state", models.StateDeleted).Error; err != nil {
+		return err
+	}
+	// Exposed ports carry their own expiry (mirrored from the terminal's at
+	// creation time) — sweep them in the same pass so a Traefik route never
+	// outlives a session whose expiry cleanup already ran.
+	if err := r.CleanupExpiredExposedPorts(); err != nil {
+		utils.Warn("CleanupExpiredSessions: failed to sweep expired exposed ports: %v", err)
+	}
+	return nil
 }
 
 func (tr *terminalRepository) GetAllActiveUserKeys() (*[]models.UserTerminalKey, error) {
@@ -415,6 +444,67 @@ func (tr *terminalRepository) GetOrphanedLocalSessions(apiSessionIDs []string) (
 	}
 
 	return &orphanedSessions, nil
+}
+
+// CreateExposedPort persists a new port publication.
+func (r *terminalRepository) CreateExposedPort(exposedPort *models.ExposedPort) error {
+	return r.db.Create(exposedPort).Error
+}
+
+// GetExposedPortsBySessionID lists every exposure (active or not) for a
+// session, newest first — used by the owner-facing list endpoint.
+func (r *terminalRepository) GetExposedPortsBySessionID(sessionID string) (*[]models.ExposedPort, error) {
+	var exposedPorts []models.ExposedPort
+	err := r.db.Where("session_id = ?", sessionID).Order("created_at DESC").Find(&exposedPorts).Error
+	if err != nil {
+		return nil, err
+	}
+	return &exposedPorts, nil
+}
+
+func (r *terminalRepository) GetExposedPortByID(id uuid.UUID) (*models.ExposedPort, error) {
+	var exposedPort models.ExposedPort
+	if err := r.db.Where("id = ?", id).First(&exposedPort).Error; err != nil {
+		return nil, err
+	}
+	return &exposedPort, nil
+}
+
+// CountExposedPortsBySessionID backs the per-session exposure cap enforced
+// by exposedPortService.
+func (r *terminalRepository) CountExposedPortsBySessionID(sessionID string) (int64, error) {
+	var count int64
+	err := r.db.Model(&models.ExposedPort{}).Where("session_id = ?", sessionID).Count(&count).Error
+	return count, err
+}
+
+func (r *terminalRepository) DeleteExposedPort(id uuid.UUID) error {
+	return r.db.Where("id = ?", id).Delete(&models.ExposedPort{}).Error
+}
+
+func (r *terminalRepository) DeleteExposedPortsBySessionID(sessionID string) error {
+	return r.db.Where("session_id = ?", sessionID).Delete(&models.ExposedPort{}).Error
+}
+
+// GetActiveExposedPortsForTraefik joins exposed_ports to terminals so a
+// session that is no longer running (stopped/deleted/expired) never
+// contributes a route, without requiring StopSession/DeleteSession to
+// remember to clean up exposed_ports themselves.
+func (r *terminalRepository) GetActiveExposedPortsForTraefik() (*[]models.ExposedPort, error) {
+	var exposedPorts []models.ExposedPort
+	err := r.db.
+		Joins("JOIN terminals ON terminals.session_id = exposed_ports.session_id").
+		Scopes(models.RunningDisplayScope).
+		Where("exposed_ports.expires_at > ?", time.Now()).
+		Find(&exposedPorts).Error
+	if err != nil {
+		return nil, err
+	}
+	return &exposedPorts, nil
+}
+
+func (r *terminalRepository) CleanupExpiredExposedPorts() error {
+	return r.db.Where("expires_at < ?", time.Now()).Delete(&models.ExposedPort{}).Error
 }
 
 // Méthode pour obtenir des statistiques de synchronisation

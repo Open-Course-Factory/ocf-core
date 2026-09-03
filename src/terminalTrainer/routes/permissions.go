@@ -48,6 +48,15 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get command history for a terminal session (controller-enforced ownership)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "DELETE", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete command history for a terminal session (controller-enforced ownership)"},
 
+		// Exposed ports (opt-in public URL publication via Traefik). Same
+		// SelfScoped-with-controller-enforcement pattern as the other
+		// `:id`-scoped routes above: `:id` is the tt-backend session_id, and
+		// RequireTerminalAccess (mounted in the route chain) is the real
+		// ownership gate.
+		access.RoutePermission{Path: "/api/v1/terminals/:id/exposed-ports", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Publish a session port to a public URL (controller-enforced ownership + plan gate)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/exposed-ports", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "List a session's exposed ports (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/exposed-ports/:portId", Method: "DELETE", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Stop exposing a session port (controller-enforced ownership)"},
+
 		// Access status (self-scoped - checks own access level)
 		access.RoutePermission{Path: "/api/v1/terminals/:id/access-status", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Check current user's access level for a terminal"},
 

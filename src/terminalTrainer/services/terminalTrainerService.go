@@ -128,6 +128,13 @@ type TerminalTrainerService interface {
 	// BuildComplete removes the features a session held only while it was
 	// being provisioned. Called once the scenario's setup has run.
 	BuildComplete(sessionID string) error
+
+	// Exposed ports (opt-in: operator config + plan.PortExposureEnabled).
+	// See exposedPortService for the full contract; these delegate.
+	CreateExposedPort(sessionID string, containerPort int) (*dto.ExposedPortResponse, error)
+	ListExposedPorts(sessionID string) ([]dto.ExposedPortResponse, error)
+	DeleteExposedPort(sessionID string, exposedPortID uuid.UUID) error
+	GetActiveExposedPortsForTraefik() ([]models.ExposedPort, error)
 }
 
 type terminalTrainerService struct {
@@ -146,6 +153,7 @@ type terminalTrainerService struct {
 	lifecycle              *terminalLifecycleService
 	composer               *terminalComposer
 	history                *terminalHistoryService
+	exposedPorts           *exposedPortService
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -185,6 +193,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		sync:                   sync,
 		lifecycle:              newTerminalLifecycleService(proxy, sync, repository, db),
 		history:                newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
+		exposedPorts:           newExposedPortService(proxy, repository, db),
 	}
 
 	// Constructed last: the composer takes the facade's CreateUserKey as a
@@ -382,6 +391,25 @@ func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 
 func (tts *terminalTrainerService) BuildComplete(sessionID string) error {
 	return tts.lifecycle.BuildComplete(sessionID)
+}
+
+// The following methods delegate to exposedPortService, which owns the
+// public-port-publication concern (see that file's doc comment).
+
+func (tts *terminalTrainerService) CreateExposedPort(sessionID string, containerPort int) (*dto.ExposedPortResponse, error) {
+	return tts.exposedPorts.CreateExposedPort(sessionID, containerPort)
+}
+
+func (tts *terminalTrainerService) ListExposedPorts(sessionID string) ([]dto.ExposedPortResponse, error) {
+	return tts.exposedPorts.ListExposedPorts(sessionID)
+}
+
+func (tts *terminalTrainerService) DeleteExposedPort(sessionID string, exposedPortID uuid.UUID) error {
+	return tts.exposedPorts.DeleteExposedPort(sessionID, exposedPortID)
+}
+
+func (tts *terminalTrainerService) GetActiveExposedPortsForTraefik() ([]models.ExposedPort, error) {
+	return tts.exposedPorts.GetActiveExposedPortsForTraefik()
 }
 
 // The following methods delegate to terminalSyncService, which owns the

@@ -335,3 +335,18 @@ func TestBulkStartScenario_ReplacesInProgressSessions(t *testing.T) {
 // BuildComplete satisfies TerminalTrainerService. These tests never exercise
 // the provisioning window, so the stub reports success without recording.
 func (m *mockTTService) BuildComplete(sessionID string) error { return nil }
+
+// Exposed-ports stubs satisfy TerminalTrainerService. These tests never
+// exercise port exposure.
+func (m *mockTTService) CreateExposedPort(sessionID string, containerPort int) (*ttDto.ExposedPortResponse, error) {
+	return nil, nil
+}
+func (m *mockTTService) ListExposedPorts(sessionID string) ([]ttDto.ExposedPortResponse, error) {
+	return nil, nil
+}
+func (m *mockTTService) DeleteExposedPort(sessionID string, exposedPortID uuid.UUID) error {
+	return nil
+}
+func (m *mockTTService) GetActiveExposedPortsForTraefik() ([]ttModels.ExposedPort, error) {
+	return nil, nil
+}

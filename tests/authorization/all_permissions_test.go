@@ -141,6 +141,10 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/terminals/session-options", "GET"},
 		{"/api/v1/terminals/start-composed-session", "POST"},
 		{"/api/v1/terminals/capacity-check", "GET"},
+		// Exposed ports (opt-in public URL publication via Traefik).
+		{"/api/v1/terminals/:id/exposed-ports", "POST"},
+		{"/api/v1/terminals/:id/exposed-ports", "GET"},
+		{"/api/v1/terminals/:id/exposed-ports/:portId", "DELETE"},
 		// User terminal keys
 		{"/api/v1/user-terminal-keys/regenerate", "POST"},
 		{"/api/v1/user-terminal-keys/my-key", "GET"},

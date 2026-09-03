@@ -125,6 +125,17 @@ func (l *terminalLifecycleService) StopSession(sessionID string) error {
 		return err
 	}
 
+	// A stopped/resumable session may come back with a different container
+	// IP (tt-backend reassigns on resume) — any exposed-port row created
+	// before the stop would then route Traefik to a stale address. Drop them
+	// here rather than relying on GetActiveExposedPortsForTraefik's
+	// RunningDisplayScope filter, which only stops advertising them while
+	// stopped but would resurrect the (now wrong) IP the moment the session
+	// resumes to running.
+	if err := l.repository.DeleteExposedPortsBySessionID(sessionID); err != nil {
+		utils.Warn("failed to clear exposed ports for stopped session %s: %v", sessionID, err)
+	}
+
 	// 3. Auto-abandon any active scenario sessions linked to this terminal
 	result := l.db.Model(&struct{}{}).Table("scenario_sessions").
 		Where("terminal_session_id = ? AND status IN ?", sessionID, []string{"active", "provisioning", "in_progress"}).
@@ -240,6 +251,10 @@ func (l *terminalLifecycleService) DeleteSession(sessionID string) error {
 	if err := l.repository.UpdateTerminalSession(terminal); err != nil {
 		utils.Error("Failed to update session %s after delete: %v", sessionID, err)
 		return err
+	}
+
+	if err := l.repository.DeleteExposedPortsBySessionID(sessionID); err != nil {
+		utils.Warn("failed to clear exposed ports for deleted session %s: %v", sessionID, err)
 	}
 
 	// Auto-abandon any scenario run linked to this terminal. The status list

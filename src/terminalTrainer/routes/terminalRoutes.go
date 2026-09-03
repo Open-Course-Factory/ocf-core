@@ -49,6 +49,17 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	// Console access requires terminal ownership (Layer 2 security check)
 	routes.GET("/:id/console", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.ConnectConsole)
 
+	// Exposed ports: opt-in publication of a session port to a public URL via
+	// Traefik. Mounted only when the operator has configured EXPOSE_DOMAIN +
+	// TRAEFIK_PROVIDER_SECRET — see services.IsExposedPortsFeatureEnabled and
+	// the plan doc's "disabled by default" contract. Without this, the
+	// feature is entirely absent (404) rather than merely plan-gated.
+	if terminalServices.IsExposedPortsFeatureEnabled() {
+		routes.POST("/:id/exposed-ports", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.CreateExposedPort)
+		routes.GET("/:id/exposed-ports", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.ListExposedPorts)
+		routes.DELETE("/:id/exposed-ports/:portId", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.DeleteExposedPort)
+	}
+
 	// Supervision (#425): observe a learner's terminal + broker take-hand. The
 	// controller derives the learner's group server-side and enforces manager+
 	// (HasSupervisionAccess) plus the plan feature — hence AuthManagement only.

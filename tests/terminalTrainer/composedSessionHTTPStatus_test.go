@@ -346,3 +346,18 @@ func TestStartComposedSession_ServerError_ShouldReturn500(t *testing.T) {
 // BuildComplete satisfies TerminalTrainerService. These tests never exercise
 // the provisioning window, so the stub reports success without recording.
 func (m *mockTerminalTrainerService) BuildComplete(sessionID string) error { return nil }
+
+// Exposed-ports stubs satisfy TerminalTrainerService. These tests never
+// exercise port exposure.
+func (m *mockTerminalTrainerService) CreateExposedPort(sessionID string, containerPort int) (*dto.ExposedPortResponse, error) {
+	return nil, nil
+}
+func (m *mockTerminalTrainerService) ListExposedPorts(sessionID string) ([]dto.ExposedPortResponse, error) {
+	return nil, nil
+}
+func (m *mockTerminalTrainerService) DeleteExposedPort(sessionID string, exposedPortID uuid.UUID) error {
+	return nil
+}
+func (m *mockTerminalTrainerService) GetActiveExposedPortsForTraefik() ([]models.ExposedPort, error) {
+	return nil, nil
+}

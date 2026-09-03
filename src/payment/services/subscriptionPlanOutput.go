@@ -63,6 +63,7 @@ func SubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.SubscriptionPla
 		IsDefaultFree:             plan.IsDefaultFree,
 		SeatUnit:                  plan.SeatUnit,
 		NetworkAccessEnabled:      plan.NetworkAccessEnabled,
+		PortExposureEnabled:       plan.PortExposureEnabled,
 		DataPersistenceEnabled:    plan.DataPersistenceEnabled,
 		SessionSupervisionEnabled: plan.SessionSupervisionEnabled,
 

@@ -51,6 +51,13 @@ type SubscriptionPlan struct {
 	MaxMemoryMB int `gorm:"default:0" mapstructure:"max_memory_mb" json:"max_memory_mb"` // Total RAM budget in MiB; 0 = unlimited
 
 	NetworkAccessEnabled      bool `gorm:"default:false" json:"network_access_enabled"`                                           // Allow external network access
+	// PortExposureEnabled gates the ability to publish a port from inside a
+	// terminal session to a public URL via the Traefik reverse proxy
+	// (src/terminalTrainer/services/exposedPortService.go). Deliberately
+	// separate from NetworkAccessEnabled: a plan that already allows
+	// outbound network access must not silently gain public inbound
+	// exposure of the user's sandbox — this is opt-in per plan.
+	PortExposureEnabled       bool `gorm:"default:false" json:"port_exposure_enabled"`                                            // Allow exposing a session port to a public URL via Traefik
 	DataPersistenceEnabled    bool `gorm:"default:false" json:"data_persistence_enabled"`                                         // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)
 	SessionSupervisionEnabled bool `gorm:"default:false" json:"session_supervision_enabled"`                                      // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
 	GroupManagementEnabled    bool `gorm:"default:false" json:"group_management_enabled" mapstructure:"group_management_enabled"` // Typed entitlement: plan grants group management (replaces the legacy features[] "group_management" string)

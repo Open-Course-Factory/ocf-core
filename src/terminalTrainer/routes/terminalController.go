@@ -113,6 +113,11 @@ type TerminalController interface {
 	// the list of sessions occupying the budget. Optionally scoped to an
 	// organization via ?organization_id=<uuid>.
 	MyTerminalUsage(ctx *gin.Context)
+
+	// Exposed ports (opt-in public URL publication via Traefik).
+	CreateExposedPort(ctx *gin.Context)
+	ListExposedPorts(ctx *gin.Context)
+	DeleteExposedPort(ctx *gin.Context)
 }
 
 type terminalController struct {

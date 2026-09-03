@@ -283,6 +283,18 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	// Initialize payment routes
 	payment.InitPaymentRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
+	// Internal, non-JWT routes for service-to-service callers (e.g. Traefik's
+	// HTTP provider polling for dynamic config). Deliberately mounted OUTSIDE
+	// apiGroup — no AuthManagement/Layer2Enforcement, protected instead by
+	// RequireProviderSecret. Only mounted when the operator configured the
+	// exposed-ports feature (EXPOSE_DOMAIN + TRAEFIK_PROVIDER_SECRET); absent
+	// that config the endpoint doesn't exist at all (404), matching the
+	// feature's "disabled by default" contract.
+	if terminalServices.IsExposedPortsFeatureEnabled() {
+		internalGroup := r.Group("/internal")
+		terminalController.TraefikConfigRoutes(internalGroup, sqldb.DB)
+	}
+
 	// Admin Stripe queue visibility (admin only) — shares the queue instance
 	// constructed in InitPaymentEntities so the hook, worker, and endpoint all
 	// see the same durable rows.

@@ -42,6 +42,7 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						RequiredRole:               input.RequiredRole,
 						MaxSessionDurationMinutes:  input.MaxSessionDurationMinutes,
 						NetworkAccessEnabled:       input.NetworkAccessEnabled,
+						PortExposureEnabled:        input.PortExposureEnabled,
 						DataPersistenceEnabled:     input.DataPersistenceEnabled,
 						SessionSupervisionEnabled:  input.SessionSupervisionEnabled,
 						GroupManagementEnabled:     input.GroupManagementEnabled,

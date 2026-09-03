@@ -144,6 +144,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Terminal entities
 	db.AutoMigrate(&terminalModels.Terminal{})
 	db.AutoMigrate(&terminalModels.UserTerminalKey{})
+	db.AutoMigrate(&terminalModels.ExposedPort{})
 	// MR !239 (SSOT consolidation): the legacy `status` column on `terminals`
 	// was a parallel field that drifted from `state` and caused zombie-resume
 	// and dashboard banner bugs. The model field is gone; this drops the

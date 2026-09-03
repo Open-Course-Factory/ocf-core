@@ -406,3 +406,18 @@ func TestCheckRAMAvailability_NoBodyFallsBackToPlanMax(t *testing.T) {
 // BuildComplete satisfies TerminalTrainerService. These tests never exercise
 // the provisioning window, so the stub reports success without recording.
 func (m *metricsAwareMockService) BuildComplete(sessionID string) error { return nil }
+
+// Exposed-ports stubs satisfy TerminalTrainerService. These tests never
+// exercise port exposure.
+func (m *metricsAwareMockService) CreateExposedPort(sessionID string, containerPort int) (*dto.ExposedPortResponse, error) {
+	return nil, nil
+}
+func (m *metricsAwareMockService) ListExposedPorts(sessionID string) ([]dto.ExposedPortResponse, error) {
+	return nil, nil
+}
+func (m *metricsAwareMockService) DeleteExposedPort(sessionID string, exposedPortID uuid.UUID) error {
+	return nil
+}
+func (m *metricsAwareMockService) GetActiveExposedPortsForTraefik() ([]models.ExposedPort, error) {
+	return nil, nil
+}
