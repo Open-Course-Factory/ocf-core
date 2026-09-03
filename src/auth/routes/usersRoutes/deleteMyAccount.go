@@ -1,7 +1,6 @@
 package userController
 
 import (
-	"errors"
 	"net/http"
 
 	"soli/formations/src/auth/services"
@@ -65,20 +64,14 @@ func (uc *userController) DeleteMyAccount(ctx *gin.Context) {
 	// any Casdoor / RBAC work itself.
 	err := uc.deletionService.DeleteMyAccount(userID)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrOwnsOrganizations):
-			ctx.JSON(http.StatusConflict, gin.H{"error": "You must transfer ownership of your organizations before deleting your account"})
-			return
-		case errors.Is(err, services.ErrOwnsGroups):
-			ctx.JSON(http.StatusConflict, gin.H{"error": "You must transfer ownership of your groups before deleting your account"})
-			return
-		default:
+		status, message := services.ErasureErrorResponse(err)
+		if status == http.StatusInternalServerError {
 			// Includes the Stripe-cancel abort: returning 5xx lets the user
 			// retry rather than silently leaving a billed-but-deleted account.
 			utils.Error("Account deletion failed for user %s: %v", userID, err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Account deletion failed"})
-			return
 		}
+		ctx.JSON(status, gin.H{"error": message})
+		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Account deleted"})

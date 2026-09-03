@@ -1,7 +1,6 @@
 package userController
 
 import (
-	goerrors "errors"
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
@@ -67,7 +66,7 @@ func (u userController) DeleteUser(ctx *gin.Context) {
 	// Same erasure flow as the self-service deletion (issue #490): the OCF
 	// cascade must run whoever triggers the deletion.
 	if err := u.deletionService.EraseUser(id.String()); err != nil {
-		status, message := erasureErrorResponse(err)
+		status, message := services.ErasureErrorResponse(err)
 		if status == http.StatusInternalServerError {
 			utils.Error("Admin erasure failed for user %s: %v", id, err)
 		}
@@ -82,18 +81,4 @@ func (u userController) DeleteUser(ctx *gin.Context) {
 	utils.RemovePolicy(casdoor.Enforcer, id.String(), "", "", opts)
 
 	ctx.JSON(http.StatusNoContent, "Done")
-}
-
-// erasureErrorResponse maps an EraseUser failure to the HTTP status the admin
-// should see. Ownership refusals carry the service message so the admin knows
-// ownership must be transferred first; anything else is retryable.
-func erasureErrorResponse(err error) (int, string) {
-	switch {
-	case goerrors.Is(err, services.ErrUserNotFound):
-		return http.StatusNotFound, "User not found"
-	case goerrors.Is(err, services.ErrOwnsOrganizations), goerrors.Is(err, services.ErrOwnsGroups):
-		return http.StatusConflict, err.Error()
-	default:
-		return http.StatusInternalServerError, "User erasure failed"
-	}
 }

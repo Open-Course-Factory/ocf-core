@@ -19,6 +19,21 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "List organization members",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/members/offboard", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Offboard members: deactivate, block sign-in, schedule erasure after the retention period",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/members/:userId/reinstate", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Reinstate an offboarded member",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/members/:userId/erase", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "owner"},
+			Description: "Erase an offboarded member now, ahead of the scheduled date (owner only)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/groups", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
 			Description: "List organization groups",

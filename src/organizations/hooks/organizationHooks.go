@@ -361,7 +361,17 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 		return utils.CapacityExceededError("organization", len(org.Members), org.MaxMembers)
 	}
 
-	// 3. Check if user is already a member
+	// 3. Check if user is already a member. An offboarded member still has a
+	// row: a BeforeCreate hook cannot turn this insert into an update, so it
+	// refuses and points at the reinstate action instead of inserting a
+	// second membership.
+	offboarded, err := h.isOffboardedMember(org.ID, member.UserID)
+	if err != nil {
+		return fmt.Errorf("failed to check membership state: %w", err)
+	}
+	if offboarded {
+		return models.ErrMemberOffboarded
+	}
 	isMember, _ := h.organizationService.IsUserInOrganization(org.ID, member.UserID)
 	if isMember {
 		return fmt.Errorf("user is already a member of this organization")
@@ -415,6 +425,14 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 
 	utils.Debug("Validated organization member: user %s joining organization %s", member.UserID, member.OrganizationID)
 	return nil
+}
+
+func (h *OrganizationMemberValidationHook) isOffboardedMember(orgID uuid.UUID, userID string) (bool, error) {
+	var offboarded int64
+	err := h.db.Model(&models.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ? AND left_at IS NOT NULL", orgID, userID).
+		Count(&offboarded).Error
+	return offboarded > 0, err
 }
 
 // OrganizationMemberUpdateAuthorizationHook authorizes a role/status change on an existing

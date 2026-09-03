@@ -71,11 +71,15 @@ var organizationsAuditOrgRoutes = []organizationsAuditRoute{
 	{method: "GET", registeredPath: "/api/v1/organizations/:id/backends", requestPath: "/api/v1/organizations/org-audit-bk/backends", scopeID: "org-audit-bk", ruleType: access.OrgRole, minRole: "member", paramName: "id"},
 	// Manager-gated (write actions on org content)
 	{method: "POST", registeredPath: "/api/v1/organizations/:id/import", requestPath: "/api/v1/organizations/org-audit-imp/import", scopeID: "org-audit-imp", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
+	{method: "POST", registeredPath: "/api/v1/organizations/:id/members/offboard", requestPath: "/api/v1/organizations/org-audit-off/members/offboard", scopeID: "org-audit-off", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
+	// :userId is also in the path, but Layer 2 enforces against :id (org-level).
+	{method: "POST", registeredPath: "/api/v1/organizations/:id/members/:userId/reinstate", requestPath: "/api/v1/organizations/org-audit-rei/members/u-1/reinstate", scopeID: "org-audit-rei", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
 	// :groupId is also in the path, but Layer 2 enforces against :id (org-level).
 	// Handler must independently verify the group belongs to the org.
 	{method: "POST", registeredPath: "/api/v1/organizations/:id/groups/:groupId/regenerate-passwords", requestPath: "/api/v1/organizations/org-audit-rgn/groups/grp-1/regenerate-passwords", scopeID: "org-audit-rgn", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
 	// Owner-gated (most sensitive: structural conversion)
 	{method: "POST", registeredPath: "/api/v1/organizations/:id/convert-to-team", requestPath: "/api/v1/organizations/org-audit-cvt/convert-to-team", scopeID: "org-audit-cvt", ruleType: access.OrgRole, minRole: "owner", paramName: "id"},
+	{method: "POST", registeredPath: "/api/v1/organizations/:id/members/:userId/erase", requestPath: "/api/v1/organizations/org-audit-era/members/u-1/erase", scopeID: "org-audit-era", ruleType: access.OrgRole, minRole: "owner", paramName: "id"},
 }
 
 // organizationsAuditAdminRoutes — 1 AdminOnly route.

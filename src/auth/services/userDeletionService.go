@@ -8,6 +8,7 @@ import (
 	auditModels "soli/formations/src/audit/models"
 	groupModels "soli/formations/src/groups/models"
 	organizationModels "soli/formations/src/organizations/models"
+	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	scenarioModels "soli/formations/src/scenarios/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -22,17 +23,30 @@ var (
 	ErrOwnsOrganizations = errors.New("user owns non-personal organizations; transfer ownership first")
 	ErrOwnsGroups        = errors.New("user owns groups; transfer ownership first")
 	ErrDeletionFailed    = errors.New("account deletion failed")
+	// ErrStillActiveElsewhere blocks an organization-triggered erasure: the
+	// user is an active member of another team organization or holds a paid
+	// subscription of their own, so the departing organization does not own
+	// the whole account.
+	ErrStillActiveElsewhere = errors.New("user is still active in another organization or holds a personal paid subscription")
 )
 
 // UserDeletionService handles RGPD right-to-erasure account deletion.
 //
 // EraseUser is the single erasure flow; every entry point (self-service,
-// admin DELETE /users/:id, and future org-owner / cron erasure) goes through
-// it so the pre-flight, the identity/billing teardown and the OCF cascade can
-// never drift apart.
+// admin DELETE /users/:id, org-owner erase-now and the daily erasure job) goes
+// through it so the pre-flight, the identity/billing teardown and the OCF
+// cascade can never drift apart.
 type UserDeletionService interface {
 	EraseUser(userID string) error
 	DeleteMyAccount(userID string) error
+	// EraseDepartedMember is EraseUser for a member an organization offboarded:
+	// it adds the cross-organization pre-flight (ErrStillActiveElsewhere) that
+	// self-service and admin deletion deliberately do not have.
+	EraseDepartedMember(orgID uuid.UUID, userID string) error
+	// CheckDepartedMemberErasable runs every pre-flight EraseDepartedMember
+	// would, without erasing. The members list uses it to report why an
+	// erasure is blocked — one owner for the rule and its explanation.
+	CheckDepartedMemberErasable(orgID uuid.UUID, userID string) error
 }
 
 type userDeletionService struct {
@@ -84,6 +98,53 @@ func (s *userDeletionService) EraseUser(userID string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		return s.cascadeOCFData(tx, userID)
 	})
+}
+
+// EraseDepartedMember erases a member that orgID offboarded, refusing while the
+// user is still active somewhere the organization does not control.
+func (s *userDeletionService) EraseDepartedMember(orgID uuid.UUID, userID string) error {
+	if err := s.assertNotActiveElsewhere(orgID, userID); err != nil {
+		return err
+	}
+	return s.EraseUser(userID)
+}
+
+// CheckDepartedMemberErasable is the read-only twin of EraseDepartedMember.
+func (s *userDeletionService) CheckDepartedMemberErasable(orgID uuid.UUID, userID string) error {
+	if err := s.assertNotActiveElsewhere(orgID, userID); err != nil {
+		return err
+	}
+	return s.assertNoOwnedOrgsOrGroups(userID)
+}
+
+// assertNotActiveElsewhere refuses when the user holds an active membership in
+// a team organization other than orgID, or an entitling subscription they
+// bought themselves (batch seats belong to the purchaser, not the user).
+func (s *userDeletionService) assertNotActiveElsewhere(orgID uuid.UUID, userID string) error {
+	var activeElsewhere int64
+	if err := s.db.Model(&organizationModels.OrganizationMember{}).
+		Joins("JOIN organizations ON organizations.id = organization_members.organization_id").
+		Where("organization_members.user_id = ? AND organization_members.is_active = ? AND organization_members.organization_id <> ? AND organizations.organization_type = ?",
+			userID, true, orgID, organizationModels.OrgTypeTeam).
+		Count(&activeElsewhere).Error; err != nil {
+		return fmt.Errorf("%w: failed to check other memberships: %v", ErrDeletionFailed, err)
+	}
+	if activeElsewhere > 0 {
+		return ErrStillActiveElsewhere
+	}
+
+	var paidSubscriptions int64
+	if err := s.db.Model(&paymentModels.UserSubscription{}).
+		Joins("JOIN subscription_plans ON subscription_plans.id = user_subscriptions.subscription_plan_id").
+		Scopes(paymentModels.ScopeEntitling).
+		Where("user_subscriptions.user_id = ? AND user_subscriptions.subscription_batch_id IS NULL AND subscription_plans.price_amount > 0", userID).
+		Count(&paidSubscriptions).Error; err != nil {
+		return fmt.Errorf("%w: failed to check personal subscriptions: %v", ErrDeletionFailed, err)
+	}
+	if paidSubscriptions > 0 {
+		return ErrStillActiveElsewhere
+	}
+	return nil
 }
 
 // assertNoOwnedOrgsOrGroups blocks deletion while the user still owns shared

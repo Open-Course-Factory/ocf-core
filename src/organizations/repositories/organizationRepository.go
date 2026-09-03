@@ -184,7 +184,9 @@ func (r *organizationRepository) GetOrganizationMember(orgID uuid.UUID, userID s
 // GetOrganizationMembers retrieves all members of an organization
 func (r *organizationRepository) GetOrganizationMembers(orgID uuid.UUID, includes []string) (*[]models.OrganizationMember, error) {
 	var members []models.OrganizationMember
-	query := r.db.Where("organization_id = ? AND is_active = ?", orgID, true)
+	// Active members plus offboarded ones: the latter stay listed (with their
+	// scheduled erasure date) until erased. Plainly deactivated rows stay hidden.
+	query := r.db.Where("organization_id = ? AND (is_active = ? OR left_at IS NOT NULL)", orgID, true)
 
 	// Handle preloading of related entities
 	for _, include := range includes {

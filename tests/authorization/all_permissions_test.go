@@ -544,6 +544,9 @@ func TestRegisterOrganizationPermissions_MemberRoutes(t *testing.T) {
 		method string
 	}{
 		{"/api/v1/organizations/:id/members", "GET"},
+		{"/api/v1/organizations/:id/members/offboard", "POST"},
+		{"/api/v1/organizations/:id/members/:userId/reinstate", "POST"},
+		{"/api/v1/organizations/:id/members/:userId/erase", "POST"},
 		{"/api/v1/organizations/:id/groups", "GET"},
 		{"/api/v1/organizations/:id/convert-to-team", "POST"},
 		{"/api/v1/organizations/:id/backends", "GET"},

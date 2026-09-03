@@ -21,23 +21,33 @@ import (
 )
 
 type OrganizationController struct {
-	service       services.OrganizationService
-	userService   authServices.UserService
-	importService services.ImportService
-	groupService  groupServices.GroupService
-	db            *gorm.DB
+	service         services.OrganizationService
+	userService     authServices.UserService
+	importService   services.ImportService
+	offboarding     services.MemberOffboardingService
+	deletionService authServices.UserDeletionService
+	groupService    groupServices.GroupService
+	db              *gorm.DB
 }
 
-func NewOrganizationController(service services.OrganizationService, importService services.ImportService, db *gorm.DB) *OrganizationController {
+func NewOrganizationController(
+	service services.OrganizationService,
+	importService services.ImportService,
+	offboarding services.MemberOffboardingService,
+	deletionService authServices.UserDeletionService,
+	db *gorm.DB,
+) *OrganizationController {
 	return &OrganizationController{
 		service: service,
 		userService: authServices.NewUserService(
 			authServices.NewCasdoorUserClient(),
 			paymentServices.NewPaymentDeletionHelper(db),
 		),
-		importService: importService,
-		groupService:  groupServices.NewGroupService(db),
-		db:            db,
+		importService:   importService,
+		offboarding:     offboarding,
+		deletionService: deletionService,
+		groupService:    groupServices.NewGroupService(db),
+		db:              db,
 	}
 }
 
@@ -113,6 +123,11 @@ func (oc *OrganizationController) GetOrganizationMembers(ctx *gin.Context) {
 			Metadata:       member.Metadata,
 			CreatedAt:      member.CreatedAt,
 			UpdatedAt:      member.UpdatedAt,
+			LeftAt:             member.LeftAt,
+			ScheduledErasureAt: member.ScheduledErasureAt,
+		}
+		if member.IsOffboarded() {
+			memberOutput.ErasureBlockedReason = oc.erasureBlockedReason(orgID, member.UserID)
 		}
 
 		// Include Organization if it was loaded

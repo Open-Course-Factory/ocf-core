@@ -35,15 +35,27 @@ type ImportService interface {
 	) (*dto.ImportOrganizationDataResponse, error)
 }
 
+// ImportIdentityClient is the slice of the identity provider the import needs
+// for accounts that already exist. auth/services' CasdoorUserClient satisfies
+// it; new accounts still go through the casdoorsdk package directly.
+type ImportIdentityClient interface {
+	GetUserByEmail(email string) (*casdoorsdk.User, error)
+	UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error)
+}
+
 type importService struct {
 	db              *gorm.DB
+	identity        ImportIdentityClient
+	members         MemberOffboardingService
 	terminalService ttServices.TerminalTrainerService
 	groupService    groupServices.GroupService
 }
 
-func NewImportService(db *gorm.DB) ImportService {
+func NewImportService(db *gorm.DB, identity ImportIdentityClient, members MemberOffboardingService) ImportService {
 	return &importService{
 		db:              db,
+		identity:        identity,
+		members:         members,
 		terminalService: ttServices.NewTerminalTrainerService(db),
 		groupService:    groupServices.NewGroupService(db),
 	}
@@ -344,7 +356,7 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	}
 
 	// Check if user already exists
-	existingUser, err := casdoorsdk.GetUserByEmail(user.Email)
+	existingUser, err := s.identity.GetUserByEmail(user.Email)
 	if err == nil && existingUser != nil {
 		// User exists
 		if !updateExisting {
@@ -352,12 +364,14 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 			return "", nil
 		}
 
-		if err := updateExistingUser(existingUser, user); err != nil {
+		if err := s.updateExistingUser(existingUser, user); err != nil {
 			return "", err
 		}
 
-		// Add user to organization
-		s.addUserToOrganization(existingUser.Id, orgID)
+		// Re-enrolling by email: an offboarded member is reinstated here.
+		if err := s.members.Enrol(orgID, existingUser.Id); err != nil {
+			return "", err
+		}
 
 		return existingUser.Id, nil
 	}
@@ -396,7 +410,7 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	}
 
 	// Get the created user to get the actual ID
-	createdUser, err := casdoorsdk.GetUserByEmail(user.Email)
+	createdUser, err := s.identity.GetUserByEmail(user.Email)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve created user: %w", err)
 	}
@@ -404,8 +418,9 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	// Add default roles
 	s.addRolesToUser(createdUser.Id, user.Role)
 
-	// Add user to organization
-	s.addUserToOrganization(createdUser.Id, orgID)
+	if err := s.members.Enrol(orgID, createdUser.Id); err != nil {
+		return "", err
+	}
 
 	// Personal organization (same as normal registration). An imported learner
 	// is a user like any other: without this they own no workspace of their own
@@ -428,42 +443,6 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	}
 
 	return createdUser.Id, nil
-}
-
-// updateExistingUser writes the CSV row's name, optional password and
-// force-reset flag onto an existing account.
-//
-// UpdateUserForColumns, never UpdateUser: with no column list Casdoor applies
-// a default whitelist that silently drops columns such as email_verified —
-// the class of bug that locked 36 accounts out of billing.
-func updateExistingUser(existingUser *casdoorsdk.User, row dto.UserImportRow) error {
-	utils.Debug("Updating existing user: %s", row.Email)
-	existingUser.FirstName = row.FirstName
-	existingUser.LastName = row.LastName
-	existingUser.DisplayName = fmt.Sprintf("%s %s", row.FirstName, row.LastName)
-	columns := []string{"first_name", "last_name", "display_name"}
-
-	if row.Password != "" {
-		existingUser.Password = row.Password
-		columns = append(columns, "password")
-	}
-
-	if strings.ToLower(row.ForceReset) == "true" {
-		if existingUser.Properties == nil {
-			existingUser.Properties = make(map[string]string)
-		}
-		existingUser.Properties["force_password_reset"] = "true"
-		columns = append(columns, "properties")
-	}
-
-	affected, err := casdoorsdk.UpdateUserForColumns(existingUser, columns)
-	if err != nil {
-		return fmt.Errorf("failed to update user in Casdoor: %v", err)
-	}
-	if !affected {
-		return fmt.Errorf("casdoor did not persist the update of %s", row.Email)
-	}
-	return nil
 }
 
 // addRolesToUser adds roles to a user in Casbin
@@ -594,33 +573,39 @@ func (s *importService) processMembership(
 	return nil
 }
 
-// addUserToOrganization adds a user to an organization as a member
-func (s *importService) addUserToOrganization(userID string, orgID uuid.UUID) error {
-	// Check if already a member
-	var existingMember organizationModels.OrganizationMember
-	result := s.db.Where("organization_id = ? AND user_id = ?", orgID, userID).First(&existingMember)
-	if result.Error == nil {
-		return nil // Already a member
+// updateExistingUser writes the CSV row's name, optional password and
+// force-reset flag onto an existing account.
+//
+// UpdateUserForColumns, never UpdateUser: with no column list Casdoor applies
+// a default whitelist that silently drops columns such as email_verified —
+// the class of bug that locked 36 accounts out of billing.
+func (s *importService) updateExistingUser(existingUser *casdoorsdk.User, row dto.UserImportRow) error {
+	utils.Debug("Updating existing user: %s", row.Email)
+	existingUser.FirstName = row.FirstName
+	existingUser.LastName = row.LastName
+	existingUser.DisplayName = fmt.Sprintf("%s %s", row.FirstName, row.LastName)
+	columns := []string{"first_name", "last_name", "display_name"}
+
+	if row.Password != "" {
+		existingUser.Password = row.Password
+		columns = append(columns, "password")
 	}
 
-	// Add as member
-	newMember := organizationModels.OrganizationMember{
-		OrganizationID: orgID,
-		UserID:         userID,
-		Role:           organizationModels.OrgRoleMember,
-		JoinedAt:       time.Now(),
-		IsActive:       true,
+	if strings.ToLower(row.ForceReset) == "true" {
+		if existingUser.Properties == nil {
+			existingUser.Properties = make(map[string]string)
+		}
+		existingUser.Properties["force_password_reset"] = "true"
+		columns = append(columns, "properties")
 	}
 
-	if err := s.db.Create(&newMember).Error; err != nil {
-		return fmt.Errorf("failed to add user to organization: %w", err)
+	affected, err := s.identity.UpdateUserForColumns(existingUser, columns)
+	if err != nil {
+		return fmt.Errorf("failed to update user in Casdoor: %v", err)
 	}
-
-	// Add Casbin permission for organization
-	opts := utils.DefaultPermissionOptions()
-	opts.WarnOnError = true
-	utils.AddPolicy(casdoor.Enforcer, userID, fmt.Sprintf("/api/v1/organizations/%s", orgID), "GET|POST|PATCH", opts)
-
+	if !affected {
+		return fmt.Errorf("casdoor did not persist the update of %s", row.Email)
+	}
 	return nil
 }
 

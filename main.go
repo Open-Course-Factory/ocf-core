@@ -190,6 +190,7 @@ func main() {
 	cron.StartEmailVerificationCleanupJob(sqldb.DB)    // Clean up expired email verification tokens
 	cron.StartScenarioSessionCleanupJob(sqldb.DB)      // Abandon zombie scenario sessions with dead terminals
 	cron.StartClassAutoArchiveJob(sqldb.DB)            // Archive classes past their expires_at (#491)
+	cron.StartMemberErasureJob(sqldb.DB, authServices.NewUserDeletionService(sqldb.DB, authServices.NewUserService(authServices.NewCasdoorUserClient(), paymentServices.NewPaymentDeletionHelper(sqldb.DB)))) // Erase offboarded members past their retention
 
 	// Background job: close idle impersonation sessions every minute. Mirrors
 	// the safety net described in src/auth/services/impersonationService.go.
