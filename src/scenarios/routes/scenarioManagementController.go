@@ -1090,6 +1090,28 @@ func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Con
 		}
 	}
 
+	// 3. Public catalogue: offered to every class, unless the scenario already
+	// reached the picker as org-owned or assigned — those sources take precedence
+	var publicScenarios []models.Scenario
+	if err := sc.db.Scopes(models.PublicCatalogue).
+		Preload("Steps").
+		Find(&publicScenarios).Error; err != nil {
+		slog.Error("failed to fetch public scenarios", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to fetch scenarios",
+		})
+		return
+	}
+	for _, s := range publicScenarios {
+		if _, listed := scenarioMap[s.ID]; !listed {
+			scenarioMap[s.ID] = &scenarioWithSource{
+				Scenario: s,
+				Source:   "public",
+			}
+		}
+	}
+
 	// Build output with source field
 	output := make([]gin.H, 0, len(scenarioMap))
 	for _, sw := range scenarioMap {
