@@ -134,6 +134,13 @@ type TerminalTrainerService interface {
 	// BuildComplete removes the features a session held only while it was
 	// being provisioned. Called once the scenario's setup has run.
 	BuildComplete(sessionID string) error
+
+	// Exposed ports (opt-in: operator config + plan.PortExposureEnabled).
+	// See exposedPortService for the full contract; these delegate.
+	CreateExposedPort(sessionID string, containerPort int) (*dto.ExposedPortResponse, error)
+	ListExposedPorts(sessionID string) ([]dto.ExposedPortResponse, error)
+	DeleteExposedPort(sessionID string, exposedPortID uuid.UUID) error
+	GetActiveExposedPortsForTraefik() ([]models.ExposedPort, error)
 }
 
 type terminalTrainerService struct {
@@ -157,6 +164,7 @@ type terminalTrainerService struct {
 	*terminalLifecycleService
 	*terminalComposer
 	*terminalHistoryService
+	*exposedPortService
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -197,6 +205,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		terminalSyncService:      sync,
 		terminalLifecycleService: newTerminalLifecycleService(proxy, sync, repository, db),
 		terminalHistoryService:   newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
+		exposedPortService:       newExposedPortService(proxy, repository, db),
 	}
 
 	// Constructed last: the composer takes the facade's CreateUserKey as a

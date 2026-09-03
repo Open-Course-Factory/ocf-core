@@ -55,6 +55,7 @@ func fullyPopulatedPlan() *models.SubscriptionPlan {
 		SeatUnit:                  models.SeatUnitLearnerDay,
 		IsDefaultFree:             true,
 		NetworkAccessEnabled:      true,
+		PortExposureEnabled:       true,
 		DataPersistenceEnabled:    true,
 		SessionSupervisionEnabled: true,
 
