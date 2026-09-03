@@ -232,7 +232,7 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	require.NoError(t, db.Create(&plan).Error)
 
 	// Create group with 1 member
-	groupID := uuid.New()
+	groupID := createClassGroup(t, db, "org-backend-class", "trainer", nil).ID
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
 		GroupID: groupID, UserID: userID, Role: "member", JoinedAt: time.Now(), IsActive: true,
 	}).Error)

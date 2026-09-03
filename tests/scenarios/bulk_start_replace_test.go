@@ -203,7 +203,7 @@ func TestBulkStartScenario_ReplacesExistingActiveSessions(t *testing.T) {
 	}
 
 	// Create group with 2 members
-	groupID := uuid.New()
+	groupID := createClassGroup(t, db, "replace-active-class", "trainer", nil).ID
 	users := []string{"replace-active-s1", "replace-active-s2"}
 	for _, uid := range users {
 		require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -286,7 +286,7 @@ func TestBulkStartScenario_ReplacesInProgressSessions(t *testing.T) {
 	}
 
 	// Create group with 1 member
-	groupID := uuid.New()
+	groupID := createClassGroup(t, db, "replace-progress-class", "trainer", nil).ID
 	userID := "replace-progress-s1"
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
 		GroupID: groupID, UserID: userID, Role: "member", JoinedAt: time.Now(), IsActive: true,

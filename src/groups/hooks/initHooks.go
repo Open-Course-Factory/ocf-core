@@ -29,6 +29,17 @@ func InitGroupHooks(db *gorm.DB) {
 		log.Println("✅ Group write authorization hook registered")
 	}
 
+	// Hooks refusing a new member or a new scenario assignment on an
+	// archived class (#491). The assignment one is registered here, on the
+	// class side, because the rule is the class's.
+	for _, entityName := range []string{"GroupMember", "ScenarioAssignment"} {
+		if err := hooks.GlobalHookRegistry.RegisterHook(NewGroupArchivedHook(db, entityName)); err != nil {
+			log.Printf("❌ Failed to register archived class hook for %s: %v", entityName, err)
+		} else {
+			log.Printf("✅ Archived class hook registered for %s", entityName)
+		}
+	}
+
 	// Hook for setting up group owner and creating owner member
 	ownerSetupHook := NewGroupOwnerSetupHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(ownerSetupHook); err != nil {

@@ -64,6 +64,10 @@ func bulkStartFixture(t *testing.T, name string, membersByRole map[string][]stri
 
 	ttMock := newCapturingTTService()
 	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.ClassGroup{
+		BaseModel: entityManagementModels.BaseModel{ID: groupID},
+		Name: name + "-class", DisplayName: name + " Class", OwnerUserID: ownerID, OrganizationID: &orgID, MaxMembers: 50,
+	}).Error)
 	for role, users := range membersByRole {
 		for _, uid := range users {
 			require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{

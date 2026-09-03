@@ -1,6 +1,7 @@
 package scenarioController
 
 import (
+	groupModels "soli/formations/src/groups/models"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -503,7 +504,7 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 
 	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, provisioning, req.SessionDurationMinutes, trainerID)
 	if err != nil {
-		if errors.Is(err, scenarioModels.ErrScenarioArchived) {
+		if errors.Is(err, scenarioModels.ErrScenarioArchived) || errors.Is(err, groupModels.ErrClassArchived) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}

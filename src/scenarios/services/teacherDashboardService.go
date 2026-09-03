@@ -463,6 +463,16 @@ func (s *TeacherDashboardService) CalculateGrade(sessionID uuid.UUID) float64 {
 // sessionDurationMinutes controls terminal session lifetime (default: 240 = 4 hours).
 // trainerID identifies the trainer who initiated the bulk start (for Qualiopi traceability).
 func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioID uuid.UUID, provisioning ScenarioProvisioning, sessionDurationMinutes int, trainerID string) (*BulkStartResult, error) {
+	// An archived class has no future to start: the same rule the hooks apply
+	// to new members and assignments (groupHooks.GroupArchivedHook).
+	var group groupModels.ClassGroup
+	if err := s.db.Select("archived_at").First(&group, "id = ?", groupID).Error; err != nil {
+		return nil, fmt.Errorf("group not found: %w", err)
+	}
+	if group.IsArchived() {
+		return nil, groupModels.ErrClassArchived
+	}
+
 	// Learners only. Starting a scenario for a class means starting it for the
 	// people being taught, not for the colleague who co-manages the class and
 	// not for its owner — who is typically the trainer clicking the button, and

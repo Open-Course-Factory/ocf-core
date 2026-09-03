@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -32,7 +31,7 @@ func TestScenarioSession_TrainerID_SetOnBulkStart(t *testing.T) {
 	}
 
 	// Create group with 2 student members
-	groupID := uuid.New()
+	groupID := createClassGroup(t, db, "trainer-id-class", "trainer", nil).ID
 	students := []string{"student-tid-1", "student-tid-2"}
 	for _, uid := range students {
 		require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
