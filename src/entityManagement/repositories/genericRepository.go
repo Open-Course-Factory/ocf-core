@@ -9,6 +9,7 @@ import (
 	"soli/formations/src/entityManagement/repositories/filters"
 	"soli/formations/src/utils"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -22,6 +23,7 @@ type GenericRepository interface {
 	GetAllEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error)
 	GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error)
 	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
+	SetArchivedAt(id uuid.UUID, entityName string, model any, at *time.Time) error
 	DeleteEntity(id uuid.UUID, entity any, scoped bool) error
 }
 
@@ -57,6 +59,11 @@ func (o *genericRepository) getFilterManager(entityName string) *filters.FilterM
 	// through the page query, the offset COUNT, and the cursor query alike.
 	manager.AddStrategy(filters.NewOwnerArrayFilter())
 
+	// Archive read scope. Same contract as the array-owner filter: it only
+	// matches the sentinel key the list handler injects for archivable
+	// entities, so it is inert everywhere else.
+	manager.AddStrategy(filters.NewNotArchivedFilter())
+
 	return manager
 }
 
@@ -88,6 +95,20 @@ func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity an
 	result := r.db.Model(&entity).Where("id = ?", id).Updates(data)
 	if result.Error != nil {
 		return entityErrors.WrapDatabaseError(result.Error, "update entity")
+	}
+	if result.RowsAffected == 0 {
+		return entityErrors.NewEntityNotFound(entityName, id)
+	}
+	return nil
+}
+
+// SetArchivedAt writes archived_at by explicit column rather than through the
+// loaded struct, so a nil value clears the column instead of being skipped as a
+// zero value.
+func (r genericRepository) SetArchivedAt(id uuid.UUID, entityName string, model any, at *time.Time) error {
+	result := r.db.Model(model).Where("id = ?", id).Update("archived_at", at)
+	if result.Error != nil {
+		return entityErrors.WrapDatabaseError(result.Error, "set archived_at")
 	}
 	if result.RowsAffected == 0 {
 		return entityErrors.NewEntityNotFound(entityName, id)

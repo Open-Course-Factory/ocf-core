@@ -40,6 +40,15 @@ type TypedEntityRegistration[M any, C any, E any, O any] struct {
 	// OwnershipConfig it is not keyed on the caller's identity, so an
 	// unauthenticated caller still sees the visible rows.
 	VisibilityScope *access.VisibilityScopeConfig `json:"-"`
+	// Archivable opts the entity into the framework's archiving capability. The
+	// model must embed models.Archivable (checked at boot, panics otherwise).
+	// The framework then synthesizes POST /:id/archive and /:id/unarchive item
+	// actions whose access rule is derived from the entity's PATCH permission,
+	// fires the Before/After Archive/Unarchive hooks around the write, and hides
+	// archived rows from the generic list unless ?include_archived=true.
+	// Get-by-id is unaffected. Who may archive, and what an archived row still
+	// permits, is the entity's business: guard it with a BeforeArchive hook.
+	Archivable bool `json:"-"`
 	// Actions declares custom REST actions beyond the generated CRUD verbs. Each
 	// is mounted by the route generator and gets its Layer 1 / Layer 2 policies
 	// registered from Role/Access at registration time.

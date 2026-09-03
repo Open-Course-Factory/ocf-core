@@ -132,7 +132,7 @@ func (hr *hookRegistry) ExecuteHooks(ctx *HookContext) error {
 			// (fire-and-forget) — their errors are recorded but do not fail the
 			// already-committed write.
 			switch ctx.HookType {
-			case BeforeCreate, BeforeUpdate, BeforeDelete:
+			case BeforeCreate, BeforeUpdate, BeforeDelete, BeforeArchive, BeforeUnarchive:
 				return err
 			default:
 				hr.recordError(hook.GetName(), ctx.EntityName, ctx.HookType, ctx.EntityID, err)

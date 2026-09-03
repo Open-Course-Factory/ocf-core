@@ -165,6 +165,7 @@ func main() {
 	// and the DB is ready. This replaces the per-module manual NewOwnershipHook
 	// registrations that used to live in the Init*Hooks funcs above.
 	ems.RegisterOwnershipHooks(sqldb.DB)
+	ems.GlobalEntityRegistrationService.WarnArchivableEntitiesWithoutBeforeArchiveHook()
 
 	// Register module features
 	initialization.RegisterModuleFeatures(sqldb.DB)

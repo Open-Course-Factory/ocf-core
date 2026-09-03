@@ -7,6 +7,7 @@ import (
 	authInterfaces "soli/formations/src/auth/interfaces"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
+	"soli/formations/src/entityManagement/models"
 	"soli/formations/src/entityManagement/repositories"
 	"soli/formations/src/entityManagement/utils"
 	appUtils "soli/formations/src/utils"
@@ -58,6 +59,7 @@ type GenericService interface {
 	DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string, userRoles ...string) error
 	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
 	EditEntityWithUser(id uuid.UUID, entityName string, entity any, data any, userID string, userRoles ...string) error
+	SetArchived(entityName string, id uuid.UUID, at *time.Time, userID string, userRoles []string) (any, error)
 	GetEntityModelInterface(entityName string) any
 	AddOwnerIDs(entity any, userId string) (any, error)
 	ExtractUuidFromReflectEntity(entity any) uuid.UUID
@@ -319,6 +321,75 @@ func (g *genericService) EditEntityWithUser(id uuid.UUID, entityName string, ent
 		appUtils.Warn("after_update hooks failed for %s: %v", entityName, err)
 	}
 	return nil
+}
+
+// SetArchived stamps (at != nil) or clears (at == nil) archived_at on one row
+// of an archivable entity, running the Before/After Archive or Unarchive hooks
+// around the write. A Before* error aborts and leaves the row untouched. The
+// call is idempotent: a row already in the requested state is returned as is
+// and no hook runs, so cascades never fire twice.
+func (g *genericService) SetArchived(entityName string, id uuid.UUID, at *time.Time, userID string, userRoles []string) (any, error) {
+	ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName)
+	if !ok {
+		return nil, entityErrors.NewEntityNotRegistered(entityName)
+	}
+	entity, err := g.GetEntity(id, ops.NewModelInstance(), entityName, nil)
+	if err != nil {
+		return nil, err
+	}
+	archivable, ok := entity.(models.ArchivableModel)
+	if !ok {
+		return nil, entityErrors.NewInvalidInputError("entityName", entityName, "entity is not archivable")
+	}
+
+	archive := at != nil
+	if archivable.IsArchived() == archive {
+		return entity, nil
+	}
+	before, after := archiveHookTypes(archive)
+
+	if err := hooks.GlobalHookRegistry.ExecuteHooks(newArchiveHookContext(before, entityName, id, entity, userID, userRoles)); err != nil {
+		return nil, entityErrors.WrapHookError(string(before), entityName, err)
+	}
+
+	// A fresh model instance, not the loaded one: GORM writes the updated
+	// column back through the pointer it is given, which would rewrite the
+	// entity the BeforeArchive hooks just saw.
+	if err := g.genericRepository.SetArchivedAt(id, entityName, ops.NewModelInstance(), at); err != nil {
+		return nil, err
+	}
+
+	updated, err := g.GetEntity(id, ops.NewModelInstance(), entityName, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := hooks.GlobalHookRegistry.ExecuteHooks(newArchiveHookContext(after, entityName, id, updated, userID, userRoles)); err != nil {
+		appUtils.Warn("%s hooks failed for %s: %v", after, entityName, err)
+	}
+	return updated, nil
+}
+
+// archiveHookTypes returns the Before/After pair for an archive (true) or an
+// unarchive (false).
+func archiveHookTypes(archive bool) (before, after hooks.HookType) {
+	if archive {
+		return hooks.BeforeArchive, hooks.AfterArchive
+	}
+	return hooks.BeforeUnarchive, hooks.AfterUnarchive
+}
+
+// newArchiveHookContext builds the context every archive hook receives: the
+// loaded model as NewEntity, no OldEntity, and the acting user.
+func newArchiveHookContext(hookType hooks.HookType, entityName string, id uuid.UUID, entity any, userID string, userRoles []string) *hooks.HookContext {
+	return &hooks.HookContext{
+		EntityName: entityName,
+		HookType:   hookType,
+		EntityID:   id,
+		NewEntity:  entity,
+		UserID:     userID,
+		UserRoles:  userRoles,
+		Context:    context.Background(),
+	}
 }
 
 func (g *genericService) GetEntityModelInterface(entityName string) any {

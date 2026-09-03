@@ -6,9 +6,12 @@ import (
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/interfaces"
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/hooks"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+	"soli/formations/src/entityManagement/models"
 	"soli/formations/src/entityManagement/utils"
 	appUtils "soli/formations/src/utils"
+	"sort"
 	"strings"
 
 	"github.com/gertd/go-pluralize"
@@ -43,6 +46,7 @@ type EntityRegistrationService struct {
 	entityRoles         map[string]entityManagementInterfaces.EntityRoles
 	dtoRedactors        map[string]DtoRedactor
 	entityActions       map[string][]entityManagementInterfaces.ActionConfig
+	archivable          map[string]bool
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
@@ -59,6 +63,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		entityRoles:         make(map[string]entityManagementInterfaces.EntityRoles),
 		dtoRedactors:        make(map[string]DtoRedactor),
 		entityActions:       make(map[string][]entityManagementInterfaces.ActionConfig),
+		archivable:          make(map[string]bool),
 	}
 }
 
@@ -77,6 +82,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.entityRoles = make(map[string]entityManagementInterfaces.EntityRoles)
 	s.dtoRedactors = make(map[string]DtoRedactor)
 	s.entityActions = make(map[string][]entityManagementInterfaces.ActionConfig)
+	s.archivable = make(map[string]bool)
 }
 
 // UnregisterEntity removes all registrations for a specific entity
@@ -94,6 +100,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.entityRoles, name)
 	delete(s.dtoRedactors, name)
 	delete(s.entityActions, name)
+	delete(s.archivable, name)
 }
 
 func (s *EntityRegistrationService) RegisterEntityInterface(name string, entityType any) {
@@ -208,6 +215,47 @@ func (s *EntityRegistrationService) RegisterVisibilityScope(name string, config 
 // GetVisibilityScope retrieves the visibility-scope config for an entity, or nil.
 func (s *EntityRegistrationService) GetVisibilityScope(name string) *access.VisibilityScopeConfig {
 	return s.visibilityScopes[name]
+}
+
+// RegisterArchivable records whether an entity opted into archiving. The generic
+// list handler and the swagger generator consult it.
+func (s *EntityRegistrationService) RegisterArchivable(name string, on bool) {
+	if on {
+		s.archivable[name] = true
+		return
+	}
+	delete(s.archivable, name)
+}
+
+// IsArchivable reports whether the named entity opted into archiving. Unknown
+// entities are not archivable.
+func (s *EntityRegistrationService) IsArchivable(name string) bool {
+	return s.archivable[name]
+}
+
+// ArchivableEntitiesWithoutBeforeArchiveHook lists, sorted, the archivable
+// entities that have no BeforeArchive hook. Archive access is derived from the
+// PATCH rule, which for SelfScoped entities is open to every member at Layer 2;
+// such an entity relies entirely on its hook to refuse callers who may not
+// manage the row, so having none is almost certainly a mistake.
+func (s *EntityRegistrationService) ArchivableEntitiesWithoutBeforeArchiveHook() []string {
+	var unguarded []string
+	for name := range s.archivable {
+		if len(hooks.GlobalHookRegistry.GetHooks(name, hooks.BeforeArchive)) == 0 {
+			unguarded = append(unguarded, name)
+		}
+	}
+	sort.Strings(unguarded)
+	return unguarded
+}
+
+// WarnArchivableEntitiesWithoutBeforeArchiveHook logs one warning per unguarded
+// archivable entity. Call it once at startup, after every module has registered
+// its hooks.
+func (s *EntityRegistrationService) WarnArchivableEntitiesWithoutBeforeArchiveHook() {
+	for _, name := range s.ArchivableEntitiesWithoutBeforeArchiveHook() {
+		appUtils.Warn("Entity %s is archivable but registers no BeforeArchive hook: archive access is only as strict as its PATCH rule", name)
+	}
 }
 
 // SetDefaultEntityAccesses est une version publique pour les tests qui accepte un enforcer
@@ -467,6 +515,12 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 		Delete: deriveAccessRule(reg.Roles, "DELETE", name, reg.OwnershipConfig),
 	})
 
+	if reg.Archivable {
+		assertModelIsArchivable[M](name)
+		service.RegisterArchivable(name, true)
+		reg.Actions = append(reg.Actions, archiveActions(name, reg.Roles, reg.OwnershipConfig, *new(O))...)
+	}
+
 	// Store custom actions and set up their Layer 1 / Layer 2 access policies.
 	// Normalization/validation happens once in RegisterEntityActions; feed the
 	// normalized slice into access setup so both see the same uppercase method.
@@ -477,12 +531,7 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 // deriveAccessRule determines the Layer 2 access rule for an entity CRUD operation
 // based on RBAC role config and optional ownership config.
 func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method string, entityName string, ownershipConfig *access.OwnershipConfig) access.AccessRule {
-	memberMethods := roles.Roles["member"]
-
-	// Check if member role includes this HTTP method
-	memberHasAccess := strings.Contains(memberMethods, method)
-
-	if !memberHasAccess {
+	if !memberHasMethod(roles, method) {
 		return access.AccessRule{Type: access.AdminOnly}
 	}
 
@@ -506,6 +555,70 @@ func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method strin
 	}
 
 	return access.AccessRule{Type: access.Public}
+}
+
+// memberHasMethod reports whether the entity's Casbin role config grants the
+// member role the given HTTP method.
+func memberHasMethod(roles entityManagementInterfaces.EntityRoles, method string) bool {
+	return strings.Contains(roles.Roles[access.RoleMember], method)
+}
+
+// assertModelIsArchivable fails at boot, not at first request, when an entity
+// declares Archivable without embedding models.Archivable.
+func assertModelIsArchivable[M any](entityName string) {
+	if _, ok := any(*new(M)).(models.ArchivableModel); !ok {
+		panic(fmt.Sprintf("entity %q is registered as Archivable but %T does not embed models.Archivable", entityName, *new(M)))
+	}
+}
+
+// archiveActionHandlerFactory builds the handler behind the synthesized
+// archive/unarchive actions. It is installed by the routes package (which owns
+// the generic handlers and cannot be imported from here) and resolved lazily at
+// mount time, so registering an archivable entity never needs the routes
+// package linked — only mounting its routes does.
+var archiveActionHandlerFactory func(entityName string, archive bool) entityManagementInterfaces.ActionHandlerFactory
+
+// SetArchiveActionHandlerFactory installs the archive action handler builder.
+func SetArchiveActionHandlerFactory(f func(entityName string, archive bool) entityManagementInterfaces.ActionHandlerFactory) {
+	archiveActionHandlerFactory = f
+}
+
+// archiveActions synthesizes the two item actions an archivable entity gets.
+// Role and Access are derived from the entity's PATCH permission: whoever may
+// update the row may archive it, at both layers. Entity-specific refusals
+// belong in a BeforeArchive hook.
+func archiveActions(entityName string, roles entityManagementInterfaces.EntityRoles, ownership *access.OwnershipConfig, responseDto any) []entityManagementInterfaces.ActionConfig {
+	role := access.RoleAdministrator
+	if memberHasMethod(roles, "PATCH") {
+		role = access.RoleMember
+	}
+	accessRule := deriveAccessRule(roles, "PATCH", entityName, ownership)
+
+	action := func(name, description string, archive bool) entityManagementInterfaces.ActionConfig {
+		return entityManagementInterfaces.ActionConfig{
+			Name:        name,
+			Method:      "POST",
+			Scope:       entityManagementInterfaces.ActionScopeItem,
+			Handler:     lazyArchiveActionHandler(entityName, archive),
+			Role:        role,
+			Access:      accessRule,
+			Description: description,
+			ResponseDTO: responseDto,
+		}
+	}
+	return []entityManagementInterfaces.ActionConfig{
+		action("archive", "Archive the "+entityName+": it stays readable by id but leaves the default list", true),
+		action("unarchive", "Put an archived "+entityName+" back in service", false),
+	}
+}
+
+func lazyArchiveActionHandler(entityName string, archive bool) entityManagementInterfaces.ActionHandlerFactory {
+	return func(db *gorm.DB) gin.HandlerFunc {
+		if archiveActionHandlerFactory == nil {
+			panic(fmt.Sprintf("entity %q is Archivable but no archive action handler is installed (the routes package must be linked before routes are mounted)", entityName))
+		}
+		return archiveActionHandlerFactory(entityName, archive)(db)
+	}
 }
 
 var GlobalEntityRegistrationService = NewEntityRegistrationService()
