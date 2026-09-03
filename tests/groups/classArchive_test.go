@@ -15,6 +15,7 @@ import (
 
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
+	config "soli/formations/src/configuration"
 	authMocks "soli/formations/src/auth/mocks"
 	"soli/formations/src/cron"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -506,19 +507,25 @@ func TestArchivePreview_ListsMembersWithTheirOtherActiveClassCount(t *testing.T)
 		return []*casdoorsdk.User{
 			{Id: "alice", Name: "alice", DisplayName: "Alice", Email: "alice@example.org"},
 			{Id: "bob", Name: "bob", DisplayName: "Bob", Email: "bob@example.org"},
+			{Id: "carol", Name: "carol", DisplayName: "Carol", Email: "carol@example.org"},
 		}, nil
 	}
 	t.Cleanup(func() { groupRoutes.ListCasdoorUsers = origUsers })
 
 	org := seedOrganization(t, env.db, "org-owner")
+	require.NoError(t, env.db.Model(&org).Update("retention_days", 30).Error)
 	seedOrgMember(t, env.db, org.ID, "alice", orgModels.OrgRoleMember, true)
 	seedOrgMember(t, env.db, org.ID, "bob", orgModels.OrgRoleMember, false)
+	seedOrgMember(t, env.db, org.ID, "carol", orgModels.OrgRoleMember, false)
+	require.NoError(t, env.db.Model(&orgModels.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ?", org.ID, "carol").Update("left_at", time.Now()).Error)
 	closing := seedClass(t, env.db, "closing", "teacher", &org.ID)
 	other := seedClass(t, env.db, "other", "teacher", &org.ID)
 	archivedOther := seedClass(t, env.db, "archived-other", "teacher", &org.ID)
 	elsewhere := seedClass(t, env.db, "elsewhere", "teacher", nil)
 	seedClassMember(t, env.db, closing.ID, "alice", groupModels.GroupMemberRoleMember)
 	seedClassMember(t, env.db, closing.ID, "bob", groupModels.GroupMemberRoleMember)
+	seedClassMember(t, env.db, closing.ID, "carol", groupModels.GroupMemberRoleMember)
 	// alice continues in `other`; her archived class and the class outside the
 	// org must not count.
 	seedClassMember(t, env.db, other.ID, "alice", groupModels.GroupMemberRoleMember)
@@ -539,7 +546,8 @@ func TestArchivePreview_ListsMembersWithTheirOtherActiveClassCount(t *testing.T)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var preview dto.ArchivePreviewOutput
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &preview))
-	require.Len(t, preview.Members, 2)
+	require.Len(t, preview.Members, 3)
+	assert.Equal(t, 30, preview.RetentionDays, "the organization's own retention period")
 
 	byUser := map[string]dto.ArchivePreviewMember{}
 	for _, m := range preview.Members {
@@ -552,6 +560,26 @@ func TestArchivePreview_ListsMembersWithTheirOtherActiveClassCount(t *testing.T)
 	assert.Equal(t, "active", byUser["alice"].OrgMemberState)
 	assert.Equal(t, 0, byUser["bob"].OtherActiveClassesInOrg)
 	assert.Equal(t, "removed", byUser["bob"].OrgMemberState)
+	assert.Equal(t, "offboarded", byUser["carol"].OrgMemberState, "a stood-down row with left_at is offboarded, not merely removed")
+}
+
+func TestArchivePreview_PersonalClassReportsThePlatformRetentionDefault(t *testing.T) {
+	env := setupClassArchiveEnv(t)
+	origUsers := groupRoutes.ListCasdoorUsers
+	groupRoutes.ListCasdoorUsers = func() ([]*casdoorsdk.User, error) { return nil, nil }
+	t.Cleanup(func() { groupRoutes.ListCasdoorUsers = origUsers })
+
+	personal := seedClass(t, env.db, "personal", "teacher", nil)
+	seedClassMember(t, env.db, personal.ID, "alice", groupModels.GroupMemberRoleMember)
+
+	env.as("teacher")
+	rec := env.do(http.MethodGet, classGroupsPath+"/"+personal.ID.String()+"/archive-preview", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var preview dto.ArchivePreviewOutput
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &preview))
+	assert.Equal(t, config.DefaultRetentionDays(), preview.RetentionDays, "no organization means the platform default")
+	require.Len(t, preview.Members, 1)
+	assert.Equal(t, "none", preview.Members[0].OrgMemberState)
 }
 
 // ---------------------------------------------------------------------------

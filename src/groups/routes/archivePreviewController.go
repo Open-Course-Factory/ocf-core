@@ -2,12 +2,14 @@ package groupRoutes
 
 import (
 	"net/http"
+	"time"
 
 	access "soli/formations/src/auth/access"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/groups/dto"
 	"soli/formations/src/groups/models"
 	"soli/formations/src/groups/services"
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -40,6 +42,7 @@ type previewRow struct {
 	Role                    string
 	OtherActiveClassesInOrg int
 	OrgMemberActive         *bool
+	OrgMemberLeftAt         *time.Time
 }
 
 // Preview godoc
@@ -72,13 +75,32 @@ func (c *ArchivePreviewController) Preview(ctx *gin.Context) {
 		return
 	}
 
+	organization, err := c.organizationOf(group)
+	if err != nil {
+		utils.Error("archive preview of class %s failed: %v", groupID, err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build the archive preview"})
+		return
+	}
 	rows, err := c.rosterWithContinuation(group)
 	if err != nil {
 		utils.Error("archive preview of class %s failed: %v", groupID, err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build the archive preview"})
 		return
 	}
-	ctx.JSON(http.StatusOK, dto.ArchivePreviewOutput{Members: c.identify(rows, group.OrganizationID != nil)})
+	ctx.JSON(http.StatusOK, dto.ArchivePreviewOutput{
+		RetentionDays: organization.EffectiveRetentionDays(),
+		Members:       c.identify(rows, group.OrganizationID != nil),
+	})
+}
+
+// organizationOf loads the class's organization; a personal class yields a zero
+// Organization, whose EffectiveRetentionDays is the platform default.
+func (c *ArchivePreviewController) organizationOf(group models.ClassGroup) (orgModels.Organization, error) {
+	var organization orgModels.Organization
+	if group.OrganizationID == nil {
+		return organization, nil
+	}
+	return organization, c.db.First(&organization, "id = ?", *group.OrganizationID).Error
 }
 
 func (c *ArchivePreviewController) callerMayArchive(ctx *gin.Context, groupID uuid.UUID) bool {
@@ -105,7 +127,7 @@ func (c *ArchivePreviewController) rosterWithContinuation(group models.ClassGrou
 	}
 
 	query := c.db.Table("group_members AS gm").
-		Select("gm.user_id, gm.role, (?) AS other_active_classes_in_org, om.is_active AS org_member_active", otherClasses).
+		Select("gm.user_id, gm.role, (?) AS other_active_classes_in_org, om.is_active AS org_member_active, om.left_at AS org_member_left_at", otherClasses).
 		Where("gm.group_id = ? AND gm.is_active = ? AND gm.deleted_at IS NULL", group.ID, true).
 		Order("gm.role, gm.user_id")
 	if group.OrganizationID != nil {
@@ -137,7 +159,7 @@ func (c *ArchivePreviewController) identify(rows []previewRow, hasOrganization b
 			UserID:                  row.UserID,
 			Role:                    row.Role,
 			OtherActiveClassesInOrg: row.OtherActiveClassesInOrg,
-			OrgMemberState:          orgMemberState(row.OrgMemberActive, hasOrganization),
+			OrgMemberState:          orgMemberState(row, hasOrganization),
 		}
 		if u := users[row.UserID]; u != nil {
 			member.Email = u.Email
@@ -153,13 +175,17 @@ func (c *ArchivePreviewController) identify(rows []previewRow, hasOrganization b
 
 // orgMemberState names the three standings a roster member can have in the
 // class's organization. The offboarding work (#492) adds "offboarded" here.
-func orgMemberState(active *bool, hasOrganization bool) string {
-	switch {
-	case !hasOrganization || active == nil:
+// orgMemberState mirrors OrganizationMember.IsOffboarded on the scanned row: an
+// offboarded membership is also stood down, so left_at is checked before is_active.
+func orgMemberState(row previewRow, hasOrganization bool) string {
+	if !hasOrganization || row.OrgMemberActive == nil {
 		return "none"
-	case *active:
-		return "active"
-	default:
-		return "removed"
 	}
+	if row.OrgMemberLeftAt != nil {
+		return "offboarded"
+	}
+	if *row.OrgMemberActive {
+		return "active"
+	}
+	return "removed"
 }

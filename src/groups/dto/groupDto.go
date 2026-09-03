@@ -83,7 +83,10 @@ type GroupListOutput struct {
 // on the roster and whether each of them continues elsewhere in the
 // organization, so the "and then?" of every learner is visible up front.
 type ArchivePreviewOutput struct {
-	Members []ArchivePreviewMember `json:"members"`
+	// RetentionDays is how long a departed member's data is kept before erasure:
+	// the class's organization's figure, or the platform default for a personal class.
+	RetentionDays int                    `json:"retention_days"`
+	Members       []ArchivePreviewMember `json:"members"`
 }
 
 // ArchivePreviewMember is one roster line of the preview.
@@ -96,8 +99,9 @@ type ArchivePreviewMember struct {
 	// the same organization: 0 means archiving this class leaves them in none.
 	OtherActiveClassesInOrg int `json:"other_active_classes_in_org"`
 	// OrgMemberState is the member's standing in the class's organization:
-	// "active", "removed" (membership row stood down), or "none" (no row, or
-	// the class has no organization).
+	// "active", "offboarded" (left through offboarding, data awaiting erasure),
+	// "removed" (membership row stood down), or "none" (no row, or the class
+	// has no organization).
 	OrgMemberState string `json:"org_member_state"`
 }
 
