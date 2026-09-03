@@ -352,28 +352,8 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 			return "", nil
 		}
 
-		// Update user
-		utils.Debug("Updating existing user: %s", user.Email)
-		existingUser.FirstName = user.FirstName
-		existingUser.LastName = user.LastName
-		existingUser.DisplayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-
-		// Update password if provided
-		if user.Password != "" {
-			existingUser.Password = user.Password
-		}
-
-		// Set force reset flag
-		if strings.ToLower(user.ForceReset) == "true" {
-			if existingUser.Properties == nil {
-				existingUser.Properties = make(map[string]string)
-			}
-			existingUser.Properties["force_password_reset"] = "true"
-		}
-
-		_, errUpdate := casdoorsdk.UpdateUser(existingUser)
-		if errUpdate != nil {
-			return "", fmt.Errorf("failed to update user in Casdoor: %v", errUpdate)
+		if err := updateExistingUser(existingUser, user); err != nil {
+			return "", err
 		}
 
 		// Add user to organization
@@ -448,6 +428,42 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	}
 
 	return createdUser.Id, nil
+}
+
+// updateExistingUser writes the CSV row's name, optional password and
+// force-reset flag onto an existing account.
+//
+// UpdateUserForColumns, never UpdateUser: with no column list Casdoor applies
+// a default whitelist that silently drops columns such as email_verified —
+// the class of bug that locked 36 accounts out of billing.
+func updateExistingUser(existingUser *casdoorsdk.User, row dto.UserImportRow) error {
+	utils.Debug("Updating existing user: %s", row.Email)
+	existingUser.FirstName = row.FirstName
+	existingUser.LastName = row.LastName
+	existingUser.DisplayName = fmt.Sprintf("%s %s", row.FirstName, row.LastName)
+	columns := []string{"first_name", "last_name", "display_name"}
+
+	if row.Password != "" {
+		existingUser.Password = row.Password
+		columns = append(columns, "password")
+	}
+
+	if strings.ToLower(row.ForceReset) == "true" {
+		if existingUser.Properties == nil {
+			existingUser.Properties = make(map[string]string)
+		}
+		existingUser.Properties["force_password_reset"] = "true"
+		columns = append(columns, "properties")
+	}
+
+	affected, err := casdoorsdk.UpdateUserForColumns(existingUser, columns)
+	if err != nil {
+		return fmt.Errorf("failed to update user in Casdoor: %v", err)
+	}
+	if !affected {
+		return fmt.Errorf("casdoor did not persist the update of %s", row.Email)
+	}
+	return nil
 }
 
 // addRolesToUser adds roles to a user in Casbin
