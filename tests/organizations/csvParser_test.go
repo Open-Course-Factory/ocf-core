@@ -481,3 +481,158 @@ func TestParseUsersCSV_UTF8AccentsPreserved(t *testing.T) {
 	assert.Equal(t, "François", users[2].FirstName, "UTF-8 ç should be preserved")
 	assert.Equal(t, "Lefèvre", users[2].LastName, "UTF-8 è should be preserved")
 }
+
+func TestParseUsersCSV_SemicolonDelimiter_FrenchClassroomExport(t *testing.T) {
+	content := "Nom;Né(e) le;Sexe;E-mail;Heures manquées;Entrée;Sortie\n" +
+		"DUPONT Marie;15/01/2000;F;marie.dupont@ecole.fr;2;01/09/2025;\n"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "A semicolon-separated export must parse")
+	require.Len(t, users, 1)
+	assert.Equal(t, "marie.dupont@ecole.fr", users[0].Email)
+	assert.Equal(t, "DUPONT", users[0].LastName)
+	assert.Equal(t, "Marie", users[0].FirstName)
+}
+
+func TestParseUsersCSV_TabDelimiter(t *testing.T) {
+	content := "email\tfirst_name\tlast_name\njohn@test.com\tJohn\tDoe\n"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "A tab-separated export must parse")
+	require.Len(t, users, 1)
+	assert.Equal(t, "john@test.com", users[0].Email)
+	assert.Equal(t, "Doe", users[0].LastName)
+}
+
+func TestParseUsersCSV_CommaDelimiter_ValueContainingSemicolon(t *testing.T) {
+	content := "email,first_name,last_name\njohn@test.com,John,\"Doe; Jr\"\n"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Comma wins when the header holds more commas than semicolons")
+	require.Len(t, users, 1)
+	assert.Equal(t, "Doe; Jr", users[0].LastName)
+}
+
+func TestParseGroupsCSV_SemicolonDelimiter(t *testing.T) {
+	content := "group_name;display_name;description\nm1;M1 DevOps;Master 1\n"
+
+	fileHeader := createMultipartFileHeader(t, "groups.csv", content)
+	groups, errors := orgUtils.ParseGroupsCSV(fileHeader)
+
+	assert.Empty(t, errors)
+	require.Len(t, groups, 1)
+	assert.Equal(t, "M1 DevOps", groups[0].DisplayName)
+}
+
+func TestParseMembershipsCSV_SemicolonDelimiter(t *testing.T) {
+	content := "user_email;group_name;role\njohn@test.com;m1;member\n"
+
+	fileHeader := createMultipartFileHeader(t, "memberships.csv", content)
+	memberships, errors := orgUtils.ParseMembershipsCSV(fileHeader)
+
+	assert.Empty(t, errors)
+	require.Len(t, memberships, 1)
+	assert.Equal(t, "m1", memberships[0].GroupName)
+}
+
+func TestParseUsersCSV_MissingEmailColumn_NamesFoundColumnsAndAliases(t *testing.T) {
+	content := "Nom,Né(e) le,Sexe\nDUPONT Marie,15/01/2000,F\n"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Nil(t, users)
+	require.Len(t, errors, 1)
+	assert.Equal(t, 0, errors[0].Row)
+	assert.Equal(t, "email", errors[0].Field)
+	assert.Equal(t,
+		"Missing required column: email. Found columns: [Nom; Né(e) le; Sexe]. Expected: email (or e-mail, mail)",
+		errors[0].Message)
+}
+
+func TestParseUsersCSV_MissingNameColumns_NamesFoundColumnsAndAliases(t *testing.T) {
+	content := "E-mail,Sexe\nmarie@ecole.fr,F\n"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Nil(t, users)
+	require.Len(t, errors, 1)
+	assert.Equal(t, "name", errors[0].Field)
+	assert.Equal(t,
+		"Missing required columns: need (first_name AND last_name) or name. Found columns: [E-mail; Sexe]. "+
+			"Expected: name (or nom), or first_name (or prenom, prénom) + last_name (or nom de famille)",
+		errors[0].Message)
+}
+
+func TestParseGroupsCSV_MissingColumn_NamesFoundColumns(t *testing.T) {
+	content := "group_name;description\nm1;Master 1\n"
+
+	fileHeader := createMultipartFileHeader(t, "groups.csv", content)
+	groups, errors := orgUtils.ParseGroupsCSV(fileHeader)
+
+	assert.Nil(t, groups)
+	require.Len(t, errors, 1)
+	assert.Equal(t,
+		"Missing required column: display_name. Found columns: [group_name; description]. Expected: display_name",
+		errors[0].Message)
+}
+
+func TestParseUsersCSV_SubHeaderRow_ErrorNamesRowAndContent(t *testing.T) {
+	content := "Nom;Né(e) le;Sexe;E-mail;Heures manquées;Entrée;Sortie\n" +
+		"Toutes / Mes cours\n" +
+		"DUPONT Marie;15/01/2000;F;marie.dupont@ecole.fr;2;01/09/2025;\n"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	require.Len(t, errors, 1, "Only the sub-header row is in error")
+	assert.Equal(t, 2, errors[0].Row)
+	assert.Equal(t, "users", errors[0].File)
+	assert.Equal(t, dto.ErrCodeValidation, errors[0].Code)
+	assert.Equal(t,
+		`Row 2 has 1 field(s) but the header has 7 (separator ';'): "Toutes / Mes cours"`,
+		errors[0].Message)
+	require.Len(t, users, 1, "Rows after the faulty one are still parsed")
+	assert.Equal(t, "marie.dupont@ecole.fr", users[0].Email)
+}
+
+func TestParseUsersCSV_SubHeaderRowWithSeparators_ErrorNamesRowAndContent(t *testing.T) {
+	content := "Nom;Né(e) le;Sexe;E-mail;Heures manquées;Entrée;Sortie\n" +
+		";;;;Toutes / Mes cours;;\n" +
+		"DUPONT Marie;15/01/2000;F;marie.dupont@ecole.fr;2;01/09/2025;\n"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	require.Len(t, errors, 2, "The sub-header row lacks both email and name")
+	assert.Equal(t, 2, errors[0].Row)
+	assert.Equal(t, "email", errors[0].Field)
+	assert.Equal(t, "name", errors[1].Field)
+	assert.Equal(t, `Email is required (row 2: ";;;;Toutes / Mes cours;;")`, errors[0].Message)
+	require.Len(t, users, 1)
+}
+
+func TestParseUsersCSV_EmptyInput_ReportsEmptyFile(t *testing.T) {
+	fileHeader := createMultipartFileHeader(t, "users.csv", "")
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Nil(t, users)
+	require.Len(t, errors, 1)
+	assert.Equal(t, 0, errors[0].Row)
+	assert.Equal(t, "The users file is empty", errors[0].Message)
+}
+
+func TestParseUsersCSV_HeaderOnly_SemicolonDelimiter(t *testing.T) {
+	fileHeader := createMultipartFileHeader(t, "users.csv", "E-mail;Nom\n")
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors)
+	assert.Empty(t, users)
+}
