@@ -33,6 +33,14 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 					if input.IsCatalog != nil {
 						isCatalog = *input.IsCatalog
 					}
+					// Defaults to true — see the long comment on
+					// models.SubscriptionPlan.PortExposureEnabled for why
+					// this one field breaks from every other toggle's
+					// false-by-default pattern.
+					portExposureEnabled := true
+					if input.PortExposureEnabled != nil {
+						portExposureEnabled = *input.PortExposureEnabled
+					}
 					return &models.SubscriptionPlan{
 						Name:                       input.Name,
 						Description:                input.Description,
@@ -42,7 +50,7 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						RequiredRole:               input.RequiredRole,
 						MaxSessionDurationMinutes:  input.MaxSessionDurationMinutes,
 						NetworkAccessEnabled:       input.NetworkAccessEnabled,
-						PortExposureEnabled:        input.PortExposureEnabled,
+						PortExposureEnabled:        portExposureEnabled,
 						DataPersistenceEnabled:     input.DataPersistenceEnabled,
 						SessionSupervisionEnabled:  input.SessionSupervisionEnabled,
 						GroupManagementEnabled:     input.GroupManagementEnabled,

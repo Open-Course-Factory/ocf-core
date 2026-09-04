@@ -21,7 +21,15 @@ type CreateSubscriptionPlanInput struct {
 	RequiredRole                string   `json:"required_role" mapstructure:"required_role"`
 	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
-	PortExposureEnabled         bool     `json:"port_exposure_enabled" mapstructure:"port_exposure_enabled"`
+	// PortExposureEnabled is a *bool (unlike every other capability toggle
+	// here) because its model default is true, not false — see the long
+	// comment on models.SubscriptionPlan.PortExposureEnabled. A bare bool
+	// would make "explicitly off" and "not mentioned" the same zero value,
+	// and GORM's Create() omits zero-value bool columns, letting the DB
+	// default (true) silently override an intended false. nil here means
+	// "use the default" (true); resolved in subscriptionPlanRegistration.go
+	// the same way IsActive/IsCatalog already are.
+	PortExposureEnabled         *bool    `json:"port_exposure_enabled" mapstructure:"port_exposure_enabled"`
 	DataPersistenceEnabled      bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
 	SessionSupervisionEnabled   bool     `json:"session_supervision_enabled" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
