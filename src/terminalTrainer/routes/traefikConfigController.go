@@ -64,9 +64,14 @@ type traefikHTTPConfig struct {
 }
 
 type traefikRouter struct {
-	Rule    string           `json:"rule"`
-	Service string           `json:"service"`
-	TLS     traefikRouterTLS `json:"tls"`
+	Rule    string `json:"rule"`
+	Service string `json:"service"`
+	// TLS is a pointer so it's omitted from the JSON entirely when no cert
+	// resolver is configured — during development there is deliberately no
+	// TLS on the reference Traefik instance (see traefik/README.md), and an
+	// empty {} TLS block would still tell Traefik to attempt an ACME
+	// certificate for the route with no resolver named.
+	TLS *traefikRouterTLS `json:"tls,omitempty"`
 }
 
 type traefikRouterTLS struct {
@@ -125,10 +130,10 @@ func getDynamicConfig(ctx *gin.Context, svc traefikService) {
 		return
 	}
 
+	// Unset by default (dev mode: plain HTTP, no certificates yet — see
+	// traefik/README.md). Setting TRAEFIK_CERT_RESOLVER later turns TLS back
+	// on for every router with no other change needed.
 	certResolver := os.Getenv("TRAEFIK_CERT_RESOLVER")
-	if certResolver == "" {
-		certResolver = "letsencrypt"
-	}
 
 	config := traefikDynamicConfig{HTTP: traefikHTTPConfig{
 		Routers:  make(map[string]traefikRouter, len(exposedPorts)),
@@ -136,11 +141,14 @@ func getDynamicConfig(ctx *gin.Context, svc traefikService) {
 	}}
 
 	for _, ep := range exposedPorts {
-		config.HTTP.Routers[ep.Slug] = traefikRouter{
+		router := traefikRouter{
 			Rule:    fmt.Sprintf("Host(`%s.%s`)", ep.Slug, domain),
 			Service: ep.Slug,
-			TLS:     traefikRouterTLS{CertResolver: certResolver},
 		}
+		if certResolver != "" {
+			router.TLS = &traefikRouterTLS{CertResolver: certResolver}
+		}
+		config.HTTP.Routers[ep.Slug] = router
 		config.HTTP.Services[ep.Slug] = traefikService_{
 			LoadBalancer: traefikLoadBalancer{
 				Servers: []traefikServer{{URL: fmt.Sprintf("http://%s:%d", ep.ContainerIP, ep.ContainerPort)}},
