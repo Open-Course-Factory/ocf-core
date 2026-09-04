@@ -55,8 +55,29 @@ type SubscriptionPlan struct {
 	// terminal session to a public URL via the Traefik reverse proxy
 	// (src/terminalTrainer/services/exposedPortService.go). Deliberately
 	// separate from NetworkAccessEnabled: a plan that already allows
-	// outbound network access must not silently gain public inbound
-	// exposure of the user's sandbox — this is opt-in per plan.
+	// outbound network access does not automatically gain public inbound
+	// exposure of the user's sandbox — this stays its own toggle.
+	//
+	// The GORM column default stays false — matching every other toggle on
+	// this struct, and for the same reason BulkPurchasable's comment below
+	// gives: GORM omits a zero-value bool column on Create(), so a
+	// default:true tag would make an explicit `false` on a raw struct
+	// literal indistinguishable from "not mentioned" and silently resolve
+	// to true. This was tried and a test caught it turning a deliberately
+	// disabled plan back on.
+	//
+	// The DEV DECISION to default this ON for new plans (requested
+	// explicitly, opposite of every other toggle here) is instead resolved
+	// one layer up, only on the path that can express "false" unambiguously:
+	// CreateSubscriptionPlanInput.PortExposureEnabled is a *bool — nil means
+	// "use true", same mechanism as IsActive/IsCatalog. Anything that
+	// constructs a SubscriptionPlan struct literal directly (seeds, tests,
+	// scripts) still gets ordinary Go zero-value false unless it sets the
+	// field explicitly — there is no default outside that one Create path.
+	// The feature is still gated at the operator level regardless
+	// (EXPOSE_DOMAIN + TRAEFIK_PROVIDER_SECRET, see
+	// services.IsExposedPortsFeatureEnabled) — a deployment that never sets
+	// those env vars never mounts the routes no matter what this flag says.
 	PortExposureEnabled       bool `gorm:"default:false" json:"port_exposure_enabled"`                                            // Allow exposing a session port to a public URL via Traefik
 	DataPersistenceEnabled    bool `gorm:"default:false" json:"data_persistence_enabled"`                                         // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)
 	SessionSupervisionEnabled bool `gorm:"default:false" json:"session_supervision_enabled"`                                      // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
