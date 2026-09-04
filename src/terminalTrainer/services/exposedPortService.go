@@ -217,19 +217,32 @@ func (s *exposedPortService) toResponse(exposedPort *models.ExposedPort) *dto.Ex
 		ID:        exposedPort.ID,
 		Port:      exposedPort.ContainerPort,
 		Slug:      exposedPort.Slug,
-		URL:       fmt.Sprintf("https://%s.%s", exposedPort.Slug, exposeDomain()),
+		URL:       fmt.Sprintf("%s://%s.%s", exposeScheme(), exposedPort.Slug, exposeDomain()),
 		CreatedAt: exposedPort.CreatedAt,
 		ExpiresAt: exposedPort.ExpiresAt,
 	}
 }
 
 // exposeDomain reads the domain under which exposed-port URLs are minted
-// (https://<slug>.<EXPOSE_DOMAIN>). Empty when the operator has not opted
+// (<scheme>://<slug>.<EXPOSE_DOMAIN>). Empty when the operator has not opted
 // into the feature — IsExposedPortsFeatureEnabled gates route mounting on
 // this being non-empty, so a non-empty response here is expected by the
 // time toResponse runs.
 func exposeDomain() string {
 	return os.Getenv("EXPOSE_DOMAIN")
+}
+
+// exposeScheme reads the scheme minted into exposed-port URLs. Defaults to
+// "http": during development there is deliberately no TLS/certificate setup
+// on the reference Traefik instance (see traefik/README.md) — flipping this
+// to "https" once TLS is configured operator-side is a pure env change, no
+// code change needed on either side (see also traefikConfigController.go,
+// which only adds a router's TLS block when TRAEFIK_CERT_RESOLVER is set).
+func exposeScheme() string {
+	if scheme := os.Getenv("EXPOSE_SCHEME"); scheme != "" {
+		return scheme
+	}
+	return "http"
 }
 
 // IsExposedPortsFeatureEnabled reports whether the operator configured the
