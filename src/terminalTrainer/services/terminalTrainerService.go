@@ -854,7 +854,7 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	// is populated whenever the plan exposes a budget cap (frontend keys off
 	// the non-empty slice). Plans with zero caps on both axes are unlimited
 	// and keep the default unlimited envelope.
-	if resolvedPlan != nil && tts.quotaService != nil && resolvedPlan.HasBudgetCap() {
+	if resolvedPlan != nil && tts.quotaService != nil {
 		remCPU := resolvedPlan.MaxCPU - usedCPU
 		if remCPU < 0 {
 			remCPU = 0
@@ -887,7 +887,7 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		}
 		resp.RemainingBySize = out
 	} else {
-		resp.Quota = &dto.SessionQuotaInfo{Scope: dto.ScopeUnlimited}
+		resp.Quota = &dto.SessionQuotaInfo{Scope: dto.ScopeUnknown}
 	}
 
 	return resp, nil
@@ -1151,15 +1151,11 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 	// resolved AND the quota service is wired AND the plan declares a cap
 	// on at least one axis. Plans with MaxCPU=MaxMemoryMB=0 are unlimited
 	// and keep the envelope as-is so the frontend renders an unconstrained UI.
-	opts.Quota = &dto.SessionQuotaInfo{Scope: dto.ScopeUnlimited}
+	opts.Quota = &dto.SessionQuotaInfo{Scope: dto.ScopeUnknown}
 
 	if plan == nil || tts.quotaService == nil {
 		return
 	}
-	if !plan.HasBudgetCap() {
-		return
-	}
-
 	usedCPU, usedMem, err := tts.quotaService.GetBudgetUsage(userID, budgetScopeOrgID)
 	if err != nil {
 		utils.Warn("EnrichSessionOptionsBudget: usage lookup failed for user=%s scope=%v: %v", userID, budgetScopeOrgID, err)

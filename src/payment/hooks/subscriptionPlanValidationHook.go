@@ -83,6 +83,10 @@ func (h *SubscriptionPlanValidationHook) Execute(ctx *hooks.HookContext) error {
 		return entityErrors.NewValidationError("data_persistence_gb", "must be at most 500 GB")
 	}
 
+	if err := validatePlanBudget(ctx); err != nil {
+		return err
+	}
+
 	// A tax behaviour that is neither inclusive nor exclusive is not a typo the
 	// caller can be trusted to have meant: taxBehaviorOf falls back to exclusive,
 	// so accepting one quietly turns an announced TTC price into a net one and
@@ -149,4 +153,51 @@ func intField(m map[string]any, key string) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// validatePlanBudget refuses a plan whose CPU or memory budget is not positive.
+//
+// This became necessary when `0` stopped meaning "unlimited" and started
+// meaning "no capacity". That reading is right for a value nobody set — the
+// zero-value struct a soft-deleted plan resolves to must grant nothing rather
+// than everything (#481) — but it also means an unset budget produces a plan on
+// which nobody can launch anything, administrators included: they do not bypass
+// the budget gate. The mistake therefore has to fail at the door, not at 9am
+// with a class waiting.
+//
+// Create and update are asymmetric on purpose:
+//   - BeforeCreate reads the converted *models.SubscriptionPlan, where an
+//     omitted field is already a 0. A create must state both budgets, so an
+//     absent one is a rejection rather than a skip.
+//   - BeforeUpdate reads the raw patch map, where an absent key is a partial
+//     update and is left alone. Only a stated non-positive value is refused.
+func validatePlanBudget(ctx *hooks.HookContext) error {
+	axes := []struct {
+		field string
+		label string
+	}{
+		{"max_cpu", "CPU budget"},
+		{"max_memory_mb", "memory budget"},
+	}
+
+	switch v := ctx.NewEntity.(type) {
+	case *models.SubscriptionPlan:
+		values := map[string]int{"max_cpu": v.MaxCPU, "max_memory_mb": v.MaxMemoryMB}
+		for _, axis := range axes {
+			if values[axis.field] <= 0 {
+				return entityErrors.NewValidationError(axis.field,
+					"must be greater than 0 — a plan with no "+axis.label+" cannot launch anything")
+			}
+		}
+	case map[string]any:
+		for _, axis := range axes {
+			value, present := intField(v, axis.field)
+			if present && value <= 0 {
+				return entityErrors.NewValidationError(axis.field,
+					"must be greater than 0 — a plan with no "+axis.label+" cannot launch anything")
+			}
+		}
+	}
+
+	return nil
 }

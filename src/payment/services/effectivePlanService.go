@@ -492,11 +492,9 @@ func widenCeiling(current UserBudgetCeiling, plan *models.SubscriptionPlan) User
 	return current
 }
 
-// widerLimit returns the more permissive of two budget limits.
+// widerLimit returns the more permissive of two budget limits — simply the
+// larger, now that no value means "unlimited".
 func widerLimit(a, b int) int {
-	if models.IsUnlimitedBudget(a) || models.IsUnlimitedBudget(b) {
-		return models.UnlimitedBudget
-	}
 	if b > a {
 		return b
 	}

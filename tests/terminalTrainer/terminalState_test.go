@@ -116,6 +116,12 @@ func TestTerminalState_JSONRoundTrip_ByteIdentical(t *testing.T) {
 // of every QuotaScope constant. These strings are the JSON wire format
 // consumed by ocf-front; renaming a constant value silently re-labels every
 // quota-bearing payload and must trip the suite loudly.
+//
+// It did exactly that when "unlimited" became "unknown". The rename is
+// deliberate: the value never meant "this plan is uncapped" but "there is no
+// budget to report", and plans can no longer be uncapped at all. ocf-front
+// must be updated in the same release — it reads this field as a
+// discriminator.
 func TestQuotaScopeConstants_PinnedWireFormat(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -124,7 +130,7 @@ func TestQuotaScopeConstants_PinnedWireFormat(t *testing.T) {
 	}{
 		{name: "user", scope: dto.ScopeUser, expected: "user"},
 		{name: "organization", scope: dto.ScopeOrganization, expected: "organization"},
-		{name: "unlimited", scope: dto.ScopeUnlimited, expected: "unlimited"},
+		{name: "unknown", scope: dto.ScopeUnknown, expected: "unknown"},
 	}
 
 	for _, tc := range testCases {
@@ -151,7 +157,7 @@ func TestQuotaScope_JSONRoundTrip_ByteIdentical(t *testing.T) {
 	}{
 		{name: "user", scope: dto.ScopeUser, expected: `"scope":"user"`},
 		{name: "organization", scope: dto.ScopeOrganization, expected: `"scope":"organization"`},
-		{name: "unlimited", scope: dto.ScopeUnlimited, expected: `"scope":"unlimited"`},
+		{name: "unknown", scope: dto.ScopeUnknown, expected: `"scope":"unknown"`},
 	}
 
 	for _, tc := range testCases {

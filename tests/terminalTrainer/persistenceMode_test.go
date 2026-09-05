@@ -123,8 +123,12 @@ func configureTTServer(t *testing.T, url string) {
 // by the fake server.
 func makePlan(persistent bool) *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
-		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                      "test-plan",
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:      "test-plan",
+		// Budgets are stated so these cases reach the persistence logic:
+		// a zero budget now means no capacity and refuses the session outright.
+		MaxCPU:                    24000,
+		MaxMemoryMB:               24576,
 		IsActive:                  true,
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    persistent,
@@ -471,8 +475,12 @@ func TestStartComposedSession_PersistentGatedByDataPersistenceEnabled(t *testing
 	// Plan has DataPersistenceEnabled=true — the SSOT field. Persistent mode
 	// must be permitted purely on the basis of this single field.
 	plan := &paymentModels.SubscriptionPlan{
-		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                      "ssot-plan",
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:      "ssot-plan",
+		// Budgets are stated so these cases reach the persistence logic:
+		// a zero budget now means no capacity and refuses the session outright.
+		MaxCPU:                    24000,
+		MaxMemoryMB:               24576,
 		IsActive:                  true,
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    true,
@@ -506,8 +514,12 @@ func TestStartComposedSession_PersistentRejectedWhenDataPersistenceDisabled(t *t
 	require.NoError(t, err)
 
 	plan := &paymentModels.SubscriptionPlan{
-		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                      "ssot-plan-no-pers",
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:      "ssot-plan-no-pers",
+		// Budgets are stated so these cases reach the persistence logic:
+		// a zero budget now means no capacity and refuses the session outright.
+		MaxCPU:                    24000,
+		MaxMemoryMB:               24576,
 		IsActive:                  true,
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    false,
@@ -538,8 +550,12 @@ func TestStartComposedSession_PersistentRejectedWhenDataPersistenceDisabled(t *t
 // preview path must go through this helper.
 func TestResolveScenarioPersistenceMode(t *testing.T) {
 	planWithPersistence := &paymentModels.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "with-persistence",
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:      "with-persistence",
+		// Budgets are stated so these cases reach the persistence logic:
+		// a zero budget now means no capacity and refuses the session outright.
+		MaxCPU:                 24000,
+		MaxMemoryMB:            24576,
 		IsActive:               true,
 		DataPersistenceEnabled: true,
 	}

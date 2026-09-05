@@ -111,16 +111,19 @@ func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.
 	assert.Equal(t, float64(1024), student["active_memory_mb"])
 }
 
-// TestOrgTerminalUsage_UnlimitedPlan_UnlimitedScope — plans with zero
-// CPU/RAM caps emit Scope=unlimited and an empty RemainingBySize.
-func TestOrgTerminalUsage_UnlimitedPlan_UnlimitedScope(t *testing.T) {
+// TestOrgTerminalUsage_ZeroBudgetPlan_AffordsNothing — a plan with zero
+// CPU/RAM caps used to report Scope=unlimited and let the dashboard render an
+// unconstrained view. Zero now means no capacity, so the org is shown as
+// having nothing available rather than everything.
+func TestOrgTerminalUsage_ZeroBudgetPlan_AffordsNothing(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
 	plan := &paymentModels.SubscriptionPlan{
-		Name:      "Unlimited",
+		Name:      "Zero budget",
 		IsActive:  true,
 		IsCatalog: true,
-		// MaxCPU=0 and MaxMemoryMB=0 → unlimited.
+		// MaxCPU=0 and MaxMemoryMB=0 → no capacity. Created directly rather
+		// than through the API, which now refuses this shape.
 	}
 	require.NoError(t, db.Create(plan).Error)
 
@@ -158,14 +161,18 @@ func TestOrgTerminalUsage_UnlimitedPlan_UnlimitedScope(t *testing.T) {
 
 	quota, ok := resp["quota"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, "unlimited", quota["scope"],
-		"plan with zero caps must emit Scope=unlimited")
+	assert.Equal(t, float64(0), quota["max_cpu"],
+		"a zero-budget plan reports a zero cap, not an unlimited one")
+	assert.NotEqual(t, "unlimited", quota["scope"],
+		"the unlimited scope no longer exists")
 
-	// remaining_by_size must be empty/nil so the frontend skips that block.
-	bySize, present := resp["remaining_by_size"]
-	if present {
-		slice, ok := bySize.([]interface{})
-		assert.True(t, ok && len(slice) == 0,
-			"remaining_by_size must be empty for unlimited plan (got %v)", bySize)
+	// Every size must afford nothing rather than the block being skipped.
+	if bySize, present := resp["remaining_by_size"]; present && bySize != nil {
+		for _, entry := range bySize.([]interface{}) {
+			m, ok := entry.(map[string]interface{})
+			require.True(t, ok)
+			assert.Equal(t, float64(0), m["remaining_count"],
+				"size %v must afford nothing on a zero budget", m["key"])
+		}
 	}
 }

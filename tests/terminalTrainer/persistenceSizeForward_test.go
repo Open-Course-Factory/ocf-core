@@ -48,6 +48,10 @@ func makePersistencePlan(gb int) *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
 		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                      "persistence-plan",
+		// Stated so these cases reach the persistence-size logic: a zero
+		// budget now means no capacity and refuses the session outright.
+		MaxCPU:      24000,
+		MaxMemoryMB: 24576,
 		IsActive:                  true,
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    true,

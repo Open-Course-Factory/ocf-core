@@ -3,7 +3,6 @@ package services
 import (
 	"errors"
 	"fmt"
-	"math"
 
 	"soli/formations/src/payment/catalog"
 	paymentDto "soli/formations/src/payment/dto"
@@ -98,8 +97,7 @@ type QuotaService interface {
 	//                                (max_mem - used_mem)/size.memory))
 	//
 	// An entry is returned for every canonical size in the catalog, even
-	// when the count is zero. When MaxCPU/MaxMemoryMB are zero (unlimited),
-	// RemainingCount reports math.MaxInt32 for every size.
+	// when the count is zero. A nil plan yields zero for every size.
 	//
 	// This is a pure function (no DB access) intended for endpoints that
 	// already know the user's current footprint, e.g.
@@ -336,11 +334,6 @@ func limitForMetric(plan *models.SubscriptionPlan, metric string) int64 {
 // composed-session path) populates these columns on create so new
 // sessions never need a catalog fallback.
 
-// budgetUnlimited is the sentinel returned for the "remaining" axis on
-// an unlimited (zero-cap) plan. Chosen as math.MaxInt32 so JSON callers
-// can recognise it without special-casing.
-const budgetUnlimited = math.MaxInt32
-
 // BudgetScopeFor — see interface doc.
 func (s *quotaService) BudgetScopeFor(userID string, requestOrgID *uuid.UUID) *uuid.UUID {
 	result, err := s.effectivePlanService.GetUserEffectivePlan(userID, requestOrgID)
@@ -370,29 +363,24 @@ func (s *quotaService) CheckBudget(
 }
 
 // cpuRemainingForReport produces the "remaining" CPU value used in
-// rejection responses (clamped to >=0 and respecting the unlimited
-// sentinel for zero-cap plans).
+// rejection responses, clamped to >= 0.
 func cpuRemainingForReport(plan *models.SubscriptionPlan, usedCPU int) int {
-	if plan.IsCPUUnlimited() {
-		return budgetUnlimited
-	}
-	r := plan.MaxCPU - usedCPU
-	if r < 0 {
-		return 0
-	}
-	return r
+	return clampNonNegative(plan.MaxCPU - usedCPU)
 }
 
 // memRemainingForReport mirrors cpuRemainingForReport for the memory axis.
 func memRemainingForReport(plan *models.SubscriptionPlan, usedMemMB int) int {
-	if plan.IsMemoryUnlimited() {
-		return budgetUnlimited
-	}
-	r := plan.MaxMemoryMB - usedMemMB
-	if r < 0 {
+	return clampNonNegative(plan.MaxMemoryMB - usedMemMB)
+}
+
+// clampNonNegative floors an over-spent budget at zero: usage can exceed a
+// cap after a plan is downgraded, and a negative "remaining" is not something
+// any caller should have to interpret.
+func clampNonNegative(v int) int {
+	if v < 0 {
 		return 0
 	}
-	return r
+	return v
 }
 
 // ComputeRemainingBySize — see interface doc.
@@ -403,22 +391,12 @@ func (s *quotaService) ComputeRemainingBySize(
 	canonicalKeys := catalog.CanonicalSizeKeys()
 	out := make([]SizeRemaining, 0, len(canonicalKeys))
 
-	cpuUnlimited := plan == nil || plan.IsCPUUnlimited()
-	memUnlimited := plan == nil || plan.IsMemoryUnlimited()
-
-	remCPU := 0
-	if !cpuUnlimited {
-		remCPU = plan.MaxCPU - usedCPU
-		if remCPU < 0 {
-			remCPU = 0
-		}
-	}
-	remMem := 0
-	if !memUnlimited {
-		remMem = plan.MaxMemoryMB - usedMemMB
-		if remMem < 0 {
-			remMem = 0
-		}
+	// A nil plan grants nothing. With no unlimited state, "no plan resolved"
+	// and "no capacity" are the same answer, and it is the safe one.
+	remCPU, remMem := 0, 0
+	if plan != nil {
+		remCPU = clampNonNegative(plan.MaxCPU - usedCPU)
+		remMem = clampNonNegative(plan.MaxMemoryMB - usedMemMB)
 	}
 
 	for _, key := range canonicalKeys {
@@ -426,34 +404,14 @@ func (s *quotaService) ComputeRemainingBySize(
 		if !ok {
 			continue
 		}
+		// Every catalog size costs something on both axes. A zero would be a
+		// catalog defect, and "fits infinitely" is the wrong way to fail it.
 		count := 0
-		switch {
-		case cpuUnlimited && memUnlimited:
-			count = budgetUnlimited
-		case cpuUnlimited:
-			if size.MemoryMB > 0 {
-				count = remMem / size.MemoryMB
-			} else {
-				count = budgetUnlimited
-			}
-		case memUnlimited:
-			if size.CPU > 0 {
-				count = remCPU / size.CPU
-			} else {
-				count = budgetUnlimited
-			}
-		default:
-			byCPU := budgetUnlimited
-			if size.CPU > 0 {
-				byCPU = remCPU / size.CPU
-			}
-			byMem := budgetUnlimited
-			if size.MemoryMB > 0 {
-				byMem = remMem / size.MemoryMB
-			}
-			if byCPU < byMem {
-				count = byCPU
-			} else {
+		if size.CPU > 0 && size.MemoryMB > 0 {
+			byCPU := remCPU / size.CPU
+			byMem := remMem / size.MemoryMB
+			count = byCPU
+			if byMem < count {
 				count = byMem
 			}
 		}
@@ -591,39 +549,22 @@ func (s *quotaService) EnforceBudgetTx(
 // sum, it produces the BudgetCheck verdict. Keeping it pure means the
 // locked and unlocked gates apply identical thresholds.
 func evaluateBudget(plan *models.SubscriptionPlan, usedCPU, usedMemMB, requestedCPU, requestedMemMB int) *BudgetCheck {
-	cpuUnlimited := plan.IsCPUUnlimited()
-	remainingCPU := budgetUnlimited
-	if !cpuUnlimited {
-		remainingCPU = plan.MaxCPU - usedCPU - requestedCPU
-	}
-
-	memUnlimited := plan.IsMemoryUnlimited()
-	remainingMem := budgetUnlimited
-	if !memUnlimited {
-		remainingMem = plan.MaxMemoryMB - usedMemMB - requestedMemMB
-	}
+	remainingCPU := plan.MaxCPU - usedCPU - requestedCPU
+	remainingMem := plan.MaxMemoryMB - usedMemMB - requestedMemMB
 
 	switch {
-	case !cpuUnlimited && remainingCPU < 0:
-		left := plan.MaxCPU - usedCPU
-		if left < 0 {
-			left = 0
-		}
-		return &BudgetCheck{
-			Allowed:        false,
-			RemainingCPU:   left,
-			RemainingMemMB: memRemainingForReport(plan, usedMemMB),
-			Reason:         "budget_cpu_exceeded",
-		}
-	case !memUnlimited && remainingMem < 0:
-		left := plan.MaxMemoryMB - usedMemMB
-		if left < 0 {
-			left = 0
-		}
+	case remainingCPU < 0:
 		return &BudgetCheck{
 			Allowed:        false,
 			RemainingCPU:   cpuRemainingForReport(plan, usedCPU),
-			RemainingMemMB: left,
+			RemainingMemMB: memRemainingForReport(plan, usedMemMB),
+			Reason:         "budget_cpu_exceeded",
+		}
+	case remainingMem < 0:
+		return &BudgetCheck{
+			Allowed:        false,
+			RemainingCPU:   cpuRemainingForReport(plan, usedCPU),
+			RemainingMemMB: memRemainingForReport(plan, usedMemMB),
 			Reason:         "budget_memory_exceeded",
 		}
 	}

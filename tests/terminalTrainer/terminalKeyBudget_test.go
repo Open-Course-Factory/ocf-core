@@ -105,11 +105,10 @@ func TestBudgetForTerminalKey_NoEntitlementSendsNoCap(t *testing.T) {
 	assert.Nil(t, mem)
 }
 
-// A negative budget is nonsense data, but the two sides of the codebase used
-// to disagree about it: quotaService reads `<= 0` as unlimited while the
-// ceiling fold read `== 0`. Both now go through IsUnlimitedBudget, so a
-// negative value cannot be a finite cap on one side and unlimited on the other.
-func TestBudgetForTerminalKey_NegativeCeilingIsTreatedAsUnlimited(t *testing.T) {
+// A negative budget is nonsense data that plan validation now refuses at the
+// door. Should one reach here anyway — a row predating the validation — it must
+// not be sent to tt-backend, which rejects a non-positive budget outright.
+func TestBudgetForTerminalKey_NegativeCeilingSendsNoCap(t *testing.T) {
 	cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
 		MaxCPU:         -1,
 		MaxMemoryMB:    -1,

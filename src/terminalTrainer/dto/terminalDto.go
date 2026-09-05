@@ -589,16 +589,15 @@ type TTFeature struct {
 //
 // Budget fields (Quota, AllowedSizes[i].RemainingCount, AllowedSizes[i].MemoryMB)
 // reflect the user's (or org's) current CPU/RAM footprint against the
-// effective plan's caps. Plans with zero caps report Quota.Scope="unlimited"
-// and per-size RemainingCount=0 — the frontend renders an unconstrained UI
-// in that case.
+// effective plan's caps. When no budget could be computed at all, Quota.Scope
+// is "unknown" and the numeric fields are zero — see QuotaScope.
 type SessionOptionsResponse struct {
 	Distribution    TTDistribution         `json:"distribution"`
 	AllowedSizes    []SessionOptionSize    `json:"allowed_sizes"`
 	AllowedFeatures []SessionOptionFeature `json:"allowed_features"`
 	// Quota carries the user's (or org's) budget snapshot. Always present
-	// so the frontend can render generically; Scope="unlimited" signals
-	// "no budget enforcement, ignore the numeric fields".
+	// so the frontend can render generically; Scope="unknown" signals
+	// "no budget could be computed, ignore the numeric fields".
 	Quota *SessionQuotaInfo `json:"quota,omitempty"`
 }
 
@@ -611,20 +610,31 @@ type SessionOptionsResponse struct {
 // effectivePlanService.go): PlanSource answers "where does this user's plan
 // come from" (personal | organization), while QuotaScope answers "which
 // counter is this quota being charged against" (user | organization |
-// unlimited). The vocabularies differ ("personal" vs "user") and QuotaScope
-// carries a third value ("unlimited") that has no PlanSource analog —
-// emitted when the resolved plan declares no CPU/RAM caps.
+// unknown). The vocabularies differ ("personal" vs "user") and QuotaScope
+// carries a third value that has no PlanSource analog.
+//
+// That third value used to be "unlimited", which was a misnomer: it never
+// meant "this plan is uncapped" but "there is no budget to report here",
+// covering a plan with zero caps, an unwired quota service, and an
+// unresolved plan alike. Plans can no longer be uncapped, but the other two
+// cases remain and still need a wire value — so it is named for what it is.
+//
+// The frontend keys the "do not lock the size pills merely because
+// RemainingCount is 0" behaviour off this value, which stays correct when
+// the number could not be computed: the read path is allowed to be
+// optimistic because EnforceBudgetTx enforces independently on the write
+// path.
 type QuotaScope string
 
 const (
 	ScopeUser         QuotaScope = "user"
 	ScopeOrganization QuotaScope = "organization"
-	ScopeUnlimited    QuotaScope = "unlimited"
+	ScopeUnknown      QuotaScope = "unknown"
 )
 
 // SessionQuotaInfo is the budget snapshot embedded in session-options and
-// org-usage responses. MaxCPU / MaxMemoryMB of 0 paired with Scope="unlimited"
-// means the plan has no budget cap (or the feature flag is off).
+// org-usage responses. Zeroed numeric fields paired with Scope="unknown" mean
+// no budget could be computed, not that the plan is uncapped.
 type SessionQuotaInfo struct {
 	MaxCPU            int        `json:"max_cpu"`
 	MaxMemoryMB       int        `json:"max_memory_mb"`
@@ -706,9 +716,8 @@ type SizeRemainingDTO = paymentDto.SizeRemaining
 // with the Quota envelope to show "5 running / 7 slots used / X vCPU left".
 //
 // Budget fields (Quota, RemainingBySize) reflect the org's current CPU/RAM
-// footprint against the effective plan's caps. Plans with zero caps report
-// Quota.Scope="unlimited" and an empty RemainingBySize slice — the dashboard
-// renders an unconstrained view in that case.
+// footprint against the effective plan's caps. When no budget could be
+// computed, Quota.Scope is "unknown" and RemainingBySize is empty.
 type OrgTerminalUsageResponse struct {
 	OrganizationID  string                 `json:"organization_id"`
 	ActiveTerminals int                    `json:"active_terminals"`

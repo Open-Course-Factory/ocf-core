@@ -47,8 +47,14 @@ type SubscriptionPlan struct {
 	// can be summed/compared directly without any unit conversion. The
 	// frontend converts mCPU to fractional vCPU for display ("5000 mCPU"
 	// → "5 vCPU", "500 mCPU" → "0.5 vCPU").
-	MaxCPU      int `gorm:"default:0" mapstructure:"max_cpu" json:"max_cpu"`             // Total CPU budget in mCPU (1000 = 1 vCPU); 0 = unlimited
-	MaxMemoryMB int `gorm:"default:0" mapstructure:"max_memory_mb" json:"max_memory_mb"` // Total RAM budget in MiB; 0 = unlimited
+	// Both budgets must be > 0 on a usable plan; the create/update hook refuses
+	// anything else. The column default stays 0 because there is no sensible
+	// non-zero default — 0 now reads as "no capacity", so a row that reached
+	// the database without a budget (a direct SQL insert, or the zero-value
+	// struct a soft-deleted plan resolves to) grants nothing instead of
+	// everything, which is the safe direction. It used to mean "unlimited".
+	MaxCPU      int `gorm:"default:0" mapstructure:"max_cpu" json:"max_cpu"`             // Total CPU budget in mCPU (1000 = 1 vCPU)
+	MaxMemoryMB int `gorm:"default:0" mapstructure:"max_memory_mb" json:"max_memory_mb"` // Total RAM budget in MiB
 
 	NetworkAccessEnabled      bool `gorm:"default:false" json:"network_access_enabled"`                                           // Allow external network access
 	DataPersistenceEnabled    bool `gorm:"default:false" json:"data_persistence_enabled"`                                         // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)
@@ -133,35 +139,6 @@ func (s SubscriptionPlan) EffectiveSeatUnit() string {
 // IsFree reports whether the plan carries no recurring charge and therefore
 // must not be synced to Stripe as a billable product/price.
 func (s SubscriptionPlan) IsFree() bool { return s.PriceAmount <= 0 }
-
-// UnlimitedBudget is the value MaxCPU and MaxMemoryMB carry to mean "no cap
-// on this axis".
-const UnlimitedBudget = 0
-
-// IsUnlimitedBudget reports whether a budget value means "no cap".
-//
-// The convention lives here, next to the fields that carry it, because it was
-// previously restated at each call site with THREE different operators —
-// `> 0`, `<= 0` and `== 0` — which had already drifted: a negative budget read
-// as unlimited to the quota engine and as a finite (negative) cap elsewhere.
-func IsUnlimitedBudget(limit int) bool { return limit <= UnlimitedBudget }
-
-// IsCPUUnlimited reports whether the plan places no cap on CPU.
-func (s SubscriptionPlan) IsCPUUnlimited() bool { return IsUnlimitedBudget(s.MaxCPU) }
-
-// IsMemoryUnlimited reports whether the plan places no cap on memory.
-func (s SubscriptionPlan) IsMemoryUnlimited() bool { return IsUnlimitedBudget(s.MaxMemoryMB) }
-
-// HasBudgetCap reports whether the plan constrains either axis, i.e. whether
-// the budget engine has anything to enforce.
-//
-// Callers asked this question in two De Morgan-equivalent forms —
-// `MaxCPU > 0 || MaxMemoryMB > 0` in one place and
-// `MaxCPU <= 0 && MaxMemoryMB <= 0` (negated) in another, both in the same
-// file — which is precisely the kind of restatement that drifts.
-func (s SubscriptionPlan) HasBudgetCap() bool {
-	return !s.IsCPUUnlimited() || !s.IsMemoryUnlimited()
-}
 
 func (s SubscriptionPlan) GetBaseModel() entityManagementModels.BaseModel {
 	return s.BaseModel
