@@ -317,6 +317,8 @@ func TestSetupPaymentPermissions_AdminRoutes(t *testing.T) {
 		{"/api/v1/subscription-plans/sync-stripe", "POST"},
 		{"/api/v1/subscription-plans/sync-stripe/mirror", "POST"},
 		{"/api/v1/subscription-plans/import-stripe", "POST"},
+		// Plan health report (admin-only)
+		{"/api/v1/subscription-plans/health", "GET"},
 		// NEW: Stripe hooks toggle
 		{"/api/v1/hooks/stripe/toggle", "POST"},
 		// NEW: Usage metrics admin routes (prevent subscription limit bypass)

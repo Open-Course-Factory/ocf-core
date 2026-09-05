@@ -213,6 +213,11 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Reset usage metric counter (admin only)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/subscription-plans/health", Method: "GET",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Report what every plan promises but cannot deliver (platform operators)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/subscription-plans/pricing-preview", Method: "POST",
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Price a prospective tier ladder before saving it (admin only)",
