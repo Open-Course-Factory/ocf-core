@@ -67,29 +67,34 @@ func TestBudgetForTerminalKey_SubVCPUCeilingStillGrantsOne(t *testing.T) {
 	assert.Equal(t, int64(256), *mem)
 }
 
-func TestBudgetForTerminalKey_UnlimitedSendsNoCap(t *testing.T) {
-	// 0 on a plan axis means unlimited. tt-backend expresses "no budget" as a
-	// NULL column, which its request DTO models as an omitted pointer.
-	cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
-		MaxCPU:         0,
-		MaxMemoryMB:    0,
-		HasEntitlement: true,
-	})
+// A non-positive budget on an axis sends no cap for that axis rather than a
+// zero: tt-backend rejects an explicit 0 outright, so forwarding one would turn
+// a bad row into a failed key provisioning. Plan validation refuses to create
+// such a budget, so this only guards rows that predate it.
+func TestBudgetForTerminalKey_NonPositiveAxisSendsNoCap(t *testing.T) {
+	cases := []struct {
+		name        string
+		cpu, memory int
+		wantCPU     bool
+		wantMem     bool
+	}{
+		{"both zero", 0, 0, false, false},
+		{"zero cpu only", 0, 4096, false, true},
+		{"zero memory only", 8000, 0, true, false},
+		{"both negative", -1, -1, false, false},
+	}
 
-	assert.Nil(t, cpu, "unlimited CPU must send no cap, not a zero")
-	assert.Nil(t, mem, "unlimited RAM must send no cap, not a zero")
-}
-
-func TestBudgetForTerminalKey_UnlimitedOnOneAxisOnly(t *testing.T) {
-	cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
-		MaxCPU:         0,
-		MaxMemoryMB:    4096,
-		HasEntitlement: true,
-	})
-
-	assert.Nil(t, cpu)
-	require.NotNil(t, mem)
-	assert.Equal(t, int64(4096), *mem)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
+				MaxCPU:         tc.cpu,
+				MaxMemoryMB:    tc.memory,
+				HasEntitlement: true,
+			})
+			assert.Equal(t, tc.wantCPU, cpu != nil, "cpu cap presence")
+			assert.Equal(t, tc.wantMem, mem != nil, "memory cap presence")
+		})
+	}
 }
 
 func TestBudgetForTerminalKey_NoEntitlementSendsNoCap(t *testing.T) {
@@ -99,20 +104,6 @@ func TestBudgetForTerminalKey_NoEntitlementSendsNoCap(t *testing.T) {
 	// primary entitlement check.
 	cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
 		HasEntitlement: false,
-	})
-
-	assert.Nil(t, cpu)
-	assert.Nil(t, mem)
-}
-
-// A negative budget is nonsense data that plan validation now refuses at the
-// door. Should one reach here anyway — a row predating the validation — it must
-// not be sent to tt-backend, which rejects a non-positive budget outright.
-func TestBudgetForTerminalKey_NegativeCeilingSendsNoCap(t *testing.T) {
-	cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
-		MaxCPU:         -1,
-		MaxMemoryMB:    -1,
-		HasEntitlement: true,
 	})
 
 	assert.Nil(t, cpu)

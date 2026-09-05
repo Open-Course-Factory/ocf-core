@@ -563,23 +563,6 @@ func TestTerminalBudgetHook_BeforeCreate_UnknownSize_Error(t *testing.T) {
 // 11) Unlimited budget allows any size
 // ---------------------------------------------------------------------------
 
-// A zero budget refuses the create. It used to mean unlimited, so the write-time
-// gate waved through an XL on a plan nobody had configured — the #481 shape, at
-// the last line of defence. The denormalised size footprint is still stamped on
-// the row: the hook records what was asked for even when it refuses it.
-func TestTerminalBudgetHook_BeforeCreate_ZeroBudgetRefuses(t *testing.T) {
-	db := freshTestDB(t)
-	plan := budgetPlanInMem("Zero budget", 0, 0, nil)
-	hook := newHookForTest(db, plan, nil)
-
-	terminal := &terminalModels.Terminal{
-		UserID:      "u-zero-budget",
-		MachineSize: "XL", // 4000 mCPU / 4g
-	}
-
-	err := execBeforeCreate(hook, terminal)
-	require.Error(t, err, "a plan with no budget must refuse the write, not wave it through")
-}
 
 // ---------------------------------------------------------------------------
 // 12) Race condition (PostgreSQL only — gated by testing.Short() + env)

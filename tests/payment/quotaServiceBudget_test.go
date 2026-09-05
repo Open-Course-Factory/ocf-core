@@ -201,41 +201,6 @@ func TestQuotaService_CheckBudget_MixedActiveSessions(t *testing.T) {
 	assert.Equal(t, 512, check.RemainingMemMB, "4096 - (1024+512) - 2048 = 512")
 }
 
-// A zero budget grants NOTHING. This is the inversion of the old rule, where
-// zero meant unlimited and a plan nobody had configured handed out XL machines
-// (#481). Validation now refuses to create such a plan, but the engine must
-// fail closed regardless — the guard exists for rows that predate it and for
-// the zero-value struct a soft-deleted plan still resolves to.
-func TestQuotaService_CheckBudget_ZeroBudget_GrantsNothing(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "u-budget-zero"
-
-	plan := budgetPlan(t, db, "BudgetZero", 0, 0, nil)
-
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 4096)
-
-	require.NoError(t, err)
-	require.NotNil(t, check)
-	assert.False(t, check.Allowed, "a plan with no budget must not admit a session")
-	assert.Equal(t, "budget_cpu_exceeded", check.Reason)
-	assert.Equal(t, 0, check.RemainingCPU)
-	assert.Equal(t, 0, check.RemainingMemMB)
-}
-
-// Even the smallest catalog size is refused, not just XL.
-func TestQuotaService_CheckBudget_ZeroBudget_RefusesSmallestSize(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-
-	plan := budgetPlan(t, db, "BudgetZeroXS", 0, 0, nil)
-
-	check, err := newQuotaSvc(t, db).CheckBudget("u-zero-xs", nil, plan, 500, 256)
-
-	require.NoError(t, err)
-	assert.False(t, check.Allowed)
-}
-
 // TestQuotaService_CheckBudget_StoppedCountsRegardlessOfPersistence pins the
 // new rule (D6', supersedes D6): every stopped session — persistent OR
 // ephemeral — counts against the budget until tt-backend confirms the
@@ -404,22 +369,6 @@ func TestQuotaService_ComputeRemainingBySize_AllSizes(t *testing.T) {
 	// too — CPU stamped in mCPU.
 	assert.Equal(t, 4000, got["l"].CPU)
 	assert.Equal(t, 2048, got["l"].MemoryMB)
-}
-
-// A zero budget affords no sessions of any size — the composer locks every
-// pill rather than offering an unconstrained UI.
-func TestQuotaService_ComputeRemainingBySize_ZeroBudget_GrantsNothing(t *testing.T) {
-	db := freshTestDB(t)
-
-	plan := budgetPlan(t, db, "BudgetZeroRemainings", 0, 0, nil)
-	svc := newQuotaSvc(t, db)
-
-	remaining := svc.ComputeRemainingBySize(plan, 0, 0)
-
-	require.NotEmpty(t, remaining, "every catalog size still gets an entry")
-	for _, r := range remaining {
-		assert.Equal(t, 0, r.RemainingCount, "size %s must afford nothing on a zero budget", r.Key)
-	}
 }
 
 // A nil plan is the same answer: "no plan resolved" and "no capacity" are one

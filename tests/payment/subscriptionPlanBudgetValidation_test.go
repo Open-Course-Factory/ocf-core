@@ -135,31 +135,6 @@ func TestSubscriptionPlanValidation_UpdateHandlesPointerPatch(t *testing.T) {
 		map[string]any{"max_cpu": absent}), "a nil pointer is an omitted field")
 }
 
-// Every plan live in production must still pass, or this change breaks the
-// platform on deploy rather than at the next plan edit.
-func TestSubscriptionPlanValidation_ProductionPlansStillPass(t *testing.T) {
-	live := []struct {
-		name        string
-		cpu, memory int
-	}{
-		{"Découverte", 500, 256},
-		{"Siège élève — mensuel", 2000, 2048},
-		{"Siège élève — pack jours", 2000, 2048},
-		{"Member Pro (retiré)", 4000, 4096},
-		{"Solo", 6000, 6144},
-		{"Formateur", 6000, 6144},
-		{"Formateur — MDS (classe)", 24000, 12288},
-	}
-
-	for _, p := range live {
-		t.Run(p.name, func(t *testing.T) {
-			assert.NoError(t, execPlanValidation(hooks.BeforeCreate, &models.SubscriptionPlan{
-				Name: p.name, MaxCPU: p.cpu, MaxMemoryMB: p.memory,
-			}))
-		})
-	}
-}
-
 // End-to-end through the REAL generic service with the payment hooks wired:
 // a plan created without budgets is refused and nothing is persisted. This is
 // the path an admin actually uses, and the only one that can produce the

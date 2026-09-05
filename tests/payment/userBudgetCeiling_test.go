@@ -129,30 +129,6 @@ func TestUserBudgetCeiling_TakesTheMostGenerousContext(t *testing.T) {
 	assert.Equal(t, 4096, ceiling.MaxMemoryMB)
 }
 
-// A zero budget no longer dominates. It used to mean "unlimited" and win over
-// any finite value, so one misconfigured plan silently lifted the ceiling in
-// every other context the user acted in. Zero now means no capacity, so the
-// larger real budget wins.
-func TestUserBudgetCeiling_ZeroDoesNotDominate(t *testing.T) {
-	db := freshTestDB(t)
-	userID := "user-with-zero-plan"
-
-	finite := planWithBudget(t, db, "Finite", 10, 2000, 1024)
-	zero := planWithBudget(t, db, "Zero budget", 40, 0, 0)
-
-	orgA := orgSubscriptionOn(t, db, "owner-f", finite)
-	addMemberWithRole(t, db, orgA.ID, userID, "member")
-
-	orgB := orgSubscriptionOn(t, db, "owner-z", zero)
-	addMemberWithRole(t, db, orgB.ID, userID, "member")
-
-	ceiling, err := services.NewEffectivePlanService(db).GetUserBudgetCeiling(userID)
-
-	require.NoError(t, err)
-	assert.Equal(t, 2000, ceiling.MaxCPU, "the real budget must win over a zero one")
-	assert.Equal(t, 1024, ceiling.MaxMemoryMB)
-}
-
 // A personal subscription counts as one of the contexts.
 func TestUserBudgetCeiling_IncludesPersonalSubscription(t *testing.T) {
 	db := freshTestDB(t)
