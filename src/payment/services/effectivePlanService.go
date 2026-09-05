@@ -122,6 +122,38 @@ type EffectivePlanService interface {
 	// user benefits from grant classrooms", which is the right question for a
 	// capability flag and the wrong one for spending.
 	CanPurchaseSeats(userID string) ClassroomEntitlement
+
+	// GetUserBudgetCeiling returns the largest CPU/RAM entitlement the user
+	// holds across every context they can act in — their personal
+	// subscription plus each organization they belong to, with role-based
+	// plan overrides honoured.
+	//
+	// It exists because a user's Terminal Trainer API key is GLOBAL to the
+	// user, while plan resolution is per-org. Capping the key at any single
+	// org's plan would wrongly block the user in every other context, so the
+	// key carries their maximum entitlement and the per-org gate
+	// (QuotaService) remains the finer control.
+	//
+	// The role override is the point: an organization holding a large pool
+	// plan can map role 'member' to a small learner plan, and that mapping —
+	// not the org's own plan — is what must reach the learner's key.
+	// Otherwise a single learner can consume the whole class budget.
+	GetUserBudgetCeiling(userID string) (UserBudgetCeiling, error)
+}
+
+// UserBudgetCeiling is the per-user resource ceiling derived from plans.
+//
+// MaxCPU is in mCPU (1000 = 1 vCPU), matching SubscriptionPlan.MaxCPU.
+// On both axes 0 means UNLIMITED, exactly as the plan model defines it — so
+// callers must consult HasEntitlement before reading a zero as "no limit".
+type UserBudgetCeiling struct {
+	MaxCPU      int
+	MaxMemoryMB int
+	// HasEntitlement is false when the user holds no plan in any context.
+	// Without it, "no plan at all" and "unlimited plan" would both present
+	// as two zeroes — the difference between granting nothing and granting
+	// everything.
+	HasEntitlement bool
 }
 
 type effectivePlanService struct {
@@ -393,4 +425,81 @@ func (s *effectivePlanService) quotaService() QuotaService {
 // Thin wrapper kept for backward compatibility — actual logic lives in QuotaService.
 func (s *effectivePlanService) CheckEffectiveUsageLimitFromResult(result *EffectivePlanResult, userID string, metricType string, increment int64) (*UsageLimitCheck, error) {
 	return s.quotaService().CheckUserQuotaWithPlan(result, userID, metricType, increment)
+}
+
+// GetUserBudgetCeiling — see interface doc.
+//
+// Resolution walks every context the user can act in and keeps the most
+// generous budget on each axis independently. It deliberately reuses
+// resolveForOrg per organization rather than resolveGlobal: resolveGlobal
+// picks a winner by plan Priority and never consults organization_role_plans,
+// so a learner mapped to a small role plan would come back holding their
+// school's large plan — the exact inversion this ceiling exists to prevent.
+func (s *effectivePlanService) GetUserBudgetCeiling(userID string) (UserBudgetCeiling, error) {
+	var ceiling UserBudgetCeiling
+
+	// Personal subscription, if any. A missing one is not an error — most
+	// learners have none.
+	if sub, err := s.paymentRepo.GetActiveUserSubscription(userID); err == nil && sub != nil {
+		ceiling = widenCeiling(ceiling, &sub.SubscriptionPlan)
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		utils.Warn("budget ceiling: failed to read personal subscription for %s: %v", userID, err)
+	}
+
+	// Every active org membership, resolved through the role-aware path.
+	var memberships []orgModels.OrganizationMember
+	if err := s.db.
+		Where("user_id = ? AND is_active = ?", userID, true).
+		Find(&memberships).Error; err != nil {
+		return ceiling, fmt.Errorf("failed to list organizations for user %s: %w", userID, err)
+	}
+
+	for i := range memberships {
+		orgID := memberships[i].OrganizationID
+		result, err := s.resolveForOrg(userID, orgID)
+		if err != nil {
+			// An org with no subscription and no personal fallback resolves
+			// to an error. That context simply grants nothing; it must not
+			// sink the whole ceiling.
+			utils.Debug("budget ceiling: no plan for user %s in org %s: %v", userID, orgID.String(), err)
+			continue
+		}
+		if result != nil {
+			ceiling = widenCeiling(ceiling, result.Plan)
+		}
+	}
+
+	return ceiling, nil
+}
+
+// widenCeiling folds one plan into the running ceiling, keeping the more
+// generous value per axis. Unlimited (0) dominates any finite budget, so it
+// can only be applied once an entitlement exists — otherwise the zero-valued
+// starting point would be indistinguishable from an unlimited plan.
+func widenCeiling(current UserBudgetCeiling, plan *models.SubscriptionPlan) UserBudgetCeiling {
+	if plan == nil {
+		return current
+	}
+	if !current.HasEntitlement {
+		return UserBudgetCeiling{
+			MaxCPU:         plan.MaxCPU,
+			MaxMemoryMB:    plan.MaxMemoryMB,
+			HasEntitlement: true,
+		}
+	}
+	current.MaxCPU = widerLimit(current.MaxCPU, plan.MaxCPU)
+	current.MaxMemoryMB = widerLimit(current.MaxMemoryMB, plan.MaxMemoryMB)
+	return current
+}
+
+// widerLimit returns the more permissive of two limits under the plan model's
+// convention that 0 means unlimited.
+func widerLimit(a, b int) int {
+	if a == 0 || b == 0 {
+		return 0
+	}
+	if b > a {
+		return b
+	}
+	return a
 }

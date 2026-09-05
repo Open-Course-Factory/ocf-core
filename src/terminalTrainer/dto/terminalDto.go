@@ -93,15 +93,18 @@ type TerminalSessionResponse struct {
 type TerminalTrainerAPIKeyResponse struct {
 	Success bool `json:"success"`
 	Data    struct {
-		ID                    int64  `json:"id"`
-		KeyValue              string `json:"key_value"`
-		Name                  string `json:"name"`
-		IsAdmin               bool   `json:"is_admin"`
-		IsActive              bool   `json:"is_active"`
-		CreatedAt             int64  `json:"created_at"`
-		UpdatedAt             int64  `json:"updated_at"`
-		LastUsedAt            *int64 `json:"last_used_at"`
-		MaxConcurrentSessions int    `json:"max_concurrent_sessions"`
+		ID         int64  `json:"id"`
+		KeyValue   string `json:"key_value"`
+		Name       string `json:"name"`
+		IsAdmin    bool   `json:"is_admin"`
+		IsActive   bool   `json:"is_active"`
+		CreatedAt  int64  `json:"created_at"`
+		UpdatedAt  int64  `json:"updated_at"`
+		LastUsedAt *int64 `json:"last_used_at"`
+		// Terminal Trainer dropped max_concurrent_sessions from api_keys in
+		// favour of the max_cpu_total / max_memory_mb_total budgets, so the
+		// field is no longer sent and nothing decodes it. Removed rather than
+		// left to decode as a permanent zero.
 	} `json:"data"`
 	Message string `json:"message"`
 }

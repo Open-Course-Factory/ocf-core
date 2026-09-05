@@ -106,6 +106,20 @@ func (s *stubEffectivePlanService) CanPurchaseSeats(userID string) paymentServic
 	return paymentServices.ClassroomEntitlementFor(s.personalPlan)
 }
 
+// GetUserBudgetCeiling reports the stub's personal plan as the user's ceiling.
+// These tests exercise the budget hook, not key provisioning, so the simplest
+// faithful answer is enough to satisfy the interface.
+func (s *stubEffectivePlanService) GetUserBudgetCeiling(userID string) (paymentServices.UserBudgetCeiling, error) {
+	if s.personalPlan == nil {
+		return paymentServices.UserBudgetCeiling{}, nil
+	}
+	return paymentServices.UserBudgetCeiling{
+		MaxCPU:         s.personalPlan.MaxCPU,
+		MaxMemoryMB:    s.personalPlan.MaxMemoryMB,
+		HasEntitlement: true,
+	}, nil
+}
+
 func (s *stubEffectivePlanService) CanRunClassrooms(userID string, orgID *uuid.UUID) paymentServices.ClassroomEntitlement {
 	result, err := s.GetUserEffectivePlan(userID, orgID)
 	if err != nil || result == nil {

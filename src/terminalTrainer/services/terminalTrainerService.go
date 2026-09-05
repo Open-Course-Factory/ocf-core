@@ -139,6 +139,7 @@ type terminalTrainerService struct {
 	repository             repositories.TerminalRepository
 	orgSubscriptionService paymentServices.OrganizationSubscriptionService
 	quotaService           paymentServices.QuotaService
+	effectivePlanService   paymentServices.EffectivePlanService
 	enumService            TerminalTrainerEnumService
 	db                     *gorm.DB
 	proxy                  *terminalProxyClient
@@ -179,6 +180,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		repository:             repository,
 		orgSubscriptionService: paymentServices.NewOrganizationSubscriptionService(db),
 		quotaService:           quotaService,
+		effectivePlanService:   eps,
 		enumService:            enumService,
 		db:                     db,
 		proxy:                  proxy,
@@ -285,11 +287,36 @@ func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
 		return fmt.Errorf("user already has an active terminal trainer key")
 	}
 
+	// Per-key CPU/RAM budget from the user's plan entitlement.
+	//
+	// This replaces the historical "max_concurrent_sessions": 5, which
+	// tt-backend DROPPED (see its migration dropping the api_keys column in
+	// favour of max_cpu_total / max_memory_mb_total). The field was silently
+	// ignored on arrival, so every key was provisioned with no budget at all
+	// — which is why a single learner could consume an entire class pool.
+	//
+	// A resolution failure must not block key creation: without a key the
+	// user cannot open any terminal, whereas without a budget they are still
+	// gated by ocf-core's own quota. Fall back to no cap and warn.
+	ceiling, ceilingErr := tts.effectivePlanService.GetUserBudgetCeiling(userID)
+	if ceilingErr != nil {
+		utils.Warn("Failed to resolve budget ceiling for user %s, provisioning key without a per-key budget: %v", userID, ceilingErr)
+		ceiling = paymentServices.UserBudgetCeiling{}
+	}
+	maxCPUTotal, maxMemoryMBTotal := BudgetForTerminalKey(ceiling)
+
 	// Appel à l'API Terminal Trainer
 	payload := map[string]any{
-		"name":                    keyName,
-		"is_admin":                false,
-		"max_concurrent_sessions": 5,
+		"name":     keyName,
+		"is_admin": false,
+	}
+	// Omitted rather than sent as zero: tt-backend models "no budget" as a
+	// NULL column and rejects an explicit 0 as invalid.
+	if maxCPUTotal != nil {
+		payload["max_cpu_total"] = *maxCPUTotal
+	}
+	if maxMemoryMBTotal != nil {
+		payload["max_memory_mb_total"] = *maxMemoryMBTotal
 	}
 
 	url := fmt.Sprintf("%s/%s/admin/api-keys", tts.baseURL, tts.apiVersion)
@@ -304,11 +331,10 @@ func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
 
 	// Sauvegarder en base
 	userTerminalKey := &models.UserTerminalKey{
-		UserID:      userID,
-		APIKey:      apiResponse.Data.KeyValue,
-		KeyName:     apiResponse.Data.Name,
-		IsActive:    true,
-		MaxSessions: apiResponse.Data.MaxConcurrentSessions,
+		UserID:   userID,
+		APIKey:   apiResponse.Data.KeyValue,
+		KeyName:  apiResponse.Data.Name,
+		IsActive: true,
 	}
 
 	return tts.repository.CreateUserTerminalKey(userTerminalKey)
