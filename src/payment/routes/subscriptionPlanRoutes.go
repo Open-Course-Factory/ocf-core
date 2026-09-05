@@ -25,6 +25,10 @@ func SubscriptionPlanRoutes(router *gin.RouterGroup, config *config.Configuratio
 	planRoutes.POST("/pricing-preview", authMiddleware.AuthManagement(), subscriptionController.PreviewProspectivePricing)
 	planRoutes.POST("/seat-pricing-check", authMiddleware.AuthManagement(), subscriptionController.CheckSeatPricingCoherence)
 
+	// Plan health report (admin seulement) — déclaré avant les routes CRUD
+	// génériques /:id pour que le segment statique gagne.
+	planRoutes.GET("/health", authMiddleware.AuthManagement(), subscriptionController.GetPlanHealth)
+
 	// Routes de synchronisation Stripe (admin seulement)
 	planRoutes.POST("/:id/sync-stripe", authMiddleware.AuthManagement(), subscriptionController.SyncSubscriptionPlanWithStripe)
 	planRoutes.POST("/sync-stripe", authMiddleware.AuthManagement(), subscriptionController.SyncAllSubscriptionPlansWithStripe)

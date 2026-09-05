@@ -36,6 +36,9 @@ type SubscriptionController interface {
 	CheckUsageLimit(ctx *gin.Context)
 	GetUserUsage(ctx *gin.Context)
 
+	// Plan health
+	GetPlanHealth(ctx *gin.Context)
+
 	// Pricing preview
 	GetPricingPreview(ctx *gin.Context)
 	PreviewProspectivePricing(ctx *gin.Context)
@@ -1583,4 +1586,34 @@ func (sc *userSubscriptionController) orgSubscriptionToUserDTO(userID string, su
 		CreatedAt:          sub.CreatedAt,
 		UpdatedAt:          sub.UpdatedAt,
 	}
+}
+
+// GetPlanHealth godoc
+//
+//	@Summary		Report what every plan promises but cannot deliver
+//	@Description	One entry per subscription plan with something worth saying:
+//	@Description	a budget that launches nothing, a deleted plan still
+//	@Description	entitling live subscribers, a catalogue plan Stripe cannot
+//	@Description	charge for, or two budget axes that afford materially
+//	@Description	different numbers of sessions. Plans with nothing wrong are
+//	@Description	absent — the report is a list of things to fix.
+//	@Tags			subscription-plans
+//	@Produce		json
+//	@Success		200	{array}		services.PlanHealth
+//	@Failure		403	{object}	errors.APIError
+//	@Failure		500	{object}	errors.APIError
+//	@Router			/subscription-plans/health [get]
+//	@Security		BearerAuth
+func (sc *userSubscriptionController) GetPlanHealth(ctx *gin.Context) {
+	report, err := services.CheckAllPlanHealth(sc.db)
+	if err != nil {
+		utils.Error("failed to build the plan health report: %v", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to read the subscription plans",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, report)
 }
