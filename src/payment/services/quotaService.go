@@ -373,7 +373,7 @@ func (s *quotaService) CheckBudget(
 // rejection responses (clamped to >=0 and respecting the unlimited
 // sentinel for zero-cap plans).
 func cpuRemainingForReport(plan *models.SubscriptionPlan, usedCPU int) int {
-	if plan.MaxCPU <= 0 {
+	if plan.IsCPUUnlimited() {
 		return budgetUnlimited
 	}
 	r := plan.MaxCPU - usedCPU
@@ -385,7 +385,7 @@ func cpuRemainingForReport(plan *models.SubscriptionPlan, usedCPU int) int {
 
 // memRemainingForReport mirrors cpuRemainingForReport for the memory axis.
 func memRemainingForReport(plan *models.SubscriptionPlan, usedMemMB int) int {
-	if plan.MaxMemoryMB <= 0 {
+	if plan.IsMemoryUnlimited() {
 		return budgetUnlimited
 	}
 	r := plan.MaxMemoryMB - usedMemMB
@@ -403,8 +403,8 @@ func (s *quotaService) ComputeRemainingBySize(
 	canonicalKeys := catalog.CanonicalSizeKeys()
 	out := make([]SizeRemaining, 0, len(canonicalKeys))
 
-	cpuUnlimited := plan == nil || plan.MaxCPU <= 0
-	memUnlimited := plan == nil || plan.MaxMemoryMB <= 0
+	cpuUnlimited := plan == nil || plan.IsCPUUnlimited()
+	memUnlimited := plan == nil || plan.IsMemoryUnlimited()
 
 	remCPU := 0
 	if !cpuUnlimited {
@@ -591,13 +591,13 @@ func (s *quotaService) EnforceBudgetTx(
 // sum, it produces the BudgetCheck verdict. Keeping it pure means the
 // locked and unlocked gates apply identical thresholds.
 func evaluateBudget(plan *models.SubscriptionPlan, usedCPU, usedMemMB, requestedCPU, requestedMemMB int) *BudgetCheck {
-	cpuUnlimited := plan.MaxCPU <= 0
+	cpuUnlimited := plan.IsCPUUnlimited()
 	remainingCPU := budgetUnlimited
 	if !cpuUnlimited {
 		remainingCPU = plan.MaxCPU - usedCPU - requestedCPU
 	}
 
-	memUnlimited := plan.MaxMemoryMB <= 0
+	memUnlimited := plan.IsMemoryUnlimited()
 	remainingMem := budgetUnlimited
 	if !memUnlimited {
 		remainingMem = plan.MaxMemoryMB - usedMemMB - requestedMemMB

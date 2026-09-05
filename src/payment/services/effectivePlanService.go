@@ -141,22 +141,6 @@ type EffectivePlanService interface {
 	GetUserBudgetCeiling(userID string) (UserBudgetCeiling, error)
 }
 
-// UnlimitedBudget is the value SubscriptionPlan.MaxCPU / MaxMemoryMB carry to
-// mean "no cap on this axis".
-const UnlimitedBudget = 0
-
-// IsUnlimitedBudget reports whether a plan budget value means "no cap".
-//
-// The convention is written down HERE and nowhere else, because it is easy to
-// restate slightly differently at each site — this file originally tested
-// `== 0` while quotaService tests `<= 0`, so a negative budget would have read
-// as unlimited to one and as a (negative) finite cap to the other.
-//
-// Note the quota engine and the backfill package still carry their own inline
-// copies of this comparison; they predate this helper and are left alone here
-// to keep the change reviewable.
-func IsUnlimitedBudget(limit int) bool { return limit <= UnlimitedBudget }
-
 // UserBudgetCeiling is the per-user resource ceiling derived from plans.
 //
 // MaxCPU is in mCPU (1000 = 1 vCPU), matching SubscriptionPlan.MaxCPU.
@@ -510,8 +494,8 @@ func widenCeiling(current UserBudgetCeiling, plan *models.SubscriptionPlan) User
 
 // widerLimit returns the more permissive of two budget limits.
 func widerLimit(a, b int) int {
-	if IsUnlimitedBudget(a) || IsUnlimitedBudget(b) {
-		return UnlimitedBudget
+	if models.IsUnlimitedBudget(a) || models.IsUnlimitedBudget(b) {
+		return models.UnlimitedBudget
 	}
 	if b > a {
 		return b

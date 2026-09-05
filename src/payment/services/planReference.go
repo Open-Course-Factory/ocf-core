@@ -18,7 +18,7 @@ import (
 // Preload honours soft deletes, so a subscription pointing at a deleted plan
 // comes back carrying the ZERO-VALUE SubscriptionPlan rather than failing. That
 // struct looks like a plan to every consumer: it has a name (empty), an ID (nil)
-// and limits (zero) — and QuotaService reads MaxCPU <= 0 as "no cap on this
+// and limits (zero) — and QuotaService reads an unlimited budget as "no cap on this
 // axis", which is the correct rule for a genuinely unlimited plan. So a deleted
 // plan granted unlimited capacity, XL machines included (#481).
 //

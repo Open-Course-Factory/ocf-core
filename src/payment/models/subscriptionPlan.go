@@ -134,6 +134,35 @@ func (s SubscriptionPlan) EffectiveSeatUnit() string {
 // must not be synced to Stripe as a billable product/price.
 func (s SubscriptionPlan) IsFree() bool { return s.PriceAmount <= 0 }
 
+// UnlimitedBudget is the value MaxCPU and MaxMemoryMB carry to mean "no cap
+// on this axis".
+const UnlimitedBudget = 0
+
+// IsUnlimitedBudget reports whether a budget value means "no cap".
+//
+// The convention lives here, next to the fields that carry it, because it was
+// previously restated at each call site with THREE different operators —
+// `> 0`, `<= 0` and `== 0` — which had already drifted: a negative budget read
+// as unlimited to the quota engine and as a finite (negative) cap elsewhere.
+func IsUnlimitedBudget(limit int) bool { return limit <= UnlimitedBudget }
+
+// IsCPUUnlimited reports whether the plan places no cap on CPU.
+func (s SubscriptionPlan) IsCPUUnlimited() bool { return IsUnlimitedBudget(s.MaxCPU) }
+
+// IsMemoryUnlimited reports whether the plan places no cap on memory.
+func (s SubscriptionPlan) IsMemoryUnlimited() bool { return IsUnlimitedBudget(s.MaxMemoryMB) }
+
+// HasBudgetCap reports whether the plan constrains either axis, i.e. whether
+// the budget engine has anything to enforce.
+//
+// Callers asked this question in two De Morgan-equivalent forms —
+// `MaxCPU > 0 || MaxMemoryMB > 0` in one place and
+// `MaxCPU <= 0 && MaxMemoryMB <= 0` (negated) in another, both in the same
+// file — which is precisely the kind of restatement that drifts.
+func (s SubscriptionPlan) HasBudgetCap() bool {
+	return !s.IsCPUUnlimited() || !s.IsMemoryUnlimited()
+}
+
 func (s SubscriptionPlan) GetBaseModel() entityManagementModels.BaseModel {
 	return s.BaseModel
 }

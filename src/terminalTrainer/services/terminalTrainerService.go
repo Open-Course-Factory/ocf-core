@@ -854,8 +854,7 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	// is populated whenever the plan exposes a budget cap (frontend keys off
 	// the non-empty slice). Plans with zero caps on both axes are unlimited
 	// and keep the default unlimited envelope.
-	if resolvedPlan != nil && tts.quotaService != nil &&
-		(resolvedPlan.MaxCPU > 0 || resolvedPlan.MaxMemoryMB > 0) {
+	if resolvedPlan != nil && tts.quotaService != nil && resolvedPlan.HasBudgetCap() {
 		remCPU := resolvedPlan.MaxCPU - usedCPU
 		if remCPU < 0 {
 			remCPU = 0
@@ -1157,7 +1156,7 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 	if plan == nil || tts.quotaService == nil {
 		return
 	}
-	if plan.MaxCPU <= 0 && plan.MaxMemoryMB <= 0 {
+	if !plan.HasBudgetCap() {
 		return
 	}
 

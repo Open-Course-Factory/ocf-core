@@ -1,6 +1,7 @@
 package services
 
 import (
+	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 )
 
@@ -36,13 +37,13 @@ func BudgetForTerminalKey(ceiling paymentServices.UserBudgetCeiling) (maxCPUTota
 		return nil, nil
 	}
 
-	if !paymentServices.IsUnlimitedBudget(ceiling.MaxCPU) {
+	if !paymentModels.IsUnlimitedBudget(ceiling.MaxCPU) {
 		// Ceiling division: any fraction of a vCPU claims a whole one.
 		vcpu := int64((ceiling.MaxCPU + mCPUPerVCPU - 1) / mCPUPerVCPU)
 		maxCPUTotal = &vcpu
 	}
 
-	if !paymentServices.IsUnlimitedBudget(ceiling.MaxMemoryMB) {
+	if !paymentModels.IsUnlimitedBudget(ceiling.MaxMemoryMB) {
 		mem := int64(ceiling.MaxMemoryMB)
 		maxMemoryMBTotal = &mem
 	}

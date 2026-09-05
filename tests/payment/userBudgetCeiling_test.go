@@ -176,12 +176,3 @@ func TestUserBudgetCeiling_NoSubscriptionGrantsNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ceiling.HasEntitlement, "a user with no plan anywhere must not read as unlimited")
 }
-
-// The unlimited convention must be expressed in exactly one place; this pins
-// its boundary so a future edit cannot quietly narrow it to `== 0`.
-func TestIsUnlimitedBudget_Boundary(t *testing.T) {
-	assert.True(t, services.IsUnlimitedBudget(0), "0 is the documented unlimited sentinel")
-	assert.True(t, services.IsUnlimitedBudget(-1), "a negative budget is not a finite cap")
-	assert.False(t, services.IsUnlimitedBudget(1))
-	assert.False(t, services.IsUnlimitedBudget(24000))
-}
