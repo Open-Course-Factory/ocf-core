@@ -396,13 +396,34 @@ type FullSyncResponse struct {
 	Duration    time.Duration `json:"duration"`
 }
 
-// ServerMetricsResponse représente les métriques du serveur Terminal Trainer
+// ServerMetricsResponse représente les métriques du serveur Terminal Trainer.
+//
+// CPUTotal and RAMTotalGB are the host's capacity as tt-backend reports it
+// (tt-backend !130). An older tt-backend omits them, and they decode as 0.
 type ServerMetricsResponse struct {
 	CPUPercent     float64 `json:"cpu_percent"`
+	CPUTotal       int     `json:"cpu_total"`
 	RAMPercent     float64 `json:"ram_percent"`
 	RAMAvailableGB float64 `json:"ram_available_gb"`
+	RAMTotalGB     float64 `json:"ram_total_gb"`
 	Timestamp      int64   `json:"timestamp"`
 	Backend        string  `json:"backend,omitempty"`
+}
+
+// TotalRAMGB is the host's total RAM, the one owner of that number on the
+// ocf-core side. It is what tt-backend reports; only when an older tt-backend
+// reported nothing is it recovered from the available/percent pair, and a
+// host at 100% with no reported total yields 0, which every caller treats as
+// no headroom.
+func (m ServerMetricsResponse) TotalRAMGB() float64 {
+	if m.RAMTotalGB > 0 {
+		return m.RAMTotalGB
+	}
+	free := 1.0 - m.RAMPercent/100.0
+	if free <= 0 {
+		return 0
+	}
+	return m.RAMAvailableGB / free
 }
 
 // BulkCreateTerminalsRequest for creating multiple terminals for a group

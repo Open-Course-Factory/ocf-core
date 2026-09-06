@@ -184,8 +184,7 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 				perTerminalRAM := EstimatePerTerminalRAMGB()
 
 				totalRequiredRAM := float64(len(activeMembers)) * perTerminalRAM
-				totalRAM := metrics.RAMAvailableGB / (1.0 - metrics.RAMPercent/100.0)
-				minReservedRAM := totalRAM * 0.05
+				minReservedRAM := metrics.TotalRAMGB() * minRAMReserveFraction
 
 				if metrics.RAMPercent >= 99.0 || metrics.RAMAvailableGB-totalRequiredRAM < minReservedRAM {
 					utils.Warn("bulk terminal creation blocked: insufficient RAM (%d terminals × %.2f GB = %.2f GB required, %.2f GB available)",

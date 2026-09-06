@@ -93,15 +93,12 @@ func EvaluateLaunchCapacity(plan *paymentModels.SubscriptionPlan, requestedSize 
 
 	requiredRAM := resolveRequiredRAM(plan, requestedSize)
 
-	// Recover the total RAM (GB) from the available + percentage pair.
-	// ram_available_gb = total_ram * (1 - ram_percent/100)
-	// Guard against division-by-zero (RAMPercent < 100 is enforced above
-	// but we use 99 as the cutoff and keep a defensive denominator).
-	denom := 1.0 - metrics.RAMPercent/100.0
-	if denom <= 0 {
+	// The reserve is a fraction of the host's total RAM, which tt-backend
+	// reports. No total means no headroom to reason about.
+	totalRAM := metrics.TotalRAMGB()
+	if totalRAM <= 0 {
 		return CapacityResult{Status: CapacityStatusCritical, Reason: "ram_full"}
 	}
-	totalRAM := metrics.RAMAvailableGB / denom
 	minReservedRAM := totalRAM * minRAMReserveFraction
 
 	ramAfterCreation := metrics.RAMAvailableGB - requiredRAM

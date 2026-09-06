@@ -26,7 +26,9 @@ import (
 //	availableGB — RAM remaining (GB).
 //	usedPercent — percent of total RAM currently used (0–100).
 //
-// The total RAM is derived implicitly: total = availableGB / (1 - used/100).
+// No ram_total_gb is set, so these exercise the fallback for an older
+// tt-backend: total = availableGB / (1 - used/100). The reported-total path is
+// pinned in hostCapacity_test.go.
 func metricsFor(availableGB, usedPercent float64) *dto.ServerMetricsResponse {
 	return &dto.ServerMetricsResponse{
 		RAMAvailableGB: availableGB,
