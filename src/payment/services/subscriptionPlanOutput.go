@@ -17,10 +17,12 @@ import (
 //     plus IsCatalog.
 //
 // The omissions were not neutral, because the zero value carries meaning here:
-// MaxCPU / MaxMemoryMB of 0 means UNLIMITED (see models.SubscriptionPlan), so two
-// of the three producers reported an unlimited CPU/RAM budget for every plan they
-// converted, while also reporting group management as absent on plans that grant
-// it. Wrong in the permissive direction on quota, restrictive on features.
+// MaxCPU / MaxMemoryMB of 0 meant UNLIMITED at the time, so two of the three
+// producers reported an unlimited CPU/RAM budget for every plan they converted,
+// while also reporting group management as absent on plans that grant it. Wrong
+// in the permissive direction on quota, restrictive on features. Today a zero
+// budget means no capacity (see models.SubscriptionPlan), so the same drop would
+// report a plan that can launch nothing.
 //
 // Anything that needs this DTO MUST come through here. A DTO with more than one
 // builder drifts; this one already had, silently, across six fields.

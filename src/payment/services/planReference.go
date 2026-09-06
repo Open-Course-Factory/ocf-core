@@ -18,9 +18,10 @@ import (
 // Preload honours soft deletes, so a subscription pointing at a deleted plan
 // comes back carrying the ZERO-VALUE SubscriptionPlan rather than failing. That
 // struct looks like a plan to every consumer: it has a name (empty), an ID (nil)
-// and limits (zero) — and QuotaService reads an unlimited budget as "no cap on this
-// axis", which is the correct rule for a genuinely unlimited plan. So a deleted
-// plan granted unlimited capacity, XL machines included (#481).
+// and limits (zero) — and at the time QuotaService read a zero budget as "no cap
+// on this axis". So a deleted plan granted unlimited capacity, XL machines
+// included (#481). A zero budget grants nothing now, but a blank plan is still
+// not a plan, and refusing it is what makes the broken row visible.
 //
 // The predicate was written twice before this: once inline in
 // organizationSubscriptionService (#451), and not at all in EffectivePlanService,
@@ -37,9 +38,9 @@ var ErrDanglingPlanReference = errors.New("subscription references a plan that n
 
 // planDidLoad reports whether a plan association actually resolved.
 //
-// The ID is the test, not the price or the name: a 0 EUR plan is a real plan,
-// and an unlimited plan legitimately has zero limits. Only a nil ID means
-// nothing came back.
+// The ID is the test, not the price, the name or the budget: a 0 EUR plan is
+// a real plan, and a zero budget is a row the operator must fix, not a row
+// that did not load. Only a nil ID means nothing came back.
 func planDidLoad(p *models.SubscriptionPlan) bool {
 	return p != nil && p.ID != uuid.Nil
 }

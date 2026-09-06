@@ -5,9 +5,10 @@
 //
 // GORM's Preload honours soft deletes, so a dangling subscription -> plan
 // reference leaves the zero-value struct rather than failing. EffectivePlanService
-// handed that struct out as a plan; QuotaService reads MaxCPU <= 0 as "no cap on
-// that axis" — a legitimate rule for unlimited plans — so a deleted plan silently
-// granted every machine size, XL included.
+// handed that struct out as a plan; QuotaService then read MaxCPU <= 0 as "no cap
+// on that axis", so a deleted plan silently granted every machine size, XL
+// included. A zero budget grants nothing today, and these tests still hold: a
+// blank plan is not a plan, and refusing it is what surfaces the broken row.
 //
 // The rule these tests pin: resolution FAILS CLOSED. A plan that did not load is
 // not a plan, and no caller can be handed one.
@@ -166,7 +167,8 @@ func TestEffectivePlan_RolePlanOnDeletedPlan_FailsClosed(t *testing.T) {
 }
 
 // TestQuota_DanglingPlanGrantsNothing is the consequence the issue reported:
-// max_cpu 0 read as unlimited, so every size — XL included — came back allowed.
+// max_cpu 0 used to read as unlimited, so every size — XL included — came back
+// allowed.
 func TestQuota_DanglingPlanGrantsNothing(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "learner-on-dead-plan"

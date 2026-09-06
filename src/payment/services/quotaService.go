@@ -46,10 +46,8 @@ type QuotaService interface {
 	GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 
 	// CheckBudget evaluates whether a session of the requested CPU/RAM cost
-	// fits within the user's (or org's) effective plan.
-	//
-	// When MaxCPU/MaxMemoryMB on the plan are zero, the corresponding axis
-	// is treated as unlimited.
+	// fits within the user's (or org's) effective plan. There is no unlimited
+	// state: a zero budget on an axis fits nothing.
 	//
 	// Sessions counted toward the budget follow lifecycle rule D6'
 	// (supersedes D6, locked 2026-05-28), encoded in the SSOT
@@ -149,7 +147,7 @@ type QuotaService interface {
 	// predicate as the unlocked CheckBudget path, so the locked and
 	// unlocked sums can never drift apart.
 	//
-	// MaxCPU/MaxMemoryMB of 0 mean unlimited on that axis. The returned
+	// The returned
 	// BudgetEnforcement carries the BudgetCheck verdict plus the summed
 	// UsedCPU/UsedMemMB, so callers can construct their own rejection
 	// error (e.g. the hook's ErrBudgetExhausted) without re-querying.

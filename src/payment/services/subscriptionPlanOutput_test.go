@@ -7,8 +7,8 @@ package services
 // value.
 //
 // That distinction matters because zero is not neutral on this DTO — MaxCPU and
-// MaxMemoryMB of 0 mean "unlimited", so a dropped budget field reads as a
-// permission rather than as missing data.
+// MaxMemoryMB of 0 mean "no capacity", so a dropped budget field reads as a
+// plan that can launch nothing rather than as missing data.
 
 import (
 	"reflect"
@@ -91,7 +91,7 @@ func TestSubscriptionPlanToOutput_CarriesEveryDTOField(t *testing.T) {
 			"SubscriptionPlanOutput.%s was left at its zero value by the converter. "+
 				"Every field must be carried: a dropped field does not read as missing "+
 				"data downstream, it reads as a default — and for the budget fields the "+
-				"default means UNLIMITED.", field.Name)
+				"default means no capacity.", field.Name)
 	}
 }
 
@@ -106,8 +106,8 @@ func TestSubscriptionPlanToOutput_CarriesThePreviouslyDroppedFields(t *testing.T
 	assert.True(t, out.BulkPurchasable, "bulk purchasability must survive conversion")
 	assert.Equal(t, models.SeatUnitLearnerDay, out.SeatUnit, "seat unit must survive conversion")
 	assert.True(t, out.SessionSupervisionEnabled, "session supervision must survive conversion")
-	assert.Equal(t, 16000, out.MaxCPU, "a dropped MaxCPU would report the plan as unlimited")
-	assert.Equal(t, 16384, out.MaxMemoryMB, "a dropped MaxMemoryMB would report the plan as unlimited")
+	assert.Equal(t, 16000, out.MaxCPU, "a dropped MaxCPU would report the plan as unable to launch anything")
+	assert.Equal(t, 16384, out.MaxMemoryMB, "a dropped MaxMemoryMB would report the plan as unable to launch anything")
 	assert.True(t, out.IsCatalog, "catalog visibility must survive conversion")
 }
 
@@ -116,8 +116,8 @@ func TestSubscriptionPlanToOutput_NilPlanYieldsZeroValue(t *testing.T) {
 	assert.Equal(t, uuid.Nil, out.ID, "a nil plan must convert to an empty DTO, not panic")
 }
 
-// A zero-cap plan is a real state meaning "unlimited", so it must round-trip as 0
-// rather than being confused with an absent field.
+// A zero budget is what the row holds, so it must round-trip as 0 rather than
+// being invented into something the converter thinks is more sensible.
 func TestSubscriptionPlanToOutput_ZeroBudgetIsPreservedNotInvented(t *testing.T) {
 	plan := fullyPopulatedPlan()
 	plan.MaxCPU = 0

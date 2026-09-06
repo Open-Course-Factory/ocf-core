@@ -171,8 +171,8 @@ The CPU/RAM budget cap (from `MaxCPU` / `MaxMemoryMB`) is no longer enforced as 
 
 `SubscriptionPlan` gates terminals through a CPU/RAM budget instead of an explicit size allowlist + concurrent session cap. The budget is the single source of truth: every catalog size is admissible if the remaining budget can fit it, and concurrent sessions are bounded indirectly by the total budget. Terminal-relevant fields:
 
-- `MaxCPU int` — total vCPU budget across active sessions; `0` = unlimited
-- `MaxMemoryMB int` — total RAM budget in MiB across active sessions; `0` = unlimited
+- `MaxCPU int` — total CPU budget in mCPU (1000 = 1 vCPU) across active sessions; must be `> 0`, there is no unlimited state (`0` = no capacity, refused by the validation hook and the Stripe import)
+- `MaxMemoryMB int` — total RAM budget in MiB across active sessions; same rule
 - `MaxSessionDurationMinutes int` — per-session wall-clock cap
 - `NetworkAccessEnabled`, `DataPersistenceEnabled`, `DataPersistenceGB` — feature toggles + persistence quota
 - `DefaultBackend string`, `AllowedBackends []string` — backend routing (used when the org has no backend config)

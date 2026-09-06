@@ -3,9 +3,9 @@
 // Tests for Stripe Product metadata serialization/deserialization tied to
 // SubscriptionPlan budget fields.
 //
-// The metadata payload carries plan_id + the CPU/RAM budget caps. Empty
-// metadata round-trips to zeros (which the budget engine interprets as
-// unlimited).
+// The metadata payload carries plan_id + the CPU/RAM budget caps. A key the
+// product does not carry states nothing: the importer decides what that means,
+// and it never means a zero budget.
 package payment_tests
 
 import (

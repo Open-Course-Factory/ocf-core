@@ -116,9 +116,9 @@ type TerminalTrainerService interface {
 	GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error)
 	// EnrichSessionOptionsBudget populates the per-size RemainingCount /
 	// MemoryMB fields and the top-level Quota block on a SessionOptionsResponse.
-	// In count-mode or when the feature flag is off, Quota.Scope is set to
-	// "unlimited" and per-size remaining counts are left at zero — the frontend
-	// renders the legacy shape. Mutates opts in place.
+	// With no plan or no quota service, Quota.Scope is "unknown" and per-size
+	// remaining counts are left at zero — no budget could be computed, and the
+	// frontend must not lock the sizes on that. Mutates opts in place.
 	//
 	// budgetScopeOrgID is the pool the budget draws on — EffectivePlanResult's
 	// ScopeOrganizationID, NOT the organization from the request. The two differ,
@@ -850,10 +850,9 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	}
 
 	// Budget enrichment. Always emit a Quota envelope for shape stability —
-	// Scope="unlimited" signals "ignore the numeric fields". RemainingBySize
-	// is populated whenever the plan exposes a budget cap (frontend keys off
-	// the non-empty slice). Plans with zero caps on both axes are unlimited
-	// and keep the default unlimited envelope.
+	// Scope="unknown" signals "no budget could be computed, ignore the numeric
+	// fields". RemainingBySize is populated whenever a plan resolved (frontend
+	// keys off the non-empty slice); a zero budget yields zero everywhere.
 	if resolvedPlan != nil && tts.quotaService != nil {
 		resp.Quota = tts.quotaService.BudgetSnapshot(resolvedPlan, usedCPU, usedMem, dto.ScopeOrganization)
 
@@ -1106,9 +1105,9 @@ func (tts *terminalTrainerService) GetUserConsentStatus(userID string) (bool, st
 
 // EnrichSessionOptionsBudget — see interface doc.
 //
-// In count-mode OR when the feature flag is off, Quota.Scope is "unlimited",
-// every numeric field is zero, and per-size RemainingCount stays at zero
-// (the existing Allowed flag remains authoritative). In budget-mode, we
+// With no plan, no quota service or a failed usage lookup, Quota.Scope is
+// "unknown", every numeric field is zero, and per-size RemainingCount stays
+// at zero (the existing Allowed flag remains authoritative). Otherwise we
 // read the current footprint via QuotaService.GetBudgetUsage, fan it out
 // across catalog sizes via ComputeRemainingBySize, and stamp the top-level
 // Quota block.
@@ -1131,10 +1130,9 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 		}
 	}
 
-	// Default unlimited quota envelope — overwritten below when a plan is
-	// resolved AND the quota service is wired AND the plan declares a cap
-	// on at least one axis. Plans with MaxCPU=MaxMemoryMB=0 are unlimited
-	// and keep the envelope as-is so the frontend renders an unconstrained UI.
+	// Default "unknown" envelope — overwritten below once a plan is resolved
+	// AND the quota service is wired AND the usage lookup succeeds. It means
+	// no budget could be computed, so the frontend must not lock sizes on it.
 	opts.Quota = &dto.SessionQuotaInfo{Scope: dto.ScopeUnknown}
 
 	if plan == nil || tts.quotaService == nil {

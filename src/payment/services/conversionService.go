@@ -122,7 +122,7 @@ func (cs *conversionService) UserSubscriptionsToDTO(subscriptions *[]models.User
 //
 // Delegates to SubscriptionPlanToOutput, the single producer. This function used
 // to build the DTO itself and dropped six fields doing so — including the budget
-// caps, whose zero value means "unlimited" (#454).
+// caps, whose zero value then meant "unlimited" (#454).
 func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan) (*dto.SubscriptionPlanOutput, error) {
 	if plan == nil {
 		return nil, nil

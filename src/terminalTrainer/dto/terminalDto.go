@@ -759,8 +759,8 @@ type MyTerminalUsageResponse struct {
 	PlanName                  string                   `json:"plan_name"`
 	PlanSource                string                   `json:"plan_source"`       // "personal" | "organization"
 	PlanSourceName            string                   `json:"plan_source_name"`  // org name when source=organization, "" otherwise
-	MaxCPU                    int                      `json:"max_cpu"`           // 0 = unlimited
-	MaxMemoryMB               int                      `json:"max_memory_mb"`     // 0 = unlimited
+	MaxCPU                    int                      `json:"max_cpu"`           // mCPU budget; every plan states a positive one
+	MaxMemoryMB               int                      `json:"max_memory_mb"`     // MiB budget; every plan states a positive one
 	MaxSessionDurationMinutes int                      `json:"max_session_duration_minutes"`
 	UsedCPU                   int                      `json:"used_cpu"`
 	UsedMemoryMB              int                      `json:"used_memory_mb"`
