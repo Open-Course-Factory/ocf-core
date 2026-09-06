@@ -42,6 +42,10 @@ type ImportIdentityClient interface {
 	GetUserByEmail(email string) (*casdoorsdk.User, error)
 	UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error)
 	AddUser(user *casdoorsdk.User) error
+	// SetPassword is Casdoor's dedicated password call, the only one that
+	// hashes. Writing the password column through UpdateUserForColumns stores
+	// the value raw, and every login on it fails.
+	SetPassword(user *casdoorsdk.User, newPassword string) error
 }
 
 type importService struct {
@@ -158,19 +162,16 @@ func (s *importService) ImportOrganizationData(
 	for i := range users {
 		user := &users[i]
 
-		// Auto-generate password if not provided
-		if user.Password == "" {
-			user.Password = orgUtils.GenerateSecurePassword(16)
-			user.ForceReset = "true"
-			user.GeneratedPassword = user.Password
-		}
-
 		// Default role if not provided
 		if user.Role == "" {
 			user.Role = "member"
 		}
 
-		userID, err := s.processUser(*user, orgID, updateExisting, dryRun)
+		// A password is generated only for an account that gets created, inside
+		// processUser. Generating one here for every row reset the password of
+		// every account that already existed, and handed the teacher a list of
+		// credentials that did not work.
+		userID, err := s.processUser(user, orgID, updateExisting, dryRun)
 		if err != nil {
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 2, // +2 for header and 0-index
@@ -350,7 +351,7 @@ func (s *importService) ImportOrganizationData(
 }
 
 // processUser creates or updates a user in Casdoor
-func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, updateExisting bool, dryRun bool) (string, error) {
+func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, updateExisting bool, dryRun bool) (string, error) {
 	if dryRun {
 		utils.Debug("[DRY-RUN] Would create/update user: %s", user.Email)
 		return "dry-run-user-id", nil
@@ -365,7 +366,7 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 			return "", nil
 		}
 
-		if err := s.updateExistingUser(existingUser, user); err != nil {
+		if err := s.updateExistingUser(existingUser, *user); err != nil {
 			return "", err
 		}
 
@@ -379,6 +380,14 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 
 	// Create new user
 	utils.Debug("Creating new user: %s", user.Email)
+
+	// Auto-generate a password when the row states none. Only a created account
+	// gets one: it is reported back as a credential the teacher hands over.
+	if user.Password == "" {
+		user.Password = orgUtils.GenerateSecurePassword(16)
+		user.ForceReset = "true"
+		user.GeneratedPassword = user.Password
+	}
 
 	// Generate ToS acceptance timestamp (current time for bulk import)
 	tosTime := time.Now().Format(time.RFC3339)
@@ -394,7 +403,7 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 
 	// Create user in Casdoor
 	newUser := casdoorsdk.User{
-		Name:              importedUsername(user),
+		Name:              importedUsername(*user),
 		DisplayName:       fmt.Sprintf("%s %s", user.FirstName, user.LastName),
 		Email:             user.Email,
 		Password:          user.Password,
@@ -591,8 +600,8 @@ func (s *importService) processMembership(
 	return nil
 }
 
-// updateExistingUser writes the CSV row's name, optional password and
-// force-reset flag onto an existing account.
+// updateExistingUser writes the CSV row's name and force-reset flag onto an
+// existing account, and applies a password only when the row states one.
 //
 // UpdateUserForColumns, never UpdateUser: with no column list Casdoor applies
 // a default whitelist that silently drops columns such as email_verified —
@@ -604,17 +613,21 @@ func (s *importService) updateExistingUser(existingUser *casdoorsdk.User, row dt
 	existingUser.DisplayName = fmt.Sprintf("%s %s", row.FirstName, row.LastName)
 	columns := []string{"first_name", "last_name", "display_name"}
 
-	if row.Password != "" {
-		existingUser.Password = row.Password
-		columns = append(columns, "password")
-	}
-
 	if strings.ToLower(row.ForceReset) == "true" {
 		if existingUser.Properties == nil {
 			existingUser.Properties = make(map[string]string)
 		}
 		existingUser.Properties["force_password_reset"] = "true"
 		columns = append(columns, "properties")
+	}
+
+	// A password stated in the row is applied through Casdoor's set-password
+	// call, which hashes it. It must never travel as a column of the update:
+	// that stores it raw, and the account can no longer log in.
+	if row.Password != "" {
+		if err := s.identity.SetPassword(existingUser, row.Password); err != nil {
+			return fmt.Errorf("failed to set password: %w", err)
+		}
 	}
 
 	affected, err := s.identity.UpdateUserForColumns(existingUser, columns)

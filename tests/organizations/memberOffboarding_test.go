@@ -56,13 +56,14 @@ import (
 // so the same instance serves the offboarding service (SetForbidden), the import
 // service (GetUserByEmail / UpdateUserForColumns) and userService.DeleteUser.
 type fakeIdentity struct {
-	mu        sync.Mutex
-	users     map[string]*casdoorsdk.User // by id
-	forbidden map[string]bool
-	deleted   []string
-	columns   [][]string
-	created   []*casdoorsdk.User
-	affected  bool
+	mu           sync.Mutex
+	users        map[string]*casdoorsdk.User // by id
+	forbidden    map[string]bool
+	deleted      []string
+	columns      [][]string
+	created      []*casdoorsdk.User
+	passwordsSet map[string]string
+	affected     bool
 }
 
 func newFakeIdentity(userIDs ...string) *fakeIdentity {
@@ -108,6 +109,16 @@ func (f *fakeIdentity) AddUser(user *casdoorsdk.User) error {
 	}
 	f.created = append(f.created, user)
 	f.users[user.Id] = user
+	return nil
+}
+
+func (f *fakeIdentity) SetPassword(user *casdoorsdk.User, newPassword string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.passwordsSet == nil {
+		f.passwordsSet = map[string]string{}
+	}
+	f.passwordsSet[user.Name] = newPassword
 	return nil
 }
 

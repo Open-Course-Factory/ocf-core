@@ -4,17 +4,17 @@
 //
 // These tests drive a production refactor of src/auth/services/userService.go:
 //
-//   1. Introduce a CasdoorUserClient interface so that Casdoor HTTP calls can
-//      be stubbed in unit tests (today, userService calls casdoorsdk package
-//      functions directly — impossible to mock without a seam).
+//  1. Introduce a CasdoorUserClient interface so that Casdoor HTTP calls can
+//     be stubbed in unit tests (today, userService calls casdoorsdk package
+//     functions directly — impossible to mock without a seam).
 //
-//   2. Introduce a PaymentDeletionHelper interface that encapsulates the
-//      payment-side cascade work (cancel active Stripe subscriptions,
-//      pseudonymize billing data, preserve invoices).
+//  2. Introduce a PaymentDeletionHelper interface that encapsulates the
+//     payment-side cascade work (cancel active Stripe subscriptions,
+//     pseudonymize billing data, preserve invoices).
 //
-//   3. Change the NewUserService constructor to accept those two collaborators
-//      so DeleteUser can orchestrate: cancel Stripe FIRST, abort on failure,
-//      THEN delete from Casdoor.
+//  3. Change the NewUserService constructor to accept those two collaborators
+//     so DeleteUser can orchestrate: cancel Stripe FIRST, abort on failure,
+//     THEN delete from Casdoor.
 //
 // As shipped today, NewUserService takes no arguments and DeleteUser silently
 // leaves dangling Stripe subscriptions, charging deleted users. These tests
@@ -141,6 +141,10 @@ func (m *mockCasdoorUserClient) GetUserByEmail(email string) (*casdoorsdk.User, 
 }
 
 func (m *mockCasdoorUserClient) AddUser(user *casdoorsdk.User) error { return nil }
+
+func (m *mockCasdoorUserClient) SetPassword(user *casdoorsdk.User, newPassword string) error {
+	return nil
+}
 
 func (m *mockCasdoorUserClient) UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error) {
 	args := m.Called(user, columns)
@@ -395,7 +399,7 @@ func TestDeleteUser_MultipleActiveSubscriptions_CancelsAll(t *testing.T) {
 		casdoorMock.On("GetUserByUserId", userID).Return(casdoorUser, nil)
 		casdoorMock.On("DeleteUser", casdoorUser).Return(true, nil)
 		helperMock.On("CancelAllActiveSubscriptionsForUser", userID).Return(nil)
-	helperMock.On("DeleteStripeCustomersForUser", userID).Return(nil)
+		helperMock.On("DeleteStripeCustomersForUser", userID).Return(nil)
 		helperMock.On("PseudonymizeBillingDataForUser", userID).Return(nil)
 
 		svc := authServices.NewUserService(casdoorMock, helperMock)
@@ -469,9 +473,9 @@ func TestDeleteUser_PseudonymizesBillingData(t *testing.T) {
 		db.Model(&paymentModels.PaymentMethod{}).
 			Where("user_id = ?", userID).
 			Updates(map[string]any{
-				"card_brand":  "[deleted]",
-				"card_last4":  "[deleted]",
-				"is_active":   false,
+				"card_brand": "[deleted]",
+				"card_last4": "[deleted]",
+				"is_active":  false,
 			})
 	}).Return(nil)
 

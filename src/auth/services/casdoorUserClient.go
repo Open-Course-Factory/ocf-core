@@ -34,6 +34,9 @@ type CasdoorUserClient interface {
 	// AddUser creates the account. Reported through the interface so callers
 	// that create accounts (the bulk import) can be tested on what they send.
 	AddUser(user *casdoorsdk.User) error
+	// SetPassword goes through Casdoor's dedicated call, the only one that
+	// hashes; the password column of an update is stored raw.
+	SetPassword(user *casdoorsdk.User, newPassword string) error
 	// SetForbidden blocks (or unblocks) sign-in for the account. It fails when
 	// Casdoor reports the change was not persisted.
 	SetForbidden(userID string, forbidden bool) error
@@ -90,4 +93,15 @@ func (c *defaultCasdoorUserClient) SetForbidden(userID string, forbidden bool) e
 func (c *defaultCasdoorUserClient) AddUser(user *casdoorsdk.User) error {
 	_, err := casdoorsdk.AddUser(user)
 	return err
+}
+
+func (c *defaultCasdoorUserClient) SetPassword(user *casdoorsdk.User, newPassword string) error {
+	ok, err := casdoorsdk.SetPassword(user.Owner, user.Name, "", newPassword)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("password update rejected by casdoor for user %s", user.Name)
+	}
+	return nil
 }
