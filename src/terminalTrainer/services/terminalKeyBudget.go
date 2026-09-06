@@ -1,12 +1,9 @@
 package services
 
 import (
+	"soli/formations/src/payment/catalog"
 	paymentServices "soli/formations/src/payment/services"
 )
-
-// mCPUPerVCPU is the ocf-core CPU unit scale: SubscriptionPlan.MaxCPU and
-// the size catalog are both expressed in millicores, where 1000 = 1 vCPU.
-const mCPUPerVCPU = 1000
 
 // BudgetForTerminalKey converts a user's plan ceiling into the per-key budget
 // units Terminal Trainer expects, returning nil on an axis that must carry no
@@ -35,7 +32,7 @@ const mCPUPerVCPU = 1000
 func BudgetForTerminalKey(ceiling paymentServices.UserBudgetCeiling) (maxCPUTotal, maxMemoryMBTotal *int64) {
 	if ceiling.MaxCPU > 0 {
 		// Ceiling division: any fraction of a vCPU claims a whole one.
-		vcpu := int64((ceiling.MaxCPU + mCPUPerVCPU - 1) / mCPUPerVCPU)
+		vcpu := int64((ceiling.MaxCPU + catalog.MilliCPUPerVCPU - 1) / catalog.MilliCPUPerVCPU)
 		maxCPUTotal = &vcpu
 	}
 

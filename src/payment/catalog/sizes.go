@@ -24,6 +24,11 @@ import (
 	"sync"
 )
 
+// MilliCPUPerVCPU is the CPU unit scale every budget number shares:
+// SubscriptionPlan.MaxCPU, MachineSize.CPU and the per-key budget sent to
+// tt-backend are all reckoned in millicores, where 1000 mCPU = 1 vCPU.
+const MilliCPUPerVCPU = 1000
+
 // MachineSize describes the CPU + memory footprint of one size class.
 //
 // CPU is expressed in integer millicores (mCPU): 1000 mCPU = 1 vCPU. The
@@ -216,7 +221,7 @@ func parseSource(src SourceSize) (MachineSize, error) {
 	if err != nil {
 		return MachineSize{}, err
 	}
-	return MachineSize{CPU: cpuPercent * 10, MemoryMB: memMB}, nil
+	return MachineSize{CPU: cpuPercent * MilliCPUPerVCPU / 100, MemoryMB: memMB}, nil
 }
 
 // classifyDrift reports the drift entry for one live size against the
