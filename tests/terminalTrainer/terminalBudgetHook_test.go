@@ -115,6 +115,12 @@ func (s *stubEffectivePlanService) GetUserBudgetCeiling(userID string) (paymentS
 	}, nil
 }
 
+// GetOrganizationPlan: this stub holds no organizations, so no organization
+// holds a plan of its own.
+func (s *stubEffectivePlanService) GetOrganizationPlan(orgID uuid.UUID) (*paymentServices.EffectivePlanResult, error) {
+	return nil, errors.New("no organization subscription in stub")
+}
+
 func (s *stubEffectivePlanService) CanRunClassrooms(userID string, orgID *uuid.UUID) paymentServices.ClassroomEntitlement {
 	result, err := s.GetUserEffectivePlan(userID, orgID)
 	if err != nil || result == nil {

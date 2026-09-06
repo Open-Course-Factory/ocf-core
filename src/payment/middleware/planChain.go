@@ -25,7 +25,7 @@ func PlanChain(db *gorm.DB, req entityManagementInterfaces.PlanRequirement, ts t
 		chain = append(chain, InjectOrgContext())
 	}
 	if req.RequirePlan {
-		chain = append(chain, InjectEffectivePlan(services.NewEffectivePlanService(db), db), RequirePlan())
+		chain = append(chain, InjectEffectivePlan(services.NewEffectivePlanService(db)), RequirePlan())
 	}
 	if req.CheckHostRAM {
 		// Fail fast: a CheckHostRAM requirement with a nil TerminalTrainerService

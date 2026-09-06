@@ -119,7 +119,7 @@ func setupBudgetHTTPRouter(t *testing.T, userID string, svc terminalServices.Ter
 
 	router.POST("/api/v1/terminals/start-composed-session",
 		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(eps, sharedTestDB),
+		paymentMiddleware.InjectEffectivePlan(eps),
 		paymentMiddleware.RequirePlan(),
 		ctrl.StartComposedSession,
 	)

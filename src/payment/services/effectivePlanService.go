@@ -127,6 +127,17 @@ type EffectivePlanService interface {
 	// not the org's own plan — is what must reach the learner's key.
 	// Otherwise a single learner can consume the whole class budget.
 	GetUserBudgetCeiling(userID string) (UserBudgetCeiling, error)
+
+	// GetOrganizationPlan resolves the plan an organization's own entitling
+	// subscription grants, with no membership check and no role override.
+	//
+	// It exists for the one caller that legitimately acts in an organization
+	// without belonging to it: a platform administrator. The middleware used
+	// to answer that case with its own query of "the org's entitling
+	// subscription" — a fourth resolver, which had to relearn the dangling
+	// plan rule on its own (#481). Members keep resolving through
+	// GetUserEffectivePlan, which consults the role plans first.
+	GetOrganizationPlan(orgID uuid.UUID) (*EffectivePlanResult, error)
 }
 
 // UserBudgetCeiling is the per-user resource ceiling derived from plans.
@@ -360,10 +371,25 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 			// budget, counted for this user alone, even inside an organization.
 		}, nil
 	}
-	// No skipping here, unlike resolveGlobal: this organization HAS a subscription,
-	// so falling through to the personal fallback would answer with someone else's
-	// plan and count its budget against the wrong pool. A broken reference is an
-	// operator problem, not an entitlement (#481).
+	return organizationPlanResult(orgID, orgSub)
+}
+
+// GetOrganizationPlan — see interface doc.
+func (s *effectivePlanService) GetOrganizationPlan(orgID uuid.UUID) (*EffectivePlanResult, error) {
+	orgSub, err := s.orgSubRepo.GetActiveOrganizationSubscription(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("no active subscription for organization %s: %w", orgID.String(), err)
+	}
+	return organizationPlanResult(orgID, orgSub)
+}
+
+// organizationPlanResult turns an organization's entitling subscription into
+// the result every caller of it shares. No skipping here, unlike
+// resolveGlobal: this organization HAS a subscription, so answering with
+// anything else would hand out someone else's plan and count its budget
+// against the wrong pool. A broken reference is an operator problem, not an
+// entitlement (#481).
+func organizationPlanResult(orgID uuid.UUID, orgSub *models.OrganizationSubscription) (*EffectivePlanResult, error) {
 	if planErr := EnsurePlanLoaded(&orgSub.SubscriptionPlan,
 		fmt.Sprintf("organization subscription %s", orgSub.ID)); planErr != nil {
 		return nil, planErr

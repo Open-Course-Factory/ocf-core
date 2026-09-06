@@ -76,7 +76,7 @@ func registerGateRoute(t *testing.T, db *gorm.DB, userID, path string, withRAM b
 	ctrl := terminalController.NewTerminalControllerWithService(db, termSvc)
 	chain := []gin.HandlerFunc{
 		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(eps, db),
+		paymentMiddleware.InjectEffectivePlan(eps),
 		paymentMiddleware.RequirePlan(),
 	}
 	if withRAM {
@@ -221,7 +221,7 @@ func TestComposedStart_PastDueBeyondGrace_Rejected402(t *testing.T) {
 	ctrl := terminalController.NewTerminalControllerWithService(db, termSvc)
 	router.POST("/api/v1/terminals/start-composed-session",
 		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(eps, db),
+		paymentMiddleware.InjectEffectivePlan(eps),
 		paymentMiddleware.RequirePlan(),
 		paymentMiddleware.CheckRAMAvailability(termSvc),
 		ctrl.StartComposedSession,

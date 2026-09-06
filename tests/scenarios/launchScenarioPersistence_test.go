@@ -217,7 +217,7 @@ func setupPersistenceRouter(t *testing.T, db *gorm.DB, userID string) *gin.Engin
 
 	router.POST("/api/v1/scenario-sessions/launch",
 		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
+		paymentMiddleware.InjectEffectivePlan(effectivePlanService),
 		paymentMiddleware.RequirePlan(),
 		ctrl.LaunchScenario,
 	)

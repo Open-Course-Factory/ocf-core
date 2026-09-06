@@ -138,7 +138,7 @@ func setupLaunchRouterWithProdMiddleware(t *testing.T, db *gorm.DB, userID strin
 
 	router.POST("/api/v1/scenario-sessions/launch",
 		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
+		paymentMiddleware.InjectEffectivePlan(effectivePlanService),
 		paymentMiddleware.RequirePlan(),
 		ctrl.LaunchScenario,
 	)

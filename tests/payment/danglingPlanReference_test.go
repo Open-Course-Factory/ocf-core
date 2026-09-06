@@ -273,7 +273,7 @@ func TestInjectEffectivePlan_AdminFallbackOnDeletedPlan_ResolvesNoPlan(t *testin
 	ctx, _ := newTestContext("GET", "/terminals/session-options", nil, adminID, []string{"administrator"})
 	ctx.Set("org_context_id", org.ID.String())
 
-	paymentMiddleware.InjectEffectivePlan(services.NewEffectivePlanService(db), db)(ctx)
+	paymentMiddleware.InjectEffectivePlan(services.NewEffectivePlanService(db))(ctx)
 
 	val, exists := ctx.Get("effective_plan_result")
 	require.True(t, exists)

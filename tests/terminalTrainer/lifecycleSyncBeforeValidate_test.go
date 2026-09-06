@@ -144,7 +144,7 @@ func setupResumeRouterWithSync(t *testing.T, userID string, svc services.Termina
 	router.POST("/api/v1/terminals/:id/start",
 		accessMW.RequireTerminalAccessAllowStopped(),
 		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(effectivePlanService, sharedTestDB),
+		paymentMiddleware.InjectEffectivePlan(effectivePlanService),
 		paymentMiddleware.RequirePlan(),
 		ctrl.StartSession,
 	)
