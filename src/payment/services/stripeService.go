@@ -26,6 +26,7 @@ import (
 	billingPortalSession "github.com/stripe/stripe-go/v85/billingportal/session"
 	"github.com/stripe/stripe-go/v85/checkout/session"
 	"github.com/stripe/stripe-go/v85/customer"
+	"github.com/stripe/stripe-go/v85/form"
 	"github.com/stripe/stripe-go/v85/invoice"
 	"github.com/stripe/stripe-go/v85/paymentmethod"
 	"github.com/stripe/stripe-go/v85/price"
@@ -225,6 +226,22 @@ func NewStripeService(db *gorm.DB) StripeService {
 func stripeIdempotencyKey(operation string, parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
 	return operation + ":" + hex.EncodeToString(sum[:])
+}
+
+// stripeRequestFingerprint hashes a request exactly as stripe-go will encode it
+// on the wire, so a key that folds it can only ever be reused for that request.
+//
+// Stripe refuses a key reused with different parameters (idempotency_error),
+// and keys outlive a deploy: a release that changed the checkout parameters
+// reused the key of a request made minutes earlier with the old ones, and
+// every checkout failed for the rest of the day. Folding the identity of the
+// request (user, plan, day, generation) was not enough; the request itself has
+// to be part of the key.
+func stripeRequestFingerprint(params interface{}) string {
+	values := &form.Values{}
+	form.AppendTo(values, params)
+	sum := sha256.Sum256([]byte(values.Encode()))
+	return hex.EncodeToString(sum[:])
 }
 
 // idempotencyDateBucket returns today's UTC date (YYYY-MM-DD). Time-bucketing a
@@ -438,6 +455,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 	baseKeyParts := []string{
 		userID, input.SubscriptionPlanID.String(), input.CouponCode, billingAddrID,
 		idempotencyDateBucket(), fmt.Sprintf("gen%d", subscriptionGeneration),
+		stripeRequestFingerprint(params),
 	}
 	params.SetIdempotencyKey(stripeIdempotencyKey("checkout", baseKeyParts...))
 
@@ -648,6 +666,7 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 		userID, input.SubscriptionPlanID.String(), fmt.Sprintf("%d", input.Quantity),
 		bulkGroupID, input.CouponCode, bulkBillingAddrID, idempotencyDateBucket(),
 		fmt.Sprintf("gen%d", batchGeneration),
+		stripeRequestFingerprint(params),
 	}
 	params.SetIdempotencyKey(stripeIdempotencyKey("checkout-bulk", bulkKeyParts...))
 
