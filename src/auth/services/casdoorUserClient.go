@@ -31,6 +31,9 @@ type CasdoorUserClient interface {
 	// to a bare UpdateUser, whose default whitelist silently drops columns such
 	// as email_verified and is_forbidden.
 	UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error)
+	// AddUser creates the account. Reported through the interface so callers
+	// that create accounts (the bulk import) can be tested on what they send.
+	AddUser(user *casdoorsdk.User) error
 	// SetForbidden blocks (or unblocks) sign-in for the account. It fails when
 	// Casdoor reports the change was not persisted.
 	SetForbidden(userID string, forbidden bool) error
@@ -82,4 +85,9 @@ func (c *defaultCasdoorUserClient) SetForbidden(userID string, forbidden bool) e
 		return fmt.Errorf("%w (is_forbidden=%t for %s)", ErrCasdoorWriteNotPersisted, forbidden, userID)
 	}
 	return nil
+}
+
+func (c *defaultCasdoorUserClient) AddUser(user *casdoorsdk.User) error {
+	_, err := casdoorsdk.AddUser(user)
+	return err
 }

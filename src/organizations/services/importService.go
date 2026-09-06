@@ -35,12 +35,13 @@ type ImportService interface {
 	) (*dto.ImportOrganizationDataResponse, error)
 }
 
-// ImportIdentityClient is the slice of the identity provider the import needs
-// for accounts that already exist. auth/services' CasdoorUserClient satisfies
-// it; new accounts still go through the casdoorsdk package directly.
+// ImportIdentityClient is the slice of the identity provider the import needs.
+// auth/services' CasdoorUserClient satisfies it. New accounts go through it too,
+// so a test can see the exact account the import asks Casdoor to create.
 type ImportIdentityClient interface {
 	GetUserByEmail(email string) (*casdoorsdk.User, error)
 	UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error)
+	AddUser(user *casdoorsdk.User) error
 }
 
 type importService struct {
@@ -391,9 +392,9 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 		properties["force_password_reset"] = "true"
 	}
 
-	// Create user directly in Casdoor
+	// Create user in Casdoor
 	newUser := casdoorsdk.User{
-		Name:              fmt.Sprintf("%s_%s_%d", user.FirstName, user.LastName, time.Now().Unix()),
+		Name:              importedUsername(user),
 		DisplayName:       fmt.Sprintf("%s %s", user.FirstName, user.LastName),
 		Email:             user.Email,
 		Password:          user.Password,
@@ -404,8 +405,7 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 		CreatedTime:       casdoorsdk.GetCurrentTime(),
 	}
 
-	_, err = casdoorsdk.AddUser(&newUser)
-	if err != nil {
+	if err := s.identity.AddUser(&newUser); err != nil {
 		return "", fmt.Errorf("failed to create user in Casdoor: %w", err)
 	}
 
@@ -443,6 +443,24 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	}
 
 	return createdUser.Id, nil
+}
+
+// importedUsername derives the Casdoor username of an imported account.
+//
+// It used to be "First_Last_<unix>" verbatim, and Casdoor refused any class
+// list carrying a space, an accent, an apostrophe or an empty first name in
+// those cells, with a message about separators the teacher could not act on.
+// casdoor.UsernameFrom owns Casdoor's rule; the email's local part stands in
+// when the name leaves nothing usable, and the timestamp keeps homonyms apart.
+func importedUsername(user dto.UserImportRow) string {
+	base := casdoor.UsernameFrom(user.FirstName, user.LastName)
+	if base == "" {
+		base = casdoor.UsernameFrom(strings.SplitN(user.Email, "@", 2)[0])
+	}
+	if base == "" {
+		base = "user"
+	}
+	return fmt.Sprintf("%s-%d", base, time.Now().Unix())
 }
 
 // addRolesToUser adds roles to a user in Casbin

@@ -140,6 +140,8 @@ func (m *mockCasdoorUserClient) GetUserByEmail(email string) (*casdoorsdk.User, 
 	return u, args.Error(1)
 }
 
+func (m *mockCasdoorUserClient) AddUser(user *casdoorsdk.User) error { return nil }
+
 func (m *mockCasdoorUserClient) UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error) {
 	args := m.Called(user, columns)
 	return args.Bool(0), args.Error(1)

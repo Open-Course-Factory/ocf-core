@@ -39,7 +39,7 @@ type OrganizationMember struct {
 	ScheduledErasureAt *time.Time `gorm:"index" json:"scheduled_erasure_at,omitempty"`
 
 	// Optional metadata (custom fields per member)
-	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Metadata map[string]any `gorm:"type:jsonb;serializer:json" json:"metadata,omitempty"`
 
 	// Relations
 	Organization Organization `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"organization,omitempty"`

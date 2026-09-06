@@ -61,6 +61,7 @@ type fakeIdentity struct {
 	forbidden map[string]bool
 	deleted   []string
 	columns   [][]string
+	created   []*casdoorsdk.User
 	affected  bool
 }
 
@@ -95,6 +96,19 @@ func (f *fakeIdentity) DeleteUser(user *casdoorsdk.User) (bool, error) {
 	f.deleted = append(f.deleted, user.Id)
 	delete(f.users, user.Id)
 	return true, nil
+}
+
+// AddUser records the account the import asks for and makes it findable by
+// email, as the real provider would, so the creation path can run end to end.
+func (f *fakeIdentity) AddUser(user *casdoorsdk.User) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if user.Id == "" {
+		user.Id = fmt.Sprintf("imported-%d", len(f.created)+1)
+	}
+	f.created = append(f.created, user)
+	f.users[user.Id] = user
+	return nil
 }
 
 func (f *fakeIdentity) UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error) {
