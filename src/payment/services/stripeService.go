@@ -3321,6 +3321,26 @@ func (ss *stripeService) UpdateSubscriptionQuantity(subscriptionID string, subsc
 	return sub, nil
 }
 
+// applyBudgetMetadata copies each budget axis the product states onto the
+// plan and leaves the others untouched.
+func applyBudgetMetadata(plan *models.SubscriptionPlan, meta PlanProductMetadata) {
+	if meta.MaxCPU != nil {
+		plan.MaxCPU = *meta.MaxCPU
+	}
+	if meta.MaxMemoryMB != nil {
+		plan.MaxMemoryMB = *meta.MaxMemoryMB
+	}
+}
+
+func budgetRefused(productID, priceID string, axes []string) FailedPlan {
+	return FailedPlan{
+		StripeProductID: productID,
+		StripePriceID:   priceID,
+		Error: fmt.Sprintf("refused: %s must be a positive integer in the product metadata",
+			strings.Join(axes, " and ")),
+	}
+}
+
 // ImportPlansFromStripe imports subscription plans from Stripe into the database
 func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 	result := &SyncPlansResult{
@@ -3386,9 +3406,15 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				existingPlan.BillingInterval = string(priceObj.Recurring.Interval)
 				existingPlan.IsActive = prod.Active
 
-				// Reconcile budget fields from Stripe metadata.
-				existingPlan.MaxCPU = budgetMeta.MaxCPU
-				existingPlan.MaxMemoryMB = budgetMeta.MaxMemoryMB
+				// An axis the product does not state is left as it was; a
+				// stated non-positive one refuses the update. db.Save bypasses the
+				// entity hook, so the budget rule has to be applied here.
+				applyBudgetMetadata(existingPlan, budgetMeta)
+				if axes := existingPlan.MissingBudgetAxes(); len(axes) > 0 {
+					result.FailedPlans = append(result.FailedPlans,
+						budgetRefused(prod.ID, priceObj.ID, axes))
+					continue
+				}
 
 				// Handle tiered pricing for updates
 				if priceObj.Tiers != nil && len(priceObj.Tiers) > 0 {
@@ -3458,8 +3484,14 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				BillingInterval: string(priceObj.Recurring.Interval),
 				IsActive:        prod.Active,
 				StripeCreated:   true,
-				MaxCPU:          budgetMeta.MaxCPU,
-				MaxMemoryMB:     budgetMeta.MaxMemoryMB,
+			}
+			// A new plan must state both axes: an unstated one would be created
+			// as a zero, a plan nobody can launch anything on.
+			applyBudgetMetadata(newPlan, budgetMeta)
+			if axes := newPlan.MissingBudgetAxes(); len(axes) > 0 {
+				result.FailedPlans = append(result.FailedPlans,
+					budgetRefused(prod.ID, priceObj.ID, axes))
+				continue
 			}
 
 			// Handle tiered pricing (volume/graduated pricing in Stripe)

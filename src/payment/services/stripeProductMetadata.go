@@ -33,9 +33,12 @@ const metadataValueManagedByOCF = "ocf"
 // PlanProductMetadata is the typed view of a Stripe Product's metadata map
 // for the fields ocf-core cares about. It is the reverse of
 // BuildPlanProductMetadata and is consumed by the import/reconcile path.
+// PlanProductMetadata is what a Stripe product says about a plan's budget.
+// Pointer fields: nil is "the product does not state this axis", which the
+// importer treats as "leave the plan alone", never as a zero.
 type PlanProductMetadata struct {
-	MaxCPU      int
-	MaxMemoryMB int
+	MaxCPU      *int
+	MaxMemoryMB *int
 }
 
 // BuildPlanProductMetadata composes the Stripe Product `metadata` map for a
@@ -52,22 +55,24 @@ func BuildPlanProductMetadata(plan *models.SubscriptionPlan) map[string]string {
 	}
 }
 
-// ParsePlanProductMetadata extracts the typed budget fields from a Stripe
-// Product metadata map. Absent or malformed values fall back to zero
-// (which means "unlimited" in the budget engine).
+// ParsePlanProductMetadata reads the budget axes a product states. An absent
+// key, or one that does not parse as an integer, states nothing; the caller
+// decides what "not stated" means for its operation.
 func ParsePlanProductMetadata(metadata map[string]string) PlanProductMetadata {
-	parsed := PlanProductMetadata{}
-
-	if v, ok := metadata[metadataKeyMaxCPU]; ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			parsed.MaxCPU = n
-		}
+	return PlanProductMetadata{
+		MaxCPU:      statedInt(metadata, metadataKeyMaxCPU),
+		MaxMemoryMB: statedInt(metadata, metadataKeyMaxMemoryMB),
 	}
-	if v, ok := metadata[metadataKeyMaxMemoryMB]; ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			parsed.MaxMemoryMB = n
-		}
-	}
+}
 
-	return parsed
+func statedInt(metadata map[string]string, key string) *int {
+	raw, ok := metadata[key]
+	if !ok {
+		return nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return nil
+	}
+	return &n
 }

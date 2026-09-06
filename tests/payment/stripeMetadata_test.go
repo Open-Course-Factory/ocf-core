@@ -15,6 +15,7 @@ import (
 	"soli/formations/src/payment/services"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStripeMetadata_WriteBudgetPlan_EmitsCPUAndMemoryKeys(t *testing.T) {
@@ -32,8 +33,11 @@ func TestStripeMetadata_WriteBudgetPlan_EmitsCPUAndMemoryKeys(t *testing.T) {
 	assert.NotEmpty(t, metadata["plan_id"], "plan_id must be emitted so importers can reconcile")
 }
 
+// The writer states what the plan holds, zero included: a zero budget must be
+// visible on the Stripe side, where the importer will refuse it, rather than
+// silently dropped.
 func TestStripeMetadata_WriteZeroBudget_EmitsZeros(t *testing.T) {
-	plan := &models.SubscriptionPlan{Name: "Unlimited"}
+	plan := &models.SubscriptionPlan{Name: "Accidental zero"}
 
 	metadata := services.BuildPlanProductMetadata(plan)
 
@@ -42,7 +46,6 @@ func TestStripeMetadata_WriteZeroBudget_EmitsZeros(t *testing.T) {
 }
 
 func TestStripeMetadata_ReadBudgetMetadata_ParsesCPUAndMemory(t *testing.T) {
-	// max_cpu is stored as stringified mCPU (1000 mCPU = 1 vCPU).
 	metadata := map[string]string{
 		"max_cpu":       "8000",
 		"max_memory_mb": "4096",
@@ -50,19 +53,23 @@ func TestStripeMetadata_ReadBudgetMetadata_ParsesCPUAndMemory(t *testing.T) {
 
 	parsed := services.ParsePlanProductMetadata(metadata)
 
-	assert.Equal(t, 8000, parsed.MaxCPU)
-	assert.Equal(t, 4096, parsed.MaxMemoryMB)
+	require.NotNil(t, parsed.MaxCPU)
+	require.NotNil(t, parsed.MaxMemoryMB)
+	assert.Equal(t, 8000, *parsed.MaxCPU)
+	assert.Equal(t, 4096, *parsed.MaxMemoryMB)
 }
 
-func TestStripeMetadata_ReadEmpty_DefaultsToZero(t *testing.T) {
+// An absent key states nothing. It must not read as a zero: the importer
+// treats "not stated" as "leave the plan alone", and a zero would be a budget
+// that grants nothing.
+func TestStripeMetadata_ReadEmpty_StatesNoAxis(t *testing.T) {
 	parsed := services.ParsePlanProductMetadata(map[string]string{})
 
-	assert.Equal(t, 0, parsed.MaxCPU)
-	assert.Equal(t, 0, parsed.MaxMemoryMB)
+	assert.Nil(t, parsed.MaxCPU)
+	assert.Nil(t, parsed.MaxMemoryMB)
 }
 
-func TestStripeMetadata_ReadGarbageInts_DefaultsToZero(t *testing.T) {
-	// Stripe metadata is always string — defensively handle malformed ints.
+func TestStripeMetadata_ReadGarbageInts_StatesNoAxis(t *testing.T) {
 	metadata := map[string]string{
 		"max_cpu":       "not-a-number",
 		"max_memory_mb": "",
@@ -70,6 +77,16 @@ func TestStripeMetadata_ReadGarbageInts_DefaultsToZero(t *testing.T) {
 
 	parsed := services.ParsePlanProductMetadata(metadata)
 
-	assert.Equal(t, 0, parsed.MaxCPU)
-	assert.Equal(t, 0, parsed.MaxMemoryMB)
+	assert.Nil(t, parsed.MaxCPU)
+	assert.Nil(t, parsed.MaxMemoryMB)
+}
+
+// A stated zero is stated. The importer must see it and refuse it, not treat
+// it as absent.
+func TestStripeMetadata_ReadStatedZero_IsStated(t *testing.T) {
+	parsed := services.ParsePlanProductMetadata(map[string]string{"max_cpu": "0"})
+
+	require.NotNil(t, parsed.MaxCPU)
+	assert.Equal(t, 0, *parsed.MaxCPU)
+	assert.Nil(t, parsed.MaxMemoryMB)
 }
