@@ -563,22 +563,6 @@ func TestTerminalBudgetHook_BeforeCreate_UnknownSize_Error(t *testing.T) {
 // 11) Unlimited budget allows any size
 // ---------------------------------------------------------------------------
 
-func TestTerminalBudgetHook_BeforeCreate_UnlimitedBudget(t *testing.T) {
-	db := freshTestDB(t)
-	plan := budgetPlanInMem("Unlimited", 0, 0, nil) // 0/0 = unlimited
-	hook := newHookForTest(db, plan, nil)
-
-	terminal := &terminalModels.Terminal{
-		UserID:      "u-unlimited",
-		MachineSize: "XL", // 4000 mCPU / 4g
-	}
-
-	err := execBeforeCreate(hook, terminal)
-	require.NoError(t, err, "0-cap MaxCPU/MaxMemoryMB → unlimited → any size allowed")
-
-	assert.Equal(t, 4000, terminal.SizeCPU)
-	assert.Equal(t, 4096, terminal.SizeMemoryMB)
-}
 
 // ---------------------------------------------------------------------------
 // 12) Race condition (PostgreSQL only — gated by testing.Short() + env)

@@ -1,7 +1,6 @@
 package services
 
 import (
-	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 )
 
@@ -27,23 +26,23 @@ const mCPUPerVCPU = 1000
 // contradicts the plan the learner was sold. ocf-core's own budget gate stays
 // the authoritative one.
 //
-// nil is returned (meaning "no cap", NULL in tt-backend) in two cases:
-//   - the axis is unlimited (0 on the plan), and
-//   - the user holds no entitlement at all — tt-backend has no way to express
-//     a zero budget (it rejects 0 as invalid), so nothing is sent and
-//     ocf-core's gate remains what refuses them.
+// nil is returned (meaning "no cap", NULL in tt-backend) only when the user
+// holds no entitlement at all: tt-backend has no way to express a zero budget
+// (it rejects 0 as invalid), so nothing is sent and ocf-core's own gate remains
+// what refuses them. Every plan now carries a positive budget, so an entitled
+// user always gets a cap.
 func BudgetForTerminalKey(ceiling paymentServices.UserBudgetCeiling) (maxCPUTotal, maxMemoryMBTotal *int64) {
 	if !ceiling.HasEntitlement {
 		return nil, nil
 	}
 
-	if !paymentModels.IsUnlimitedBudget(ceiling.MaxCPU) {
+	if ceiling.MaxCPU > 0 {
 		// Ceiling division: any fraction of a vCPU claims a whole one.
 		vcpu := int64((ceiling.MaxCPU + mCPUPerVCPU - 1) / mCPUPerVCPU)
 		maxCPUTotal = &vcpu
 	}
 
-	if !paymentModels.IsUnlimitedBudget(ceiling.MaxMemoryMB) {
+	if ceiling.MaxMemoryMB > 0 {
 		mem := int64(ceiling.MaxMemoryMB)
 		maxMemoryMBTotal = &mem
 	}

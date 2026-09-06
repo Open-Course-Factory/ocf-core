@@ -66,7 +66,9 @@ func Run(db *gorm.DB, opts Options) (*Report, error) {
 	apply := func(tx *gorm.DB) error {
 		for i := range plans {
 			plan := &plans[i]
-			if plan.HasBudgetCap() {
+			// Already carries a budget, so the count -> budget translation has
+			// already run for this plan. Not an "unlimited" question.
+			if plan.MaxCPU > 0 || plan.MaxMemoryMB > 0 {
 				report.Skipped++
 				report.Plans = append(report.Plans, PlanReport{
 					PlanID:      plan.ID.String(),
@@ -133,9 +135,8 @@ func Rollback(db *gorm.DB, opts Options) (*Report, error) {
 	apply := func(tx *gorm.DB) error {
 		for i := range plans {
 			plan := &plans[i]
-			// Deliberately an exact `== 0`, NOT models.IsUnlimitedBudget.
-			// This asks "is the plan already at the value Rollback writes?",
-			// which is a different question from "is this plan unlimited".
+			// Deliberately an exact `== 0`: this asks "is the plan already at
+			// the value Rollback writes?", not "does it have a budget".
 			// Reading it as <= 0 would skip a plan holding a negative budget
 			// and leave that nonsense value in place, when clearing it is
 			// exactly this function's job.

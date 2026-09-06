@@ -73,6 +73,12 @@ func TestSubscriptionPlanValidation_CreateCapsDataPersistenceGB(t *testing.T) {
 			err := execPlanValidation(hooks.BeforeCreate, &models.SubscriptionPlan{
 				Name:              "Cap Plan",
 				DataPersistenceGB: tc.gb,
+				// A create must also state positive budgets (see
+				// subscriptionPlanBudgetValidation_test.go). Stated here so this
+				// case still exercises the storage cap rather than tripping the
+				// budget rule first.
+				MaxCPU:      6000,
+				MaxMemoryMB: 6144,
 			})
 			if tc.rejected {
 				require.Error(t, err,
@@ -250,6 +256,10 @@ func TestSubscriptionPlan_CreateAt500_AcceptedEndToEnd(t *testing.T) {
 		Currency:          "eur",
 		BillingInterval:   "month",
 		DataPersistenceGB: 500,
+		// A create must also state positive budgets; without them the budget
+		// rule refuses the plan before the storage cap is reached.
+		MaxCPU:      6000,
+		MaxMemoryMB: 6144,
 	}, "SubscriptionPlan", "admin-1")
 	require.NoError(t, err, "a plan at exactly 500 GB must be accepted")
 

@@ -129,28 +129,6 @@ func TestUserBudgetCeiling_TakesTheMostGenerousContext(t *testing.T) {
 	assert.Equal(t, 4096, ceiling.MaxMemoryMB)
 }
 
-// A plan with 0 on an axis means unlimited, which must dominate any finite
-// value rather than being treated as the smallest number.
-func TestUserBudgetCeiling_UnlimitedDominates(t *testing.T) {
-	db := freshTestDB(t)
-	userID := "user-with-unlimited"
-
-	finite := planWithBudget(t, db, "Finite", 10, 2000, 1024)
-	unlimited := planWithBudget(t, db, "Unlimited", 40, 0, 0)
-
-	orgA := orgSubscriptionOn(t, db, "owner-f", finite)
-	addMemberWithRole(t, db, orgA.ID, userID, "member")
-
-	orgB := orgSubscriptionOn(t, db, "owner-u", unlimited)
-	addMemberWithRole(t, db, orgB.ID, userID, "member")
-
-	ceiling, err := services.NewEffectivePlanService(db).GetUserBudgetCeiling(userID)
-
-	require.NoError(t, err)
-	assert.Equal(t, 0, ceiling.MaxCPU, "0 means unlimited and must win over a finite budget")
-	assert.Equal(t, 0, ceiling.MaxMemoryMB)
-}
-
 // A personal subscription counts as one of the contexts.
 func TestUserBudgetCeiling_IncludesPersonalSubscription(t *testing.T) {
 	db := freshTestDB(t)

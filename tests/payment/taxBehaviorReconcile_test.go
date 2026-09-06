@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
@@ -57,7 +56,7 @@ func TestPlanValidation_AcceptsTheTwoRealTaxBehaviors(t *testing.T) {
 	for _, behavior := range []string{"inclusive", "exclusive"} {
 		t.Run(behavior, func(t *testing.T) {
 			assert.NoError(t, execPlanValidation(hooks.BeforeCreate,
-				&models.SubscriptionPlan{TaxBehavior: behavior}))
+				&models.SubscriptionPlan{TaxBehavior: behavior, MaxCPU: 6000, MaxMemoryMB: 6144}))
 			assert.NoError(t, execPlanValidation(hooks.BeforeUpdate,
 				map[string]any{"tax_behavior": behavior}))
 		})
@@ -68,18 +67,12 @@ func TestPlanValidation_AcceptsTheTwoRealTaxBehaviors(t *testing.T) {
 // taxBehaviorOf — turning an announced TTC price into a net one and billing the
 // VAT twice over. Refuse it while it is still a request.
 func TestPlanValidation_RejectsAnUnusableTaxBehavior(t *testing.T) {
-	// The offending field travels in Details, not in the message — assert on it
-	// so this cannot be satisfied by some other validation failing instead.
-	rejectedField := func(t *testing.T, err error) string {
-		t.Helper()
-		var entityErr *entityErrors.EntityError
-		require.ErrorAs(t, err, &entityErr)
-		field, _ := entityErr.Details["field"].(string)
-		return field
-	}
+	// The offending field travels in Details, not in the message — asserting on
+	// it means this cannot be satisfied by some other validation failing
+	// instead. rejectedField is shared with the budget validation tests.
 
 	err := execPlanValidation(hooks.BeforeCreate,
-		&models.SubscriptionPlan{TaxBehavior: "ttc"})
+		&models.SubscriptionPlan{TaxBehavior: "ttc", MaxCPU: 6000, MaxMemoryMB: 6144})
 	require.Error(t, err, "an unknown tax behaviour must not reach a Stripe price")
 	assert.Equal(t, "tax_behavior", rejectedField(t, err))
 
@@ -97,7 +90,7 @@ func TestPlanValidation_SilenceOnTaxBehaviorIsNotAnError(t *testing.T) {
 	// answers for; rejecting it here would make every pre-existing plan
 	// unupdatable.
 	assert.NoError(t, execPlanValidation(hooks.BeforeCreate,
-		&models.SubscriptionPlan{TaxBehavior: ""}))
+		&models.SubscriptionPlan{TaxBehavior: "", MaxCPU: 6000, MaxMemoryMB: 6144}))
 	assert.NoError(t, execPlanValidation(hooks.BeforeUpdate,
 		map[string]any{"tax_behavior": ""}))
 }

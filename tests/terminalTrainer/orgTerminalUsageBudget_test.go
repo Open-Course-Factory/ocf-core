@@ -7,9 +7,6 @@
 //   * Quota envelope (MaxCPU / MaxMemoryMB / Used* / Remaining* / Scope)
 //   * RemainingBySize array (one entry per catalog size, XL → XS)
 //   * Per-user ActiveCPU / ActiveMemoryMB
-//
-// For plans with zero CPU/RAM caps Quota.Scope is "unlimited" and
-// RemainingBySize is empty — the dashboard renders an unconstrained view.
 package terminalTrainer_tests
 
 import (
@@ -109,63 +106,4 @@ func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.
 	assert.Equal(t, "student1", student["user_id"])
 	assert.Equal(t, float64(2000), student["active_cpu"])
 	assert.Equal(t, float64(1024), student["active_memory_mb"])
-}
-
-// TestOrgTerminalUsage_UnlimitedPlan_UnlimitedScope — plans with zero
-// CPU/RAM caps emit Scope=unlimited and an empty RemainingBySize.
-func TestOrgTerminalUsage_UnlimitedPlan_UnlimitedScope(t *testing.T) {
-	db := setupTestDBWithOrgs(t)
-
-	plan := &paymentModels.SubscriptionPlan{
-		Name:      "Unlimited",
-		IsActive:  true,
-		IsCatalog: true,
-		// MaxCPU=0 and MaxMemoryMB=0 → unlimited.
-	}
-	require.NoError(t, db.Create(plan).Error)
-
-	org := createTestOrgForHistory(t, db, "owner1")
-	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
-
-	orgSub := &paymentModels.OrganizationSubscription{
-		OrganizationID:     org.ID,
-		SubscriptionPlanID: plan.ID,
-		StripeCustomerID:   "cus_test_" + uuid.New().String()[:8],
-		Status:             "active",
-		CurrentPeriodStart: time.Now(),
-		CurrentPeriodEnd:   time.Now().AddDate(1, 0, 0),
-	}
-	require.NoError(t, db.Create(orgSub).Error)
-
-	ctrl := terminalController.NewTerminalController(db)
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.Use(func(c *gin.Context) {
-		c.Set("userId", "owner1")
-		c.Set("userRoles", []string{"member"})
-		c.Next()
-	})
-	router.GET("/organizations/:id/terminal-usage", ctrl.GetOrgTerminalUsage)
-
-	req := httptest.NewRequest("GET", "/organizations/"+org.ID.String()+"/terminal-usage", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-
-	var resp map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-
-	quota, ok := resp["quota"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "unlimited", quota["scope"],
-		"plan with zero caps must emit Scope=unlimited")
-
-	// remaining_by_size must be empty/nil so the frontend skips that block.
-	bySize, present := resp["remaining_by_size"]
-	if present {
-		slice, ok := bySize.([]interface{})
-		assert.True(t, ok && len(slice) == 0,
-			"remaining_by_size must be empty for unlimited plan (got %v)", bySize)
-	}
 }
