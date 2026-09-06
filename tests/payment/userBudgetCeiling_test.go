@@ -144,13 +144,13 @@ func TestUserBudgetCeiling_IncludesPersonalSubscription(t *testing.T) {
 	assert.Equal(t, 6144, ceiling.MaxMemoryMB)
 }
 
-// No entitlement anywhere is not an error — it is a user who may not spawn
-// anything, and the caller must be able to tell that apart from "unlimited".
+// No entitlement anywhere is not an error, it is a user who may not spawn
+// anything: a zero ceiling on both axes.
 func TestUserBudgetCeiling_NoSubscriptionGrantsNothing(t *testing.T) {
 	db := freshTestDB(t)
 
 	ceiling, err := services.NewEffectivePlanService(db).GetUserBudgetCeiling("nobody")
 
 	require.NoError(t, err)
-	assert.False(t, ceiling.HasEntitlement, "a user with no plan anywhere must not read as unlimited")
+	assert.Equal(t, services.UserBudgetCeiling{}, ceiling, "a user with no plan anywhere holds no budget")
 }

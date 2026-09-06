@@ -30,9 +30,8 @@ func TestBudgetForTerminalKey_RoundsPartialCPUUp(t *testing.T) {
 	// 1500 mCPU = 1.5 vCPU. Truncating would hand the learner 1 vCPU and make
 	// tt-backend refuse a session the plan allows.
 	cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
-		MaxCPU:         1500,
-		MaxMemoryMB:    2048,
-		HasEntitlement: true,
+		MaxCPU:      1500,
+		MaxMemoryMB: 2048,
 	})
 
 	require.NotNil(t, cpu)
@@ -43,9 +42,8 @@ func TestBudgetForTerminalKey_RoundsPartialCPUUp(t *testing.T) {
 
 func TestBudgetForTerminalKey_ExactCPUIsNotInflated(t *testing.T) {
 	cpu, _ := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
-		MaxCPU:         24000,
-		MaxMemoryMB:    12288,
-		HasEntitlement: true,
+		MaxCPU:      24000,
+		MaxMemoryMB: 12288,
 	})
 
 	require.NotNil(t, cpu)
@@ -56,9 +54,8 @@ func TestBudgetForTerminalKey_SubVCPUCeilingStillGrantsOne(t *testing.T) {
 	// A 500 mCPU learner plan (one XS session) must not convert to a 0 budget:
 	// tt-backend rejects 0 outright, and it would mean "may launch nothing".
 	cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
-		MaxCPU:         500,
-		MaxMemoryMB:    256,
-		HasEntitlement: true,
+		MaxCPU:      500,
+		MaxMemoryMB: 256,
 	})
 
 	require.NotNil(t, cpu)
@@ -70,7 +67,9 @@ func TestBudgetForTerminalKey_SubVCPUCeilingStillGrantsOne(t *testing.T) {
 // A non-positive budget on an axis sends no cap for that axis rather than a
 // zero: tt-backend rejects an explicit 0 outright, so forwarding one would turn
 // a bad row into a failed key provisioning. Plan validation refuses to create
-// such a budget, so this only guards rows that predate it.
+// such a budget, so this guards rows that predate it and the user who holds no
+// plan in any context, whose ceiling is zero on both axes. The per-key budget
+// is defence in depth; ocf-core's own gate is what refuses them.
 func TestBudgetForTerminalKey_NonPositiveAxisSendsNoCap(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -87,25 +86,11 @@ func TestBudgetForTerminalKey_NonPositiveAxisSendsNoCap(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
-				MaxCPU:         tc.cpu,
-				MaxMemoryMB:    tc.memory,
-				HasEntitlement: true,
+				MaxCPU:      tc.cpu,
+				MaxMemoryMB: tc.memory,
 			})
 			assert.Equal(t, tc.wantCPU, cpu != nil, "cpu cap presence")
 			assert.Equal(t, tc.wantMem, mem != nil, "memory cap presence")
 		})
 	}
-}
-
-func TestBudgetForTerminalKey_NoEntitlementSendsNoCap(t *testing.T) {
-	// A user with no plan in any context. tt-backend cannot express a zero
-	// budget, so nothing is sent and ocf-core's own gate remains the thing
-	// that refuses them — the per-key budget is defense-in-depth, not the
-	// primary entitlement check.
-	cpu, mem := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
-		HasEntitlement: false,
-	})
-
-	assert.Nil(t, cpu)
-	assert.Nil(t, mem)
 }

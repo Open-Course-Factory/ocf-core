@@ -114,9 +114,8 @@ func (s *stubEffectivePlanService) GetUserBudgetCeiling(userID string) (paymentS
 		return paymentServices.UserBudgetCeiling{}, nil
 	}
 	return paymentServices.UserBudgetCeiling{
-		MaxCPU:         s.personalPlan.MaxCPU,
-		MaxMemoryMB:    s.personalPlan.MaxMemoryMB,
-		HasEntitlement: true,
+		MaxCPU:      s.personalPlan.MaxCPU,
+		MaxMemoryMB: s.personalPlan.MaxMemoryMB,
 	}, nil
 }
 

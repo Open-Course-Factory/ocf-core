@@ -143,17 +143,13 @@ type EffectivePlanService interface {
 
 // UserBudgetCeiling is the per-user resource ceiling derived from plans.
 //
-// MaxCPU is in mCPU (1000 = 1 vCPU), matching SubscriptionPlan.MaxCPU.
-// On both axes 0 means UNLIMITED, exactly as the plan model defines it — so
-// callers must consult HasEntitlement before reading a zero as "no limit".
+// MaxCPU is in mCPU (1000 = 1 vCPU), matching SubscriptionPlan.MaxCPU. A
+// zero on an axis is a user who holds no budget on it, in any context:
+// nothing distinguishes "no plan" from "no capacity", and neither grants
+// anything.
 type UserBudgetCeiling struct {
 	MaxCPU      int
 	MaxMemoryMB int
-	// HasEntitlement is false when the user holds no plan in any context.
-	// Without it, "no plan at all" and "unlimited plan" would both present
-	// as two zeroes — the difference between granting nothing and granting
-	// everything.
-	HasEntitlement bool
 }
 
 type effectivePlanService struct {
@@ -472,31 +468,13 @@ func (s *effectivePlanService) GetUserBudgetCeiling(userID string) (UserBudgetCe
 	return ceiling, nil
 }
 
-// widenCeiling folds one plan into the running ceiling, keeping the more
-// generous value per axis. Unlimited (0) dominates any finite budget, so it
-// can only be applied once an entitlement exists — otherwise the zero-valued
-// starting point would be indistinguishable from an unlimited plan.
+// widenCeiling folds one plan into the running ceiling, keeping the larger
+// value per axis.
 func widenCeiling(current UserBudgetCeiling, plan *models.SubscriptionPlan) UserBudgetCeiling {
 	if plan == nil {
 		return current
 	}
-	if !current.HasEntitlement {
-		return UserBudgetCeiling{
-			MaxCPU:         plan.MaxCPU,
-			MaxMemoryMB:    plan.MaxMemoryMB,
-			HasEntitlement: true,
-		}
-	}
-	current.MaxCPU = widerLimit(current.MaxCPU, plan.MaxCPU)
-	current.MaxMemoryMB = widerLimit(current.MaxMemoryMB, plan.MaxMemoryMB)
+	current.MaxCPU = max(current.MaxCPU, plan.MaxCPU)
+	current.MaxMemoryMB = max(current.MaxMemoryMB, plan.MaxMemoryMB)
 	return current
-}
-
-// widerLimit returns the more permissive of two budget limits — simply the
-// larger, now that no value means "unlimited".
-func widerLimit(a, b int) int {
-	if b > a {
-		return b
-	}
-	return a
 }
