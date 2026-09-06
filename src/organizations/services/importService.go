@@ -32,6 +32,7 @@ type ImportService interface {
 		dryRun bool,
 		updateExisting bool,
 		targetGroup string,
+		nameOrder dto.NameOrder,
 	) (*dto.ImportOrganizationDataResponse, error)
 }
 
@@ -71,6 +72,7 @@ func (s *importService) ImportOrganizationData(
 	dryRun bool,
 	updateExisting bool,
 	targetGroup string,
+	nameOrder dto.NameOrder,
 ) (*dto.ImportOrganizationDataResponse, error) {
 
 	startTime := time.Now()
@@ -98,7 +100,7 @@ func (s *importService) ImportOrganizationData(
 	}
 
 	// 2. Parse CSV files
-	users, userErrors, userWarnings := orgUtils.ParseUsersCSV(usersFile)
+	users, userErrors, userWarnings := orgUtils.ParseUsersCSV(usersFile, nameOrder)
 	response.Errors = append(response.Errors, userErrors...)
 	response.Warnings = append(response.Warnings, userWarnings...)
 

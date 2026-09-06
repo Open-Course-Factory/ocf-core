@@ -39,6 +39,7 @@ import (
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupModels "soli/formations/src/groups/models"
+	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
 	organizationRoutes "soli/formations/src/organizations/routes"
 	"soli/formations/src/organizations/services"
@@ -446,7 +447,7 @@ func TestCsvImport_ReenrolsAnOffboardedStudentByEmail(t *testing.T) {
 
 	importer := services.NewImportService(db, identity, offboarding)
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
-		usersCSV(t, "student-a@example.com,Ada,Lovelace,member\n"), nil, nil, false, true, "")
+		usersCSV(t, "student-a@example.com,Ada,Lovelace,member\n"), nil, nil, false, true, "", dto.NameOrderLastFirst)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
 
 	m := loadMember(t, db, orgID, "student-a")

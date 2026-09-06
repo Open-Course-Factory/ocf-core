@@ -221,7 +221,7 @@ func (t *csvTable) value(record []string, column string) string {
 	return getColumnValue(record, t.columns, column)
 }
 
-func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.ImportError, []dto.ImportWarning) {
+func ParseUsersCSV(file *multipart.FileHeader, nameOrder dto.NameOrder) ([]dto.UserImportRow, []dto.ImportError, []dto.ImportWarning) {
 	table, headerErr := openCSVTable(file, "users")
 	if headerErr != nil {
 		return nil, []dto.ImportError{*headerErr}, nil
@@ -270,7 +270,7 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 			Name:           table.value(record, "name"),
 		}
 
-		rowErrors, rowWarnings := validateUserRow(&user, table.rowNum, table.joinRow(record))
+		rowErrors, rowWarnings := validateUserRow(&user, nameOrder, table.rowNum, table.joinRow(record))
 		if len(rowWarnings) > 0 {
 			warnings = append(warnings, rowWarnings...)
 		}
@@ -379,7 +379,7 @@ func getColumnValue(record []string, headerMap map[string]int, columnName string
 // validateUserRow validates a user row and performs name splitting if needed.
 // It accepts a pointer so it can set FirstName/LastName from the Name field.
 // Returns (errors, warnings).
-func validateUserRow(user *dto.UserImportRow, rowNum int, rowContent string) ([]dto.ImportError, []dto.ImportWarning) {
+func validateUserRow(user *dto.UserImportRow, nameOrder dto.NameOrder, rowNum int, rowContent string) ([]dto.ImportError, []dto.ImportWarning) {
 	var errors []dto.ImportError
 	var warnings []dto.ImportWarning
 	rowRef := fmt.Sprintf(" (row %d: %q)", rowNum, rowContent)
@@ -396,18 +396,14 @@ func validateUserRow(user *dto.UserImportRow, rowNum int, rowContent string) ([]
 
 	// Name splitting: if Name is set but FirstName/LastName are empty
 	if user.Name != "" && user.FirstName == "" && user.LastName == "" {
-		lastSpace := strings.LastIndex(user.Name, " ")
-		if lastSpace == -1 {
-			// Single word: last name only
-			user.LastName = user.Name
+		var singleWord bool
+		user.FirstName, user.LastName, singleWord = splitName(user.Name, nameOrder)
+		if singleWord {
 			warnings = append(warnings, dto.ImportWarning{
 				Row:     rowNum,
 				File:    "users",
 				Message: fmt.Sprintf("Name '%s' has no space; used as last name only (empty first name)", user.Name),
 			})
-		} else {
-			user.LastName = user.Name[:lastSpace]
-			user.FirstName = user.Name[lastSpace+1:]
 		}
 	}
 
@@ -448,6 +444,33 @@ func validateUserRow(user *dto.UserImportRow, rowNum int, rowContent string) ([]
 }
 
 // validateGroupRow validates a group row
+// splitName is the one owner of how a single "name" column becomes first and
+// last names. The first name is always the single word at one end (the last
+// word for last_first, the first word for first_last); every other word is the
+// last name, which is where compound names ("DE LA FONTAINE") live. A name
+// without a space is a last name alone, whatever the order.
+func splitName(name string, order dto.NameOrder) (first, last string, singleWord bool) {
+	var found bool
+	if order == dto.NameOrderFirstLast {
+		first, last, found = strings.Cut(name, " ")
+	} else {
+		last, first, found = cutLast(name, " ")
+	}
+	if !found {
+		return "", name, true
+	}
+	return first, last, false
+}
+
+// cutLast is strings.Cut around the LAST occurrence of sep.
+func cutLast(s, sep string) (before, after string, found bool) {
+	i := strings.LastIndex(s, sep)
+	if i == -1 {
+		return s, "", false
+	}
+	return s[:i], s[i+len(sep):], true
+}
+
 func validateGroupRow(group dto.GroupImportRow, rowNum int) []dto.ImportError {
 	var errors []dto.ImportError
 

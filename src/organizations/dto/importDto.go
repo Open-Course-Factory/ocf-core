@@ -1,6 +1,9 @@
 package dto
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // CSV Row Structures
 
@@ -39,10 +42,33 @@ type MembershipImportRow struct {
 // Request/Response Structures
 
 // ImportOrganizationDataRequest represents the bulk import request
+// NameOrder says which way round a single "name" column reads. It only
+// applies to rows resolved from that column; explicit first_name/last_name
+// columns are taken as-is.
+type NameOrder string
+
+const (
+	NameOrderLastFirst NameOrder = "last_first" // "DUPONT Marie": last word is the first name
+	NameOrderFirstLast NameOrder = "first_last" // "Marie DUPONT": first word is the first name
+)
+
+// ParseNameOrder reads the name_order form field; absent means last_first.
+func ParseNameOrder(raw string) (NameOrder, error) {
+	switch NameOrder(raw) {
+	case "", NameOrderLastFirst:
+		return NameOrderLastFirst, nil
+	case NameOrderFirstLast:
+		return NameOrderFirstLast, nil
+	default:
+		return "", fmt.Errorf("invalid name_order %q: must be %s or %s", raw, NameOrderLastFirst, NameOrderFirstLast)
+	}
+}
+
 type ImportOrganizationDataRequest struct {
-	DryRun         bool `form:"dry_run"`         // Validate only, don't persist
-	UpdateExisting bool `form:"update_existing"` // Update existing users/groups vs skip
-	SendInvites    bool `form:"send_invites"`    // Send email invitations (future)
+	DryRun         bool      `form:"dry_run"`         // Validate only, don't persist
+	UpdateExisting bool      `form:"update_existing"` // Update existing users/groups vs skip
+	SendInvites    bool      `form:"send_invites"`    // Send email invitations (future)
+	NameOrder      NameOrder `form:"name_order"`      // How a single "name" column reads (last_first default, first_last)
 }
 
 // ImportOrganizationDataResponse represents the import operation result

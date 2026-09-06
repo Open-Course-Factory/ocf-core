@@ -270,6 +270,8 @@ func (oc *OrganizationController) GetOrganizationGroups(ctx *gin.Context) {
 // @Param memberships formData file false "Memberships CSV file (user_email,group_name,role)"
 // @Param dry_run formData boolean false "Validate only without persisting changes"
 // @Param update_existing formData boolean false "Update existing users and groups"
+// @Param target_group formData string false "Group every imported user is added to"
+// @Param name_order formData string false "How a single name column reads: last_first (default, 'DUPONT Marie') or first_last ('Marie DUPONT')" Enums(last_first, first_last)
 // @Success 200 {object} dto.ImportOrganizationDataResponse
 // @Failure 400 {object} errors.APIError "Invalid request"
 // @Failure 403 {object} errors.APIError "Not authorized to manage this organization"
@@ -338,6 +340,14 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 	dryRunStr := ctx.DefaultPostForm("dry_run", "false")
 	updateExistingStr := ctx.DefaultPostForm("update_existing", "false")
 	targetGroup := ctx.DefaultPostForm("target_group", "")
+	nameOrder, err := dto.ParseNameOrder(ctx.DefaultPostForm("name_order", ""))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
 
 	// Convert string parameters to boolean
 	dryRun, _ := strconv.ParseBool(dryRunStr)
@@ -353,6 +363,7 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 		dryRun,
 		updateExisting,
 		targetGroup,
+		nameOrder,
 	)
 
 	if err != nil {
