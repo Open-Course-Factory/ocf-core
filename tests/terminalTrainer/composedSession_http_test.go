@@ -68,7 +68,7 @@ func startComposedTTBackendStub(t *testing.T) *httptest.Server {
 			})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sizes"):
 			// Mirror tt-backend's canonical seed catalog (dbSeedSizes).
-			// CPU/Memory must match backfill.sizeCatalog so the budget
+			// CPU/Memory must match the payment/catalog sizes so the budget
 			// engine and the catalog endpoint agree on resource cost.
 			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{"key": "XS", "name": "Extra Small", "sort_order": 10, "cpu": 1, "memory": "256MB"},
@@ -221,7 +221,7 @@ func TestStartComposedSession_HTTP_BudgetMode_RejectsOverBudget(t *testing.T) {
 // succeed. Pins that the budget gate doesn't false-reject under capacity.
 //
 // The success path persists a Terminal row carrying SizeCPU /
-// SizeMemoryMB sourced from backfill (cleanup 1 SSOT). We assert both
+// SizeMemoryMB sourced from payment/catalog (cleanup 1 SSOT). We assert both
 // the HTTP status AND the persisted footprint so a regression that
 // silently zeroes the denormalised columns is caught here.
 func TestStartComposedSession_HTTP_BudgetMode_AllowsWithinBudget(t *testing.T) {
@@ -258,7 +258,7 @@ func TestStartComposedSession_HTTP_BudgetMode_AllowsWithinBudget(t *testing.T) {
 		"within-budget request must succeed — got %d. Body: %s", w.Code, w.Body.String())
 
 	// Verify the persisted Terminal row carries the denormalised footprint
-	// sourced from the backfill catalog (cleanup 1's SSOT). A drift here
+	// sourced from payment/catalog (cleanup 1's SSOT). A drift here
 	// breaks the budget-sum query (which reads from these columns).
 	// XS = 500 mCPU after the unit switch.
 	var cnt int64
@@ -267,5 +267,5 @@ func TestStartComposedSession_HTTP_BudgetMode_AllowsWithinBudget(t *testing.T) {
 		userID, 500, 256,
 	).Scan(&cnt).Error)
 	assert.EqualValues(t, 1, cnt,
-		"persisted Terminal must carry SizeCPU=500 (mCPU), SizeMemoryMB=256 from the backfill catalog (XS)")
+		"persisted Terminal must carry SizeCPU=500 (mCPU), SizeMemoryMB=256 from payment/catalog (XS)")
 }
