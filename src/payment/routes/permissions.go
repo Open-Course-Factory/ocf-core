@@ -54,11 +54,6 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Upgrade subscription plan",
 		},
 		access.RoutePermission{
-			Path: "/api/v1/user-subscriptions/usage/check", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Check usage limit availability",
-		},
-		access.RoutePermission{
 			Path: "/api/v1/user-subscriptions/sync-usage-limits", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Sync usage limits from Stripe",

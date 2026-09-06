@@ -91,10 +91,6 @@ func (s *stubEffectivePlanService) GetUserEffectivePlan(userID string, orgID *uu
 	return nil, nil
 }
 
-func (s *stubEffectivePlanService) CheckEffectiveUsageLimit(userID string, orgID *uuid.UUID, metricType string, increment int64) (*paymentServices.UsageLimitCheck, error) {
-	return nil, errors.New("not implemented in stub")
-}
-
 // CanRunClassrooms resolves through this stub's own GetUserEffectivePlan so the
 // verdict tracks whatever plan the test set up, rather than being a second,
 // independently-stubbed answer — the exact split that made this predicate drift
@@ -133,10 +129,6 @@ func (s *stubEffectivePlanService) CanRunClassrooms(userID string, orgID *uuid.U
 // budget tests rely on.
 func (s *stubEffectivePlanService) ClassroomEntitlementInOrg(userID string, orgID uuid.UUID, plan *paymentModels.SubscriptionPlan) paymentServices.ClassroomEntitlement {
 	return paymentServices.ClassroomEntitlementFor(plan)
-}
-
-func (s *stubEffectivePlanService) CheckEffectiveUsageLimitFromResult(result *paymentServices.EffectivePlanResult, userID string, metricType string, increment int64) (*paymentServices.UsageLimitCheck, error) {
-	return nil, errors.New("not implemented in stub")
 }
 
 // ---------------------------------------------------------------------------

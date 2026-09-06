@@ -32,12 +32,8 @@ type UserSubscriptionService interface {
 	CreateUserSubscription(userID string, planID uuid.UUID) (*models.UserSubscription, error)
 	UpgradeUserPlan(userID string, newPlanID uuid.UUID, prorationBehavior string) (*models.UserSubscription, error)
 
-	// Usage limits and metrics - types métiers.
-	//
-	// Quota checks live in QuotaService (CheckUserQuota /
-	// CheckUserQuotaWithPlan). Production controllers and the CheckLimit
-	// middleware call into QuotaService directly; no legacy
-	// CheckUsageLimit wrapper is exposed here.
+	// Usage metrics are counters only: nothing compares them to a plan
+	// limit, the CPU/RAM budget in QuotaService is the one quota gate.
 	IncrementUsage(userID, metricType string, increment int64) error
 	GetUserUsageMetrics(userID string, organizationID ...string) (*[]models.UsageMetrics, error)
 	ResetMonthlyUsage(userID string) error
@@ -70,18 +66,6 @@ type UserSubscriptionService interface {
 
 	// Admin operations
 	AdminAssignSubscription(userID string, planID uuid.UUID, durationDays int, assignedByUserID string) (*models.UserSubscription, error)
-}
-
-// Types métiers pour les opérations complexes
-type UsageLimitCheck struct {
-	Allowed        bool
-	CurrentUsage   int64
-	Limit          int64
-	RemainingUsage int64
-	Message        string
-	UserID         string
-	MetricType     string
-	Source         EffectivePlanSource // "personal" or "organization"
 }
 
 type SubscriptionAnalytics struct {

@@ -22,7 +22,6 @@ type ConversionService interface {
 	// Usage metrics conversions
 	UsageMetricsToDTO(metrics *models.UsageMetrics) (*dto.UsageMetricsOutput, error)
 	UsageMetricsListToDTO(metricsList *[]models.UsageMetrics) (*[]dto.UsageMetricsOutput, error)
-	UsageLimitCheckToDTO(check *UsageLimitCheck) *dto.UsageLimitCheckOutput
 
 	// Payment method conversions
 	PaymentMethodToDTO(pm *models.PaymentMethod) (*dto.PaymentMethodOutput, error)
@@ -196,22 +195,6 @@ func (cs *conversionService) UsageMetricsListToDTO(metricsList *[]models.UsageMe
 	}
 
 	return &outputs, nil
-}
-
-// UsageLimitCheckToDTO convertit un UsageLimitCheck vers DTO
-func (cs *conversionService) UsageLimitCheckToDTO(check *UsageLimitCheck) *dto.UsageLimitCheckOutput {
-	if check == nil {
-		return nil
-	}
-
-	return &dto.UsageLimitCheckOutput{
-		Allowed:        check.Allowed,
-		CurrentUsage:   check.CurrentUsage,
-		Limit:          check.Limit,
-		RemainingUsage: check.RemainingUsage,
-		Message:        check.Message,
-		Source:         string(check.Source),
-	}
 }
 
 // PaymentMethodToDTO convertit un PaymentMethod model vers DTO

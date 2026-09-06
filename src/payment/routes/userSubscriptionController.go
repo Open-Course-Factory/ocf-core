@@ -33,7 +33,6 @@ type SubscriptionController interface {
 	ReactivateSubscription(ctx *gin.Context)
 	UpgradeUserPlan(ctx *gin.Context)
 	GetSubscriptionAnalytics(ctx *gin.Context)
-	CheckUsageLimit(ctx *gin.Context)
 	GetUserUsage(ctx *gin.Context)
 
 	// Plan health
@@ -802,62 +801,6 @@ func (sc *userSubscriptionController) GetSubscriptionAnalytics(ctx *gin.Context)
 	analyticsDTO := sc.conversionService.SubscriptionAnalyticsToDTO(analytics)
 
 	ctx.JSON(http.StatusOK, analyticsDTO)
-}
-
-// Check Usage Limit godoc
-//
-//	@Summary		Vérifier les limites d'utilisation
-//	@Description	Vérifie si l'utilisateur peut effectuer une action selon ses limites d'abonnement
-//	@Tags			subscriptions
-//	@Accept			json
-//	@Produce		json
-//	@Param			usage_check	body	dto.UsageLimitCheckInput	true	"Usage limit check"
-//	@Security		Bearer
-//	@Success		200	{object}	dto.UsageLimitCheckOutput
-//	@Failure		400	{object}	errors.APIError	"Bad request"
-//	@Router			/user-subscriptions/usage/check [post]
-func (sc *userSubscriptionController) CheckUsageLimit(ctx *gin.Context) {
-	userId := ctx.GetString("userId")
-
-	var input dto.UsageLimitCheckInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	// Parse optional organization_id so the gate uses the same plan as the
-	// launcher's display path (#334 — gate previously resolved a different plan
-	// than the dashboard when the user had both personal and org subscriptions).
-	var orgID *uuid.UUID
-	if input.OrganizationID != nil && *input.OrganizationID != "" {
-		parsed, parseErr := uuid.Parse(*input.OrganizationID)
-		if parseErr != nil {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "Invalid organization_id format",
-			})
-			return
-		}
-		orgID = &parsed
-	}
-
-	// Vérifier les limites via le service effectif (prend en compte personal + org)
-	result, err := sc.effectivePlanService.CheckEffectiveUsageLimit(userId, orgID, input.MetricType, input.Increment)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	// Convertir vers DTO
-	resultDTO := sc.conversionService.UsageLimitCheckToDTO(result)
-
-	ctx.JSON(http.StatusOK, resultDTO)
 }
 
 // Get User Usage godoc

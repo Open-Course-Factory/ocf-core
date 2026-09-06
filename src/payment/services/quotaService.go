@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"fmt"
 
 	"soli/formations/src/payment/catalog"
@@ -25,22 +24,11 @@ import (
 // service composes those two primitives and is the ONLY place where a
 // quota decision is actually computed.
 //
-// External consumers (effectivePlanService.CheckEffectiveUsageLimit*,
-// the CheckLimit middleware, and scenario controllers) delegate to
-// QuotaService. Their public surfaces are kept stable for backward
-// compatibility, but the logic lives here.
+// The budget engine is the only quota rule: SubscriptionPlan.MaxCPU /
+// MaxMemoryMB against the sizes of the sessions occupying a slot. Usage
+// metrics (usage_metrics rows) are counters only — no plan carries a
+// numeric limit for them, so nothing here compares them to one.
 type QuotaService interface {
-	// CheckUserQuota resolves the user's effective plan (in the given org
-	// context if non-nil) and decides whether the proposed increment keeps
-	// usage within the plan limit.
-	CheckUserQuota(userID string, orgID *uuid.UUID, metric string, increment int64) (*UsageLimitCheck, error)
-
-	// CheckUserQuotaWithPlan skips plan resolution and uses a pre-resolved
-	// EffectivePlanResult. Used by the CheckLimit middleware after
-	// InjectEffectivePlan has placed the resolved plan in the request
-	// context, avoiding a redundant DB round-trip.
-	CheckUserQuotaWithPlan(plan *EffectivePlanResult, userID string, metric string, increment int64) (*UsageLimitCheck, error)
-
 	// GetOrgQuota returns the current usage and plan limits for an
 	// organization. Used by GET /organizations/:id/usage-limits.
 	GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
@@ -187,7 +175,6 @@ type SizeRemaining = paymentDto.SizeRemaining
 type quotaService struct {
 	db                   *gorm.DB
 	effectivePlanService EffectivePlanService
-	paymentRepo          repositories.PaymentRepository
 	orgSubRepo           repositories.OrganizationSubscriptionRepository
 }
 
@@ -199,75 +186,8 @@ func NewQuotaService(db *gorm.DB, eps EffectivePlanService) QuotaService {
 	return &quotaService{
 		db:                   db,
 		effectivePlanService: eps,
-		paymentRepo:          repositories.NewPaymentRepository(db),
 		orgSubRepo:           repositories.NewOrganizationSubscriptionRepository(db),
 	}
-}
-
-// CheckUserQuota resolves the effective plan then delegates to
-// CheckUserQuotaWithPlan. Keeping the two-step shape lets the middleware
-// skip resolution when it already has a plan in context.
-func (s *quotaService) CheckUserQuota(userID string, orgID *uuid.UUID, metric string, increment int64) (*UsageLimitCheck, error) {
-	result, err := s.effectivePlanService.GetUserEffectivePlan(userID, orgID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get effective plan: %w", err)
-	}
-	return s.CheckUserQuotaWithPlan(result, userID, metric, increment)
-}
-
-// CheckUserQuotaWithPlan is the actual decision function. Every quota
-// check in the codebase eventually flows through this.
-//
-// Slot counts are scoped to the same org context the plan was resolved in:
-// when the plan came from an organization subscription, the count is filtered
-// to that org so that two orgs with separate caps cannot share a single
-// global counter. When the plan is personal (or org context was nil), the
-// count is global to the user.
-func (s *quotaService) CheckUserQuotaWithPlan(plan *EffectivePlanResult, userID string, metric string, increment int64) (*UsageLimitCheck, error) {
-	if plan == nil || plan.Plan == nil {
-		return nil, fmt.Errorf("cannot check quota without a resolved plan")
-	}
-
-	limit := limitForMetric(plan.Plan, metric)
-
-	// The resolved plan states its own scope, so the slot count always matches the
-	// limit being checked. This used to be derived from OrganizationSubscription,
-	// which org role-plans leave nil — so a role-plan's limit was compared against a
-	// globally-counted usage (#457).
-	orgID := plan.ScopeOrganizationID
-
-	currentUsage, err := s.currentUsage(userID, orgID, metric)
-	if err != nil {
-		return nil, err
-	}
-
-	allowed := limit == -1 || (currentUsage+increment) <= limit
-
-	var remaining int64
-	if limit == -1 {
-		remaining = -1
-	} else {
-		remaining = limit - currentUsage
-		if remaining < 0 {
-			remaining = 0
-		}
-	}
-
-	message := ""
-	if !allowed {
-		message = fmt.Sprintf("Usage limit exceeded for %s. Current: %d, Limit: %d", metric, currentUsage, limit)
-	}
-
-	return &UsageLimitCheck{
-		Allowed:        allowed,
-		CurrentUsage:   currentUsage,
-		Limit:          limit,
-		RemainingUsage: remaining,
-		Message:        message,
-		UserID:         userID,
-		MetricType:     metric,
-		Source:         plan.Source,
-	}, nil
 }
 
 // GetOrgQuota returns the active subscription's plan limits along with
@@ -292,43 +212,6 @@ func (s *quotaService) GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 		CurrentTerminals: int(currentTerminals),
 		CurrentCourses:   int(currentCourses),
 	}, nil
-}
-
-// currentUsage reads the persisted usage_metrics row for a user/metric.
-// Returns 0 when no row exists (not an error — a first-time user has
-// no metrics yet).
-//
-// Terminal capacity is NOT routed through here: the CPU/RAM budget engine
-// (CheckBudget on SubscriptionPlan.MaxCPU / MaxMemoryMB, fed by
-// sumActiveResources*) is the sole authoritative quota gate for terminals.
-// The metric dispatcher only serves the remaining numeric metrics
-// (courses_created, ...).
-func (s *quotaService) currentUsage(userID string, orgID *uuid.UUID, metric string) (int64, error) {
-	_ = orgID // org-scoped usage rows do not exist for the remaining metrics.
-	return s.storedUsage(userID, metric), nil
-}
-
-// storedUsage reads the persisted usage_metrics row for a user/metric.
-// Returns 0 when no row exists (not an error — a first-time user has
-// no metrics yet).
-func (s *quotaService) storedUsage(userID, metric string) int64 {
-	m, err := s.paymentRepo.GetUserUsageMetrics(userID, metric)
-	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			utils.Warn("Failed to get usage metrics for user %s, metric %s: %v", userID, metric, err)
-		}
-		return 0
-	}
-	return m.CurrentValue
-}
-
-// limitForMetric extracts the per-metric limit from a plan. -1 means
-// unlimited. No plan currently enforces a numeric usage limit: the course
-// limit was removed and terminal caps live on the budget engine
-// (MaxCPU/MaxMemoryMB), so every metric is unlimited here. Kept as the single
-// place a future numeric metric would add its case back.
-func limitForMetric(plan *models.SubscriptionPlan, metric string) int64 {
-	return -1
 }
 
 // --- Budget quota methods -----------------------------------------------

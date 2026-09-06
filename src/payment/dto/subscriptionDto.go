@@ -360,27 +360,6 @@ type SubscriptionAnalyticsOutput struct {
 	GeneratedAt             time.Time                `json:"generated_at"`
 }
 
-// DTOs pour la gestion des limites d'utilisation
-type UsageLimitCheckInput struct {
-	MetricType string `binding:"required" json:"metric_type"`
-	Increment  int64  `json:"increment"` // Combien on veut ajouter
-	// OrganizationID scopes the limit check to a specific org context. When set,
-	// the gate uses THAT org's plan (matching the launcher's display path). When
-	// empty, the gate falls back to the user's globally highest-priority plan —
-	// reserved for callers that genuinely have no org context.
-	// See issue #334 / MR !239 for the launcher-vs-gate mismatch this prevents.
-	OrganizationID *string `json:"organization_id,omitempty"`
-}
-
-type UsageLimitCheckOutput struct {
-	Allowed        bool   `json:"allowed"`
-	CurrentUsage   int64  `json:"current_usage"`
-	Limit          int64  `json:"limit"`
-	RemainingUsage int64  `json:"remaining_usage"`
-	Message        string `json:"message,omitempty"`
-	Source         string `json:"source"` // "personal" or "organization" — indicates where the effective plan comes from
-}
-
 // DTOs for bulk license purchases
 // BulkPurchaseInput describes a trainer buying licences for learners.
 //

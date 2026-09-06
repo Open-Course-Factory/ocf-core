@@ -108,7 +108,7 @@ func resolveOrgID(ctx *gin.Context) (string, []byte) {
 }
 
 // InjectEffectivePlan resolves the user's effective subscription plan and stores
-// it in the request context. Downstream middleware (RequirePlan, CheckLimit) can
+// it in the request context. Downstream middleware (RequirePlan) can
 // then read it without repeating the resolution logic.
 // The db parameter is used for the admin bypass fallback (see issue #239).
 func InjectEffectivePlan(effectivePlanService services.EffectivePlanService, db ...*gorm.DB) gin.HandlerFunc {

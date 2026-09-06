@@ -73,18 +73,6 @@ type EffectivePlanService interface {
 	// should pass nil.
 	GetUserEffectivePlan(userID string, orgID *uuid.UUID) (*EffectivePlanResult, error)
 
-	// CheckEffectiveUsageLimit checks whether the user can perform the given action
-	// based on their effective plan limits.
-	//
-	// orgID has the same semantics as GetUserEffectivePlan: pass the org when known,
-	// nil only when no org context exists.
-	CheckEffectiveUsageLimit(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error)
-
-	// CheckEffectiveUsageLimitFromResult checks usage limits using an already-resolved plan,
-	// skipping the plan resolution DB round-trip. Used by CheckLimit middleware when
-	// InjectEffectivePlan has already placed the result in the Gin context.
-	CheckEffectiveUsageLimitFromResult(result *EffectivePlanResult, userID string, metricType string, increment int64) (*UsageLimitCheck, error)
-
 	// CanRunClassrooms is the single owner of "may this user run classrooms?" —
 	// create class groups, convert an organization to a team, buy seats for
 	// learners. It lives here because the hard part of the question is plan
@@ -386,41 +374,6 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 		OrganizationSubscription: orgSub,
 		ScopeOrganizationID:      &orgID,
 	}, nil
-}
-
-// CheckEffectiveUsageLimit checks whether the user can perform the given action
-// based on their effective plan limits.
-//
-// orgID has the same semantics as GetUserEffectivePlan — pass the org context
-// when known, nil only when no org context exists.
-//
-// Thin wrapper kept for backward compatibility with existing callers and test
-// mocks. The actual quota logic lives in QuotaService — see
-// src/payment/services/quotaService.go.
-func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error) {
-	result, err := s.GetUserEffectivePlan(userID, orgID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get effective plan: %w", err)
-	}
-	return s.quotaService().CheckUserQuotaWithPlan(result, userID, metricType, increment)
-}
-
-// quotaService builds a transient QuotaService backed by this
-// effectivePlanService. The two services are intentionally separate
-// (QuotaService takes EffectivePlanService as a dependency) — building
-// it on demand avoids a hard reference cycle while keeping the quota
-// rule expressed in exactly one place.
-func (s *effectivePlanService) quotaService() QuotaService {
-	return NewQuotaService(s.db, s)
-}
-
-// CheckEffectiveUsageLimitFromResult checks usage limits using a pre-resolved plan result,
-// avoiding the plan resolution DB round-trip. Called by CheckLimit middleware when
-// InjectEffectivePlan has already resolved and stored the plan in the Gin context.
-//
-// Thin wrapper kept for backward compatibility — actual logic lives in QuotaService.
-func (s *effectivePlanService) CheckEffectiveUsageLimitFromResult(result *EffectivePlanResult, userID string, metricType string, increment int64) (*UsageLimitCheck, error) {
-	return s.quotaService().CheckUserQuotaWithPlan(result, userID, metricType, increment)
 }
 
 // GetUserBudgetCeiling — see interface doc.

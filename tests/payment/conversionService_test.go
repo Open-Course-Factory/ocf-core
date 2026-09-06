@@ -176,37 +176,6 @@ func TestConversionService_UsageMetricsToDTO_UnlimitedUsage(t *testing.T) {
 	assert.Equal(t, float64(0), result.UsagePercent) // 0% pour unlimited
 }
 
-func TestConversionService_UsageLimitCheckToDTO(t *testing.T) {
-	conversionService := services.NewConversionService()
-
-	check := &services.UsageLimitCheck{
-		Allowed:        false,
-		CurrentUsage:   8,
-		Limit:          10,
-		RemainingUsage: 2,
-		Message:        "Approaching limit",
-		UserID:         "user123",
-		MetricType:     "courses_created",
-	}
-
-	result := conversionService.UsageLimitCheckToDTO(check)
-
-	assert.NotNil(t, result)
-	assert.False(t, result.Allowed)
-	assert.Equal(t, int64(8), result.CurrentUsage)
-	assert.Equal(t, int64(10), result.Limit)
-	assert.Equal(t, int64(2), result.RemainingUsage)
-	assert.Equal(t, "Approaching limit", result.Message)
-}
-
-func TestConversionService_UsageLimitCheckToDTO_Nil(t *testing.T) {
-	conversionService := services.NewConversionService()
-
-	result := conversionService.UsageLimitCheckToDTO(nil)
-
-	assert.Nil(t, result)
-}
-
 func TestConversionService_PaymentMethodToDTO(t *testing.T) {
 	conversionService := services.NewConversionService()
 

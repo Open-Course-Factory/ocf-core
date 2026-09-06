@@ -421,26 +421,3 @@ func TestGetUserEffectivePlanForOrg_NonMember_TeamOrg_ShouldRejectAccess(t *test
 			"error should indicate the user is not a member of the organization")
 	}
 }
-
-// TestCheckEffectiveUsageLimitForOrg_NonMember_ShouldRejectAccess verifies that
-// CheckEffectiveUsageLimit also rejects non-member access for org-scoped checks.
-func TestCheckEffectiveUsageLimitForOrg_NonMember_ShouldRejectAccess(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-
-	ownerUserID := "org-owner-for-limit"
-	attackerUserID := "attacker-for-limit"
-
-	// Any active plan on the org is enough — the check is rejected at the
-	// membership layer, before any usage limit is consulted.
-	generousPlan := createPlan(t, db, "GenerousPlan", 50, 0)
-	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "generous-team", ownerUserID, generousPlan, organizationModels.OrgTypeTeam)
-
-	// attackerUserID is NOT a member — should not be able to check limits against this org
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(attackerUserID, &teamOrg.ID, "courses_created", 1)
-
-	assert.Error(t, err, "should reject usage limit check for non-member user")
-	assert.Nil(t, check, "should not return usage limits for non-member user")
-}

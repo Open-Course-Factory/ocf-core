@@ -262,7 +262,6 @@ func TestSetupPaymentPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/user-subscriptions/:id/cancel", "POST"},
 		{"/api/v1/user-subscriptions/:id/reactivate", "POST"},
 		{"/api/v1/user-subscriptions/upgrade", "POST"},
-		{"/api/v1/user-subscriptions/usage/check", "POST"},
 		{"/api/v1/user-subscriptions/sync-usage-limits", "POST"},
 		{"/api/v1/user-subscriptions/purchase-bulk", "POST"},
 		// NEW: Organization subscription routes
