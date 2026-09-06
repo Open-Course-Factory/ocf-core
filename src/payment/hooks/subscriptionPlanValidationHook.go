@@ -155,49 +155,32 @@ func intField(m map[string]any, key string) (int, bool) {
 	}
 }
 
-// validatePlanBudget refuses a plan whose CPU or memory budget is not positive.
-//
-// This became necessary when `0` stopped meaning "unlimited" and started
-// meaning "no capacity". That reading is right for a value nobody set — the
-// zero-value struct a soft-deleted plan resolves to must grant nothing rather
-// than everything (#481) — but it also means an unset budget produces a plan on
-// which nobody can launch anything, administrators included: they do not bypass
-// the budget gate. The mistake therefore has to fail at the door, not at 9am
-// with a class waiting.
-//
-// Create and update are asymmetric on purpose:
-//   - BeforeCreate reads the converted *models.SubscriptionPlan, where an
-//     omitted field is already a 0. A create must state both budgets, so an
-//     absent one is a rejection rather than a skip.
-//   - BeforeUpdate reads the raw patch map, where an absent key is a partial
-//     update and is left alone. Only a stated non-positive value is refused.
+// validatePlanBudget refuses a non-positive CPU or memory budget. On a struct
+// (create) both axes must be stated; on a map (update) only a stated axis is
+// checked, so a patch that omits the budget stays a partial update. The struct
+// branch asks the model, the one owner of the positive-budget rule; the map
+// branch keeps intField for the partial-patch semantics.
 func validatePlanBudget(ctx *hooks.HookContext) error {
-	axes := []struct {
-		field string
-		label string
-	}{
-		{"max_cpu", "CPU budget"},
-		{"max_memory_mb", "memory budget"},
+	fields := nonPositiveBudgetFields(ctx.NewEntity)
+	if len(fields) == 0 {
+		return nil
 	}
+	return entityErrors.NewValidationError(fields[0],
+		"must be greater than 0, a plan with no budget cannot launch anything")
+}
 
-	switch v := ctx.NewEntity.(type) {
+func nonPositiveBudgetFields(entity any) []string {
+	switch v := entity.(type) {
 	case *models.SubscriptionPlan:
-		values := map[string]int{"max_cpu": v.MaxCPU, "max_memory_mb": v.MaxMemoryMB}
-		for _, axis := range axes {
-			if values[axis.field] <= 0 {
-				return entityErrors.NewValidationError(axis.field,
-					"must be greater than 0 — a plan with no "+axis.label+" cannot launch anything")
-			}
-		}
+		return v.MissingBudgetAxes()
 	case map[string]any:
-		for _, axis := range axes {
-			value, present := intField(v, axis.field)
-			if present && value <= 0 {
-				return entityErrors.NewValidationError(axis.field,
-					"must be greater than 0 — a plan with no "+axis.label+" cannot launch anything")
+		var fields []string
+		for _, field := range []string{"max_cpu", "max_memory_mb"} {
+			if value, stated := intField(v, field); stated && value <= 0 {
+				fields = append(fields, field)
 			}
 		}
+		return fields
 	}
-
 	return nil
 }

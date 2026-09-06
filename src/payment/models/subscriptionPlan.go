@@ -140,6 +140,21 @@ func (s SubscriptionPlan) EffectiveSeatUnit() string {
 // must not be synced to Stripe as a billable product/price.
 func (s SubscriptionPlan) IsFree() bool { return s.PriceAmount <= 0 }
 
+// MissingBudgetAxes names the budget axes, by JSON field, that are not positive.
+// A plan with a non-positive budget on either axis can launch nothing, and
+// every place that refuses or reports such a plan asks this method rather than
+// comparing against zero itself. nil means the budget is fine.
+func (s SubscriptionPlan) MissingBudgetAxes() []string {
+	var missing []string
+	if s.MaxCPU <= 0 {
+		missing = append(missing, "max_cpu")
+	}
+	if s.MaxMemoryMB <= 0 {
+		missing = append(missing, "max_memory_mb")
+	}
+	return missing
+}
+
 func (s SubscriptionPlan) GetBaseModel() entityManagementModels.BaseModel {
 	return s.BaseModel
 }
