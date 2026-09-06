@@ -7,6 +7,7 @@ import (
 	"soli/formations/src/entityManagement/hooks"
 	paymentServices "soli/formations/src/payment/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
+	"soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 
 	"gorm.io/gorm"
@@ -168,6 +169,20 @@ func InitTerminalHooks(db *gorm.DB) {
 		utils.Error("❌ Failed to register Terminal budget hook: %v", err)
 	} else {
 		utils.Info("✅ Terminal budget hook registered")
+	}
+
+	// Re-provision a user's tt-backend key budget after the entity changes
+	// that can move their ceiling: a personal subscription, an organization
+	// role plan, an organization membership. One hook instance per entity,
+	// since a hook declares a single entity name.
+	terminalService := services.NewTerminalTrainerService(db)
+	for _, entityName := range KeyBudgetSyncEntities {
+		syncHook := NewTerminalKeyBudgetSyncHook(db, terminalService, entityName)
+		if err := hooks.GlobalHookRegistry.RegisterHook(syncHook); err != nil {
+			utils.Error("❌ Failed to register terminal key budget sync hook for %s: %v", entityName, err)
+		} else {
+			utils.Info("✅ Terminal key budget sync hook registered for %s", entityName)
+		}
 	}
 
 	utils.Info("🔗 Terminal hooks initialization complete")

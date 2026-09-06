@@ -45,6 +45,9 @@ func (m *mockTerminalTrainerService) StartComposedSession(userID string, input d
 func (m *mockTerminalTrainerService) CreateUserKey(userID, userName string) error {
 	panic("not implemented")
 }
+func (m *mockTerminalTrainerService) SyncUserKeyBudget(userID string) error {
+	panic("not implemented")
+}
 func (m *mockTerminalTrainerService) GetUserKey(userID string) (*models.UserTerminalKey, error) {
 	panic("not implemented")
 }
