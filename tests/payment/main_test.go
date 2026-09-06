@@ -90,8 +90,7 @@ func runTestMigrations(db *gorm.DB) error {
 		user_id TEXT NOT NULL,
 		api_key TEXT NOT NULL,
 		key_name TEXT NOT NULL,
-		is_active BOOLEAN DEFAULT true,
-		max_sessions INTEGER DEFAULT 5
+		is_active BOOLEAN DEFAULT true
 	)`)
 
 	// Terminal table (has no PostgreSQL-specific defaults but isn't in the payment models package).

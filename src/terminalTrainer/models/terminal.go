@@ -360,7 +360,6 @@ type UserTerminalKey struct {
 	APIKey      string `gorm:"type:varchar(255);not null" json:"api_key"`
 	KeyName     string `gorm:"type:varchar(255);not null" json:"key_name"`
 	IsActive    bool   `gorm:"default:true" json:"is_active"`
-	MaxSessions int    `gorm:"default:5" json:"max_sessions"`
 
 	// Relations
 	Terminals []Terminal

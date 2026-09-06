@@ -164,11 +164,10 @@ func seedPersistencePlan(t *testing.T, db *gorm.DB, userID string, dataPersisten
 func seedPersistenceUserKey(t *testing.T, db *gorm.DB, userID string) {
 	t.Helper()
 	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
-		UserID:      userID,
-		APIKey:      "test-key-" + userID,
-		KeyName:     "test-" + userID,
-		IsActive:    true,
-		MaxSessions: 5,
+		UserID:   userID,
+		APIKey:   "test-key-" + userID,
+		KeyName:  "test-" + userID,
+		IsActive: true,
 	}).Error)
 }
 

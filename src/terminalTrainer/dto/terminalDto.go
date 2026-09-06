@@ -62,13 +62,11 @@ type TerminalOutput struct {
 type CreateUserTerminalKeyInput struct {
 	UserID      string `binding:"required" json:"user_id"`
 	KeyName     string `binding:"required" json:"key_name"`
-	MaxSessions int    `json:"max_sessions"`
 }
 
 type UpdateUserTerminalKeyInput struct {
 	KeyName     *string `json:"key_name,omitempty" mapstructure:"key_name"`
 	IsActive    *bool   `json:"is_active,omitempty" mapstructure:"is_active"`
-	MaxSessions *int    `json:"max_sessions,omitempty" mapstructure:"max_sessions"`
 }
 
 type UserTerminalKeyOutput struct {
@@ -76,7 +74,6 @@ type UserTerminalKeyOutput struct {
 	UserID      string    `json:"user_id"`
 	KeyName     string    `json:"key_name"`
 	IsActive    bool      `json:"is_active"`
-	MaxSessions int       `json:"max_sessions"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -291,7 +288,6 @@ type SyncStatisticsResponse struct {
 type APIKeyUsageInfo struct {
 	KeyID           int64     `json:"key_id"`
 	IsActive        bool      `json:"is_active"`
-	MaxSessions     int       `json:"max_sessions"`
 	CurrentSessions int       `json:"current_sessions"`
 	UsagePercentage float64   `json:"usage_percentage"`
 	LastUsed        time.Time `json:"last_used,omitempty"`

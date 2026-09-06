@@ -149,6 +149,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	// and dashboard banner bugs. The model field is gone; this drops the
 	// orphan column. Idempotent — HasColumn returns false once dropped.
 	dropOrphanTerminalColumns(db)
+	DropOrphanUserTerminalKeyColumns(db)
 
 	// Group entities
 	db.AutoMigrate(&groupModels.ClassGroup{})
@@ -1041,6 +1042,26 @@ func dropOrphanTerminalColumns(db *gorm.DB) {
 			continue
 		}
 		log.Printf("[MIGRATION] dropped orphan column terminals.%s", col)
+	}
+}
+
+// DropOrphanUserTerminalKeyColumns drops user_terminal_keys.max_sessions,
+// whose Go field was removed (#494). The value was stored, exposed on the
+// DTOs and compared nowhere: tt-backend budgets a key by CPU and RAM, so a
+// session count on the ocf-core side was a number nobody enforced. Raw ALTER
+// for the same reason as DropOrphanPlanColumns (GORM's DropColumn is a silent
+// no-op on SQLite); guarded on HasColumn so it is idempotent.
+func DropOrphanUserTerminalKeyColumns(db *gorm.DB) {
+	migrator := db.Migrator()
+	for _, col := range []string{"max_sessions"} {
+		if !migrator.HasColumn(&terminalModels.UserTerminalKey{}, col) {
+			continue
+		}
+		if err := db.Exec("ALTER TABLE user_terminal_keys DROP COLUMN " + col).Error; err != nil {
+			log.Printf("[MIGRATION] failed to drop orphan column user_terminal_keys.%s: %v", col, err)
+			continue
+		}
+		log.Printf("[MIGRATION] dropped orphan column user_terminal_keys.%s", col)
 	}
 }
 

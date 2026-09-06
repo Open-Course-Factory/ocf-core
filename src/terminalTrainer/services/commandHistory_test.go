@@ -37,7 +37,6 @@ func createTestTerminalForService(t *testing.T, db *gorm.DB, userID, sessionID, 
 		APIKey:      "test-api-key-" + userID,
 		KeyName:     "test-key",
 		IsActive:    true,
-		MaxSessions: 5,
 	}
 	err := db.Create(userKey).Error
 	require.NoError(t, err)

@@ -98,8 +98,7 @@ KEY_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/user-terminal-keys \
     -H "Authorization: Bearer $OWNER_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
-        "keyName": "Manual Test Key",
-        "maxSessions": 5
+        "keyName": "Manual Test Key"
     }')
 
 KEY_ID=$(echo "$KEY_RESPONSE" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)

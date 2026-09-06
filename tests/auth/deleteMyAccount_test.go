@@ -172,7 +172,6 @@ func seedRunningTerminal(t *testing.T, db *gorm.DB, userID string) *terminalMode
 		APIKey:      "key-" + uuid.NewString()[:8],
 		KeyName:     "test-key",
 		IsActive:    true,
-		MaxSessions: 5,
 	}).Error)
 
 	term := &terminalModels.Terminal{
@@ -657,7 +656,6 @@ func seedStoppedTerminal(t *testing.T, db *gorm.DB, userID string) *terminalMode
 		APIKey:      "key-" + uuid.NewString()[:8],
 		KeyName:     "stopped-key",
 		IsActive:    true,
-		MaxSessions: 5,
 	}).Error)
 
 	term := &terminalModels.Terminal{
@@ -741,7 +739,6 @@ func TestDeleteMyAccount_DeletesUserTerminalKey(t *testing.T) {
 		APIKey:      "live-key",
 		KeyName:     "primary",
 		IsActive:    true,
-		MaxSessions: 5,
 	}).Error)
 
 	casdoorMock, helperMock, _ := happyMocks(userID)

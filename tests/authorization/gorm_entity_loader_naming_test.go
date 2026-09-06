@@ -62,7 +62,6 @@ func TestGormEntityLoader_ResolvesGoNameToTableName(t *testing.T) {
 		APIKey:      "api-key-xyz",
 		KeyName:     "test-key",
 		IsActive:    true,
-		MaxSessions: 5,
 	}
 	key.ID = keyID
 	require.NoError(t, db.Create(&key).Error)

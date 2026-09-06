@@ -122,12 +122,11 @@ func (utc *userTerminalKeyController) GetMyKey(ctx *gin.Context) {
 
 	// Convertir vers DTO (sans révéler la clé API pour des raisons de sécurité)
 	keyOutput := dto.UserTerminalKeyOutput{
-		ID:          userKey.ID,
-		UserID:      userKey.UserID,
-		KeyName:     userKey.KeyName,
-		IsActive:    userKey.IsActive,
-		MaxSessions: userKey.MaxSessions,
-		CreatedAt:   userKey.CreatedAt,
+		ID:        userKey.ID,
+		UserID:    userKey.UserID,
+		KeyName:   userKey.KeyName,
+		IsActive:  userKey.IsActive,
+		CreatedAt: userKey.CreatedAt,
 	}
 
 	ctx.JSON(http.StatusOK, keyOutput)

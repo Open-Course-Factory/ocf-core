@@ -224,7 +224,7 @@ func seedAssignment(t *testing.T, db *gorm.DB, scenarioID, groupID uuid.UUID) {
 
 func seedTerminal(t *testing.T, db *gorm.DB, userID string) terminalModels.Terminal {
 	t.Helper()
-	key := terminalModels.UserTerminalKey{UserID: userID, APIKey: "key-" + userID, KeyName: "k", IsActive: true, MaxSessions: 5}
+	key := terminalModels.UserTerminalKey{UserID: userID, APIKey: "key-" + userID, KeyName: "k", IsActive: true}
 	require.NoError(t, db.Create(&key).Error)
 	terminal := terminalModels.Terminal{
 		SessionID: "session-" + uuid.NewString(), UserID: userID, State: terminalModels.StateRunning,

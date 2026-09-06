@@ -18,20 +18,18 @@ func RegisterUserTerminalKey(service *ems.EntityRegistrationService) {
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.UserTerminalKey, dto.CreateUserTerminalKeyInput, dto.UpdateUserTerminalKeyInput, dto.UserTerminalKeyOutput]{
 				ModelToDto: func(model *models.UserTerminalKey) (dto.UserTerminalKeyOutput, error) {
 					return dto.UserTerminalKeyOutput{
-						ID:          model.ID,
-						UserID:      model.UserID,
-						KeyName:     model.KeyName,
-						IsActive:    model.IsActive,
-						MaxSessions: model.MaxSessions,
-						CreatedAt:   model.CreatedAt,
+						ID:        model.ID,
+						UserID:    model.UserID,
+						KeyName:   model.KeyName,
+						IsActive:  model.IsActive,
+						CreatedAt: model.CreatedAt,
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateUserTerminalKeyInput) *models.UserTerminalKey {
 					return &models.UserTerminalKey{
-						UserID:      input.UserID,
-						KeyName:     input.KeyName,
-						IsActive:    true,
-						MaxSessions: input.MaxSessions,
+						UserID:   input.UserID,
+						KeyName:  input.KeyName,
+						IsActive: true,
 					}
 				},
 			},

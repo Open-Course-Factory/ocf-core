@@ -23,7 +23,6 @@ func createTestUserKey(db *gorm.DB, userID string) (*models.UserTerminalKey, err
 		APIKey:      "test-api-key-" + userID,
 		KeyName:     "test-key-" + userID,
 		IsActive:    true,
-		MaxSessions: 5,
 	}
 	err := db.Create(userKey).Error
 	return userKey, err
