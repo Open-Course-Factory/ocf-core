@@ -42,7 +42,7 @@ func TestCsvImport_ReimportLeavesAnExistingPasswordAlone(t *testing.T) {
 
 	importer := services.NewImportService(db, identity, offboarding)
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
-		usersCSV(t, "ada@example.com,Ada,Lovelace,member\n"), nil, nil, false, true, "")
+		usersCSV(t, "ada@example.com,Ada,Lovelace,member\n"), nil, nil, false, true, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
 
 	assert.Empty(t, identity.passwordsSet, "an existing account keeps its password when the row states none")
@@ -62,7 +62,7 @@ func TestCsvImport_ExplicitPasswordOnExistingAccountGoesThroughSetPassword(t *te
 
 	importer := services.NewImportService(db, identity, offboarding)
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
-		usersCSVWithPassword(t, "ada@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"), nil, nil, false, true, "")
+		usersCSVWithPassword(t, "ada@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"), nil, nil, false, true, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
 
 	assert.Equal(t, "Str0ng-Pass!", identity.passwordsSet["ada-lovelace-1"], "a stated password is applied through the hashing call")
@@ -79,7 +79,7 @@ func TestCsvImport_CreatedAccountGetsAGeneratedPasswordAndACredential(t *testing
 
 	importer := services.NewImportService(db, identity, offboarding)
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
-		usersCSV(t, "new@example.com,Grace,Hopper,member\n"), nil, nil, false, false, "")
+		usersCSV(t, "new@example.com,Grace,Hopper,member\n"), nil, nil, false, false, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
 
 	require.Len(t, identity.created, 1)

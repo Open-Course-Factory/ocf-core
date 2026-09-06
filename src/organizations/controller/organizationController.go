@@ -270,6 +270,7 @@ func (oc *OrganizationController) GetOrganizationGroups(ctx *gin.Context) {
 // @Param memberships formData file false "Memberships CSV file (user_email,group_name,role)"
 // @Param dry_run formData boolean false "Validate only without persisting changes"
 // @Param update_existing formData boolean false "Update existing users and groups"
+// @Param verify_emails formData boolean false "Mark imported addresses as verified, as the organization vouches for them (default true)"
 // @Success 200 {object} dto.ImportOrganizationDataResponse
 // @Failure 400 {object} errors.APIError "Invalid request"
 // @Failure 403 {object} errors.APIError "Not authorized to manage this organization"
@@ -338,10 +339,13 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 	dryRunStr := ctx.DefaultPostForm("dry_run", "false")
 	updateExistingStr := ctx.DefaultPostForm("update_existing", "false")
 	targetGroup := ctx.DefaultPostForm("target_group", "")
+	// Absent means true: the organization vouches for the addresses it imports.
+	verifyEmailsStr := ctx.DefaultPostForm("verify_emails", "true")
 
 	// Convert string parameters to boolean
 	dryRun, _ := strconv.ParseBool(dryRunStr)
 	updateExisting, _ := strconv.ParseBool(updateExistingStr)
+	verifyEmails, _ := strconv.ParseBool(verifyEmailsStr)
 
 	// Call import service
 	response, err := oc.importService.ImportOrganizationData(
@@ -353,6 +357,7 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 		dryRun,
 		updateExisting,
 		targetGroup,
+		verifyEmails,
 	)
 
 	if err != nil {

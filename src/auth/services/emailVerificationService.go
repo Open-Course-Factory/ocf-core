@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/models"
 	emailServices "soli/formations/src/email/services"
 	"soli/formations/src/utils"
@@ -198,19 +199,8 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 		return fmt.Errorf("failed to get user: user not found in identity provider")
 	}
 
-	// Use native Casdoor EmailVerified field
-	user.EmailVerified = true
-
-	// Store timestamp in Properties (no native Casdoor field for this)
-	if user.Properties == nil {
-		user.Properties = make(map[string]string)
-	}
-	user.Properties["email_verified_at"] = time.Now().Format(time.RFC3339)
-
-	// Name both columns. Casdoor's default whitelist covers `properties` but
-	// not `email_verified`, which is how production ended up full of accounts
-	// carrying an email_verified_at stamp next to a false flag.
-	affected, err := writeCasdoorUserColumns(user, []string{"email_verified", "properties"})
+	casdoor.MarkEmailVerified(user, time.Now())
+	affected, err := writeCasdoorUserColumns(user, casdoor.EmailVerifiedColumns())
 	if err != nil {
 		return fmt.Errorf("failed to update user verification status: %w", err)
 	}

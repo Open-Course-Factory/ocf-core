@@ -42,6 +42,7 @@ type MembershipImportRow struct {
 type ImportOrganizationDataRequest struct {
 	DryRun         bool `form:"dry_run"`         // Validate only, don't persist
 	UpdateExisting bool `form:"update_existing"` // Update existing users/groups vs skip
+	VerifyEmails   bool `form:"verify_emails"`   // Mark imported addresses verified; absent means true (the organization vouches for them)
 	SendInvites    bool `form:"send_invites"`    // Send email invitations (future)
 }
 

@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"mime/multipart"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ type ImportService interface {
 		dryRun bool,
 		updateExisting bool,
 		targetGroup string,
+		verifyEmails bool,
 	) (*dto.ImportOrganizationDataResponse, error)
 }
 
@@ -76,6 +78,7 @@ func (s *importService) ImportOrganizationData(
 	dryRun bool,
 	updateExisting bool,
 	targetGroup string,
+	verifyEmails bool,
 ) (*dto.ImportOrganizationDataResponse, error) {
 
 	startTime := time.Now()
@@ -171,7 +174,7 @@ func (s *importService) ImportOrganizationData(
 		// processUser. Generating one here for every row reset the password of
 		// every account that already existed, and handed the teacher a list of
 		// credentials that did not work.
-		userID, err := s.processUser(user, orgID, updateExisting, dryRun)
+		userID, err := s.processUser(user, orgID, updateExisting, dryRun, verifyEmails)
 		if err != nil {
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 2, // +2 for header and 0-index
@@ -350,8 +353,10 @@ func (s *importService) ImportOrganizationData(
 	return response, nil
 }
 
-// processUser creates or updates a user in Casdoor
-func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, updateExisting bool, dryRun bool) (string, error) {
+// processUser creates or updates a user in Casdoor. With verifyEmails the
+// address is marked verified as if the person had clicked the link: the
+// organization holds the class list and vouches for it.
+func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, updateExisting bool, dryRun bool, verifyEmails bool) (string, error) {
 	if dryRun {
 		utils.Debug("[DRY-RUN] Would create/update user: %s", user.Email)
 		return "dry-run-user-id", nil
@@ -366,7 +371,7 @@ func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, up
 			return "", nil
 		}
 
-		if err := s.updateExistingUser(existingUser, *user); err != nil {
+		if err := s.updateExistingUser(existingUser, *user, verifyEmails); err != nil {
 			return "", err
 		}
 
@@ -412,6 +417,10 @@ func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, up
 		SignupApplication: "ocf",
 		Properties:        properties,
 		CreatedTime:       casdoorsdk.GetCurrentTime(),
+	}
+
+	if verifyEmails {
+		casdoor.MarkEmailVerified(&newUser, time.Now())
 	}
 
 	if err := s.identity.AddUser(&newUser); err != nil {
@@ -600,13 +609,14 @@ func (s *importService) processMembership(
 	return nil
 }
 
-// updateExistingUser writes the CSV row's name and force-reset flag onto an
-// existing account, and applies a password only when the row states one.
+// updateExistingUser writes the CSV row's name, force-reset flag and, when
+// asked, the verified mark onto an existing account, and applies a password
+// only when the row states one.
 //
 // UpdateUserForColumns, never UpdateUser: with no column list Casdoor applies
 // a default whitelist that silently drops columns such as email_verified —
 // the class of bug that locked 36 accounts out of billing.
-func (s *importService) updateExistingUser(existingUser *casdoorsdk.User, row dto.UserImportRow) error {
+func (s *importService) updateExistingUser(existingUser *casdoorsdk.User, row dto.UserImportRow, verifyEmails bool) error {
 	utils.Debug("Updating existing user: %s", row.Email)
 	existingUser.FirstName = row.FirstName
 	existingUser.LastName = row.LastName
@@ -619,6 +629,11 @@ func (s *importService) updateExistingUser(existingUser *casdoorsdk.User, row dt
 		}
 		existingUser.Properties["force_password_reset"] = "true"
 		columns = append(columns, "properties")
+	}
+
+	if verifyEmails {
+		casdoor.MarkEmailVerified(existingUser, time.Now())
+		columns = appendMissingColumns(columns, casdoor.EmailVerifiedColumns()...)
 	}
 
 	// A password stated in the row is applied through Casdoor's set-password
@@ -638,6 +653,17 @@ func (s *importService) updateExistingUser(existingUser *casdoorsdk.User, row dt
 		return fmt.Errorf("casdoor did not persist the update of %s", row.Email)
 	}
 	return nil
+}
+
+// appendMissingColumns adds each column once: force_reset and the verified
+// mark both touch `properties`.
+func appendMissingColumns(columns []string, more ...string) []string {
+	for _, column := range more {
+		if !slices.Contains(columns, column) {
+			columns = append(columns, column)
+		}
+	}
+	return columns
 }
 
 // assignFreeTrialPlan assigns the free Trial plan to a new user.

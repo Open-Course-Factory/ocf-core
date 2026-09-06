@@ -30,7 +30,7 @@ func TestCsvImport_DerivesUsernamesCasdoorAccepts(t *testing.T) {
 		"ma_ben-abdallah@orsysformation.fr,Ma,Ben-Abdallah,member\n"+
 			"eloise@example.com,Éloïse,D'Angelo,member\n"+
 			"dupont@example.com,,DUPONT,member\n"+
-			"jm@example.com,Jean Marie,DE LA FONTAINE,member\n"), nil, nil, false, false, "")
+			"jm@example.com,Jean Marie,DE LA FONTAINE,member\n"), nil, nil, false, false, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
 	assert.Empty(t, resp.Errors)
 	assert.Equal(t, 4, resp.Summary.UsersCreated)
