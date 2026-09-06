@@ -144,8 +144,7 @@ func (s *stubEffectivePlanService) CheckEffectiveUsageLimitFromResult(result *pa
 // ---------------------------------------------------------------------------
 
 // budgetPlanInMem builds an in-memory plan (not persisted) for hook tests.
-// MaxCPU/MaxMemoryMB of 0 means "unlimited" per the contract. The
-// trailing []string parameter is retained for call-site compatibility
+// The trailing []string parameter is retained for call-site compatibility
 // (it used to carry AllowedMachineSizes); it is now ignored.
 //
 // maxCPU is in millicores (mCPU): 1000 mCPU = 1 vCPU.
@@ -557,11 +556,6 @@ func TestTerminalBudgetHook_BeforeCreate_UnknownSize_Error(t *testing.T) {
 	require.ErrorAs(t, err, &unkErr)
 	assert.Equal(t, "potato", unkErr.Requested)
 }
-
-// ---------------------------------------------------------------------------
-// 11) Unlimited budget allows any size
-// ---------------------------------------------------------------------------
-
 
 // ---------------------------------------------------------------------------
 // 12) Race condition (PostgreSQL only — gated by testing.Short() + env)

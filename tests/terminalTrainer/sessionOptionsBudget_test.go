@@ -109,26 +109,6 @@ func TestSessionOptions_BudgetMode_IncludesTopLevelQuota(t *testing.T) {
 	assert.Equal(t, dto.ScopeUser, opts.Quota.Scope, "personal context → scope=user")
 }
 
-// TestSessionOptions_UnlimitedPlan_UnlimitedScope — plans with zero CPU/RAM
-// caps emit Scope="unlimited" so the frontend renders an unconstrained UI.
-func TestSessionOptions_UnlimitedPlan_UnlimitedScope(t *testing.T) {
-	db := freshTestDB(t)
-	svc := services.NewTerminalTrainerService(db)
-
-	plan := &paymentModels.SubscriptionPlan{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:      "Unlimited",
-		// MaxCPU=0 and MaxMemoryMB=0 → unlimited on both axes.
-	}
-
-	opts := budgetSessionOptions()
-	svc.EnrichSessionOptionsBudget(opts, plan, "u-unlim", nil)
-
-	require.NotNil(t, opts.Quota)
-	// MemoryMB stamp is mode-independent.
-	assert.Equal(t, 1024, findSize(t, opts, "M").MemoryMB)
-}
-
 // TestSessionOptions_BudgetMode_OrgScope — when orgID is non-nil, Scope
 // must be "organization" so dashboards can label the budget accordingly.
 func TestSessionOptions_BudgetMode_OrgScope(t *testing.T) {

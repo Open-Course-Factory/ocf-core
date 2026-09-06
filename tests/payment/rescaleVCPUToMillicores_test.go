@@ -71,14 +71,15 @@ func TestRescaleVCPUToMillicores_LeavesAlreadyScaledPlanAlone(t *testing.T) {
 		"already-mCPU value (5000) must NOT be re-multiplied")
 }
 
-func TestRescaleVCPUToMillicores_LeavesUnlimitedPlanAlone(t *testing.T) {
+func TestRescaleVCPUToMillicores_LeavesZeroBudgetAlone(t *testing.T) {
 	db := freshTestDB(t)
 
-	// Unlimited (MaxCPU=0). The >0 guard prevents a no-op multiply that
-	// would still be 0, but we assert explicitly to pin the contract.
+	// MaxCPU=0 is a row with no budget. The >0 guard prevents a no-op
+	// multiply that would still be 0, but we assert explicitly to pin the
+	// contract: the migration does not invent a budget.
 	plan := &paymentModels.SubscriptionPlan{
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            "UnlimitedPlan",
+		Name:            "ZeroBudgetPlan",
 		PriceAmount:     0,
 		Currency:        "eur",
 		BillingInterval: "month",
@@ -92,7 +93,7 @@ func TestRescaleVCPUToMillicores_LeavesUnlimitedPlanAlone(t *testing.T) {
 
 	var got paymentModels.SubscriptionPlan
 	require.NoError(t, db.First(&got, "id = ?", plan.ID).Error)
-	assert.Equal(t, 0, got.MaxCPU, "0 (unlimited) must remain 0")
+	assert.Equal(t, 0, got.MaxCPU, "a zero budget must remain 0")
 }
 
 func TestRescaleVCPUToMillicores_RescalesLegacyTerminalSize(t *testing.T) {
