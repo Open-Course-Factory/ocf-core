@@ -1605,7 +1605,8 @@ func (sc *userSubscriptionController) orgSubscriptionToUserDTO(userID string, su
 //	@Router			/subscription-plans/health [get]
 //	@Security		BearerAuth
 func (sc *userSubscriptionController) GetPlanHealth(ctx *gin.Context) {
-	report, err := services.CheckAllPlanHealth(sc.db)
+	quota := services.NewQuotaService(sc.db, sc.effectivePlanService)
+	report, err := services.CheckAllPlanHealth(sc.db, quota)
 	if err != nil {
 		utils.Error("failed to build the plan health report: %v", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{

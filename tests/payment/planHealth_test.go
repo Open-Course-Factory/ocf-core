@@ -13,6 +13,8 @@ package payment_tests
 import (
 	"testing"
 
+	"time"
+
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
@@ -61,7 +63,7 @@ func TestPlanHealth_HealthyPlanIsAbsent(t *testing.T) {
 	// 24000 mCPU / 12288 MB affords 24 size-S sessions on both axes.
 	healthPlan(t, db, "Balanced", 24000, 12288)
 
-	report, err := services.CheckAllPlanHealth(db)
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
 	require.NoError(t, err)
 	assert.Empty(t, report, "a plan with nothing wrong must not appear in the report")
@@ -73,7 +75,7 @@ func TestPlanHealth_ZeroBudgetIsBlocking(t *testing.T) {
 	healthPlan(t, db, "No CPU", 0, 6144)
 	healthPlan(t, db, "No RAM", 6000, 0)
 
-	report, err := services.CheckAllPlanHealth(db)
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
 	require.NoError(t, err)
 	require.Len(t, report, 2)
@@ -97,7 +99,7 @@ func TestPlanHealth_DanglingReferenceIsBlocking(t *testing.T) {
 	personalSubscriptionOn(t, db, "orphaned-user", plan.ID)
 	require.NoError(t, db.Delete(plan).Error)
 
-	report, err := services.CheckAllPlanHealth(db)
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
 	require.NoError(t, err)
 	require.Len(t, report, 1, "a deleted plan with live subscribers must be reported")
@@ -111,7 +113,7 @@ func TestPlanHealth_DeletedPlanWithoutSubscribersIsSilent(t *testing.T) {
 	plan := healthPlan(t, db, "Retired Cleanly", 6000, 6144)
 	require.NoError(t, db.Delete(plan).Error)
 
-	report, err := services.CheckAllPlanHealth(db)
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
 	require.NoError(t, err)
 	assert.Empty(t, report, "a retired plan with no subscribers is not a fault")
@@ -125,7 +127,7 @@ func TestPlanHealth_CatalogPlanWithoutPriceIsWarning(t *testing.T) {
 		"is_catalog": true, "stripe_price_id": "",
 	}).Error)
 
-	report, err := services.CheckAllPlanHealth(db)
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
 	require.NoError(t, err)
 	require.Len(t, report, 1)
@@ -140,7 +142,7 @@ func TestPlanHealth_FreeCatalogPlanNeedsNoPrice(t *testing.T) {
 		"is_catalog": true, "stripe_price_id": "", "price_amount": 0,
 	}).Error)
 
-	report, err := services.CheckAllPlanHealth(db)
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
 	require.NoError(t, err)
 	assert.Empty(t, report, "a free plan does not need a Stripe price")
@@ -151,10 +153,10 @@ func TestPlanHealth_FreeCatalogPlanNeedsNoPrice(t *testing.T) {
 // delivers half what its RAM suggests.
 func TestPlanHealth_AxisImbalanceIsAdvisory(t *testing.T) {
 	db := freshTestDB(t)
-	// Formateur's real shape: 6 size-S sessions by CPU, 12 by RAM.
+	// Formateur's real shape, measured at xs: 12 sessions by CPU, 24 by RAM.
 	healthPlan(t, db, "Formateur", 6000, 6144)
 
-	report, err := services.CheckAllPlanHealth(db)
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
 	require.NoError(t, err)
 	require.Len(t, report, 1)
@@ -171,25 +173,12 @@ func TestPlanHealth_AxisImbalanceIsAdvisory(t *testing.T) {
 
 // A plan whose axes agree says nothing. This is the shape the MDS class plan
 // was corrected to.
-func TestPlanHealth_BalancedAxesProduceNoAdvisory(t *testing.T) {
-	db := freshTestDB(t)
-	healthPlan(t, db, "Balanced", 24000, 12288)
-
-	report, err := services.CheckAllPlanHealth(db)
-
-	require.NoError(t, err)
-	assert.Empty(t, report)
-}
-
-// A plan whose budgets are positive but too small to pay for any catalog size
-// looks configured and launches nothing. It is reported in its own right, not
-// as an imbalance — the imbalance would restate it in weaker terms.
 func TestPlanHealth_BudgetBelowSmallestSizeIsBlocking(t *testing.T) {
 	db := freshTestDB(t)
 	// 100 mCPU / 64 MB is under xs (500 mCPU / 256 MB).
 	healthPlan(t, db, "Too Small", 100, 64)
 
-	report, err := services.CheckAllPlanHealth(db)
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
 	require.NoError(t, err)
 	require.Len(t, report, 1)
@@ -198,4 +187,41 @@ func TestPlanHealth_BudgetBelowSmallestSizeIsBlocking(t *testing.T) {
 		"a plan that affords nothing has no imbalance to describe")
 	assert.NotContains(t, findingCodes(report[0]), services.PlanHealthZeroBudget,
 		"its budgets are positive — this is a different fault")
+}
+
+// The dangling check is ReportDanglingPlanReferences, per plan: it counts role
+// mappings too, and it reads liveness through ScopeEntitling rather than a
+// status list of its own.
+func TestPlanHealth_RolePlanOnDeletedPlanIsDangling(t *testing.T) {
+	db := freshTestDB(t)
+	plan := healthPlan(t, db, "Retired Role Plan", 6000, 6144)
+	org := teamOrgWithoutSubscription(t, db, "role-corp", "owner-1")
+	rolePlanOn(t, db, org.ID, "member", plan.ID)
+	require.NoError(t, db.Delete(plan).Error)
+
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
+
+	require.NoError(t, err)
+	require.Len(t, report, 1, "a role mapping still pointing at the deleted plan entitles its members")
+	assert.Contains(t, findingCodes(report[0]), services.PlanHealthDanglingReference)
+}
+
+func TestPlanHealth_ExpiredSubscriptionOnDeletedPlanIsNotDangling(t *testing.T) {
+	db := freshTestDB(t)
+	plan := healthPlan(t, db, "Retired Pack", 6000, 6144)
+	expired := time.Now().Add(-time.Hour)
+	require.NoError(t, db.Create(&models.UserSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		UserID:             "former-holder",
+		SubscriptionPlanID: plan.ID,
+		SubscriptionType:   "personal",
+		Status:             "active",
+		ExpiresAt:          &expired,
+	}).Error)
+	require.NoError(t, db.Delete(plan).Error)
+
+	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
+
+	require.NoError(t, err)
+	assert.Empty(t, report, "a subscription past its window entitles nobody, so the plan it names is retired, not dangling")
 }

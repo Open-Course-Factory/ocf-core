@@ -67,9 +67,14 @@ type DanglingPlanReport struct {
 	OrganizationRolePlans     int
 }
 
+// Total is how many rows need repairing.
+func (r DanglingPlanReport) Total() int {
+	return r.UserSubscriptions + r.OrganizationSubscriptions + r.OrganizationRolePlans
+}
+
 // Any reports whether anything needs repairing.
 func (r DanglingPlanReport) Any() bool {
-	return r.UserSubscriptions+r.OrganizationSubscriptions+r.OrganizationRolePlans > 0
+	return r.Total() > 0
 }
 
 // ReportDanglingPlanReferences counts subscriptions and role mappings pointing
@@ -84,12 +89,32 @@ func (r DanglingPlanReport) Any() bool {
 // commercial decision and not one a startup routine should make silently.
 func ReportDanglingPlanReferences(db *gorm.DB) DanglingPlanReport {
 	livePlanIDs := db.Model(&models.SubscriptionPlan{}).Select("id")
+	return countDanglingReferences(db, func(q *gorm.DB) *gorm.DB {
+		return q.Where("subscription_plan_id NOT IN (?)", livePlanIDs)
+	})
+}
 
+// danglingReferencesTo is ReportDanglingPlanReferences for one plan that no
+// longer exists: the same three counts, the same liveness rule, so the plan
+// health page and the startup report cannot disagree about which rows dangle.
+// Asking it about a plan that still exists counts that plan's live holders.
+func danglingReferencesTo(db *gorm.DB, planID uuid.UUID) DanglingPlanReport {
+	return countDanglingReferences(db, func(q *gorm.DB) *gorm.DB {
+		return q.Where("subscription_plan_id = ?", planID)
+	})
+}
+
+// countDanglingReferences counts, per referencing table, the rows selected by
+// `references` that still entitle someone. A cancelled subscription pointing at
+// a retired plan is ordinary history, and reporting it every startup is how a
+// warning that matters gets tuned out. Role mappings carry no status, so every
+// one of them counts.
+func countDanglingReferences(db *gorm.DB, references func(*gorm.DB) *gorm.DB) DanglingPlanReport {
 	count := func(model any, label string, scopes ...func(*gorm.DB) *gorm.DB) int {
 		var n int64
 		if err := db.Model(model).
 			Scopes(scopes...).
-			Where("subscription_plan_id NOT IN (?)", livePlanIDs).
+			Scopes(references).
 			Count(&n).Error; err != nil {
 			utils.Warn("Failed to count dangling plan references on %s: %v", label, err)
 			return 0
@@ -97,10 +122,6 @@ func ReportDanglingPlanReferences(db *gorm.DB) DanglingPlanReport {
 		return int(n)
 	}
 
-	// Only subscriptions that still entitle someone. A cancelled subscription
-	// pointing at a retired plan is ordinary history, and reporting it every
-	// startup is how a warning that matters gets tuned out. Role mappings carry no
-	// status, so every one of them counts.
 	return DanglingPlanReport{
 		UserSubscriptions:         count(&models.UserSubscription{}, "user_subscriptions", models.ScopeEntitling),
 		OrganizationSubscriptions: count(&models.OrganizationSubscription{}, "organization_subscriptions", models.ScopeEntitling),
