@@ -61,6 +61,7 @@ func (m *capturingTTService) CreateUserKey(userID, userName string) error {
 	m.addKey(userID)
 	return nil
 }
+func (m *capturingTTService) SyncUserKeyBudget(userID string) error { return nil }
 
 func (m *capturingTTService) GetTerms() (string, error) {
 	return "test-terms", nil

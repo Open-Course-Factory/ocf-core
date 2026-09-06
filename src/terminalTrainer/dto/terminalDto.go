@@ -101,6 +101,9 @@ type TerminalTrainerAPIKeyResponse struct {
 		CreatedAt  int64  `json:"created_at"`
 		UpdatedAt  int64  `json:"updated_at"`
 		LastUsedAt *int64 `json:"last_used_at"`
+		// LimitsDisabled is an operator switch tt-backend requires on every
+		// update; a budget sync reads it back so it survives the write.
+		LimitsDisabled bool `json:"limits_disabled"`
 		// Terminal Trainer dropped max_concurrent_sessions from api_keys in
 		// favour of the max_cpu_total / max_memory_mb_total budgets, so the
 		// field is no longer sent and nothing decodes it. Removed rather than

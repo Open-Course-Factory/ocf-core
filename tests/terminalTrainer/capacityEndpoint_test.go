@@ -47,6 +47,9 @@ func (m *metricsAwareMockService) GetServerMetrics(nocache bool, backend string)
 func (m *metricsAwareMockService) CreateUserKey(userID, userName string) error {
 	panic("not implemented")
 }
+func (m *metricsAwareMockService) SyncUserKeyBudget(userID string) error {
+	panic("not implemented")
+}
 func (m *metricsAwareMockService) GetUserKey(userID string) (*models.UserTerminalKey, error) {
 	panic("not implemented")
 }

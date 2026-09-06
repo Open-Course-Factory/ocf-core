@@ -361,6 +361,10 @@ type UserTerminalKey struct {
 	KeyName     string `gorm:"type:varchar(255);not null" json:"key_name"`
 	IsActive    bool   `gorm:"default:true" json:"is_active"`
 	MaxSessions int    `gorm:"default:5" json:"max_sessions"`
+	// TerminalTrainerKeyID is the id tt-backend assigned to this key. Its admin
+	// API addresses a key by that id, not by its value, so it is what a later
+	// budget re-provision needs. Zero on keys created before it was recorded.
+	TerminalTrainerKeyID int64 `gorm:"default:0" json:"terminal_trainer_key_id"`
 
 	// Relations
 	Terminals []Terminal

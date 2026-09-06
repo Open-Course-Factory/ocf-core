@@ -29,6 +29,10 @@ type TerminalTrainerService interface {
 	CreateUserKey(userID, userName string) error
 	GetUserKey(userID string) (*models.UserTerminalKey, error)
 	DisableUserKey(userID string) error
+	// SyncUserKeyBudget recomputes the user's budget ceiling and pushes it to
+	// their existing tt-backend key. Called after any change that can move
+	// the ceiling; without it the key kept the budget computed at creation.
+	SyncUserKeyBudget(userID string) error
 
 	// Session management
 	GetSessionInfo(sessionID string) (*models.Terminal, error)
@@ -331,10 +335,11 @@ func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
 
 	// Sauvegarder en base
 	userTerminalKey := &models.UserTerminalKey{
-		UserID:   userID,
-		APIKey:   apiResponse.Data.KeyValue,
-		KeyName:  apiResponse.Data.Name,
-		IsActive: true,
+		UserID:               userID,
+		APIKey:               apiResponse.Data.KeyValue,
+		KeyName:              apiResponse.Data.Name,
+		IsActive:             true,
+		TerminalTrainerKeyID: apiResponse.Data.ID,
 	}
 
 	return tts.repository.CreateUserTerminalKey(userTerminalKey)

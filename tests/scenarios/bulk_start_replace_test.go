@@ -54,6 +54,7 @@ func (m *mockTTService) CreateUserKey(userID, userName string) error {
 	m.addKey(userID)
 	return nil
 }
+func (m *mockTTService) SyncUserKeyBudget(userID string) error { return nil }
 
 func (m *mockTTService) GetTerms() (string, error) {
 	return "test-terms", nil
