@@ -102,7 +102,8 @@ func (s *terminalSyncService) markSessionStopped(
 		return changed
 	}
 
-	// Fallback: plan-derived window. Mirrors StartComposedSession + StartSession.
+	// Fallback: plan-derived window, through the same owner of the plan cap
+	// rule as StartComposedSession and StartSession.
 	if terminal.SubscriptionPlanID == nil {
 		return changed
 	}
@@ -112,10 +113,11 @@ func (s *terminalSyncService) markSessionStopped(
 			terminal.SubscriptionPlanID.String(), terminal.SessionID, err)
 		return changed
 	}
-	if plan.MaxSessionDurationMinutes <= 0 {
+	expirySeconds := resolvePlanExpirySeconds(&plan)
+	if expirySeconds == 0 {
 		return changed
 	}
-	terminal.ExpiresAt = time.Now().Add(time.Duration(plan.MaxSessionDurationMinutes) * time.Minute).Local()
+	terminal.ExpiresAt = time.Now().Add(time.Duration(expirySeconds) * time.Second).Local()
 	return true
 }
 

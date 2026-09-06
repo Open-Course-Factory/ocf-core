@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
 )
@@ -415,5 +416,64 @@ func TestSyncUserSessions_Stopped_NoPlanNoIdleUntil_LeavesExpiresAtUnchanged(t *
 					originalExpiry, reloaded.ExpiresAt)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// (f) Plan present but carrying no positive duration cap: the sync fallback
+// must apply the SAME "no positive cap" rule as create and resume — leave
+// ExpiresAt untouched — rather than restating the rule inline.
+// ---------------------------------------------------------------------------
+
+func TestSyncUserSessions_AutoStopped_PlanWithoutDurationCap_LeavesExpiresAtUnchanged(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	sessionID := "sync-auto-stop-uncapped-plan-" + uuid.New().String()
+	originalExpiry := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+
+	srv := syncSessionTTServer(t, sessionID,
+		"stopped", "persistent",
+		originalExpiry.Unix(),
+		0, // omit idle_until — exercise the plan-derived fallback
+	)
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	userID := "owner-auto-stop-uncapped-" + uuid.New().String()
+	userKey, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+
+	local := &models.Terminal{
+		SessionID:         sessionID,
+		UserID:            userID,
+		Name:              "Test Terminal",
+		State:             models.StateRunning,
+		PersistenceMode:   "persistent",
+		ExpiresAt:         originalExpiry,
+		InstanceType:      "",
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+	}
+	require.NoError(t, db.Create(local).Error)
+	// A plan with no positive cap grants no plan-derived window. The column
+	// defaults to 60 on create, so the zero has to be written explicitly.
+	planID := seedPlanForTerminal(t, db, local, 0)
+	require.NoError(t, db.Model(&paymentModels.SubscriptionPlan{}).
+		Where("id = ?", planID).
+		Update("max_session_duration_minutes", 0).Error)
+
+	svc := services.NewTerminalTrainerService(db)
+	_, err = svc.SyncUserSessions(userID)
+	require.NoError(t, err)
+
+	var reloaded models.Terminal
+	require.NoError(t, db.Where("session_id = ?", sessionID).First(&reloaded).Error)
+	assert.Equal(t, models.StateStopped, reloaded.State, "state must still propagate")
+	delta := reloaded.ExpiresAt.Sub(originalExpiry)
+	if delta.Abs() > time.Second {
+		t.Errorf("a plan without a positive duration cap must leave ExpiresAt untouched (want ~%v, got %v)",
+			originalExpiry, reloaded.ExpiresAt)
 	}
 }
