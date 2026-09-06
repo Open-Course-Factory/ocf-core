@@ -44,12 +44,13 @@ func planDidLoad(p *models.SubscriptionPlan) bool {
 	return p != nil && p.ID != uuid.Nil
 }
 
-// ensurePlanLoaded reports a dangling reference as an error, and logs which row
-// carries it.
+// EnsurePlanLoaded reports a dangling reference as an error, and logs which row
+// carries it. Exported for the one consumer of a plan association outside this
+// package, the administrator fallback in effectivePlanMiddleware.
 //
 // `holder` names that row (e.g. "user subscription 0e2c…"), so the log line tells
 // an operator what to repair rather than only that something is wrong.
-func ensurePlanLoaded(p *models.SubscriptionPlan, holder string) error {
+func EnsurePlanLoaded(p *models.SubscriptionPlan, holder string) error {
 	if planDidLoad(p) {
 		return nil
 	}

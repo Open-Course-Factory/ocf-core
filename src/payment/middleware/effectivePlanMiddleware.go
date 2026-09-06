@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -160,7 +161,9 @@ func InjectEffectivePlan(effectivePlanService services.EffectivePlanService, db 
 
 // resolveOrgPlanForAdmin fetches the org's subscription directly, bypassing
 // the membership check that the normal effective plan service enforces.
-// Returns nil if the org has no active subscription.
+// Returns nil if the org has no active subscription, or if its subscription
+// points at a plan that no longer exists: reading the association outside the
+// service means applying the service's rule for it here.
 func resolveOrgPlanForAdmin(db *gorm.DB, orgID uuid.UUID) *services.EffectivePlanResult {
 	var orgSub models.OrganizationSubscription
 	err := db.Preload("SubscriptionPlan").
@@ -169,6 +172,10 @@ func resolveOrgPlanForAdmin(db *gorm.DB, orgID uuid.UUID) *services.EffectivePla
 		First(&orgSub).Error
 	if err != nil {
 		utils.Debug("Admin fallback: no active subscription for org %s: %v", orgID, err)
+		return nil
+	}
+	if services.EnsurePlanLoaded(&orgSub.SubscriptionPlan,
+		fmt.Sprintf("organization subscription %s", orgSub.ID)) != nil {
 		return nil
 	}
 	return &services.EffectivePlanResult{

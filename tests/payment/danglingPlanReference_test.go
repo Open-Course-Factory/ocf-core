@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
+	paymentMiddleware "soli/formations/src/payment/middleware"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 
@@ -226,4 +227,54 @@ func TestReportDanglingPlanReferences_SilentOnAHealthyDatabase(t *testing.T) {
 
 	assert.False(t, report.Any())
 	assert.Equal(t, 0, report.UserSubscriptions)
+}
+
+// TestUserBudgetCeiling_DanglingPersonalPlanContributesNothing: the ceiling
+// reads the personal subscription outside resolveGlobal / resolveForOrg, so
+// it needs the same guard rather than inheriting it. A zero-value plan folds
+// as zero either way; the guard is what keeps the row named in the log and
+// the reading rule stated once.
+func TestUserBudgetCeiling_DanglingPersonalPlanContributesNothing(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "learner-on-dead-personal-plan"
+
+	gone := danglingPlan(t, db, "Retired Plan")
+	personalSubscriptionOn(t, db, userID, gone.ID)
+	orgPlan := livePlan(t, db, "École / OF", 80)
+	orgSubscriptionOn(t, db, userID, orgPlan)
+
+	ceiling, err := services.NewEffectivePlanService(db).GetUserBudgetCeiling(userID)
+
+	require.NoError(t, err)
+	assert.Equal(t, orgPlan.MaxCPU, ceiling.MaxCPU, "only the plan that resolves contributes")
+	assert.Equal(t, orgPlan.MaxMemoryMB, ceiling.MaxMemoryMB)
+}
+
+// TestInjectEffectivePlan_AdminFallbackOnDeletedPlan_ResolvesNoPlan: the
+// admin bypass reads the org subscription directly, bypassing the service,
+// so a dangling reference there used to hand the administrator a blank plan
+// that RequirePlan then accepted. It must resolve to no plan, like every
+// other path.
+func TestInjectEffectivePlan_AdminFallbackOnDeletedPlan_ResolvesNoPlan(t *testing.T) {
+	db := freshTestDB(t)
+	adminID := "platform-admin"
+
+	gone := danglingPlan(t, db, "Retired Org Plan")
+	org := teamOrgWithoutSubscription(t, db, "broken-corp", "someone-else")
+	require.NoError(t, db.Create(&models.OrganizationSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID:     org.ID,
+		SubscriptionPlanID: gone.ID,
+		Status:             "active",
+	}).Error)
+
+	ctx, _ := newTestContext("GET", "/terminals/session-options", nil, adminID, []string{"administrator"})
+	ctx.Set("org_context_id", org.ID.String())
+
+	paymentMiddleware.InjectEffectivePlan(services.NewEffectivePlanService(db), db)(ctx)
+
+	val, exists := ctx.Get("effective_plan_result")
+	require.True(t, exists)
+	result, _ := val.(*services.EffectivePlanResult)
+	assert.Nil(t, result, "a subscription whose plan no longer exists must not resolve, even for an administrator")
 }

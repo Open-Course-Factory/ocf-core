@@ -201,7 +201,7 @@ func (s *effectivePlanService) resolveGlobal(userID string) (*EffectivePlanResul
 		// A dangling reference is skipped rather than fatal here: this branch has
 		// other candidates to consider, and refusing the user outright when one of
 		// their plans is broken would be closing more than the hole (#481).
-		if ensurePlanLoaded(&sub.SubscriptionPlan,
+		if EnsurePlanLoaded(&sub.SubscriptionPlan,
 			fmt.Sprintf("user subscription %s", sub.ID)) == nil {
 			personalSub = sub
 			personalPlan = &sub.SubscriptionPlan
@@ -221,7 +221,7 @@ func (s *effectivePlanService) resolveGlobal(userID string) (*EffectivePlanResul
 
 	for i := range orgSubs {
 		plan := orgSubs[i].SubscriptionPlan
-		if ensurePlanLoaded(&plan,
+		if EnsurePlanLoaded(&plan,
 			fmt.Sprintf("organization subscription %s", orgSubs[i].ID)) != nil {
 			continue
 		}
@@ -295,7 +295,7 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 		if err != nil {
 			return nil, fmt.Errorf("no active personal subscription for user %s: %w", userID, err)
 		}
-		if planErr := ensurePlanLoaded(&sub.SubscriptionPlan,
+		if planErr := EnsurePlanLoaded(&sub.SubscriptionPlan,
 			fmt.Sprintf("user subscription %s", sub.ID)); planErr != nil {
 			return nil, planErr
 		}
@@ -323,7 +323,7 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 	// specific plan, that mapping wins over the org's default subscription.
 	rolePlan, err := s.orgSubRepo.GetOrganizationRolePlan(orgID, string(member.Role))
 	if err == nil && rolePlan != nil {
-		if planErr := ensurePlanLoaded(&rolePlan.SubscriptionPlan,
+		if planErr := EnsurePlanLoaded(&rolePlan.SubscriptionPlan,
 			fmt.Sprintf("role plan %s", rolePlan.ID)); planErr != nil {
 			return nil, planErr
 		}
@@ -359,7 +359,7 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 		if fallbackErr != nil || sub == nil {
 			return nil, fmt.Errorf("no active subscription for organization %s and no personal fallback: %w", orgID.String(), fallbackErr)
 		}
-		if planErr := ensurePlanLoaded(&sub.SubscriptionPlan,
+		if planErr := EnsurePlanLoaded(&sub.SubscriptionPlan,
 			fmt.Sprintf("user subscription %s", sub.ID)); planErr != nil {
 			return nil, planErr
 		}
@@ -376,7 +376,7 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 	// so falling through to the personal fallback would answer with someone else's
 	// plan and count its budget against the wrong pool. A broken reference is an
 	// operator problem, not an entitlement (#481).
-	if planErr := ensurePlanLoaded(&orgSub.SubscriptionPlan,
+	if planErr := EnsurePlanLoaded(&orgSub.SubscriptionPlan,
 		fmt.Sprintf("organization subscription %s", orgSub.ID)); planErr != nil {
 		return nil, planErr
 	}
@@ -435,11 +435,17 @@ func (s *effectivePlanService) GetUserBudgetCeiling(userID string) (UserBudgetCe
 	var ceiling UserBudgetCeiling
 
 	// Personal subscription, if any. A missing one is not an error — most
-	// learners have none.
-	if sub, err := s.paymentRepo.GetActiveUserSubscription(userID); err == nil && sub != nil {
-		ceiling = widenCeiling(ceiling, &sub.SubscriptionPlan)
-	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	// learners have none. A dangling one contributes nothing, like everywhere
+	// else a plan association is read. The personal organization below folds
+	// the same subscription again through resolveForOrg, which is harmless:
+	// widenCeiling keeps the larger value per axis.
+	sub, err := s.paymentRepo.GetActiveUserSubscription(userID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		utils.Warn("budget ceiling: failed to read personal subscription for %s: %v", userID, err)
+	}
+	if err == nil && sub != nil && EnsurePlanLoaded(&sub.SubscriptionPlan,
+		fmt.Sprintf("user subscription %s", sub.ID)) == nil {
+		ceiling = widenCeiling(ceiling, &sub.SubscriptionPlan)
 	}
 
 	// Every active org membership, resolved through the role-aware path.
