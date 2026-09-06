@@ -123,12 +123,8 @@ type TerminalTrainerService interface {
 	// With no plan or no quota service, Quota.Scope is "unknown" and per-size
 	// remaining counts are left at zero — no budget could be computed, and the
 	// frontend must not lock the sizes on that. Mutates opts in place.
-	//
-	// budgetScopeOrgID is the pool the budget draws on — EffectivePlanResult's
-	// ScopeOrganizationID, NOT the organization from the request. The two differ,
-	// and passing the request's would advertise headroom the launch gate then
-	// refuses (#457). nil means the budget is the user's own.
-	EnrichSessionOptionsBudget(opts *dto.SessionOptionsResponse, plan *paymentModels.SubscriptionPlan, userID string, budgetScopeOrgID *uuid.UUID)
+	// The budget is the user's own, whatever plan resolved for them.
+	EnrichSessionOptionsBudget(opts *dto.SessionOptionsResponse, plan *paymentModels.SubscriptionPlan, userID string)
 	StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error)
 	// BuildComplete removes the features a session held only while it was
 	// being provisioned. Called once the scenario's setup has run.
@@ -909,13 +905,8 @@ func (tts *terminalTrainerService) GetUserTerminalUsage(userID string, orgID *uu
 	effectivePlanSvc := paymentServices.NewEffectivePlanService(tts.db)
 	planResult, err := effectivePlanSvc.GetUserEffectivePlan(userID, orgID)
 
-	// The usage below must be summed over the same pool the gate charges, or the
-	// panel reports a headroom the launcher then refuses. The scope belongs to the
-	// resolved plan, not to the request (#457).
-	budgetScope := orgID
-	if err == nil && planResult != nil {
-		budgetScope = planResult.ScopeOrganizationID
-	}
+	// The usage below is the user's own, the same count the gate charges, so the
+	// panel never reports a headroom the launcher then refuses.
 
 	if err == nil && planResult != nil && planResult.Plan != nil {
 		resp.PlanName = planResult.Plan.Name
@@ -934,7 +925,7 @@ func (tts *terminalTrainerService) GetUserTerminalUsage(userID string, orgID *uu
 	// 2. Used CPU / RAM via the SSOT helper. Routes through
 	// sumActiveResources* which uses OccupiesSlotScope.
 	if tts.quotaService != nil {
-		usedCPU, usedMem, usageErr := tts.quotaService.GetBudgetUsage(userID, budgetScope)
+		usedCPU, usedMem, usageErr := tts.quotaService.GetBudgetUsage(userID, nil)
 		if usageErr != nil {
 			return nil, fmt.Errorf("failed to load budget usage: %w", usageErr)
 		}
@@ -942,19 +933,14 @@ func (tts *terminalTrainerService) GetUserTerminalUsage(userID string, orgID *uu
 		resp.UsedMemoryMB = usedMem
 	}
 
-	// 3. Active sessions — same scope (OccupiesSlotScope) AND the same pool as the
-	// totals above. Listing a different set of sessions than the ones summed is how
-	// a panel comes to show bars that its own list does not account for.
+	// 3. Active sessions — same scope (OccupiesSlotScope) AND the same set as the
+	// totals above: the user's own. Listing a different set of sessions than the
+	// ones summed is how a panel comes to show bars its own list does not account for.
 	q := tts.db.Table("terminals").
 		Scopes(models.OccupiesSlotScope).
 		Select("terminals.session_id, terminals.name, terminals.instance_type, terminals.machine_size, terminals.size_cpu, terminals.size_memory_mb, terminals.state, terminals.persistence_mode, terminals.last_started_at, terminals.expires_at").
-		Order("terminals.last_started_at DESC")
-	if budgetScope != nil {
-		q = q.Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
-			Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", *budgetScope)
-	} else {
-		q = q.Where("terminals.user_id = ?", userID)
-	}
+		Order("terminals.last_started_at DESC").
+		Where("terminals.user_id = ?", userID)
 
 	type sessionRow struct {
 		SessionID       string
@@ -1120,7 +1106,6 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 	opts *dto.SessionOptionsResponse,
 	plan *paymentModels.SubscriptionPlan,
 	userID string,
-	budgetScopeOrgID *uuid.UUID,
 ) {
 	if opts == nil {
 		return
@@ -1143,9 +1128,9 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 	if plan == nil || tts.quotaService == nil {
 		return
 	}
-	usedCPU, usedMem, err := tts.quotaService.GetBudgetUsage(userID, budgetScopeOrgID)
+	usedCPU, usedMem, err := tts.quotaService.GetBudgetUsage(userID, nil)
 	if err != nil {
-		utils.Warn("EnrichSessionOptionsBudget: usage lookup failed for user=%s scope=%v: %v", userID, budgetScopeOrgID, err)
+		utils.Warn("EnrichSessionOptionsBudget: usage lookup failed for user=%s: %v", userID, err)
 		return
 	}
 
@@ -1163,9 +1148,6 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 	}
 
 	scope := dto.ScopeUser
-	if budgetScopeOrgID != nil {
-		scope = dto.ScopeOrganization
-	}
 	opts.Quota = tts.quotaService.BudgetSnapshot(plan, usedCPU, usedMem, scope)
 }
 

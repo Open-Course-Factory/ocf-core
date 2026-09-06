@@ -296,7 +296,9 @@ func TestGetUserTerminalUsage_ReservationCountsBudgetButHiddenFromSessionList(t 
 }
 
 // TestMyTerminalUsage_OrgContext — when ?organization_id=<orgID> is provided,
-// the response reflects the org's plan and the org-aggregated usage.
+// the response reflects the org's plan, and the usage is the caller's OWN: an
+// organization's plan caps each member alone, it is not a pool the panel
+// should draw down with other members' sessions.
 func TestMyTerminalUsage_OrgContext(t *testing.T) {
 	freshTestDB(t)
 	ownerID := "org-owner-1"
@@ -363,8 +365,9 @@ func TestMyTerminalUsage_OrgContext(t *testing.T) {
 	assert.Equal(t, float64(16384), resp["max_memory_mb"])
 	assert.Equal(t, float64(120), resp["max_session_duration_minutes"])
 
-	// 2000 + 4000 mCPU = 6000; 1024 + 2048 = 3072.
-	assert.Equal(t, float64(6000), resp["used_cpu"],
-		"org context must sum across all org members (owner + member) in mCPU")
-	assert.Equal(t, float64(3072), resp["used_memory_mb"])
+	// The owner's own running S (2000 mCPU / 1024 MB); the other member's
+	// terminal is theirs and does not appear in this user's usage.
+	assert.Equal(t, float64(2000), resp["used_cpu"],
+		"usage is the caller's own even in an organization context")
+	assert.Equal(t, float64(1024), resp["used_memory_mb"])
 }

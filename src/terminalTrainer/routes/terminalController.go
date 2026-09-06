@@ -18,7 +18,6 @@ import (
 	controller "soli/formations/src/entityManagement/routes"
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentModels "soli/formations/src/payment/models"
-	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/httperrors"
 	"soli/formations/src/terminalTrainer/models"
@@ -1961,26 +1960,6 @@ func (tc *terminalController) MyTerminalUsage(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, usage)
 }
 
-// budgetScopeFromContext returns the organization whose members share the budget
-// the caller's plan draws on, or nil when the budget is the caller's own.
-//
-// It reads the plan InjectEffectivePlan already resolved rather than the request's
-// organization_id. The two are different questions — "which organization am I
-// acting in" versus "whose budget am I spending" — and answering the second with
-// the first is what let every member of an organization hold its entire budget by
-// omitting one optional query parameter (#457).
-func budgetScopeFromContext(ctx *gin.Context) *uuid.UUID {
-	raw, exists := ctx.Get("effective_plan_result")
-	if !exists {
-		return nil
-	}
-	result, ok := raw.(*paymentServices.EffectivePlanResult)
-	if !ok || result == nil {
-		return nil
-	}
-	return result.ScopeOrganizationID
-}
-
 // GetGroupCommandHistory returns aggregated command history for all members of a group
 func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
 	groupID := ctx.Param("id")
@@ -2266,7 +2245,7 @@ func (tc *terminalController) GetSessionOptions(ctx *gin.Context) {
 	// the request's would show a personal budget for a shared pool the gate then
 	// charges collectively (#457).
 	userID := ctx.GetString("userId")
-	tc.service.EnrichSessionOptionsBudget(options, plan, userID, budgetScopeFromContext(ctx))
+	tc.service.EnrichSessionOptionsBudget(options, plan, userID)
 
 	ctx.JSON(http.StatusOK, options)
 }

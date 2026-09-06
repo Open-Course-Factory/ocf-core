@@ -56,27 +56,6 @@ type QuotaService interface {
 	// observe enough budget for the same slice of resources.
 	CheckBudget(userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, requestedCPU, requestedMemMB int) (*BudgetCheck, error)
 
-	// BudgetScopeFor answers "which pool does this user's budget draw on right
-	// now?" — the organization whose members share it, or nil for a personal
-	// budget counted for this user alone.
-	//
-	// requestOrgID is the organization the caller is acting in, and is only an
-	// INPUT to plan resolution: the answer comes from the plan that resolves, not
-	// from the request. Those differ, and the difference was the bug: a request
-	// that omitted organization_id still resolved an organization's plan while
-	// being counted personally, so every member of a school could hold the school's
-	// entire budget at once (#457).
-	//
-	// Callers that already hold an EffectivePlanResult should read
-	// ScopeOrganizationID off it instead — this exists for paths that hold only a
-	// bare plan.
-	//
-	// Total by design: when no plan resolves, the answer is requestOrgID unchanged.
-	// A caller in that position is enforcing against a plan supplied out of band and
-	// has no better information than the request, so this degrades to the previous
-	// behaviour rather than failing a launch or inventing a scope.
-	BudgetScopeFor(userID string, requestOrgID *uuid.UUID) *uuid.UUID
-
 	// ComputeRemainingBySize returns the per-size remaining count after
 	// accounting for usedCPU / usedMemMB. The formula is
 	//
@@ -222,15 +201,6 @@ func (s *quotaService) GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 // columns on the Terminal table. The TerminalBudgetHook (and the
 // composed-session path) populates these columns on create so new
 // sessions never need a catalog fallback.
-
-// BudgetScopeFor — see interface doc.
-func (s *quotaService) BudgetScopeFor(userID string, requestOrgID *uuid.UUID) *uuid.UUID {
-	result, err := s.effectivePlanService.GetUserEffectivePlan(userID, requestOrgID)
-	if err != nil || result == nil {
-		return requestOrgID
-	}
-	return result.ScopeOrganizationID
-}
 
 // CheckBudget — see interface doc.
 func (s *quotaService) CheckBudget(

@@ -45,8 +45,6 @@ func TestInjectEffectivePlan_AdminNonMember_ResolvesOrgPlanWithOrgScope(t *testi
 	assert.Equal(t, plan.MaxCPU, result.Plan.MaxCPU, "the budget travels with the plan")
 	assert.Equal(t, services.PlanSourceOrganization, result.Source)
 	require.NotNil(t, result.OrganizationSubscription)
-	require.NotNil(t, result.ScopeOrganizationID, "the org's plan draws on the org's pool, for an admin as for a member")
-	assert.Equal(t, org.ID, *result.ScopeOrganizationID)
 }
 
 func TestGetOrganizationPlan_NoSubscription_Errors(t *testing.T) {

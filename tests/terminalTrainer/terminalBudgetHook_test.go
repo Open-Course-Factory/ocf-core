@@ -71,17 +71,12 @@ func (s *stubEffectivePlanService) GetUserEffectivePlan(userID string, orgID *uu
 			OrganizationSubscription: &paymentModels.OrganizationSubscription{
 				OrganizationID: *orgID,
 			},
-			// Mirrors the real resolver: an organization's plan draws on that
-			// organization's pool. This is what the budget gate scopes by (#457),
-			// so a stub omitting it would silently exercise personal counting.
-			ScopeOrganizationID: orgID,
 		}, nil
 	}
 	if orgID == nil && s.globalResolvesToOrg != nil && s.orgPlan != nil {
 		return &paymentServices.EffectivePlanResult{
 			Plan:                s.orgPlan,
 			Source:              paymentServices.PlanSourceOrganization,
-			ScopeOrganizationID: s.globalResolvesToOrg,
 		}, nil
 	}
 	if s.personalPlan != nil {
@@ -393,11 +388,15 @@ func TestTerminalBudgetHook_BeforeCreate_PastExpirySessionsDoNotCount(t *testing
 // 8) Org-scoped: counts across all org members
 // ---------------------------------------------------------------------------
 
-func TestTerminalBudgetHook_BeforeCreate_OrgScoped(t *testing.T) {
+// ---------------------------------------------------------------------------
+// 8) An organization's plan caps each member alone
+// ---------------------------------------------------------------------------
+// It used to be a pool summed across every member, which is how six students
+// consumed a class's budget and locked the other five out (2026-09-04), and
+// how a seat plan mapped to the member role allowed one XL for a whole class.
+func TestTerminalBudgetHook_BeforeCreate_OrgPlanCapsEachMemberAlone(t *testing.T) {
 	db := freshTestDB(t)
-
 	orgID := uuid.New()
-	// Create the org and three members so the org-scoped sum sees all three.
 	require.NoError(t, db.Omit("Metadata").Create(&organizationModels.Organization{
 		BaseModel:        entityManagementModels.BaseModel{ID: orgID},
 		Name:             "team-budget",
@@ -415,40 +414,36 @@ func TestTerminalBudgetHook_BeforeCreate_OrgScoped(t *testing.T) {
 			IsActive:       true,
 		}).Error)
 	}
-
-	plan := budgetPlanInMem("Team", 3000, 4096, nil) // 3000 mCPU total
+	plan := budgetPlanInMem("Team", 3000, 4096, nil) // 3000 mCPU per member
 	hook := newHookForTest(db, nil, plan)
 
-	// 3 members each have a running S (1000 mCPU). Total 3000/3000 mCPU used.
+	// Three members each hold a running S (1000 mCPU); together 3000, the whole
+	// plan — which is irrelevant to the fourth member, who holds nothing.
 	insertExistingTerminal(t, db, "u-org-a", &orgID, "running", "ephemeral", 1000, 512)
 	insertExistingTerminal(t, db, "u-org-b", &orgID, "running", "ephemeral", 1000, 512)
 	insertExistingTerminal(t, db, "u-org-c", &orgID, "running", "ephemeral", 1000, 512)
-
-	// 4th member requests another S → must be rejected.
-	terminal := &terminalModels.Terminal{
+	require.NoError(t, execBeforeCreate(hook, &terminalModels.Terminal{
 		UserID:         "u-org-d",
 		OrganizationID: &orgID,
 		MachineSize:    "S",
-	}
+	}), "the fourth member's own usage is zero: other members' sessions do not consume their cap")
 
-	err := execBeforeCreate(hook, terminal)
-	require.Error(t, err, "org-wide sum (3000 mCPU) exhausts the 3000-mCPU team budget")
+	// A member already at their own cap is refused, whatever the others hold.
+	insertExistingTerminal(t, db, "u-org-a", &orgID, "running", "ephemeral", 2000, 1024)
+	err := execBeforeCreate(hook, &terminalModels.Terminal{UserID: "u-org-a", OrganizationID: &orgID, MachineSize: "S"})
+	require.Error(t, err, "3000 of 3000 mCPU of this member's own sessions leaves no room")
 	var budgetErr *terminalHooks.ErrBudgetExhausted
 	require.ErrorAs(t, err, &budgetErr)
 	assert.Equal(t, terminalHooks.BudgetAxisCPU, budgetErr.Axis)
 }
 
-// The bypass #457 closes: identical to the test above except the request carries
-// NO organization_id. The plan still resolves to the organization's — resolveGlobal
-// picks the highest-priority plan the user holds anywhere — so the budget is still
-// the organization's shared pool and the launch must still be refused.
-//
-// Before the fix the scope came from terminal.OrganizationID, so a nil there meant
-// "count this user alone": every member of a school could hold the school's entire
-// budget simultaneously just by omitting one optional parameter.
-func TestTerminalBudgetHook_OrgPoolAppliesWithoutOrgContext(t *testing.T) {
+// Whether the request names the organization changes nothing about whose
+// sessions are counted: the plan resolves to the organization's either way
+// (resolveGlobal picks the highest-priority plan the user holds anywhere) and
+// caps this member alone. #457 was about that parameter turning a shared pool
+// into a per-member one; there is no shared pool any more.
+func TestTerminalBudgetHook_OrgPlanWithoutOrgContextStillCapsTheMemberAlone(t *testing.T) {
 	db := freshTestDB(t)
-
 	orgID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&organizationModels.Organization{
 		BaseModel:        entityManagementModels.BaseModel{ID: orgID},
@@ -467,27 +462,23 @@ func TestTerminalBudgetHook_OrgPoolAppliesWithoutOrgContext(t *testing.T) {
 			IsActive:       true,
 		}).Error)
 	}
-
 	plan := budgetPlanInMem("School", 3000, 4096, nil)
 	eps := &stubEffectivePlanService{orgPlan: plan, globalResolvesToOrg: &orgID}
 	hook := terminalHooks.NewTerminalBudgetHook(db, eps, paymentServices.NewQuotaService(db, eps))
-
-	// Three members already hold the whole pool.
 	insertExistingTerminal(t, db, "u-school-a", &orgID, "running", "ephemeral", 1000, 512)
 	insertExistingTerminal(t, db, "u-school-b", &orgID, "running", "ephemeral", 1000, 512)
 	insertExistingTerminal(t, db, "u-school-c", &orgID, "running", "ephemeral", 1000, 512)
 
-	// Fourth member launches WITHOUT org context.
-	terminal := &terminalModels.Terminal{
-		UserID:         "u-school-d",
-		OrganizationID: nil,
-		MachineSize:    "S",
-	}
+	// Fourth member launches WITHOUT org context: allowed, they hold nothing.
+	require.NoError(t, execBeforeCreate(hook, &terminalModels.Terminal{
+		UserID:      "u-school-d",
+		MachineSize: "S",
+	}))
 
-	err := execBeforeCreate(hook, terminal)
-
-	require.Error(t, err,
-		"omitting organization_id must not convert a shared org pool into a per-member one")
+	// A member at their own cap is refused, with or without org context.
+	insertExistingTerminal(t, db, "u-school-a", &orgID, "running", "ephemeral", 2000, 1024)
+	err := execBeforeCreate(hook, &terminalModels.Terminal{UserID: "u-school-a", MachineSize: "S"})
+	require.Error(t, err)
 	var budgetErr *terminalHooks.ErrBudgetExhausted
 	require.ErrorAs(t, err, &budgetErr)
 	assert.Equal(t, terminalHooks.BudgetAxisCPU, budgetErr.Axis)

@@ -149,8 +149,6 @@ func TestResolveForOrg_CarriesYourOwnPlanIntoYourOwnOrg(t *testing.T) {
 	require.NotNil(t, result.Plan)
 	assert.Equal(t, formateur.ID, result.Plan.ID, "a personally-bought plan follows its owner")
 	assert.True(t, result.IsFallback, "the org owns nothing, so this is the personal fallback")
-	assert.Nil(t, result.ScopeOrganizationID,
-		"a personally-held plan is a personal budget, even inside an organization")
 }
 
 // A learner holding an ASSIGNED seat holds it personally, so it must follow them
@@ -187,8 +185,6 @@ func TestResolveForOrg_SchoolMembersStillInheritTheSchoolsPlanInsideIt(t *testin
 
 	require.NoError(t, err)
 	require.NotNil(t, result.Plan)
-	assert.Equal(t, schoolPlan.ID, result.Plan.ID)
-	require.NotNil(t, result.ScopeOrganizationID)
-	assert.Equal(t, schoolID, *result.ScopeOrganizationID,
-		"inside the school the budget is the school's shared pool")
+	assert.Equal(t, schoolPlan.ID, result.Plan.ID,
+		"inside the school the school's plan applies; it caps this member alone, not the school as a pool")
 }

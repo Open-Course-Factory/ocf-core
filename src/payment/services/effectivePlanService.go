@@ -35,22 +35,14 @@ type EffectivePlanResult struct {
 	OrganizationSubscription *models.OrganizationSubscription // non-nil if source=organization
 	IsFallback               bool                             // true when using personal subscription as fallback for a team org without its own subscription
 
-	// ScopeOrganizationID answers "what pool does this plan draw on?" — the single
-	// input to quota scoping. Non-nil means the plan belongs to that organization
-	// and its CPU/RAM budget is shared across the organization's members; nil means
-	// the plan is the user's own and the budget is counted for that user alone.
-	//
-	// It exists because callers were deriving the scope from OrganizationSubscription,
-	// which the role-plan branch leaves nil — so role-plans silently fell back to
-	// global counting. And because the budget hook derived it from the REQUEST's
-	// organization_id instead, which made omitting that parameter turn a shared org
-	// pool into a per-member copy of it (#457).
-	//
-	// The two cases it encodes:
-	//   - a school / OF owns the plan   → shared pool across its members
-	//   - a trainer owns the plan, and his organization owns nothing; his learners
-	//     hold their own assigned seats → each counted individually
-	ScopeOrganizationID *uuid.UUID
+	// There is deliberately no budget scope here. Every plan a user holds,
+	// personally, through an organization's subscription or through a role
+	// mapping, is that user's own cap: the quota engine counts the user's own
+	// sessions against it. Organization plans used to be a pool shared by every
+	// member, which is how six students consumed a class's budget and locked the
+	// other five out (2026-09-04), and how a seat plan mapped to the member role
+	// allowed one XL for a whole class. What an organization shares is the
+	// capacity of its backend, and that is tt-backend's admission to enforce.
 }
 
 // EffectivePlanService is the single source of truth for "what plan does this user have?"
@@ -253,7 +245,6 @@ func (s *effectivePlanService) resolveGlobal(userID string) (*EffectivePlanResul
 			Plan:                     bestOrgPlan,
 			Source:                   PlanSourceOrganization,
 			OrganizationSubscription: bestOrgSub,
-			ScopeOrganizationID:      &bestOrgSub.OrganizationID,
 		}, nil
 	}
 
@@ -270,7 +261,6 @@ func (s *effectivePlanService) resolveGlobal(userID string) (*EffectivePlanResul
 			Plan:                     bestOrgPlan,
 			Source:                   PlanSourceOrganization,
 			OrganizationSubscription: bestOrgSub,
-			ScopeOrganizationID:      &bestOrgSub.OrganizationID,
 		}, nil
 	}
 
@@ -335,11 +325,7 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 		return &EffectivePlanResult{
 			Plan:   &rolePlan.SubscriptionPlan,
 			Source: PlanSourceOrganization,
-			// A role-plan is still the organization's plan, so it draws on the
-			// organization's pool. This branch carries no OrganizationSubscription,
-			// which is precisely why the scope needs its own field: callers reading
-			// the subscription saw nil and silently counted globally.
-			ScopeOrganizationID: &orgID,
+			// The mapping is not a subscription row, so there is none to carry.
 		}, nil
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -373,8 +359,6 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 			Source:           PlanSourcePersonal,
 			UserSubscription: sub,
 			IsFallback:       true,
-			// ScopeOrganizationID stays nil: a personally-held plan is a personal
-			// budget, counted for this user alone, even inside an organization.
 		}, nil
 	}
 	return organizationPlanResult(orgID, orgSub)
@@ -404,7 +388,6 @@ func organizationPlanResult(orgID uuid.UUID, orgSub *models.OrganizationSubscrip
 		Plan:                     &orgSub.SubscriptionPlan,
 		Source:                   PlanSourceOrganization,
 		OrganizationSubscription: orgSub,
-		ScopeOrganizationID:      &orgID,
 	}, nil
 }
 

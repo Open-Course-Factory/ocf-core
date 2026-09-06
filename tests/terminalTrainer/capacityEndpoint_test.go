@@ -167,7 +167,7 @@ func (m *metricsAwareMockService) GetCatalogFeatures() ([]dto.TTFeature, error) 
 func (m *metricsAwareMockService) GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error) {
 	panic("not implemented")
 }
-func (m *metricsAwareMockService) EnrichSessionOptionsBudget(opts *dto.SessionOptionsResponse, plan *paymentModels.SubscriptionPlan, userID string, orgID *uuid.UUID) {
+func (m *metricsAwareMockService) EnrichSessionOptionsBudget(opts *dto.SessionOptionsResponse, plan *paymentModels.SubscriptionPlan, userID string) {
 }
 func (m *metricsAwareMockService) StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
 	panic("not implemented")

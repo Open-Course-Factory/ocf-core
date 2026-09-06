@@ -60,7 +60,7 @@ func TestSessionOptions_BudgetMode_IncludesRemainingCount(t *testing.T) {
 	}
 
 	opts := budgetSessionOptions()
-	svc.EnrichSessionOptionsBudget(opts, plan, "u-enrich", nil)
+	svc.EnrichSessionOptionsBudget(opts, plan, "u-enrich")
 
 	// With 8000 mCPU / 4096 MiB and zero usage (sizes in mCPU):
 	//   xs (500/256MiB)   → min(8000/500,  4096/256)  = min(16, 16) = 16
@@ -97,7 +97,7 @@ func TestSessionOptions_BudgetMode_IncludesTopLevelQuota(t *testing.T) {
 	insertExistingTerminal(t, db, "u-quota", nil, "running", "ephemeral", 2000, 1024)
 
 	opts := budgetSessionOptions()
-	svc.EnrichSessionOptionsBudget(opts, plan, "u-quota", nil)
+	svc.EnrichSessionOptionsBudget(opts, plan, "u-quota")
 
 	require.NotNil(t, opts.Quota, "Quota block must be present in budget mode")
 	assert.Equal(t, 4000, opts.Quota.MaxCPU)
@@ -109,24 +109,26 @@ func TestSessionOptions_BudgetMode_IncludesTopLevelQuota(t *testing.T) {
 	assert.Equal(t, dto.ScopeUser, opts.Quota.Scope, "personal context → scope=user")
 }
 
-// TestSessionOptions_BudgetMode_OrgScope — when orgID is non-nil, Scope
-// must be "organization" so dashboards can label the budget accordingly.
-func TestSessionOptions_BudgetMode_OrgScope(t *testing.T) {
+// TestSessionOptions_BudgetMode_OrgPlanIsStillTheUsersOwn — a plan reached
+// through an organization (its subscription, or a role mapping) is that user's
+// own cap, counted on their own sessions. The scope therefore stays "user";
+// there is no organization pool for the composer to label.
+func TestSessionOptions_BudgetMode_OrgPlanIsStillTheUsersOwn(t *testing.T) {
 	db := freshTestDB(t)
 	svc := services.NewTerminalTrainerService(db)
 
 	plan := &paymentModels.SubscriptionPlan{
 		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:        "OrgBudget",
+		Name:        "Seat plan mapped by the org",
 		MaxCPU:      8000, // 8 vCPU in mCPU
 		MaxMemoryMB: 4096,
 	}
-	orgID := uuid.New()
 
 	opts := budgetSessionOptions()
-	svc.EnrichSessionOptionsBudget(opts, plan, "u-org", &orgID)
+	svc.EnrichSessionOptionsBudget(opts, plan, "u-org")
 
 	require.NotNil(t, opts.Quota)
-	assert.Equal(t, dto.ScopeOrganization, opts.Quota.Scope,
-		"non-nil orgID → scope=organization")
+	assert.Equal(t, dto.ScopeUser, opts.Quota.Scope,
+		"an organization's plan caps the member alone, so the budget is scoped to the user")
+	assert.Equal(t, 8000, opts.Quota.RemainingCPU, "nothing of the user's own is in use")
 }

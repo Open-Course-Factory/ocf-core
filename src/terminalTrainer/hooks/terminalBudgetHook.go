@@ -153,16 +153,11 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 	//     both are skipped but the budget verdict is still exercised; the
 	//     race test uses real PostgreSQL.
 	//
-	// The scope comes from the RESOLVED PLAN, not from terminal.OrganizationID.
-	// Those differ whenever the request omits organization_id: plan resolution
-	// still returns an organization's plan (resolveGlobal picks the highest-priority
-	// one the user holds anywhere), while the request-derived scope would be nil and
-	// count only this user's own terminals. Omitting one optional parameter thus
-	// turned a school's shared pool into a per-member copy of it (#457).
-	scopeOrgID := planResult.ScopeOrganizationID
+	// The budget is the user's own: whatever plan resolved for them, their
+	// sessions alone are counted against it (see EffectivePlanResult).
 
 	return h.db.Transaction(func(tx *gorm.DB) error {
-		result, err := h.quotaService.EnforceBudgetTx(tx, terminal.UserID, scopeOrgID, plan, size.CPU, size.MemoryMB)
+		result, err := h.quotaService.EnforceBudgetTx(tx, terminal.UserID, nil, plan, size.CPU, size.MemoryMB)
 		if err != nil {
 			return fmt.Errorf("terminal_budget_enforcement: enforce budget: %w", err)
 		}
