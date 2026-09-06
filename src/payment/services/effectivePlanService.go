@@ -21,6 +21,12 @@ const (
 	PlanSourceOrganization EffectivePlanSource = "organization"
 )
 
+// ErrActiveSubscriptionRequired is the refusal every gate answers with when no
+// entitling plan resolves for the user. RequirePlan on the composed path and
+// the Terminal budget hook on the generic POST both surface its text, so a
+// learner sees one message whichever door refused them.
+var ErrActiveSubscriptionRequired = errors.New("Active subscription required")
+
 // EffectivePlanResult holds the resolved plan for a user, along with its source.
 type EffectivePlanResult struct {
 	Plan                     *models.SubscriptionPlan

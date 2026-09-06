@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"strings"
 
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/payment/catalog"
 	paymentModels "soli/formations/src/payment/models"
@@ -107,13 +108,9 @@ func (h *TerminalBudgetHook) GetHookTypes() []hooks.HookType {
 func (h *TerminalBudgetHook) IsEnabled() bool { return h.enabled }
 func (h *TerminalBudgetHook) GetPriority() int { return h.priority }
 
-// Execute runs the hook. Steps:
-//  1. Decode the Terminal from ctx.NewEntity.
-//  2. Snapshot SizeCPU / SizeMemoryMB from the catalog.
-//  3. If no EffectivePlanService is wired OR no plan resolves, skip the
-//     budget check entirely (we can't enforce what we can't resolve;
-//     other gates such as CheckLimit middleware handle the no-plan case).
-//  4. Lock + sum + compare against the plan's CPU/RAM caps.
+// Execute refuses the create when no plan resolves for the terminal's user,
+// snapshots the size's CPU/RAM footprint onto the row, then enforces the
+// plan's budget on it.
 func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 	if ctx.HookType != hooks.BeforeCreate {
 		return nil
@@ -124,13 +121,21 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 		return fmt.Errorf("terminal_budget_enforcement: expected *Terminal, got %T", ctx.NewEntity)
 	}
 
-	// (2) Snapshot the size's footprint into the entity. Unknown size →
-	//     fail closed so we never silently insert a zero-cost row.
+	// The plan comes first: no plan means no terminal, not "no cap". The
+	// composed path refuses this in RequirePlan; the generic POST reaches this
+	// hook instead and must answer the same way. The create DTO carries no
+	// machine size, so the requirement cannot hide behind the size check below.
+	planResult, err := h.effectivePlanService.GetUserEffectivePlan(terminal.UserID, terminal.OrganizationID)
+	if err != nil || planResult == nil || planResult.Plan == nil {
+		return noActivePlanRefusal(err)
+	}
+	plan := planResult.Plan
+
+	// Snapshot the size's footprint into the entity. Unknown size fails
+	// closed so a zero-cost row is never inserted; an absent size has nothing
+	// to price and is not budget-gated.
 	sizeKey := strings.TrimSpace(terminal.MachineSize)
 	if sizeKey == "" {
-		// Some callers leave MachineSize empty (e.g. legacy tests). We
-		// don't enforce budget in that case but also don't error —
-		// matches existing semantics where MachineSize is optional.
 		return nil
 	}
 	size, found := catalog.LookupSize(sizeKey)
@@ -140,24 +145,7 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 	terminal.SizeCPU = size.CPU
 	terminal.SizeMemoryMB = size.MemoryMB
 
-	// (3) Resolve effective plan. If we have no service or no plan, skip.
-	if h.effectivePlanService == nil {
-		return nil
-	}
-
-	planResult, err := h.effectivePlanService.GetUserEffectivePlan(terminal.UserID, terminal.OrganizationID)
-	if err != nil {
-		// A missing personal plan is not an error from this hook's
-		// perspective — the user may rely on an org plan resolved via
-		// middleware. Surface only hard DB errors.
-		return nil //nolint:nilerr // skip enforcement when plan unresolved
-	}
-	if planResult == nil || planResult.Plan == nil {
-		return nil
-	}
-	plan := planResult.Plan
-
-	// (4) Atomic budget check inside a transaction. The race-safe sum +
+	// Atomic budget check inside a transaction. The race-safe sum +
 	//     compare lives in QuotaService.EnforceBudgetTx (shared with the
 	//     composed-session write path); it takes the scope advisory lock
 	//     plus a SELECT FOR UPDATE on contributing rows so concurrent
@@ -190,6 +178,16 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 // flagged. Limit/Current/Requested are pulled from the plan, the summed
 // usage, and the requested size so the error payload is unchanged from
 // the hook's previous inline construction.
+// noActivePlanRefusal is RequirePlan's 403 in the shape the generic controller
+// renders: a structured entity error keeps its own status instead of being
+// wrapped as a 500 hook failure.
+func noActivePlanRefusal(cause error) error {
+	refusal := *entityErrors.ErrUnauthorized
+	refusal.Message = paymentServices.ErrActiveSubscriptionRequired.Error()
+	refusal.Err = cause
+	return &refusal
+}
+
 func budgetExhaustedFromResult(
 	result *paymentServices.BudgetEnforcement,
 	plan *paymentModels.SubscriptionPlan,

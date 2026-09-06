@@ -15,6 +15,7 @@ package terminalTrainer_tests
 
 import (
 	"errors"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	entityErrors "soli/formations/src/entityManagement/errors"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/entityManagement/hooks"
 	organizationModels "soli/formations/src/organizations/models"
@@ -621,4 +623,62 @@ func sharedTestDBDriverName() string {
 		return "<nil>"
 	}
 	return sharedTestDB.Dialector.Name()
+}
+
+// ---------------------------------------------------------------------------
+// No plan means no terminal — not "no cap".
+//
+// The composed path is protected by RequirePlan; the generic Terminal POST
+// reaches this hook instead, so the hook must refuse the same way, with the
+// same status and message, rather than skipping enforcement.
+// ---------------------------------------------------------------------------
+
+func requireNoPlanRefusal(t *testing.T, err error) {
+	t.Helper()
+	require.Error(t, err)
+	var entityErr *entityErrors.EntityError
+	require.ErrorAs(t, err, &entityErr, "the refusal must carry its own HTTP status through the generic controller")
+	assert.Equal(t, http.StatusForbidden, entityErr.HTTPStatus)
+	assert.Equal(t, paymentServices.ErrActiveSubscriptionRequired.Error(), entityErr.Message,
+		"same message as RequirePlan on the composed path")
+}
+
+func TestTerminalBudgetHook_BeforeCreate_NoPlan_RefusesLikeRequirePlan(t *testing.T) {
+	db := freshTestDB(t)
+	hook := newHookForTest(db, nil, nil)
+
+	err := execBeforeCreate(hook, &terminalModels.Terminal{UserID: "u-no-plan", MachineSize: "M"})
+
+	requireNoPlanRefusal(t, err)
+}
+
+func TestTerminalBudgetHook_BeforeCreate_PlanResolutionFailure_Refuses(t *testing.T) {
+	db := freshTestDB(t)
+	eps := &stubEffectivePlanService{failResolve: true}
+	hook := terminalHooks.NewTerminalBudgetHook(db, eps, paymentServices.NewQuotaService(db, eps))
+
+	err := execBeforeCreate(hook, &terminalModels.Terminal{UserID: "u-resolve-fails", MachineSize: "M"})
+
+	requireNoPlanRefusal(t, err)
+}
+
+func TestTerminalBudgetHook_BeforeCreate_NoPlanNoSize_StillRefuses(t *testing.T) {
+	db := freshTestDB(t)
+	hook := newHookForTest(db, nil, nil)
+
+	// The generic create DTO carries no machine size, so an empty size is
+	// exactly what the generic POST produces. The plan requirement must not
+	// hide behind the size short-circuit.
+	err := execBeforeCreate(hook, &terminalModels.Terminal{UserID: "u-no-plan-no-size"})
+
+	requireNoPlanRefusal(t, err)
+}
+
+func TestTerminalBudgetHook_BeforeCreate_PlanNoSize_Allowed(t *testing.T) {
+	db := freshTestDB(t)
+	hook := newHookForTest(db, budgetPlanInMem("Pro", 8000, 4096, nil), nil)
+
+	err := execBeforeCreate(hook, &terminalModels.Terminal{UserID: "u-plan-no-size"})
+
+	require.NoError(t, err, "a plan holder with no size to price is not budget-gated")
 }
