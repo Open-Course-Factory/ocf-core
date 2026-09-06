@@ -12,17 +12,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// OrganizationRolePlanValidationHook keeps an individual plan from being mapped
-// to a role inside an organization.
+// OrganizationRolePlanValidationHook keeps a role that runs classes from being
+// mapped to an individual plan.
 //
-// This is the second door onto the same mistake. Guarding only
-// CreateOrganizationSubscription would leave OrganizationRolePlan open — and
 // resolveForOrg consults role mappings BEFORE the organization's subscription, so
-// this door is not merely equivalent, it takes precedence.
+// this door takes precedence over the subscription one. The rule itself lives in
+// services.ValidateRolePlan, next to the subscription rule it mirrors: the role
+// decides, and a mapping below the teacher threshold is where a learner plan
+// belongs.
 //
-// The rule itself lives in services.ValidateOrgAssignablePlan, shared with the
-// subscription path. Two copies of "which plans may govern an organization" would
-// drift, and the drifting one would be whichever door the next person forgot.
+// An update is validated on the mapping it produces: the role and the plan each
+// come from the patch when stated and from the stored row otherwise, so
+// promoting a member mapping to manager re-checks the seat plan it holds.
 type OrganizationRolePlanValidationHook struct {
 	db       *gorm.DB
 	enabled  bool
@@ -46,13 +47,31 @@ func (h *OrganizationRolePlanValidationHook) IsEnabled() bool  { return h.enable
 func (h *OrganizationRolePlanValidationHook) GetPriority() int { return h.priority }
 
 func (h *OrganizationRolePlanValidationHook) Execute(ctx *hooks.HookContext) error {
-	planID, present, err := h.targetPlanID(ctx)
+	planID, planStated, err := h.targetPlanID(ctx)
 	if err != nil {
 		return err
 	}
-	// An update that does not change the plan has nothing to validate.
-	if !present {
+	role, roleStated := h.targetRole(ctx)
+
+	// An update that states neither has nothing to validate.
+	if !planStated && !roleStated {
 		return nil
+	}
+
+	// Fill what the patch leaves unsaid from the stored mapping. A row that
+	// cannot be found is not this hook's error to raise; the update itself will
+	// fail on it. With nothing to fall back on, the strict rule applies.
+	if !planStated || !roleStated {
+		if existing := h.existingMapping(ctx); existing != nil {
+			if !planStated {
+				planID = existing.SubscriptionPlanID
+			}
+			if !roleStated {
+				role = existing.Role
+			}
+		} else if !planStated {
+			return nil
+		}
 	}
 
 	var plan models.SubscriptionPlan
@@ -63,7 +82,46 @@ func (h *OrganizationRolePlanValidationHook) Execute(ctx *hooks.HookContext) err
 		return fmt.Errorf("failed to load subscription plan %s: %w", planID, err)
 	}
 
-	return paymentServices.ValidateOrgAssignablePlan(&plan)
+	if !roleStated && role == "" {
+		// Role unknown: fail closed on the stricter rule rather than let a
+		// mapping through that a class-running role would be refused.
+		return paymentServices.ValidateOrgAssignablePlan(&plan)
+	}
+	return paymentServices.ValidateRolePlan(role, &plan)
+}
+
+// targetRole reads the role this write maps, when the payload states one.
+func (h *OrganizationRolePlanValidationHook) targetRole(ctx *hooks.HookContext) (string, bool) {
+	switch payload := ctx.NewEntity.(type) {
+	case *models.OrganizationRolePlan:
+		return payload.Role, payload.Role != ""
+	case map[string]any:
+		if raw, ok := payload["role"]; ok {
+			switch v := raw.(type) {
+			case string:
+				return v, v != ""
+			case *string:
+				if v != nil {
+					return *v, *v != ""
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+// existingMapping loads the stored row an update is about, nil when the id is
+// absent or unknown.
+func (h *OrganizationRolePlanValidationHook) existingMapping(ctx *hooks.HookContext) *models.OrganizationRolePlan {
+	id, ok := ctx.EntityID.(uuid.UUID)
+	if !ok || id == uuid.Nil {
+		return nil
+	}
+	var existing models.OrganizationRolePlan
+	if err := h.db.Where("id = ?", id).First(&existing).Error; err != nil {
+		return nil
+	}
+	return &existing
 }
 
 // targetPlanID reads the plan this write maps to, from either lifecycle payload:

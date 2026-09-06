@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/payment/models"
 )
 
@@ -26,9 +27,8 @@ import (
 // that means something else, which would quietly grant classrooms to that
 // organization's members.
 //
-// Both doors must call this. Guarding only the organization subscription leaves
-// OrganizationRolePlan, which resolveForOrg consults FIRST, as an equally easy way
-// to make the same mistake.
+// This is the rule for the organization's SUBSCRIPTION. Role mappings apply it
+// only to roles that run classes: see ValidateRolePlan.
 func ValidateOrgAssignablePlan(plan *models.SubscriptionPlan) error {
 	if plan == nil {
 		return fmt.Errorf("cannot assign a missing plan to an organization")
@@ -39,6 +39,32 @@ func ValidateOrgAssignablePlan(plan *models.SubscriptionPlan) error {
 				"an organization's plan applies to all of its members and overrides their own, "+
 				"so it must be a plan that grants group management",
 			plan.Name)
+	}
+	return nil
+}
+
+// ValidateRolePlan is the rule for a plan mapped to a role inside an organization
+// (OrganizationRolePlan, which resolveForOrg consults BEFORE the subscription).
+//
+// The role decides. A role that runs classes — teacher and above — must keep a
+// plan that grants group management, or the school's managers silently lose
+// their classrooms: same downgrade as the subscription door. Below that
+// threshold the mapping is exactly where an individual plan belongs: a school
+// holds a pool plan and maps its students to a seat plan that must NOT grant
+// group management. Requiring it here made that model impossible to set up.
+func ValidateRolePlan(role string, plan *models.SubscriptionPlan) error {
+	if plan == nil {
+		return fmt.Errorf("cannot map a role to a missing plan")
+	}
+	if !access.IsRoleAtLeast(role, access.RoleMinimumForClassrooms) {
+		return nil
+	}
+	if !plan.GroupManagementEnabled {
+		return fmt.Errorf(
+			"plan %q is an individual plan and cannot be mapped to the %s role: "+
+				"that role runs classes, and a mapping overrides the member's own plan, "+
+				"so it must be a plan that grants group management",
+			plan.Name, role)
 	}
 	return nil
 }

@@ -100,9 +100,10 @@ func TestOrgSubscription_AcceptsAClassroomPlan(t *testing.T) {
 	require.NotNil(t, sub)
 }
 
-// Door two — the one resolveForOrg consults first, and the one a guard placed
-// only on the subscription path would leave wide open.
-func TestOrgRolePlan_RefusesAnIndividualPlan(t *testing.T) {
+// Door two — the one resolveForOrg consults first. A role that runs classes
+// (teacher and above) mapped to an individual plan reproduces the same
+// downgrade: the managers of a school silently lose their classrooms.
+func TestOrgRolePlan_RefusesAnIndividualPlanForARoleThatRunsClasses(t *testing.T) {
 	db := freshTestDB(t)
 	solo := seedPlanWithGroupManagement(t, db, "Solo", false)
 	orgID := uuid.New()
@@ -113,7 +114,7 @@ func TestOrgRolePlan_RefusesAnIndividualPlan(t *testing.T) {
 		HookType:   hooks.BeforeCreate,
 		NewEntity: &models.OrganizationRolePlan{
 			OrganizationID:     orgID,
-			Role:               "member",
+			Role:               "manager",
 			SubscriptionPlanID: solo.ID,
 		},
 		UserID:    "platform-operator",
@@ -121,9 +122,80 @@ func TestOrgRolePlan_RefusesAnIndividualPlan(t *testing.T) {
 	})
 
 	require.Error(t, err,
-		"mapping a role to an individual plan reproduces the same downgrade, and "+
+		"a manager mapped to an individual plan can no longer run classes, and "+
 			"role mappings take precedence over the org's subscription")
 	assert.Contains(t, err.Error(), "individual plan")
+}
+
+// The member role is where learner plans belong: a school holds a pool plan and
+// maps its students to a small seat plan that must NOT grant group management.
+// Refusing it here made the decided quota model impossible to configure.
+func TestOrgRolePlan_AcceptsALearnerPlanForMembers(t *testing.T) {
+	db := freshTestDB(t)
+	seat := seedPlanWithGroupManagement(t, db, "Siège élève — mensuel", false)
+
+	hook := paymentHooks.NewOrganizationRolePlanValidationHook(db)
+	err := hook.Execute(&hooks.HookContext{
+		EntityName: "OrganizationRolePlan",
+		HookType:   hooks.BeforeCreate,
+		NewEntity: &models.OrganizationRolePlan{
+			OrganizationID:     uuid.New(),
+			Role:               "member",
+			SubscriptionPlanID: seat.ID,
+		},
+		UserID: "platform-operator",
+	})
+
+	require.NoError(t, err, "a seat plan is exactly what the member role is for")
+}
+
+// An update that promotes a mapping's role must re-check the plan it already
+// holds: a member mapping on a seat plan cannot become a manager mapping.
+func TestOrgRolePlan_UpdateRoleAboveTeacherRechecksTheExistingPlan(t *testing.T) {
+	db := freshTestDB(t)
+	seat := seedPlanWithGroupManagement(t, db, "Siège élève — mensuel", false)
+	mapping := &models.OrganizationRolePlan{
+		OrganizationID:     uuid.New(),
+		Role:               "member",
+		SubscriptionPlanID: seat.ID,
+	}
+	require.NoError(t, db.Create(mapping).Error)
+
+	hook := paymentHooks.NewOrganizationRolePlanValidationHook(db)
+	err := hook.Execute(&hooks.HookContext{
+		EntityName: "OrganizationRolePlan",
+		HookType:   hooks.BeforeUpdate,
+		EntityID:   mapping.ID,
+		NewEntity:  map[string]any{"role": "manager"},
+		UserID:     "platform-operator",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "individual plan")
+}
+
+// Moving a member mapping onto another learner plan is fine: the role decides.
+func TestOrgRolePlan_UpdateMemberMappingOntoALearnerPlanIsAllowed(t *testing.T) {
+	db := freshTestDB(t)
+	monthly := seedPlanWithGroupManagement(t, db, "Siège élève — mensuel", false)
+	pack := seedPlanWithGroupManagement(t, db, "Siège élève — pack jours", false)
+	mapping := &models.OrganizationRolePlan{
+		OrganizationID:     uuid.New(),
+		Role:               "member",
+		SubscriptionPlanID: monthly.ID,
+	}
+	require.NoError(t, db.Create(mapping).Error)
+
+	hook := paymentHooks.NewOrganizationRolePlanValidationHook(db)
+	err := hook.Execute(&hooks.HookContext{
+		EntityName: "OrganizationRolePlan",
+		HookType:   hooks.BeforeUpdate,
+		EntityID:   mapping.ID,
+		NewEntity:  map[string]any{"subscription_plan_id": pack.ID},
+		UserID:     "platform-operator",
+	})
+
+	require.NoError(t, err)
 }
 
 func TestOrgRolePlan_AcceptsAClassroomPlan(t *testing.T) {
