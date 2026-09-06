@@ -855,23 +855,7 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	// the non-empty slice). Plans with zero caps on both axes are unlimited
 	// and keep the default unlimited envelope.
 	if resolvedPlan != nil && tts.quotaService != nil {
-		remCPU := resolvedPlan.MaxCPU - usedCPU
-		if remCPU < 0 {
-			remCPU = 0
-		}
-		remMem := resolvedPlan.MaxMemoryMB - usedMem
-		if remMem < 0 {
-			remMem = 0
-		}
-		resp.Quota = &dto.SessionQuotaInfo{
-			MaxCPU:            resolvedPlan.MaxCPU,
-			MaxMemoryMB:       resolvedPlan.MaxMemoryMB,
-			UsedCPU:           usedCPU,
-			UsedMemoryMB:      usedMem,
-			RemainingCPU:      remCPU,
-			RemainingMemoryMB: remMem,
-			Scope:             dto.ScopeOrganization,
-		}
+		resp.Quota = tts.quotaService.BudgetSnapshot(resolvedPlan, usedCPU, usedMem, dto.ScopeOrganization)
 
 		sizeRemaining := tts.quotaService.ComputeRemainingBySize(resolvedPlan, usedCPU, usedMem)
 		// Largest sizes first so the dashboard renders xl → xs by default.
@@ -1179,23 +1163,7 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 	if budgetScopeOrgID != nil {
 		scope = dto.ScopeOrganization
 	}
-	remCPU := plan.MaxCPU - usedCPU
-	if remCPU < 0 {
-		remCPU = 0
-	}
-	remMem := plan.MaxMemoryMB - usedMem
-	if remMem < 0 {
-		remMem = 0
-	}
-	opts.Quota = &dto.SessionQuotaInfo{
-		MaxCPU:            plan.MaxCPU,
-		MaxMemoryMB:       plan.MaxMemoryMB,
-		UsedCPU:           usedCPU,
-		UsedMemoryMB:      usedMem,
-		RemainingCPU:      remCPU,
-		RemainingMemoryMB: remMem,
-		Scope:             scope,
-	}
+	opts.Quota = tts.quotaService.BudgetSnapshot(plan, usedCPU, usedMem, scope)
 }
 
 // StartComposedSession delegates to terminalComposer, which owns the

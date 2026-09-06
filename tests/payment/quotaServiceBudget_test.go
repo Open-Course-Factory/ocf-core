@@ -21,6 +21,7 @@ import (
 	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
+	terminalDto "soli/formations/src/terminalTrainer/dto"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,6 @@ import (
 )
 
 // budgetPlan builds a SubscriptionPlan tuned for budget-mode tests.
-// maxCPU=0 / maxMem=0 mean unlimited per the contract.
 //
 // maxCPU is in millicores (mCPU): 1000 mCPU = 1 vCPU. Callers passing
 // integer vCPU values (legacy fixtures) must multiply by 1000.
@@ -413,4 +413,31 @@ func TestQuotaService_RemainingBudgetFits_False(t *testing.T) {
 	fits, err := newQuotaSvc(t, db).RemainingBudgetFits(userID, nil, plan, "l")
 	require.NoError(t, err)
 	assert.False(t, fits)
+}
+
+// BudgetSnapshot is the one builder of the quota envelope the org usage and
+// session-options responses carry; both used to subtract and clamp by hand.
+func TestQuotaService_BudgetSnapshot_ClampsRemainingAtZero(t *testing.T) {
+	db := freshTestDB(t)
+	plan := budgetPlan(t, db, "Snapshot", 4000, 2048, nil)
+
+	snap := newQuotaSvc(t, db).BudgetSnapshot(plan, 6000, 1024, terminalDto.ScopeOrganization)
+
+	assert.Equal(t, &terminalDto.SessionQuotaInfo{
+		MaxCPU:            4000,
+		MaxMemoryMB:       2048,
+		UsedCPU:           6000,
+		UsedMemoryMB:      1024,
+		RemainingCPU:      0,
+		RemainingMemoryMB: 1024,
+		Scope:             terminalDto.ScopeOrganization,
+	}, snap, "an over-consumed axis reports zero remaining, never a negative")
+}
+
+func TestQuotaService_BudgetSnapshot_NilPlanIsTheUnknownEnvelope(t *testing.T) {
+	db := freshTestDB(t)
+
+	snap := newQuotaSvc(t, db).BudgetSnapshot(nil, 0, 0, terminalDto.ScopeUser)
+
+	assert.Equal(t, &terminalDto.SessionQuotaInfo{Scope: terminalDto.ScopeUnknown}, snap)
 }

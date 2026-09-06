@@ -8,6 +8,7 @@ import (
 	paymentDto "soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
+	terminalDto "soli/formations/src/terminalTrainer/dto"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 
@@ -122,6 +123,13 @@ type QuotaService interface {
 	// passthrough over sumActiveResources for callers that need to
 	// surface usage in dashboards without re-implementing the predicate.
 	GetBudgetUsage(userID string, orgID *uuid.UUID) (usedCPU, usedMemMB int, err error)
+
+	// BudgetSnapshot builds the quota envelope a response carries for a plan
+	// and its current usage, with remaining clamped at zero per axis. The
+	// one builder of that envelope: org usage and session-options both
+	// embed it, and neither does the subtraction itself. A nil plan yields
+	// the "unknown" envelope, no budget to report.
+	BudgetSnapshot(plan *models.SubscriptionPlan, usedCPU, usedMemMB int, scope terminalDto.QuotaScope) *terminalDto.SessionQuotaInfo
 
 	// EnforceBudgetTx is the race-safe write-time budget gate. Unlike
 	// CheckBudget (read-time, NOT race-safe — see its doc), it runs inside
@@ -376,6 +384,21 @@ func memRemainingForReport(plan *models.SubscriptionPlan, usedMemMB int) int {
 // clampNonNegative floors an over-spent budget at zero: usage can exceed a
 // cap after a plan is downgraded, and a negative "remaining" is not something
 // any caller should have to interpret.
+func (s *quotaService) BudgetSnapshot(plan *models.SubscriptionPlan, usedCPU, usedMemMB int, scope terminalDto.QuotaScope) *terminalDto.SessionQuotaInfo {
+	if plan == nil {
+		return &terminalDto.SessionQuotaInfo{Scope: terminalDto.ScopeUnknown}
+	}
+	return &terminalDto.SessionQuotaInfo{
+		MaxCPU:            plan.MaxCPU,
+		MaxMemoryMB:       plan.MaxMemoryMB,
+		UsedCPU:           usedCPU,
+		UsedMemoryMB:      usedMemMB,
+		RemainingCPU:      cpuRemainingForReport(plan, usedCPU),
+		RemainingMemoryMB: memRemainingForReport(plan, usedMemMB),
+		Scope:             scope,
+	}
+}
+
 func clampNonNegative(v int) int {
 	if v < 0 {
 		return 0
