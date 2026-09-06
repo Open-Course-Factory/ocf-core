@@ -367,10 +367,9 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 	// Paramètres de la session de checkout
 	params := &stripe.CheckoutSessionParams{
 		Customer: stripe.String(customerID),
-		PaymentMethodTypes: stripe.StringSlice([]string{
-			"card",
-			"sepa_debit",
-		}),
+		// No payment_method_types: the accepted methods are the dashboard's
+		// payment method configuration. Naming them here was a second copy of
+		// that decision, and Stripe refuses a method the account has disabled.
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
@@ -575,10 +574,9 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 	// Checkout session parameters
 	params := &stripe.CheckoutSessionParams{
 		Customer: stripe.String(customerID),
-		PaymentMethodTypes: stripe.StringSlice([]string{
-			"card",
-			"sepa_debit",
-		}),
+		// No payment_method_types: the accepted methods are the dashboard's
+		// payment method configuration. Naming them here was a second copy of
+		// that decision, and Stripe refuses a method the account has disabled.
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
