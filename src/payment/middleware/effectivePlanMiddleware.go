@@ -193,7 +193,7 @@ func RequirePlan() gin.HandlerFunc {
 		if !exists || val == nil {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Active subscription required",
+				ErrorMessage: services.ErrActiveSubscriptionRequired.Error(),
 			})
 			ctx.Abort()
 			return
@@ -203,7 +203,7 @@ func RequirePlan() gin.HandlerFunc {
 		if !ok || result == nil {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Active subscription required",
+				ErrorMessage: services.ErrActiveSubscriptionRequired.Error(),
 			})
 			ctx.Abort()
 			return
