@@ -1512,7 +1512,33 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 // orgSubscriptionToUserDTO converts an org subscription to UserSubscriptionOutput format
 // so the frontend can use it transparently via /user-subscriptions/current
 func (sc *userSubscriptionController) orgSubscriptionToUserDTO(userID string, sub *paymentModels.OrganizationSubscription, plan *paymentModels.SubscriptionPlan) dto.UserSubscriptionOutput {
+	return OrganizationPlanToUserDTO(userID, sub, plan)
+}
+
+// OrganizationPlanToUserDTO presents the plan a user holds through an
+// organization as if it were their own subscription.
+//
+// The organization subscription is nil when a ROLE mapping decided the plan:
+// resolveForOrg returns Source=organization with the mapped plan and no
+// subscription row, because the mapping is not one. Dereferencing it here
+// took /user-subscriptions/current down for every student of an organization
+// the moment its member role was mapped to a seat plan. A role-mapped plan is
+// presented as an active organization plan with no billing period of its own.
+func OrganizationPlanToUserDTO(userID string, sub *paymentModels.OrganizationSubscription, plan *paymentModels.SubscriptionPlan) dto.UserSubscriptionOutput {
 	planOutput := convertSubscriptionPlanToOutput(plan)
+
+	if sub == nil {
+		return dto.UserSubscriptionOutput{
+			UserID:             userID,
+			SubscriptionPlanID: plan.ID,
+			SubscriptionPlan:   planOutput,
+			Status:             "active",
+			SubscriptionType:   "organization",
+			IsPrimary:          true,
+			CreatedAt:          plan.CreatedAt,
+			UpdatedAt:          plan.UpdatedAt,
+		}
+	}
 
 	return dto.UserSubscriptionOutput{
 		ID:                 sub.ID,
