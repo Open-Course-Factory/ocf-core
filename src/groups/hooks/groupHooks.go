@@ -3,12 +3,16 @@ package groupHooks
 import (
 	"fmt"
 	"log"
+	"strings"
+
 	access "soli/formations/src/auth/access"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/groups/models"
 	"soli/formations/src/groups/services"
 	"soli/formations/src/utils"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -187,6 +191,16 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 	member, ok := ctx.NewEntity.(*models.GroupMember)
 	if !ok {
 		return fmt.Errorf("expected *models.GroupMember, got %T", ctx.NewEntity)
+	}
+
+	// Binding tags are inert on the generic entity path (#390), so the keys
+	// of the row are checked here. An empty user_id used to create a
+	// membership nobody could ever resolve (#474).
+	if member.GroupID == uuid.Nil {
+		return entityErrors.NewValidationError("group_id", "must not be empty")
+	}
+	if strings.TrimSpace(member.UserID) == "" {
+		return entityErrors.NewValidationError("user_id", "must not be empty")
 	}
 
 	// 1. Check if group exists and load it
