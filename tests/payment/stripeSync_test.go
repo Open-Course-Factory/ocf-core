@@ -96,6 +96,22 @@ type fakeStripeCatalog struct {
 	writePaths []string // paths of mutating (POST/DELETE) requests, in order
 	prodSeq    int
 	priceSeq   int
+	// archiveFails lists price ids whose archive (POST active=false) answers
+	// with a server error, to model a migration that stalls half-way.
+	archiveFails map[string]bool
+}
+
+// failArchiveOf makes archiving this price fail until allowArchiveOf.
+func (c *fakeStripeCatalog) failArchiveOf(priceID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.archiveFails[priceID] = true
+}
+
+func (c *fakeStripeCatalog) allowArchiveOf(priceID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.archiveFails, priceID)
 }
 
 func (c *fakeStripeCatalog) recordWrite(path string) {
@@ -194,8 +210,9 @@ func installFakeStripeCatalog(t *testing.T) *fakeStripeCatalog {
 	t.Helper()
 
 	cat := &fakeStripeCatalog{
-		products: map[string]*fakeStripeProduct{},
-		prices:   map[string]*fakeStripePrice{},
+		products:     map[string]*fakeStripeProduct{},
+		prices:       map[string]*fakeStripePrice{},
+		archiveFails: map[string]bool{},
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -299,6 +316,10 @@ func installFakeStripeCatalog(t *testing.T) *fakeStripeCatalog {
 			}
 			if r.Method == http.MethodPost {
 				if v := r.PostForm.Get("active"); v != "" {
+					if v == "false" && cat.archiveFails[id] {
+						http.Error(w, `{"error":{"message":"archive unavailable"}}`, http.StatusInternalServerError)
+						return
+					}
 					p.Active = v == "true"
 				}
 			}
@@ -513,6 +534,45 @@ func TestSyncToStripe_MigratesPriceOnDrift(t *testing.T) {
 	newPrice := cat.getPrice(*reloaded.StripePriceID)
 	require.NotNil(t, newPrice, "the new price must exist in Stripe")
 	assert.Equal(t, int64(2999), newPrice.UnitAmount, "the new price must carry the local plan amount")
+}
+
+// TestSyncToStripe_ArchiveFailureKeepsPlanOnNewPriceAndRetriesLater: when the
+// new price is created and the plan repointed but archiving the OLD price
+// fails, the plan is on the new price and must be reported so — not as a
+// failed migration a re-run would never retry. The leftover is reported on its
+// own, and the next run, seeing no drift, still archives it.
+func TestSyncToStripe_ArchiveFailureKeepsPlanOnNewPriceAndRetriesLater(t *testing.T) {
+	db := freshTestDB(t)
+	cat := installFakeStripeCatalog(t)
+	svc := services.NewStripeService(db)
+
+	plan, _, oldPrice := syncedPlan(t, db, cat, "Sticky Plan", 2999, 1999)
+	cat.failArchiveOf(oldPrice.ID)
+
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
+	require.NoError(t, err)
+
+	reloaded := reloadPlan(t, db, plan.ID)
+	require.NotNil(t, reloaded.StripePriceID)
+	assert.NotEqual(t, oldPrice.ID, *reloaded.StripePriceID, "the plan must be on the new price")
+	assert.True(t, containsSubstr(result.PriceMigrated, "Sticky Plan"),
+		"a plan on its new price is migrated, whatever became of the old one; got %+v", result.PriceMigrated)
+	assert.True(t, containsSubstr(result.Failed, oldPrice.ID),
+		"the price left active must be reported by id; got %+v", result.Failed)
+	assert.True(t, cat.getPrice(oldPrice.ID).Active, "precondition: the archive did fail")
+
+	cat.allowArchiveOf(oldPrice.ID)
+	result, err = svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
+	require.NoError(t, err)
+
+	assert.False(t, cat.getPrice(oldPrice.ID).Active,
+		"a later run must archive the superseded price even though nothing drifts any more")
+	assert.True(t, containsSubstr(result.Archived, oldPrice.ID),
+		"the late archive must be reported; got %+v", result.Archived)
+	assert.Empty(t, result.PriceMigrated, "no drift on the second run")
+	assert.Empty(t, result.Failed)
+	assert.Equal(t, *reloaded.StripePriceID, *reloadPlan(t, db, plan.ID).StripePriceID,
+		"the plan keeps the price it was migrated to")
 }
 
 // TestSyncToStripe_NoMigrationWhenPriceMatches: when the Stripe price already

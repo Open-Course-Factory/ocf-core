@@ -167,7 +167,7 @@ type StripeSyncResult struct {
 	Created       []string `json:"created"`        // plans pushed to Stripe for the first time
 	Updated       []string `json:"updated"`        // plans whose Stripe product was updated
 	PriceMigrated []string `json:"price_migrated"` // plans repointed to a new Stripe price after drift
-	Archived      []string `json:"archived"`       // orphan Stripe products archived (mirror only)
+	Archived      []string `json:"archived"`       // orphan Stripe products (mirror only) and superseded prices archived
 	Skipped       []string `json:"skipped"`        // foreign Stripe products left untouched (mirror only)
 	Failed        []string `json:"failed"`         // per-item failures (operation continues)
 }
@@ -3699,6 +3699,9 @@ func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyn
 		if migrated {
 			result.PriceMigrated = append(result.PriceMigrated, label)
 		}
+		if !dryRun {
+			ss.archiveSupersededPrices(plan, label, result)
+		}
 	}
 
 	// --- Stripe → DB reconciliation (mirror only) ---
@@ -3712,10 +3715,14 @@ func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyn
 }
 
 // migratePriceIfDrifted compares the plan's local price against the CURRENT
-// Stripe price. On drift it creates a new Stripe price, repoints the plan, and
-// archives the old price, returning true. When the price matches, it returns
-// false without any write. In dryRun it reports drift (returns true) but performs
-// no Stripe write.
+// Stripe price. On drift it creates a new Stripe price and repoints the plan,
+// returning true. When the price matches, it returns false without any write.
+// In dryRun it reports drift (returns true) but performs no Stripe write.
+//
+// The superseded price is left to archiveSupersededPrices: once the plan is
+// repointed the migration is done, and a failed archive must not report it as
+// failed (a re-run sees no drift, so it would never be retried) nor leave the
+// old price purchasable forever.
 func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dryRun bool) (bool, error) {
 	oldPriceID := *plan.StripePriceID
 
@@ -3797,12 +3804,38 @@ func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dr
 		return false, fmt.Errorf("failed to repoint plan to new Stripe price: %w", err)
 	}
 
-	// Archive the superseded price so it can no longer back new checkouts.
-	if _, err := price.Update(oldPriceID, &stripe.PriceParams{Active: stripe.Bool(false)}); err != nil {
-		return true, fmt.Errorf("plan repointed but failed to archive old price %s: %w", oldPriceID, err)
-	}
-
 	return true, nil
+}
+
+// archiveSupersededPrices archives every price of the plan's product that is
+// still active, carries this plan's id, and is not the price the plan points
+// at — the leftovers of a migration whose archive step failed. Running it on
+// every sync of a plan already on Stripe is what makes that failure
+// self-healing: the next run archives what the previous one could not. Each
+// price is reported on its own, so a leftover never masks the migration.
+func (ss *stripeService) archiveSupersededPrices(plan *models.SubscriptionPlan, label string, result *StripeSyncResult) {
+	if plan.StripeProductID == nil || plan.StripePriceID == nil {
+		return
+	}
+	listParams := &stripe.PriceListParams{Product: plan.StripeProductID}
+	listParams.Filters.AddFilter("active", "", "true")
+
+	iter := price.List(listParams)
+	for iter.Next() {
+		superseded := iter.Price()
+		if superseded.ID == *plan.StripePriceID || superseded.Metadata["plan_id"] != plan.ID.String() {
+			continue
+		}
+		if _, err := price.Update(superseded.ID, &stripe.PriceParams{Active: stripe.Bool(false)}); err != nil {
+			result.Failed = append(result.Failed,
+				fmt.Sprintf("%s: superseded price %s is still active (archived on the next run): %v", label, superseded.ID, err))
+			continue
+		}
+		result.Archived = append(result.Archived, fmt.Sprintf("%s: superseded price %s", label, superseded.ID))
+	}
+	if err := iter.Err(); err != nil {
+		result.Failed = append(result.Failed, fmt.Sprintf("%s: could not list prices for superseded sweep: %v", label, err))
+	}
 }
 
 // mirrorArchiveOrphans lists active Stripe products and archives orphans — active
