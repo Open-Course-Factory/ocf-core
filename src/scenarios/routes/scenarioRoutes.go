@@ -50,7 +50,6 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 		launchController.GetAvailableScenarios,
 	)...)
 	sessionRoutes.GET("/my", middleware.AuthManagement(), launchController.GetMySessions)
-	sessionRoutes.POST("/start", middleware.AuthManagement(), launchController.StartScenario)
 	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)
 	sessionRoutes.GET("/:id/info", middleware.AuthManagement(), controller.GetSessionInfo)
 	sessionRoutes.GET("/:id/flags", middleware.AuthManagement(), progressController.GetSessionFlags)
