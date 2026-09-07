@@ -698,16 +698,7 @@ func (tc *terminalController) listOwnSessions(ctx *gin.Context) {
 	// Pour les admins, permettre de voir les sessions d'autres utilisateurs
 	targetUserID := ctx.Query("user_id")
 	if targetUserID != "" {
-		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
-
-		if !isAdmin {
+		if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: "Only administrators can view other users' sessions",
