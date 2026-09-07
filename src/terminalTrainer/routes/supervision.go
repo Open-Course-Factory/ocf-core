@@ -74,10 +74,9 @@ func HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessio
 		return "", false
 	}
 
-	// Of those, one the caller manages (active group + owner or an active
-	// manager/owner role) grants access — the single canonical predicate
-	// (groupSessionScope.go).
-	return callerManagesAnyGroup(db, orgMatchedGroupIDs, callerUserID)
+	// Of those, one the caller manages (groupModels.ManagedByScope, on an
+	// active group) grants access.
+	return managedActiveGroupAmong(db, orgMatchedGroupIDs, callerUserID)
 }
 
 // SupervisionStillAuthorized is the periodic re-authorization check (M1) for a

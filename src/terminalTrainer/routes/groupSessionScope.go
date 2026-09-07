@@ -34,53 +34,31 @@ import (
 // route never reads another user's data, which stopped being true with #464.
 const GroupScopedSelf access.AccessRuleType = "group_scoped_self"
 
-// managerRoles are the group_members roles that grant authority over a group's
-// sessions (supervision, group-scoped listing).
-var managerRoles = []groupModels.GroupMemberRole{
-	groupModels.GroupMemberRoleOwner,
-	groupModels.GroupMemberRoleManager,
-}
-
-// callerManagesAnyGroup returns the id of one group among candidateIDs that
-// callerUserID manages — the SINGLE canonical "manager+ of this group" predicate,
-// shared by HasSupervisionAccess (list of the learner's groups) and
-// callerManagesGroup (a single group). Management means the group is ACTIVE and the
-// caller either OWNS it (ClassGroup.OwnerUserID) or holds an active manager/owner
-// group_members role. An inactive (or missing) group is never manageable.
-// ok=false when none qualifies.
-func callerManagesAnyGroup(db *gorm.DB, candidateIDs []uuid.UUID, callerUserID string) (groupID string, ok bool) {
+// managedActiveGroupAmong returns the id of one group among candidateIDs that
+// callerUserID manages, shared by HasSupervisionAccess (the learner's groups)
+// and callerManagesGroup (a single group). The management rule itself is
+// groupModels.ManagedByScope; this only ANDs it with NotArchived, because an
+// archived group grants no authority over its sessions. ok=false when none
+// qualifies.
+func managedActiveGroupAmong(db *gorm.DB, candidateIDs []uuid.UUID, callerUserID string) (groupID string, ok bool) {
 	if len(candidateIDs) == 0 {
 		return "", false
 	}
-	// Restrict to ACTIVE groups (L1): an inactive class-group grants no authority.
-	// Live supervision is a grant, so an archived class is out; its past
-	// sessions stay reachable through the teacher dashboard.
-	var activeIDs []uuid.UUID
-	if err := db.Model(&groupModels.ClassGroup{}).
-		Where("id IN ?", candidateIDs).
+	var managedIDs []uuid.UUID
+	err := db.Model(&groupModels.ClassGroup{}).
+		Where("class_groups.id IN ?", candidateIDs).
+		Scopes(groupModels.ManagedByScope(callerUserID)).
 		Scopes(entityManagementModels.NotArchived("class_groups")).
-		Pluck("id", &activeIDs).Error; err != nil || len(activeIDs) == 0 {
+		Limit(1).
+		Pluck("id", &managedIDs).Error
+	if err != nil || len(managedIDs) == 0 {
 		return "", false
 	}
-	// One the caller OWNS (ClassGroup.OwnerUserID)...
-	var owned groupModels.ClassGroup
-	if err := db.Where("id IN ? AND owner_user_id = ?", activeIDs, callerUserID).
-		First(&owned).Error; err == nil {
-		return owned.ID.String(), true
-	}
-	// ...or one where the caller holds an active manager/owner membership role.
-	var membership groupModels.GroupMember
-	if err := db.Where("group_id IN ? AND user_id = ? AND is_active = ? AND role IN ?",
-		activeIDs, callerUserID, true, managerRoles).First(&membership).Error; err == nil {
-		return membership.GroupID.String(), true
-	}
-	return "", false
+	return managedIDs[0].String(), true
 }
 
-// callerManagesGroup reports whether callerUserID is manager+ of groupID. It
-// delegates to callerManagesAnyGroup so the management predicate lives in one place.
 func callerManagesGroup(db *gorm.DB, groupID uuid.UUID, callerUserID string) bool {
-	_, ok := callerManagesAnyGroup(db, []uuid.UUID{groupID}, callerUserID)
+	_, ok := managedActiveGroupAmong(db, []uuid.UUID{groupID}, callerUserID)
 	return ok
 }
 
