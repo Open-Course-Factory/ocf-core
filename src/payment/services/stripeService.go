@@ -1610,12 +1610,14 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 		}
 
 		utils.Debug("✅ Updated subscription %s metadata for user %s", session.Subscription.ID, userID)
+
+		// The subscription itself is created by the subscription.created webhook.
+		utils.Debug("Checkout completed for user %s, subscription: %s", userID, session.Subscription.ID)
+		return nil
 	}
 
-	// Si c'est un abonnement, il sera créé via le webhook subscription.created
-	// Ici on peut juste logger ou mettre à jour des métriques
-	utils.Debug("Checkout completed for user %s, subscription: %s", userID, session.Subscription.ID)
-
+	// A one-time payment (Stripe's `payment` mode) carries no subscription.
+	utils.Debug("Checkout completed for user %s without a subscription", userID)
 	return nil
 }
 
