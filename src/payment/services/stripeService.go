@@ -2467,6 +2467,7 @@ func (ss *stripeService) UpdateSubscription(subscriptionID, newPriceID, proratio
 	}
 	params.AddExpand("latest_invoice")
 	params.AddExpand("customer")
+	params.SetIdempotencyKey(subscriptionUpdateIdempotencyKey(currentSub, params))
 
 	updatedSub, err := subscription.Update(subscriptionID, params)
 	if err != nil {
@@ -2474,6 +2475,27 @@ func (ss *stripeService) UpdateSubscription(subscriptionID, newPriceID, proratio
 	}
 
 	return updatedSub, nil
+}
+
+// subscriptionUpdateIdempotencyKey keys a price change on the subscription's
+// LIVE state as well as on the request. Under always_invoice every update
+// bills a proration at once, so a retry must reuse the key of the attempt it
+// repeats — and nothing else. The request fingerprint (target price, proration
+// behavior, item) tells the forward charge from its compensating revert; the
+// current price and latest invoice move with every applied change, so a second
+// upgrade after a revert is a new request rather than a replay of the cached
+// forward charge, which would leave Stripe on the old price while the database
+// moves on.
+func subscriptionUpdateIdempotencyKey(current *stripe.Subscription, params *stripe.SubscriptionParams) string {
+	currentPriceID, latestInvoiceID := "", ""
+	if item := current.Items.Data[0]; item.Price != nil {
+		currentPriceID = item.Price.ID
+	}
+	if current.LatestInvoice != nil {
+		latestInvoiceID = current.LatestInvoice.ID
+	}
+	return stripeIdempotencyKey("subscription-update",
+		current.ID, currentPriceID, latestInvoiceID, idempotencyDateBucket(), stripeRequestFingerprint(params))
 }
 
 // AttachPaymentMethod attache un moyen de paiement à un client

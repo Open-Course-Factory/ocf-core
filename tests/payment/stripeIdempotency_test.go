@@ -66,6 +66,23 @@ type stripeIdemCapture struct {
 	sessionSeq    int                 // counter for generated checkout session ids
 	sessionStatus map[string]string   // session id -> live status ("open" when unset)
 	replay        map[string]string   // idempotency key -> cached create response body
+	subscriptions map[string]fakeSubscriptionState // subscription id -> what GET serves
+}
+
+// fakeSubscriptionState is the live shape of a subscription as served on GET:
+// the price its single item is on and its latest invoice, the two things a
+// plan change moves.
+type fakeSubscriptionState struct {
+	priceID   string
+	invoiceID string
+}
+
+// setSubscriptionState fixes what GET /v1/subscriptions/{id} reports. Unset
+// subscriptions serve a default state so callers needing an item still work.
+func (c *stripeIdemCapture) setSubscriptionState(id, priceID, invoiceID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.subscriptions[id] = fakeSubscriptionState{priceID: priceID, invoiceID: invoiceID}
 }
 
 func (c *stripeIdemCapture) record(name, key string) {
@@ -104,8 +121,9 @@ func (c *stripeIdemCapture) getPayloads(name string) []string {
 // (backend + key) are restored on cleanup.
 //
 // Logical names captured:
-//   - "customer_create"  : POST .../v1/customers
-//   - "checkout_session" : POST .../v1/checkout/sessions
+//   - "customer_create"      : POST .../v1/customers
+//   - "checkout_session"     : POST .../v1/checkout/sessions
+//   - "subscription_update"  : POST .../v1/subscriptions/{id}
 func installFakeStripeBackend(t *testing.T) *stripeIdemCapture {
 	t.Helper()
 
@@ -114,6 +132,7 @@ func installFakeStripeBackend(t *testing.T) *stripeIdemCapture {
 		payloads:      map[string][]string{},
 		sessionStatus: map[string]string{},
 		replay:        map[string]string{},
+		subscriptions: map[string]fakeSubscriptionState{},
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +176,18 @@ func installFakeStripeBackend(t *testing.T) *stripeIdemCapture {
 		case strings.HasSuffix(path, "/customers"):
 			cap.record("customer_create", key)
 			fmt.Fprint(w, `{"id":"cus_test_fake","object":"customer"}`)
+		case strings.Contains(path, "/subscriptions/") && r.Method == http.MethodGet:
+			// Subscription RETRIEVE serves one item on the configured price, the
+			// shape UpdateSubscription reads before it posts the change.
+			id := path[strings.LastIndex(path, "/")+1:]
+			cap.mu.Lock()
+			state, known := cap.subscriptions[id]
+			cap.mu.Unlock()
+			if !known {
+				state = fakeSubscriptionState{priceID: "price_fake_current", invoiceID: "in_fake_1"}
+			}
+			fmt.Fprintf(w, `{"id":%q,"object":"subscription","latest_invoice":%q,"items":{"object":"list","data":[{"id":"si_fake_%s","object":"subscription_item","price":{"id":%q,"object":"price"}}]}}`,
+				id, state.invoiceID, id, state.priceID)
 		case strings.Contains(path, "/subscriptions/") && r.Method == http.MethodPost:
 			// Subscription UPDATE — recorded with its body so tests can assert
 			// on scheduled changes (e.g. cancel_at for prepaid packs).
