@@ -397,9 +397,13 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 		member.InvitedBy = ctx.UserID
 	}
 
-	// 5. Default role to "member" if not set
+	// 5. Default role to "member" if not set, then refuse anything that is not
+	// a role at all — before the cap, which an administrator bypasses (#429).
 	if member.Role == "" {
 		member.Role = models.OrgRoleMember
+	}
+	if err := access.ValidateRole(string(member.Role)); err != nil {
+		return err
 	}
 
 	// 5b. Cap the assigned role at the granter's own role: a granter must not mint a
@@ -510,6 +514,10 @@ func (h *OrganizationMemberUpdateAuthorizationHook) Execute(ctx *hooks.HookConte
 		// A status/metadata-only patch is authorized by the manage check alone; there is no
 		// role transition to cap or owner role to protect.
 		return nil
+	}
+	// Refused before the cap, which an administrator bypasses (#429).
+	if err := access.ValidateRole(string(requestedRole)); err != nil {
+		return err
 	}
 
 	// Owner protection: an owner's role may not be changed through this path, mirroring the
