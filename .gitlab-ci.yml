@@ -170,11 +170,18 @@ test:auth:
       optional: true  # Skip dependency when Dockerfile.ci-auth hasn't changed
 
   services:
-    - docker:27-dind
+    # Probe the plain port only: with TLS off, dind never opens 2376.
+    - name: docker:27-dind
+      variables:
+        HEALTHCHECK_TCP_PORT: "2375"
 
   variables:
     DOCKER_DRIVER: overlay2
-    DOCKER_TLS_CERTDIR: "/certs"
+    # TLS off: dind spends longer than the runner's 30 s service health
+    # check generating certificates on a busy host (#498). The daemon is only
+    # reachable on the job's private network, so plain tcp is acceptable.
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
     # Unique project name per job to avoid container name collisions
     # when multiple MR pipelines run in parallel on the same runner
     COMPOSE_PROJECT: "ocf-test-${CI_JOB_ID}"
