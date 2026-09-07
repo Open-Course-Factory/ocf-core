@@ -62,6 +62,38 @@ type OrganizationService interface {
 type organizationService struct {
 	repository repositories.OrganizationRepository
 	db         *gorm.DB
+	identity   PasswordRegenerationIdentity
+}
+
+// PasswordRegenerationIdentity is the slice of the identity provider password
+// regeneration needs. auth/services' CasdoorUserClient satisfies it; this
+// package cannot import it (auth/services imports organizations).
+type PasswordRegenerationIdentity interface {
+	GetUserByUserId(userID string) (*casdoorsdk.User, error)
+	// SetPassword is Casdoor's dedicated password call, the only one that
+	// hashes; the password column of an update is stored raw.
+	SetPassword(user *casdoorsdk.User, newPassword string) error
+	// UpdateUserForColumns writes only the named DB columns. Never a bare
+	// UpdateUser: its default whitelist silently drops columns such as
+	// email_verified.
+	UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error)
+}
+
+// casdoorPasswordIdentity forwards PasswordRegenerationIdentity to the
+// casdoorsdk package functions.
+type casdoorPasswordIdentity struct{}
+
+func (casdoorPasswordIdentity) GetUserByUserId(userID string) (*casdoorsdk.User, error) {
+	return casdoorsdk.GetUserByUserId(userID)
+}
+
+func (casdoorPasswordIdentity) SetPassword(user *casdoorsdk.User, newPassword string) error {
+	_, err := casdoorsdk.SetPassword(user.Owner, user.Name, "", newPassword)
+	return err
+}
+
+func (casdoorPasswordIdentity) UpdateUserForColumns(user *casdoorsdk.User, columns []string) (bool, error) {
+	return casdoorsdk.UpdateUserForColumns(user, columns)
 }
 
 // classroomEntitlement builds the entitlement service on demand.
@@ -74,9 +106,16 @@ func (os *organizationService) classroomEntitlement() paymentServices.EffectiveP
 }
 
 func NewOrganizationService(db *gorm.DB) OrganizationService {
+	return NewOrganizationServiceWithIdentity(db, casdoorPasswordIdentity{})
+}
+
+// NewOrganizationServiceWithIdentity builds the service on an explicit identity
+// provider, so password regeneration can be exercised against a fake.
+func NewOrganizationServiceWithIdentity(db *gorm.DB, identity PasswordRegenerationIdentity) OrganizationService {
 	return &organizationService{
 		repository: repositories.NewOrganizationRepository(db),
 		db:         db,
+		identity:   identity,
 	}
 }
 
@@ -558,7 +597,7 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 		}
 
 		// Get user from Casdoor
-		casdoorUser, err := casdoorsdk.GetUserByUserId(userID)
+		casdoorUser, err := os.identity.GetUserByUserId(userID)
 		if err != nil || casdoorUser == nil {
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 1,
@@ -575,7 +614,7 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 		newPassword := orgUtils.GenerateSecurePassword(16)
 
 		// Update password using Casdoor's dedicated SetPassword API
-		_, err = casdoorsdk.SetPassword(casdoorUser.Owner, casdoorUser.Name, "", newPassword)
+		err = os.identity.SetPassword(casdoorUser, newPassword)
 		if err != nil {
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 1,
@@ -588,15 +627,19 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 			continue
 		}
 
-		// Set force password reset flag
-		if casdoorUser.Properties == nil {
-			casdoorUser.Properties = make(map[string]string)
-		}
-		casdoorUser.Properties["force_password_reset"] = "true"
-		_, err = casdoorsdk.UpdateUser(casdoorUser)
-		if err != nil {
-			// Log warning but don't fail - password was already changed
+		// The password is already changed at this point, so a failure to set
+		// the flag is reported next to the credential rather than failing the
+		// row: the teacher still needs the password, and must know the learner
+		// will not be forced to change it.
+		if err := os.forcePasswordReset(casdoorUser); err != nil {
 			utils.Warn("Could not set force_password_reset for user %s: %v", userID, err)
+			response.Errors = append(response.Errors, dto.ImportError{
+				Row:     i + 1,
+				File:    "user_ids",
+				Field:   "user_id",
+				Message: fmt.Sprintf("password changed for user %s but force_password_reset could not be set: %v", userID, err),
+				Code:    dto.ErrCodeValidation,
+			})
 		}
 
 		// Collect credential
@@ -608,12 +651,30 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 		response.Summary.Succeeded++
 	}
 
-	response.Success = response.Summary.Failed == 0
+	response.Success = len(response.Errors) == 0
 
 	utils.Info("Password regeneration for group %s: %d succeeded, %d failed out of %d",
 		groupID, response.Summary.Succeeded, response.Summary.Failed, response.Summary.Total)
 
 	return response, nil
+}
+
+// forcePasswordReset marks the account so the next sign-in demands a new
+// password. The flag lives in `properties`, written through an explicit column
+// list; a write Casdoor reports as not persisted is an error, not a success.
+func (os *organizationService) forcePasswordReset(user *casdoorsdk.User) error {
+	if user.Properties == nil {
+		user.Properties = make(map[string]string)
+	}
+	user.Properties["force_password_reset"] = "true"
+	affected, err := os.identity.UpdateUserForColumns(user, []string{"properties"})
+	if err != nil {
+		return err
+	}
+	if !affected {
+		return fmt.Errorf("identity provider did not persist the update")
+	}
+	return nil
 }
 
 // GrantOrganizationPermissions grants basic organization-related permissions to a user via Casbin
