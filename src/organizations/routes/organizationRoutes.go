@@ -15,8 +15,8 @@ import (
 // OrganizationRoutes sets up custom organization routes
 func OrganizationRoutes(rg *gin.RouterGroup, conf *config.Configuration, db *gorm.DB) {
 	// Initialize services
-	orgService := services.NewOrganizationService(db)
 	casdoorClient := authServices.NewCasdoorUserClient()
+	orgService := services.NewOrganizationServiceWithIdentity(db, casdoorClient)
 	userService := authServices.NewUserService(casdoorClient, paymentServices.NewPaymentDeletionHelper(db))
 	deletionService := authServices.NewUserDeletionService(db, userService)
 	offboardingService := services.NewMemberOffboardingService(db, casdoorClient, paymentServices.NewBulkLicenseService(db), deletionService)
