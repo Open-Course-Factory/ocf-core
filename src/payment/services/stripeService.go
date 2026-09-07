@@ -1094,7 +1094,7 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 			if err == nil {
 				// Verify it's actually a free plan before deleting
 				oldPlan, err := ss.subscriptionService.GetSubscriptionPlan(oldSub.SubscriptionPlanID)
-				if err == nil && oldPlan.PriceAmount == 0 {
+				if err == nil && oldPlan.IsFree() {
 					utils.Info("🔄 Deleting old free subscription %s (being replaced by paid subscription %s)",
 						replaceID, subscription.ID)
 
@@ -1548,7 +1548,7 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 			oldSubscription, err := ss.repository.GetUserSubscription(replaceSubscriptionID)
 			if err == nil {
 				oldPlan, err := ss.subscriptionService.GetSubscriptionPlan(oldSubscription.SubscriptionPlanID)
-				if err == nil && oldPlan.PriceAmount == 0 {
+				if err == nil && oldPlan.IsFree() {
 					// Delete the old free subscription (hard delete since it has no Stripe ID)
 					utils.Info("🔄 Deleting old free subscription %s for user %s (upgrading to paid)",
 						replaceSubscriptionID, userID)
