@@ -503,6 +503,38 @@ func TestListScenarios_AsRegularMember_StripsStepsAndQuestions(t *testing.T) {
 	}
 }
 
+// The list redactor has two pagination branches (offset and cursor); the
+// presence of a `cursor` query key selects the cursor one.
+func TestListScenarios_AsRegularMember_CursorPagination_StripsStepsAndQuestions(t *testing.T) {
+	db := freshTestDB(t)
+	creatorID := "creator-list-cursor-001"
+	_ = buildLeakyScenario(t, db, "leak-list-cursor-1", creatorID, nil)
+	_ = buildLeakyScenario(t, db, "leak-list-cursor-2", creatorID, nil)
+
+	router := setupScenarioReadAuthzTest(t, db, "outsider-list-cursor-001", []string{"member"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenarios?cursor=&limit=10&include=Steps.Questions", nil)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "cursor list endpoint should respond; body=%s", w.Body.String())
+
+	var page map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
+	_, isCursorPage := page["hasMore"]
+	require.True(t, isCursorPage, "expected the cursor pagination envelope; body=%v", page)
+
+	dataRaw, ok := page["data"].([]any)
+	require.True(t, ok, "cursor response must wrap items in 'data'; body=%v", page)
+	require.Len(t, dataRaw, 2, "should list both scenarios")
+
+	for i, s := range dataRaw {
+		body, ok := s.(map[string]any)
+		require.True(t, ok, "scenario[%d] must be a JSON object", i)
+		assertScenarioBodyStripped(t, body)
+	}
+}
+
 func TestListScenarios_AsAdmin_ReturnsFullContent(t *testing.T) {
 	db := freshTestDB(t)
 	creatorID := "creator-list-admin-001"
