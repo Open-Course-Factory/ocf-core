@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	entityErrors "soli/formations/src/entityManagement/errors"
+
 	"github.com/google/uuid"
 )
 
@@ -195,9 +197,21 @@ func EntityNotFoundError(entityType string) error {
 //
 // Example:
 //
-//	PermissionDeniedError("manage", "group") -> "you don't have permission to manage this group"
+//	PermissionDeniedError("manage", "group") -> "ENT006: you don't have permission to manage this group"
+//
+// The value is the structured entity error the generic entity path maps to
+// 403. Hooks and services refuse through this one constructor, so a refusal
+// raised in a Before* hook reaches the client as 403, never as the ENT007
+// hook-failure 500 an opaque error becomes (#493, #483). The message keeps the
+// word "permission": a few controllers still classify errors by it.
 func PermissionDeniedError(action, entityType string) error {
-	return fmt.Errorf("you don't have permission to %s this %s", action, entityType)
+	err := *entityErrors.ErrUnauthorized
+	err.Message = fmt.Sprintf("you don't have permission to %s this %s", action, entityType)
+	err.Details = map[string]any{
+		"action":   action,
+		"resource": entityType,
+	}
+	return &err
 }
 
 // CapacityExceededError creates a capacity limit error

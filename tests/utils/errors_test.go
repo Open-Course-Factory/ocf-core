@@ -44,19 +44,19 @@ func TestPermissionDeniedError(t *testing.T) {
 			"Manage group",
 			"manage",
 			"group",
-			"you don't have permission to manage this group",
+			"ENT006: you don't have permission to manage this group",
 		},
 		{
 			"Delete organization",
 			"delete",
 			"organization",
-			"you don't have permission to delete this organization",
+			"ENT006: you don't have permission to delete this organization",
 		},
 		{
 			"Update terminal",
 			"update",
 			"terminal",
-			"you don't have permission to update this terminal",
+			"ENT006: you don't have permission to update this terminal",
 		},
 	}
 
