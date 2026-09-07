@@ -3,6 +3,7 @@ package userController
 import (
 	"net/http"
 	"soli/formations/src/auth/dto"
+	authMiddleware "soli/formations/src/auth/middleware"
 	"soli/formations/src/auth/models"
 	services "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
@@ -191,6 +192,9 @@ func (uc *userController) ChangePassword(ctx *gin.Context) {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
 		return
 	}
+	if authMiddleware.RefuseIfImpersonated(ctx, "Changing the password") {
+		return
+	}
 
 	var input dto.ChangePasswordInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
@@ -240,6 +244,9 @@ func (uc *userController) ForceChangePassword(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	if userID == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	if authMiddleware.RefuseIfImpersonated(ctx, "Changing the password") {
 		return
 	}
 

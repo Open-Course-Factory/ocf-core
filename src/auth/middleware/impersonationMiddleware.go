@@ -16,6 +16,22 @@ import (
 // an active, fresh impersonation session for that exact target.
 const ImpersonationHeader = "X-Impersonate-User"
 
+// RefuseIfImpersonated answers 403 and aborts when the request runs under an
+// impersonated session (ImpersonationMiddleware set "impersonatorId"), and
+// reports whether it did. Self-scoped irreversible actions call it before
+// anything else: account erasure, terminal-key regeneration and password
+// changes derive their subject from "userId", which under impersonation is
+// the target, so letting them run would let an admin "acting as" a user do
+// those things to that user (#501). action names the refused action in the
+// response, e.g. "Account deletion".
+func RefuseIfImpersonated(c *gin.Context, action string) bool {
+	if c.GetString("impersonatorId") == "" {
+		return false
+	}
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": action + " is not allowed while impersonating another user"})
+	return true
+}
+
 // RolesResolver resolves the platform roles for a given user ID. The
 // middleware uses it to populate "userRoles" on the gin context after
 // swapping the identity to the impersonation target. Implementations

@@ -3,6 +3,7 @@ package terminalController
 import (
 	"net/http"
 	"soli/formations/src/auth/casdoor"
+	authMiddleware "soli/formations/src/auth/middleware"
 
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
@@ -58,6 +59,11 @@ func (utc *userTerminalKeyController) DeleteEntity(ctx *gin.Context) {
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-terminal-keys/regenerate [post]
 func (utc *userTerminalKeyController) RegenerateKey(ctx *gin.Context) {
+	// Rotating the key disables the old one: irreversible and self-scoped,
+	// so never under an impersonated session.
+	if authMiddleware.RefuseIfImpersonated(ctx, "Regenerating the terminal key") {
+		return
+	}
 	userId := ctx.GetString("userId")
 
 	// Vérifier si l'utilisateur a une clé existante
