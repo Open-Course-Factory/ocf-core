@@ -27,7 +27,7 @@
 //      actor_email AND actor_ip), delete auth tokens/settings/SSH keys.
 //
 // TARGET API the backend-dev must introduce (these tests are RED until then):
-//   - services.NewUserDeletionService(db *gorm.DB, userSvc authServices.UserService) UserDeletionService
+//   - services.NewUserDeletionService(db *gorm.DB, userSvc authServices.UserService, keyRevoker authServices.TerminalKeyRevoker) UserDeletionService
 //   - the existing services.ErrOwnsOrganizations / services.ErrOwnsGroups sentinels stay.
 //
 // SHARED HELPERS/MOCKS are defined in userDeletion_test.go (same package):
@@ -160,7 +160,19 @@ func composedUserDeletionService(
 	helperMock *mockPaymentDeletionHelper,
 ) authServices.UserDeletionService {
 	userSvc := authServices.NewUserService(casdoorMock, helperMock)
-	return authServices.NewUserDeletionService(db, userSvc)
+	return authServices.NewUserDeletionService(db, userSvc, &recordingKeyRevoker{})
+}
+
+// recordingKeyRevoker stands in for tt-backend key revocation and remembers
+// who it was asked to revoke. err, when set, is what the revocation returns.
+type recordingKeyRevoker struct {
+	revoked []string
+	err     error
+}
+
+func (r *recordingKeyRevoker) DisableUserKey(userID string) error {
+	r.revoked = append(r.revoked, userID)
+	return r.err
 }
 
 func seedRunningTerminal(t *testing.T, db *gorm.DB, userID string) *terminalModels.Terminal {
@@ -408,7 +420,7 @@ func TestDeleteMyAccount_PseudonymizesBilling_PreservesCountryAndPMID(t *testing
 	// actual mutation contract, not a hand-mocked one.
 	realHelper := paymentServices.NewPaymentDeletionHelperWithDeps(db, &stubStripeService{})
 	userSvc := authServices.NewUserService(casdoorMock, realHelper)
-	svc := authServices.NewUserDeletionService(db, userSvc)
+	svc := authServices.NewUserDeletionService(db, userSvc, &recordingKeyRevoker{})
 
 	require.NoError(t, svc.DeleteMyAccount(userID))
 
@@ -750,6 +762,56 @@ func TestDeleteMyAccount_DeletesUserTerminalKey(t *testing.T) {
 	db.Model(&terminalModels.UserTerminalKey{}).Where("user_id = ?", userID).Count(&keyCount)
 	assert.Equal(t, int64(0), keyCount,
 		"the user's terminal API key (a live tt-backend credential) must be erased on account deletion")
+}
+
+// TestDeleteMyAccount_RevokesTerminalKeyOnTtBackend pins that erasure asks
+// tt-backend to deactivate the user's API key. Deleting the local row is not
+// enough: the credential itself lives on tt-backend, where it would otherwise
+// stay usable until its own expiry.
+func TestDeleteMyAccount_RevokesTerminalKeyOnTtBackend(t *testing.T) {
+	db := setupDeleteMyAccountDB(t)
+	userID := newUserID()
+	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
+		UserID:    userID,
+		APIKey:    "live-key",
+		KeyName:   "primary",
+		IsActive:  true,
+	}).Error)
+
+	casdoorMock, helperMock, _ := happyMocks(userID)
+	revoker := &recordingKeyRevoker{}
+	svc := authServices.NewUserDeletionService(db, authServices.NewUserService(casdoorMock, helperMock), revoker)
+
+	require.NoError(t, svc.DeleteMyAccount(userID))
+
+	assert.Equal(t, []string{userID}, revoker.revoked,
+		"erasure must revoke the user's key on tt-backend, not only delete the local row")
+}
+
+// TestDeleteMyAccount_ProceedsWhenTtBackendRevocationFails pins that an
+// unreachable tt-backend does not block the right to erasure: the local row
+// still goes, and the key falls back to tt-backend's own expiry.
+func TestDeleteMyAccount_ProceedsWhenTtBackendRevocationFails(t *testing.T) {
+	db := setupDeleteMyAccountDB(t)
+	userID := newUserID()
+	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
+		UserID:    userID,
+		APIKey:    "live-key",
+		KeyName:   "primary",
+		IsActive:  true,
+	}).Error)
+
+	casdoorMock, helperMock, _ := happyMocks(userID)
+	revoker := &recordingKeyRevoker{err: errors.New("tt-backend unreachable")}
+	svc := authServices.NewUserDeletionService(db, authServices.NewUserService(casdoorMock, helperMock), revoker)
+
+	require.NoError(t, svc.DeleteMyAccount(userID))
+
+	var keyCount int64
+	db.Model(&terminalModels.UserTerminalKey{}).Where("user_id = ?", userID).Count(&keyCount)
+	assert.Equal(t, int64(0), keyCount, "the local key row must still be erased")
 }
 
 // H3 — ALL non-deleted terminals must be released, not just running ones. A

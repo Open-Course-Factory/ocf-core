@@ -56,7 +56,7 @@ func invokeAdminDeleteUserHandler(
 	controller := userController.NewUserControllerWithServices(
 		userSvc,
 		authServices.NewUserSettingsService(),
-		authServices.NewUserDeletionService(db, userSvc),
+		authServices.NewUserDeletionService(db, userSvc, &recordingKeyRevoker{}),
 	)
 
 	w := httptest.NewRecorder()
