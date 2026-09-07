@@ -19,6 +19,14 @@ workflow:
 default:
   tags:
     - ocf-core
+  # A newer pipeline on the same ref cancels this one (auto-cancel redundant
+  # pipelines is on for the project), so a burst of pushes queues only the latest.
+  interruptible: true
+  # Docker Hub pulls fail under load (TLS handshake or token timeouts); retry once.
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
 
 # ============================================================================
 # Variables
@@ -162,6 +170,9 @@ test:unit:
 # Only runs tests with //go:build integration tag
 test:auth:
   stage: test
+  # One dind + compose stack at a time per project: parallel stacks starve the
+  # runner host and the dind service never comes up (issue #498).
+  resource_group: dind-integration
   # Custom image with Go + tools pre-installed (see Dockerfile.ci-auth).
   # Auto-built by build:ci-auth-image job when Dockerfile.ci-auth changes.
   image: ${CI_REGISTRY_IMAGE}/ci-auth:latest
