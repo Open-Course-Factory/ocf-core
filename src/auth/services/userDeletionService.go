@@ -49,9 +49,17 @@ type UserDeletionService interface {
 	CheckDepartedMemberErasable(orgID uuid.UUID, userID string) error
 }
 
+// TerminalKeyRevoker is the one call erasure needs from the terminal service:
+// deactivating the user's API key on tt-backend, where the credential lives.
+// terminalTrainerService satisfies it; tests substitute a recorder.
+type TerminalKeyRevoker interface {
+	DisableUserKey(userID string) error
+}
+
 type userDeletionService struct {
 	db          *gorm.DB
 	userService UserService
+	keyRevoker  TerminalKeyRevoker
 }
 
 // NewUserDeletionService creates a new UserDeletionService.
@@ -60,8 +68,8 @@ type userDeletionService struct {
 // pseudonymize → Casdoor delete → RBAC removal). DeleteMyAccount composes it
 // rather than re-implementing the identity/billing cascade, so there is a
 // single source of truth for that security-critical ordering.
-func NewUserDeletionService(db *gorm.DB, userSvc UserService) UserDeletionService {
-	return &userDeletionService{db: db, userService: userSvc}
+func NewUserDeletionService(db *gorm.DB, userSvc UserService, keyRevoker TerminalKeyRevoker) UserDeletionService {
+	return &userDeletionService{db: db, userService: userSvc, keyRevoker: keyRevoker}
 }
 
 // DeleteMyAccount performs the self-service RGPD right-to-erasure flow for the
@@ -95,9 +103,23 @@ func (s *userDeletionService) EraseUser(userID string) error {
 		return err
 	}
 
+	s.revokeTerminalKey(userID)
+
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		return s.cascadeOCFData(tx, userID)
 	})
+}
+
+// revokeTerminalKey deactivates the user's API key on tt-backend, where the
+// credential actually lives; the cascade then deletes the local row. It runs
+// outside the cascade transaction because the revoker reads and updates the
+// key through its own connection. Best-effort: erasure is a right, and an
+// unreachable tt-backend must not withhold it — the key then falls back to
+// tt-backend's own expiry, so the miss is logged loudly.
+func (s *userDeletionService) revokeTerminalKey(userID string) {
+	if err := s.keyRevoker.DisableUserKey(userID); err != nil {
+		utils.Warn("Erasure of user %s: could not revoke the terminal key on tt-backend, it will lapse on its own expiry: %v", userID, err)
+	}
 }
 
 // EraseDepartedMember erases a member that orgID offboarded, refusing while the

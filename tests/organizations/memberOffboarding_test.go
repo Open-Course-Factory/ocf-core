@@ -275,8 +275,14 @@ func seedClassWithMember(t *testing.T, db *gorm.DB, orgID uuid.UUID, teacherID, 
 	return class.ID
 }
 
+// noopKeyRevoker stands in for tt-backend key revocation, which offboarding
+// tests do not observe.
+type noopKeyRevoker struct{}
+
+func (noopKeyRevoker) DisableUserKey(string) error { return nil }
+
 func newDeletionService(db *gorm.DB, identity *fakeIdentity) authServices.UserDeletionService {
-	return authServices.NewUserDeletionService(db, authServices.NewUserService(identity, fakePaymentHelper{}))
+	return authServices.NewUserDeletionService(db, authServices.NewUserService(identity, fakePaymentHelper{}), noopKeyRevoker{})
 }
 
 func newOffboardingService(db *gorm.DB, identity *fakeIdentity) services.MemberOffboardingService {

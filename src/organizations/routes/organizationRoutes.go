@@ -18,7 +18,7 @@ func OrganizationRoutes(rg *gin.RouterGroup, conf *config.Configuration, db *gor
 	orgService := services.NewOrganizationService(db)
 	casdoorClient := authServices.NewCasdoorUserClient()
 	userService := authServices.NewUserService(casdoorClient, paymentServices.NewPaymentDeletionHelper(db))
-	deletionService := authServices.NewUserDeletionService(db, userService)
+	deletionService := authServices.NewUserDeletionService(db, userService, authServices.NewTerminalTrainerService(db))
 	offboardingService := services.NewMemberOffboardingService(db, casdoorClient, paymentServices.NewBulkLicenseService(db), deletionService)
 	importService := services.NewImportService(db, casdoorClient, offboardingService)
 

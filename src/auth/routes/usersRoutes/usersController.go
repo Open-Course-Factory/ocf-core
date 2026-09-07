@@ -43,7 +43,7 @@ func NewUserController() UserController {
 	return NewUserControllerWithServices(
 		userService,
 		services.NewUserSettingsService(),
-		services.NewUserDeletionService(sqldb.DB, userService),
+		services.NewUserDeletionService(sqldb.DB, userService, services.NewTerminalTrainerService(sqldb.DB)),
 	)
 }
 
