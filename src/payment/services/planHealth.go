@@ -170,7 +170,7 @@ func checkPlanHealth(db *gorm.DB, quota QuotaService, plan *models.SubscriptionP
 
 	// A plan on the shelf that Stripe cannot charge for. Free plans are exempt:
 	// nothing is ever charged, so no price is needed.
-	if plan.IsCatalog && plan.PriceAmount > 0 && isBlank(plan.StripePriceID) {
+	if plan.IsCatalog && !plan.IsFree() && isBlank(plan.StripePriceID) {
 		health.Findings = append(health.Findings, PlanHealthFinding{
 			Code:     PlanHealthCatalogWithoutPrice,
 			Severity: PlanHealthWarning,

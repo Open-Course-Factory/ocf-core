@@ -137,7 +137,7 @@ func (ss *subscriptionService) GetUserSubscriptionByID(id uuid.UUID) (*models.Us
 }
 
 // CreateUserSubscription crée un nouvel abonnement
-// For free plans (PriceAmount == 0), creates an active subscription with usage metrics
+// For free plans (IsFree), creates an active subscription with usage metrics
 // For paid plans, creates an incomplete subscription that will be activated by Stripe webhook
 func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid.UUID) (*models.UserSubscription, error) {
 	// Get the plan to check if it's free
@@ -154,7 +154,7 @@ func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid
 	}
 
 	// FREE PLAN: Activate immediately without Stripe
-	if plan.PriceAmount == 0 {
+	if plan.IsFree() {
 		subscription.Status = "active"
 		subscription.CurrentPeriodStart = now
 		// Free plans are perpetual (1 year period for consistency)
@@ -173,7 +173,7 @@ func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid
 	}
 
 	// Initialize usage metrics for free plans
-	if plan.PriceAmount == 0 {
+	if plan.IsFree() {
 		err = ss.InitializeUsageMetrics(userID, subscription.ID, planID)
 		if err != nil {
 			utils.Warn("Failed to initialize usage metrics for free subscription: %v", err)

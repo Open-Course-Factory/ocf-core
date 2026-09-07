@@ -82,7 +82,7 @@ func (h *StripeSubscriptionPlanHook) Execute(ctx *hooks.HookContext) error {
 	switch ctx.HookType {
 	case hooks.AfterCreate:
 		// Free plans are not synced to Stripe.
-		if plan.PriceAmount == 0 {
+		if plan.IsFree() {
 			slog.Info("skipping stripe sync for free plan", "plan_name", plan.Name)
 			return nil
 		}

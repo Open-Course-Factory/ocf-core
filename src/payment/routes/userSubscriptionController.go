@@ -149,7 +149,7 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 				return
 			}
 
-			if currentPlan.PriceAmount > 0 {
+			if !currentPlan.IsFree() {
 				// Current plan is paid - don't allow replacement, require upgrade endpoint
 				ctx.JSON(http.StatusBadRequest, &errors.APIError{
 					ErrorCode:    http.StatusBadRequest,
@@ -175,11 +175,11 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 	}
 
 	// FREE PLAN: Create subscription directly without Stripe
-	if plan.PriceAmount == 0 {
+	if plan.IsFree() {
 		// CRITICAL: If user has an existing PAID subscription, cancel it in Stripe first
 		if existingSubscription != nil && existingSubscription.StripeSubscriptionID != nil && *existingSubscription.StripeSubscriptionID != "" {
 			currentPlan, _ := sc.subscriptionService.GetSubscriptionPlan(existingSubscription.SubscriptionPlanID)
-			if currentPlan != nil && currentPlan.PriceAmount > 0 {
+			if currentPlan != nil && !currentPlan.IsFree() {
 				// User is downgrading from paid to free - cancel Stripe subscription
 				utils.Info("🔽 User %s downgrading from paid plan (%s) to free plan (%s) - canceling Stripe subscription",
 					userId, currentPlan.Name, plan.Name)
