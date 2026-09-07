@@ -210,7 +210,7 @@ func TestGetUserSessionsGroupFilterAsNonMemberIsRefused(t *testing.T) {
 }
 
 // TestGetUserSessionsGroupFilterOfInactiveGroupIsRefused pins that an archived
-// class-group grants no authority, mirroring callerManagesAnyGroup's active-group
+// class-group grants no authority, mirroring managedActiveGroupAmong's active-group
 // restriction.
 func TestGetUserSessionsGroupFilterOfInactiveGroupIsRefused(t *testing.T) {
 	db := freshTestDB(t)
