@@ -323,7 +323,8 @@ func (h *GroupMemberPermissionHook) Execute(ctx *hooks.HookContext) error {
 	return nil
 }
 
-// GroupMemberCleanupHook revokes permissions when a member is removed
+// GroupMemberCleanupHook gates the removal of a member on the requester's
+// right to manage the group, then revokes the member's permissions.
 type GroupMemberCleanupHook struct {
 	db           *gorm.DB
 	groupService services.GroupService
@@ -369,6 +370,19 @@ func (h *GroupMemberCleanupHook) Execute(ctx *hooks.HookContext) error {
 	// Prevent removing the group owner
 	if member.Role == models.GroupMemberRoleOwner {
 		return utils.ErrCannotRemoveOwner("group")
+	}
+
+	// Same gate as the create path (GroupMemberValidationHook): the requester
+	// must be able to manage the group. Platform administrators bypass it. An
+	// empty UserID is an internal call (cascades, cleanup jobs), not a request.
+	if ctx.UserID != "" && !ctx.IsAdmin() {
+		canManage, err := h.groupService.CanUserManageGroup(member.GroupID, ctx.UserID)
+		if err != nil {
+			return fmt.Errorf("permission check failed: %w", err)
+		}
+		if !canManage {
+			return utils.PermissionDeniedError("remove members from", "group")
+		}
 	}
 
 	// Revoke permissions from the member
