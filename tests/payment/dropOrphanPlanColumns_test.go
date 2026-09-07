@@ -23,11 +23,10 @@
 //   - raw `ALTER TABLE subscription_plans DROP COLUMN <col>` DOES work on the
 //     test-env SQLite (gorm.io/driver/sqlite v1.6.0) and on Postgres.
 //   - GORM's `db.Migrator().DropColumn(&model, col)` is a SILENT NO-OP on this
-//     SQLite driver (returns nil, column survives) — which is exactly what the
-//     pre-existing dropOrphan* migrations call. That is harmless in prod
-//     (Postgres) and in the current tests (those legacy columns never exist in
-//     the test DB), but it means GREEN CANNOT reuse migrator.DropColumn here and
-//     have these SQLite tests pass.
+//     SQLite driver (returns nil, column survives) — which is what the older
+//     dropOrphan* migrations called until #437 moved every one of them onto the
+//     shared raw-ALTER helper. Harmless in prod (Postgres), but it means GREEN
+//     CANNOT reuse migrator.DropColumn here and have these SQLite tests pass.
 //   So the seam GREEN must implement is: guard on `migrator.HasColumn` (for
 //   idempotency, replacing `DROP COLUMN IF EXISTS` which SQLite lacks) then raw
 //   `db.Exec("ALTER TABLE subscription_plans DROP COLUMN " + col)`. The final
@@ -49,7 +48,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// orphanPlanColumns are the 8 columns Task 3 must drop from subscription_plans.
+// orphanPlanColumns are the subscription_plans columns the migration must
+// drop: the 8 from Task 3, plus the 6 the older sibling migration (#437) used
+// to hand to migrator.DropColumn — a silent no-op on SQLite, so they were never
+// actually dropped in tests until the two migrations were unified.
 var orphanPlanColumns = []string{
 	"max_concurrent_users",
 	"allowed_templates",
@@ -59,6 +61,12 @@ var orphanPlanColumns = []string{
 	"addon_network_price_id",
 	"addon_storage_price_id",
 	"addon_terminal_price_id",
+	"persistent_sessions_enabled",
+	"max_persistent_sessions",
+	"quota_model",
+	"max_concurrent_terminals",
+	"allowed_machine_sizes",
+	"trial_days",
 }
 
 // ensureOrphanColumn adds an orphan column to subscription_plans if the table

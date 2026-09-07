@@ -188,12 +188,8 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Payment entities
 	db.AutoMigrate(&paymentModels.SubscriptionPlan{})
-	// MR !239 (SSOT consolidation): persistent_sessions_enabled and
-	// max_persistent_sessions were duplicates of data_persistence_enabled /
-	// data_persistence_gb. The model fields were removed; AutoMigrate leaves
-	// orphan columns behind, so we explicitly drop them here. Idempotent —
-	// HasColumn returns false once the column is gone.
-	dropOrphanSubscriptionPlanColumns(db)
+	// The orphan subscription_plans columns are dropped by DropOrphanPlanColumns
+	// at the end of AutoMigrateAll, after the final backfill that reads one of them.
 	db.AutoMigrate(&paymentModels.SubscriptionBatch{})
 	db.AutoMigrate(&paymentModels.UserSubscription{})         // DEPRECATED in Phase 2 (kept for backward compat)
 	db.AutoMigrate(&paymentModels.OrganizationSubscription{}) // NEW: Phase 2 - Organization subscriptions
@@ -867,45 +863,25 @@ func BackfillSingleActiveOrgSubscription(db *gorm.DB) {
 // migrateGroupRoles harmonizes the old 4-level group role model (owner, admin,
 // assistant, member) into the new 3-level model (owner, manager, member).
 // Idempotent: only updates rows that still use the old role names.
-// dropOrphanSubscriptionPlanColumns drops columns that used to back removed
-// model fields. AutoMigrate adds columns but never drops them, so without
-// this we leave behind dead columns that confuse SELECTs and Stripe sync
-// (drift the SSOT). Idempotent: HasColumn returns false once the column is
-// gone, so re-runs are safe.
+// orphanPlanColumns are the subscription_plans columns whose Go model fields were
+// deleted across prior cleanup campaigns but which still exist physically in prod
+// (AutoMigrate adds columns, never drops them). DropOrphanPlanColumns removes them.
 //
-// Dropped columns:
 //   - persistent_sessions_enabled / max_persistent_sessions (MR !239 — collapsed
 //     into DataPersistenceEnabled / DataPersistenceGB).
 //   - quota_model / max_concurrent_terminals / allowed_machine_sizes
 //     (dual-mode cleanup — the CPU/RAM budget is now the only quota model).
 //   - trial_days (#374 — OCF has no paid trial period; the free Trial plan is
 //     the only "trial").
-func dropOrphanSubscriptionPlanColumns(db *gorm.DB) {
-	orphans := []string{
-		"persistent_sessions_enabled",
-		"max_persistent_sessions",
-		"quota_model",
-		"max_concurrent_terminals",
-		"allowed_machine_sizes",
-		"trial_days",
-	}
-	migrator := db.Migrator()
-	for _, col := range orphans {
-		if !migrator.HasColumn(&paymentModels.SubscriptionPlan{}, col) {
-			continue
-		}
-		if err := migrator.DropColumn(&paymentModels.SubscriptionPlan{}, col); err != nil {
-			log.Printf("[MIGRATION] failed to drop orphan column subscription_plans.%s: %v", col, err)
-			continue
-		}
-		log.Printf("[MIGRATION] dropped orphan column subscription_plans.%s", col)
-	}
-}
-
-// orphanPlanColumns are the subscription_plans columns whose Go model fields were
-// deleted across prior cleanup campaigns but which still exist physically in prod
-// (AutoMigrate adds columns, never drops them). DropOrphanPlanColumns removes them.
+//   - max_concurrent_users / allowed_templates / max_courses / planned_features /
+//     features / addon_*_price_id (plan-model cleanup, !321).
 var orphanPlanColumns = []string{
+	"persistent_sessions_enabled",
+	"max_persistent_sessions",
+	"quota_model",
+	"max_concurrent_terminals",
+	"allowed_machine_sizes",
+	"trial_days",
 	"max_concurrent_users",
 	"allowed_templates",
 	"max_courses",
@@ -914,6 +890,31 @@ var orphanPlanColumns = []string{
 	"addon_network_price_id",
 	"addon_storage_price_id",
 	"addon_terminal_price_id",
+}
+
+// dropOrphanColumns removes each of cols from table when it still exists. It is
+// the one mechanism every orphan-column migration uses.
+//
+// Raw ALTER, not migrator.DropColumn: GORM's Migrator().DropColumn is a silent
+// no-op on gorm.io/driver/sqlite (returns nil, the column survives), so drops
+// routed through it never took effect in the test env. Postgres (prod) runs
+// DropColumn correctly, but a raw `ALTER TABLE ... DROP COLUMN` is equivalent
+// there and is the only form that also works on SQLite. Each drop is guarded on
+// HasColumn, standing in for the `DROP COLUMN IF EXISTS` SQLite lacks, which
+// also makes every caller idempotent. model is the GORM model HasColumn
+// resolves the table from; table is the same table's SQL name.
+func dropOrphanColumns(db *gorm.DB, table string, model any, cols []string) {
+	migrator := db.Migrator()
+	for _, col := range cols {
+		if !migrator.HasColumn(model, col) {
+			continue
+		}
+		if err := db.Exec("ALTER TABLE " + table + " DROP COLUMN " + col).Error; err != nil {
+			log.Printf("[MIGRATION] failed to drop orphan column %s.%s: %v", table, col, err)
+			continue
+		}
+		log.Printf("[MIGRATION] dropped orphan column %s.%s", table, col)
+	}
 }
 
 // orphanScenarioColumns are the scenarios columns whose Go model fields were
@@ -931,26 +932,11 @@ var orphanScenarioColumns = []string{
 // DropOrphanScenarioColumns is the guarded one-time migration that removes the
 // orphanScenarioColumns from scenarios.
 //
-// Same mechanism as DropOrphanPlanColumns, and for the same reason: GORM's
-// Migrator().DropColumn is a silent no-op on gorm.io/driver/sqlite, so this
-// issues the raw ALTER and guards it on HasColumn for idempotency.
-//
 // Nothing needs a final read here — unlike `features`, this column was already
 // inert before it was deleted, so there is nothing to back up or migrate out of
 // it.
 func DropOrphanScenarioColumns(db *gorm.DB) {
-	migrator := db.Migrator()
-
-	for _, col := range orphanScenarioColumns {
-		if !migrator.HasColumn(&scenarioModels.Scenario{}, col) {
-			continue
-		}
-		if err := db.Exec("ALTER TABLE scenarios DROP COLUMN " + col).Error; err != nil {
-			log.Printf("[MIGRATION] failed to drop orphan column scenarios.%s: %v", col, err)
-			continue
-		}
-		log.Printf("[MIGRATION] dropped orphan column scenarios.%s", col)
-	}
+	dropOrphanColumns(db, "scenarios", &scenarioModels.Scenario{}, orphanScenarioColumns)
 }
 
 // DropOrphanPlanColumns is the guarded one-time migration that removes the
@@ -964,66 +950,30 @@ func DropOrphanScenarioColumns(db *gorm.DB) {
 // no later step may read it. Guarded on HasColumn(features) so the backfill is
 // skipped once the column is dropped.
 //
-// Mechanism — raw ALTER, not migrator.DropColumn: GORM's Migrator().DropColumn is
-// a silent no-op on gorm.io/driver/sqlite (returns nil, the column survives), so
-// the test-env drops would never take effect. Postgres (prod) executes DropColumn
-// correctly, but a raw `ALTER TABLE ... DROP COLUMN` is equivalent there and is the
-// only mechanism that also works on SQLite. Each drop is guarded on HasColumn,
-// standing in for the `DROP COLUMN IF EXISTS` that SQLite lacks.
-//
-// Idempotent: a second run finds the columns already gone (HasColumn false) and is
-// a no-op; an already-migrated plan (GroupManagementEnabled=true) is left untouched
-// by the backfill.
+// Idempotent: a second run finds the columns already gone and is a no-op; an
+// already-migrated plan (GroupManagementEnabled=true) is left untouched by the
+// backfill.
 func DropOrphanPlanColumns(db *gorm.DB) {
-	migrator := db.Migrator()
-
 	// FINAL backfill pass — must read the raw `features` column before it is
 	// dropped below, so no future startup step needs it.
-	if migrator.HasColumn(&paymentModels.SubscriptionPlan{}, "features") {
+	if db.Migrator().HasColumn(&paymentModels.SubscriptionPlan{}, "features") {
 		BackfillGroupManagementEntitlement(db)
 	}
 
-	for _, col := range orphanPlanColumns {
-		if !migrator.HasColumn(&paymentModels.SubscriptionPlan{}, col) {
-			continue
-		}
-		if err := db.Exec("ALTER TABLE subscription_plans DROP COLUMN " + col).Error; err != nil {
-			log.Printf("[MIGRATION] failed to drop orphan column subscription_plans.%s: %v", col, err)
-			continue
-		}
-		log.Printf("[MIGRATION] dropped orphan column subscription_plans.%s", col)
-	}
+	dropOrphanColumns(db, "subscription_plans", &paymentModels.SubscriptionPlan{}, orphanPlanColumns)
 }
 
 // dropOrphanSubscriptionTrialEndColumns drops the trial_end column from
 // user_subscriptions and organization_subscriptions. OCF has no paid trial
 // period, so the TrialEnd model fields were removed (#374); AutoMigrate never
-// drops columns, so we drop them explicitly. Mirrors
-// dropOrphanSubscriptionPlanColumns and is idempotent.
+// drops columns, so we drop them explicitly.
 func dropOrphanSubscriptionTrialEndColumns(db *gorm.DB) {
-	migrator := db.Migrator()
-	targets := []struct {
-		name  string
-		model interface{}
-	}{
-		{"user_subscriptions", &paymentModels.UserSubscription{}},
-		{"organization_subscriptions", &paymentModels.OrganizationSubscription{}},
-	}
-	for _, t := range targets {
-		if !migrator.HasColumn(t.model, "trial_end") {
-			continue
-		}
-		if err := migrator.DropColumn(t.model, "trial_end"); err != nil {
-			log.Printf("[MIGRATION] failed to drop orphan column %s.trial_end: %v", t.name, err)
-			continue
-		}
-		log.Printf("[MIGRATION] dropped orphan column %s.trial_end", t.name)
-	}
+	dropOrphanColumns(db, "user_subscriptions", &paymentModels.UserSubscription{}, []string{"trial_end"})
+	dropOrphanColumns(db, "organization_subscriptions", &paymentModels.OrganizationSubscription{}, []string{"trial_end"})
 }
 
 // dropOrphanTerminalColumns drops legacy columns from the `terminals` table
-// that used to back removed model fields. Mirrors
-// dropOrphanSubscriptionPlanColumns and is idempotent.
+// that used to back removed model fields.
 //
 // MR !239 (SSOT consolidation): the `status` column was a duplicate of
 // `state` and drifted in ways that broke Resume + dashboard banners. The
@@ -1031,38 +981,15 @@ func dropOrphanSubscriptionTrialEndColumns(db *gorm.DB) {
 // reference it (none should remain) fail loudly instead of silently
 // reading stale data.
 func dropOrphanTerminalColumns(db *gorm.DB) {
-	orphans := []string{"status"}
-	migrator := db.Migrator()
-	for _, col := range orphans {
-		if !migrator.HasColumn(&terminalModels.Terminal{}, col) {
-			continue
-		}
-		if err := migrator.DropColumn(&terminalModels.Terminal{}, col); err != nil {
-			log.Printf("[MIGRATION] failed to drop orphan column terminals.%s: %v", col, err)
-			continue
-		}
-		log.Printf("[MIGRATION] dropped orphan column terminals.%s", col)
-	}
+	dropOrphanColumns(db, "terminals", &terminalModels.Terminal{}, []string{"status"})
 }
 
 // DropOrphanUserTerminalKeyColumns drops user_terminal_keys.max_sessions,
 // whose Go field was removed (#494). The value was stored, exposed on the
 // DTOs and compared nowhere: tt-backend budgets a key by CPU and RAM, so a
-// session count on the ocf-core side was a number nobody enforced. Raw ALTER
-// for the same reason as DropOrphanPlanColumns (GORM's DropColumn is a silent
-// no-op on SQLite); guarded on HasColumn so it is idempotent.
+// session count on the ocf-core side was a number nobody enforced.
 func DropOrphanUserTerminalKeyColumns(db *gorm.DB) {
-	migrator := db.Migrator()
-	for _, col := range []string{"max_sessions"} {
-		if !migrator.HasColumn(&terminalModels.UserTerminalKey{}, col) {
-			continue
-		}
-		if err := db.Exec("ALTER TABLE user_terminal_keys DROP COLUMN " + col).Error; err != nil {
-			log.Printf("[MIGRATION] failed to drop orphan column user_terminal_keys.%s: %v", col, err)
-			continue
-		}
-		log.Printf("[MIGRATION] dropped orphan column user_terminal_keys.%s", col)
-	}
+	dropOrphanColumns(db, "user_terminal_keys", &terminalModels.UserTerminalKey{}, []string{"max_sessions"})
 }
 
 // DeleteOrphanConcurrentTerminalsRows deletes any `usage_metrics` row whose
