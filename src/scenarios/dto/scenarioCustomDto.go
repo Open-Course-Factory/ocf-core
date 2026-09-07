@@ -50,15 +50,6 @@ type ImportScenarioInput struct {
 	SourcePath    string `json:"source_path,omitempty"`
 }
 
-// StartScenarioInput - DTO for starting a scenario session
-type StartScenarioInput struct {
-	ScenarioID        string `json:"scenario_id" binding:"required"`
-	TerminalSessionID string `json:"terminal_session_id" binding:"required"`
-	Backend           string `json:"backend,omitempty"`
-	InstanceType      string `json:"instance_type,omitempty"`
-	Locale            string `json:"locale,omitempty"`
-}
-
 // StepProvisioningStatus reports what happened to the container after an
 // advance. It is embedded in every advance response (and so inlined in their
 // JSON) so the three endpoints speak one language about it.

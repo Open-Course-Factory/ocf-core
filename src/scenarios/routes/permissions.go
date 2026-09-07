@@ -15,11 +15,6 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 
 	access.RegisterEnforced(enforcer, "Scenario Sessions",
 		access.RoutePermission{
-			Path: "/api/v1/scenario-sessions/start", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Start a new scenario session for the authenticated user",
-		},
-		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/my", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "List the authenticated user's scenario sessions",

@@ -20,7 +20,6 @@ import (
 	"soli/formations/src/scenarios/services"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/httperrors"
-	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -30,10 +29,11 @@ import (
 )
 
 // scenarioLaunchController handles the scenario launch / session-start
-// endpoints: starting a session on an existing terminal (StartScenario), the
-// composed-session launch flow (LaunchScenario), the launch preview
-// (PreviewScenario), listing launchable scenarios (GetAvailableScenarios), and
-// the learner's own session list (GetMySessions). It embeds
+// endpoints: the composed-session launch flow (LaunchScenario), the launch
+// preview (PreviewScenario), listing launchable scenarios
+// (GetAvailableScenarios), and the learner's own session list (GetMySessions).
+// A scenario always provisions a fresh machine sized for it; attaching a
+// scenario to a terminal already running was retired in #507. It embeds
 // scenarioControllerBase to reach the shared db handle and helpers
 // (hasAdminRole, buildScenarioOutput).
 type scenarioLaunchController struct {
@@ -67,208 +67,6 @@ func NewScenarioLaunchController(db *gorm.DB) *scenarioLaunchController {
 		sessionService:         sessionService,
 		terminalService:        terminalService,
 	}
-}
-
-// StartScenario godoc
-// @Summary Start a scenario session
-// @Description Start a new scenario session on a terminal for the authenticated user
-// @Tags scenario-sessions
-// @Accept json
-// @Produce json
-// @Param body body dto.StartScenarioInput true "Start request"
-// @Success 201 {object} dto.ScenarioSessionOutput
-// @Failure 400 {object} errors.APIError
-// @Failure 403 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
-// @Router /scenario-sessions/start [post]
-// @Security BearerAuth
-func (sc *scenarioLaunchController) StartScenario(ctx *gin.Context) {
-	var input dto.StartScenarioInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	scenarioID, err := uuid.Parse(input.ScenarioID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
-		return
-	}
-
-	userID := ctx.GetString("userId")
-
-	// Validate terminal session ownership
-	var terminal terminalModels.Terminal
-	if err := sc.db.Where("session_id = ?", input.TerminalSessionID).First(&terminal).Error; err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Terminal session not found",
-		})
-		return
-	}
-	if terminal.UserID != userID {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "You do not own this terminal session",
-		})
-		return
-	}
-
-	// Check machine compatibility: terminal must match scenario requirements
-	var scenario models.Scenario
-	if err := sc.db.First(&scenario, "id = ?", scenarioID).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Scenario not found",
-		})
-		return
-	}
-
-	// An archived scenario cannot start a new run, on a fresh terminal or on
-	// one the learner already has.
-	if sc.rejectIfArchived(ctx, &scenario) {
-		return
-	}
-
-	// Size check: terminal size must be >= scenario required size
-	requiredSize := scenario.InstanceType // stores size like "M", "XL"
-	machineSize := terminal.MachineSize   // actual terminal size like "L"
-	if requiredSize != "" && machineSize != "" {
-		if services.SizeIsSmallerThan(machineSize, requiredSize) {
-			ctx.JSON(http.StatusConflict, &errors.APIError{
-				ErrorCode:    http.StatusConflict,
-				ErrorMessage: fmt.Sprintf("This scenario requires a %s machine or larger, but this terminal is %s", requiredSize, machineSize),
-			})
-			return
-		}
-	}
-
-	// OS type check: look up terminal's distribution to get its OS type from tt-backend
-	if scenario.OsType != "" && terminal.ComposedDistribution != "" {
-		distributions, ttErr := sc.terminalService.GetDistributions("")
-		if ttErr == nil {
-			for _, dist := range distributions {
-				if dist.Name == terminal.ComposedDistribution || dist.Prefix == terminal.InstanceType {
-					if dist.OsType != "" && dist.OsType != scenario.OsType {
-						ctx.JSON(http.StatusConflict, &errors.APIError{
-							ErrorCode:    http.StatusConflict,
-							ErrorMessage: fmt.Sprintf("This scenario requires a %s-based machine, but this terminal runs %s", scenario.OsType, dist.OsType),
-						})
-						return
-					}
-					break
-				}
-			}
-		}
-	}
-
-	// Check group-based scenario assignment access (admins and public scenarios bypass)
-	if scenario.IsPublic {
-		// Public scenarios are available to everyone, skip assignment check
-	} else if !sc.hasAdminRole(ctx) {
-		groupIDs, err := sc.openClassMembershipIDs(userID)
-		if err != nil {
-			slog.Error("failed to check group membership", "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to verify scenario access",
-			})
-			return
-		}
-
-		var count int64
-		if len(groupIDs) > 0 {
-			if err := sc.db.Model(&models.ScenarioAssignment{}).
-				Where("scenario_id = ? AND group_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)",
-					scenarioID, groupIDs, "group", time.Now(), time.Now()).
-				Count(&count).Error; err != nil {
-				slog.Error("failed to check group scenario assignment", "err", err)
-				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-					ErrorCode:    http.StatusInternalServerError,
-					ErrorMessage: "Failed to verify scenario access",
-				})
-				return
-			}
-		}
-
-		if count == 0 {
-			// Also check organization-scoped assignments
-			var orgIDs []uuid.UUID
-			if err := sc.db.Model(&orgModels.OrganizationMember{}).
-				Where("user_id = ? AND is_active = true", userID).
-				Pluck("organization_id", &orgIDs).Error; err != nil {
-				slog.Error("failed to check org membership", "err", err)
-				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-					ErrorCode:    http.StatusInternalServerError,
-					ErrorMessage: "Failed to verify scenario access",
-				})
-				return
-			}
-			if len(orgIDs) > 0 {
-				if err := sc.db.Model(&models.ScenarioAssignment{}).
-					Where("scenario_id = ? AND organization_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)",
-						scenarioID, orgIDs, "org", time.Now(), time.Now()).
-					Count(&count).Error; err != nil {
-					slog.Error("failed to check org scenario assignment", "err", err)
-					ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-						ErrorCode:    http.StatusInternalServerError,
-						ErrorMessage: "Failed to verify scenario access",
-					})
-					return
-				}
-			}
-		}
-
-		if count == 0 {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Scenario is not assigned to your group or organization",
-			})
-			return
-		}
-	}
-
-	session, err := sc.sessionService.StartScenario(userID, scenarioID, input.TerminalSessionID, input.Locale)
-	if err != nil {
-		if stderrors.Is(err, services.ErrActiveSessionExists) {
-			// A conflict the learner can resolve by resuming, not a fault.
-			// Reported with a reason so the client can offer that instead of a
-			// retry that would fail identically.
-			ctx.JSON(http.StatusConflict, gin.H{
-				"error_code":    http.StatusConflict,
-				"error_message": "A run of this scenario is already in progress.",
-				"reason":        blockReasonSessionExists,
-			})
-			return
-		}
-		slog.Error("failed to start scenario", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to start scenario",
-		})
-		return
-	}
-
-	terminalSessionID := ""
-	if session.TerminalSessionID != nil {
-		terminalSessionID = *session.TerminalSessionID
-	}
-	ctx.JSON(http.StatusCreated, dto.SessionResponse{
-		ID:                session.ID.String(),
-		ScenarioID:        session.ScenarioID.String(),
-		UserID:            session.UserID,
-		TrainerID:         session.TrainerID,
-		TerminalSessionID: terminalSessionID,
-		CurrentStep:       session.CurrentStep,
-		Status:            session.Status,
-		StartedAt:         session.StartedAt,
-	})
 }
 
 // GetMySessions godoc
