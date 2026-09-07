@@ -226,7 +226,16 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 		return fmt.Errorf("user is already a member of this group")
 	}
 
-	// 5. Check if requesting user can manage this group
+	// 5. Default role to "member" if not set, then refuse anything that is not a
+	// role at all — before the cap below, which an administrator bypasses (#429).
+	if member.Role == "" {
+		member.Role = models.GroupMemberRoleMember
+	}
+	if err := access.ValidateRole(string(member.Role)); err != nil {
+		return err
+	}
+
+	// 6. Check if requesting user can manage this group
 	if ctx.UserID != "" {
 		canManage, err := h.groupService.CanUserManageGroup(member.GroupID, ctx.UserID)
 		if err != nil {
@@ -239,12 +248,6 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 		// Set InvitedBy if not already set
 		if member.InvitedBy == "" {
 			member.InvitedBy = ctx.UserID
-		}
-
-		// Default role to "member" if not set, so the cap below sees the effective role
-		// rather than an empty string (which IsRoleAtLeast would treat as unknown and deny).
-		if member.Role == "" {
-			member.Role = models.GroupMemberRoleMember
 		}
 
 		// Cap the assigned role at the granter's own rank so a manager cannot mint a member

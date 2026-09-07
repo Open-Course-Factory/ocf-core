@@ -1,9 +1,12 @@
 package access
 
 import (
+	"fmt"
 	"log"
 	"sort"
 	"strings"
+
+	entityErrors "soli/formations/src/entityManagement/errors"
 )
 
 // IsAdmin checks whether any of the given roles indicates administrator status.
@@ -74,6 +77,21 @@ func RolePriority(role string) int {
 func IsKnownRole(role string) bool {
 	_, ok := roleHierarchy[role]
 	return ok
+}
+
+// ValidateRole returns the structured validation error the generic entity path
+// maps to 400 when role is not in the hierarchy, and nil otherwise.
+//
+// The member hooks call it before any rank comparison: a value that is not a
+// role must never be persisted, whoever writes it. Non-admin writers were
+// already refused by the cap (an unknown role ranks below everything), but a
+// platform administrator bypasses the cap and could store "garbage" (#429).
+func ValidateRole(role string) error {
+	if IsKnownRole(role) {
+		return nil
+	}
+	return entityErrors.NewValidationError("role",
+		fmt.Sprintf("unknown role %q; valid roles: %s", role, KnownRolesForMessage()))
 }
 
 // KnownRolesForMessage renders the valid roles lowest-privilege first, for error
