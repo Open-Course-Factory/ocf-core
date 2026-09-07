@@ -20,8 +20,12 @@ import (
 )
 
 type OrganizationService interface {
-	// Organization management
-	CreateOrganization(userID string, input dto.CreateOrganizationInput) (*models.Organization, error)
+	// Organization management.
+	//
+	// There is deliberately no CreateOrganization here. Team organizations are
+	// created through the generic entity route, and the creation gates —
+	// entitlement, owner membership, permissions — live in the organization
+	// hooks, on the path that actually runs (#477, same shape as #452 for groups).
 	CreatePersonalOrganization(userID string, userDisplayName string) (*models.Organization, error)
 	ConvertToTeam(orgID uuid.UUID, requestingUserID string, newName string) (*models.Organization, error)
 	GetOrganization(orgID uuid.UUID, includeRelations bool) (*models.Organization, error)
@@ -74,82 +78,6 @@ func NewOrganizationService(db *gorm.DB) OrganizationService {
 		repository: repositories.NewOrganizationRepository(db),
 		db:         db,
 	}
-}
-
-// CreateOrganization creates a new organization and adds the creator as owner
-func (os *organizationService) CreateOrganization(userID string, input dto.CreateOrganizationInput) (*models.Organization, error) {
-	// Check if organization name is unique for this user
-	existingOrg, _ := os.repository.GetOrganizationByNameAndOwner(input.Name, userID)
-	if existingOrg != nil {
-		return nil, fmt.Errorf("you already have an organization with this name")
-	}
-
-	// Create organization
-	org := &models.Organization{
-		Name:               input.Name,
-		DisplayName:        input.DisplayName,
-		Description:        input.Description,
-		OwnerUserID:        userID,
-		SubscriptionPlanID: input.SubscriptionPlanID,
-		OrganizationType:   models.OrgTypeTeam, // Regular organizations are teams
-		MaxGroups:          input.MaxGroups,
-		MaxMembers:         input.MaxMembers,
-		Metadata:           input.Metadata,
-		IsActive:           true,
-	}
-
-	if org.MaxGroups == 0 {
-		org.MaxGroups = 250 // Default limit
-	}
-	if org.MaxMembers == 0 {
-		org.MaxMembers = 50 // Default limit
-	}
-
-	createdOrg, err := os.repository.CreateOrganization(org)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create organization: %w", err)
-	}
-
-	// Automatically add creator as owner-member
-	ownerMember := &models.OrganizationMember{
-		OrganizationID: createdOrg.ID,
-		UserID:         userID,
-		Role:           models.OrgRoleOwner,
-		InvitedBy:      userID,
-		JoinedAt:       time.Now(),
-		IsActive:       true,
-	}
-
-	err = os.repository.AddOrganizationMember(ownerMember)
-	if err != nil {
-		// Rollback organization creation if adding owner fails
-		os.repository.DeleteOrganization(createdOrg.ID)
-		return nil, fmt.Errorf("failed to add owner to organization: %w", err)
-	}
-
-	// Grant permissions to the owner (both member and manager permissions)
-	err = os.GrantOrganizationPermissions(userID, createdOrg.ID)
-	if err != nil {
-		utils.Warn("Failed to grant member permissions to organization owner: %v", err)
-	}
-
-	err = os.GrantOrganizationManagerPermissions(userID, createdOrg.ID)
-	if err != nil {
-		utils.Warn("Failed to grant manager permissions to organization owner: %v", err)
-	}
-
-	// No Trial is assigned here. A team org is a container for groups, not a
-	// billing entity: it holds no plan of its own and inherits the acting
-	// member's entitlement, so the owner's paid plan applies inside the org they
-	// created to use it. Auto-assigning a free Trial made that Trial outrank the
-	// owner's paid plan for as long as the org existed — resolveForOrg prefers
-	// any org subscription over the personal fallback (#448).
-	//
-	// A structure (school/OF) still gets a plan, admin-assigned, which
-	// legitimately overrides the inheritance.
-
-	utils.Info("Organization created: %s (ID: %s) by user %s", createdOrg.Name, createdOrg.ID, userID)
-	return createdOrg, nil
 }
 
 // CreatePersonalOrganization creates a personal organization for a user
