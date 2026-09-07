@@ -30,7 +30,12 @@ type SubscriptionPlan struct {
 	// `features` DB column is left orphaned (AutoMigrate never drops it); the
 	// startup backfill still reads it to migrate legacy group_management.
 	IsActive      bool    `gorm:"default:true" json:"is_active"`
-	IsCatalog     bool    `gorm:"default:true" json:"is_catalog" mapstructure:"is_catalog"` // true = shown on pricing page, false = custom/unlisted plan
+	// IsCatalog: true = shown on the pricing page, false = custom / unlisted.
+	// No `default:true` tag on purpose: GORM omits a zero-value bool that has
+	// a default tag from the INSERT, so a plan created with is_catalog=false
+	// silently landed on the public pricing page (#447). The default lives in
+	// the create converter instead, and every write states the value.
+	IsCatalog     bool    `json:"is_catalog" mapstructure:"is_catalog"`
 	RequiredRole  string  `gorm:"type:varchar(50)" json:"required_role"`
 	StripeCreated bool    `gorm:"default:false" json:"stripe_created"`
 	CreationError *string `gorm:"type:text" json:"creation_error,omitempty"`

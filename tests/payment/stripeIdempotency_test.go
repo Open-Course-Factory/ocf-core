@@ -507,6 +507,7 @@ func activeStripePlan(t *testing.T, db *gorm.DB, name string) *models.Subscripti
 		BillingInterval: "month",
 		StripePriceID:   &priceID,
 		IsActive:        true,
+		IsCatalog:       true,
 	}
 	require.NoError(t, db.Create(plan).Error)
 	return plan

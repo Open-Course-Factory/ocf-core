@@ -26,7 +26,10 @@ type GroupMember struct {
 	Role      GroupMemberRole `gorm:"type:varchar(50);default:'member'" json:"role"`
 	InvitedBy string          `gorm:"type:varchar(255)" json:"invited_by,omitempty"` // Who invited this member
 	JoinedAt  time.Time       `gorm:"not null" json:"joined_at"`
-	IsActive  bool            `gorm:"default:true" json:"is_active"`
+	// No `default:true` tag on purpose: GORM omits a zero-value bool that has a
+	// default tag from the INSERT, so a member created inactive was stored
+	// active (#503). Every creation site states the value.
+	IsActive  bool            `json:"is_active"`
 
 	// Optional metadata (custom fields per member)
 	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
