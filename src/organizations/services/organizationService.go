@@ -475,13 +475,10 @@ func (os *organizationService) GetOrganizationMembers(orgID uuid.UUID, includes 
 	return os.repository.GetOrganizationMembers(orgID, includes)
 }
 
-// IsUserInOrganization checks if a user is a member of an organization
+// IsUserInOrganization checks if a user is an active member of an organization
 func (os *organizationService) IsUserInOrganization(orgID uuid.UUID, userID string) (bool, error) {
 	member, err := os.repository.GetOrganizationMember(orgID, userID)
-	if err != nil || member == nil {
-		return false, nil
-	}
-	return member.IsActive, nil
+	return err == nil && member != nil, nil
 }
 
 // GetUserOrganizationRole returns the user's role in an organization

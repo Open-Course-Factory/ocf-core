@@ -172,9 +172,17 @@ func (r *organizationRepository) AddOrganizationMember(member *models.Organizati
 }
 
 // GetOrganizationMember retrieves a specific member from an organization
+// GetOrganizationMember returns the ACTIVE membership of userID in orgID.
+//
+// Every service-level authorization predicate (role lookup, manage check,
+// org-wide group access) reads the row through here, so this is where a
+// deactivated membership stops counting: offboarding sets is_active=false and
+// the Layer-2 middleware (GormMembershipChecker) and the effective-plan
+// resolver already filter on it (#427). Offboarding itself reads rows through
+// its own findMembership, which must still see inactive ones.
 func (r *organizationRepository) GetOrganizationMember(orgID uuid.UUID, userID string) (*models.OrganizationMember, error) {
 	var member models.OrganizationMember
-	result := r.db.Where("organization_id = ? AND user_id = ?", orgID, userID).First(&member)
+	result := r.db.Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).First(&member)
 	if result.Error != nil {
 		return nil, result.Error
 	}
