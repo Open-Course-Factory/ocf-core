@@ -26,6 +26,10 @@ import (
 //
 // Anything that needs this DTO MUST come through here. A DTO with more than one
 // builder drifts; this one already had, silently, across six fields.
+// orgAssignableNote is what the response says about a plan an organization
+// may hold; the refusal wording for the other case is ValidateOrgAssignablePlan's.
+const orgAssignableNote = "this plan grants group management and can be assigned to an organization"
+
 func SubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.SubscriptionPlanOutput {
 	if plan == nil {
 		return dto.SubscriptionPlanOutput{}
@@ -39,6 +43,13 @@ func SubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.SubscriptionPla
 			UnitAmount:  tier.UnitAmount,
 			Description: tier.Description,
 		}
+	}
+
+	// The assignment door's own verdict, so the editor warns with the exact
+	// wording the refusal would carry (#463).
+	orgAssignable, orgAssignabilityNote := true, orgAssignableNote
+	if refusal := ValidateOrgAssignablePlan(plan); refusal != nil {
+		orgAssignable, orgAssignabilityNote = false, refusal.Error()
 	}
 
 	return dto.SubscriptionPlanOutput{
@@ -61,6 +72,8 @@ func SubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.SubscriptionPla
 
 		// Capability flags
 		GroupManagementEnabled:    plan.GroupManagementEnabled,
+		OrgAssignable:             orgAssignable,
+		OrgAssignabilityNote:      orgAssignabilityNote,
 		BulkPurchasable:           plan.BulkPurchasable,
 		IsDefaultFree:             plan.IsDefaultFree,
 		SeatUnit:                  plan.SeatUnit,

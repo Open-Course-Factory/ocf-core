@@ -98,13 +98,20 @@ type SubscriptionPlanOutput struct {
 	// IsDefaultFree is read-only: which plan new signups receive is elected at
 	// startup, not chosen per request. There is deliberately no input field for
 	// it — two plans claiming the election is a worse state than none.
-	IsDefaultFree          bool      `json:"is_default_free"`
-	GroupManagementEnabled bool      `json:"group_management_enabled"`
-	BulkPurchasable        bool      `json:"bulk_purchasable"`
-	SeatUnit               string    `json:"seat_unit"`
-	RequiredRole           string    `json:"required_role"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	IsDefaultFree          bool `json:"is_default_free"`
+	GroupManagementEnabled bool `json:"group_management_enabled"`
+	// OrgAssignable says whether an organization may hold this plan, and
+	// OrgAssignabilityNote says why in words: the assignment door's own
+	// refusal when it may not. Both are derived from that door's rule, so the
+	// plan editor can say "individual only" before an admin builds a plan and
+	// hits the refusal.
+	OrgAssignable        bool      `json:"org_assignable"`
+	OrgAssignabilityNote string    `json:"org_assignability_note"`
+	BulkPurchasable      bool      `json:"bulk_purchasable"`
+	SeatUnit             string    `json:"seat_unit"`
+	RequiredRole         string    `json:"required_role"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 
 	// Terminal-specific limits (for Terminal Trainer feature)
 	MaxSessionDurationMinutes   int  `json:"max_session_duration_minutes"`
