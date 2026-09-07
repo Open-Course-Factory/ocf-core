@@ -85,6 +85,94 @@ func SweepAutoAssignedOrgTrials(db *gorm.DB) {
 	}
 }
 
+// SweepIndividualPlanOrgSubscriptions removes the individual plans that
+// organizations were given before #458 closed both assignment doors.
+//
+// An organization's plan overrides its members' own, unconditionally: a trainer
+// whose team org was given Solo could not create classes and ran on Solo's
+// budget, with nothing reporting a problem. The doors now refuse such a plan,
+// but only for new assignments; this applies the same rules
+// (paymentServices.ValidateOrgAssignablePlan for the subscription,
+// ValidateRolePlan for role mappings) to what already exists, so the guard and
+// the sweep can never disagree on what an individual plan is.
+//
+// Subscriptions are cancelled, not deleted, like SweepAutoAssignedOrgTrials:
+// the record is history and 'cancelled' releases the one-active-per-org index.
+// Role mappings are hard-deleted: a soft delete would keep the (org, role)
+// unique index occupied and block the correct mapping from being created.
+// Every change is logged per organization, since each one changes what all of
+// that organization's members resolve to.
+//
+// Idempotent: a swept subscription is no longer entitling, a removed mapping
+// is gone.
+func SweepIndividualPlanOrgSubscriptions(db *gorm.DB) {
+	cancelled := cancelIndividualPlanOrgSubscriptions(db)
+	removed := removeIndividualPlanRoleMappings(db)
+	if cancelled > 0 || removed > 0 {
+		log.Printf("[ORG-INDIVIDUAL-PLAN-SWEEP] cancelled %d organization subscription(s) and removed %d role mapping(s) on individual plans",
+			cancelled, removed)
+	}
+}
+
+func cancelIndividualPlanOrgSubscriptions(db *gorm.DB) int {
+	var subscriptions []paymentModels.OrganizationSubscription
+	if err := db.Preload("SubscriptionPlan").Scopes(paymentModels.ScopeEntitling).Find(&subscriptions).Error; err != nil {
+		log.Printf("[ORG-INDIVIDUAL-PLAN-SWEEP] failed to load organization subscriptions: %v", err)
+		return 0
+	}
+
+	now := time.Now()
+	cancelled := 0
+	for i := range subscriptions {
+		sub := &subscriptions[i]
+		refusal := paymentServices.ValidateOrgAssignablePlan(&sub.SubscriptionPlan)
+		if refusal == nil {
+			continue
+		}
+		if err := db.Model(sub).Updates(map[string]any{"status": "cancelled", "cancelled_at": now}).Error; err != nil {
+			log.Printf("[ORG-INDIVIDUAL-PLAN-SWEEP] organization %s: failed to cancel subscription %s: %v", sub.OrganizationID, sub.ID, err)
+			continue
+		}
+		// The denormalised pointer has to follow, or the org keeps advertising a
+		// plan whose subscription was just cancelled (#449).
+		if err := db.Model(&organizationModels.Organization{}).
+			Where("id = ? AND subscription_plan_id = ?", sub.OrganizationID, sub.SubscriptionPlanID).
+			Update("subscription_plan_id", nil).Error; err != nil {
+			log.Printf("[ORG-INDIVIDUAL-PLAN-SWEEP] organization %s: failed to clear plan pointer: %v", sub.OrganizationID, err)
+		}
+		log.Printf("[ORG-INDIVIDUAL-PLAN-SWEEP] organization %s: cancelled subscription %s, it now inherits its members' plans (%v)",
+			sub.OrganizationID, sub.ID, refusal)
+		cancelled++
+	}
+	return cancelled
+}
+
+func removeIndividualPlanRoleMappings(db *gorm.DB) int {
+	var mappings []paymentModels.OrganizationRolePlan
+	if err := db.Preload("SubscriptionPlan").Find(&mappings).Error; err != nil {
+		log.Printf("[ORG-INDIVIDUAL-PLAN-SWEEP] failed to load organization role plans: %v", err)
+		return 0
+	}
+
+	removed := 0
+	for i := range mappings {
+		mapping := &mappings[i]
+		refusal := paymentServices.ValidateRolePlan(mapping.Role, &mapping.SubscriptionPlan)
+		if refusal == nil {
+			continue
+		}
+		if err := db.Unscoped().Delete(mapping).Error; err != nil {
+			log.Printf("[ORG-INDIVIDUAL-PLAN-SWEEP] organization %s: failed to remove %s role mapping %s: %v",
+				mapping.OrganizationID, mapping.Role, mapping.ID, err)
+			continue
+		}
+		log.Printf("[ORG-INDIVIDUAL-PLAN-SWEEP] organization %s: removed %s role mapping %s (%v)",
+			mapping.OrganizationID, mapping.Role, mapping.ID, refusal)
+		removed++
+	}
+	return removed
+}
+
 // AutoMigrateAll performs database migrations for all entities
 func AutoMigrateAll(db *gorm.DB) {
 	// Course entities
@@ -291,6 +379,10 @@ func AutoMigrateAll(db *gorm.DB) {
 	// holds one — and a Trial outranks its owner's paid plan, so those trainers
 	// stay locked out of the classroom features they paid for until this runs.
 	SweepAutoAssignedOrgTrials(db)
+
+	// Same story for the individual plans that reached organizations before
+	// #458 closed the doors: still held, still overriding every member (#462).
+	SweepIndividualPlanOrgSubscriptions(db)
 
 	// Report subscriptions whose plan no longer exists. Resolution now refuses
 	// them (#481), which protects the platform but shows the user a missing
