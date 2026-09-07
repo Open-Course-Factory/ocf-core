@@ -67,35 +67,6 @@ func (tc *TeacherController) GetMyGroups(c *gin.Context) {
 	c.JSON(http.StatusOK, summaries)
 }
 
-// GetGroupActivity godoc
-// @Summary Get group activity
-// @Description Returns all active scenario sessions for members of a group
-// @Tags scenario-teacher
-// @Produce json
-// @Param groupId path string true "Group ID (UUID)"
-// @Success 200 {array} services.GroupActivityItem
-// @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /teacher/groups/{groupId}/activity [get]
-// @Security BearerAuth
-func (tc *TeacherController) GetGroupActivity(c *gin.Context) {
-	groupID, err := uuid.Parse(c.Param("groupId"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
-		return
-	}
-
-	results, err := tc.dashboardService.GetGroupActivity(groupID)
-	if err != nil {
-		slog.Error("failed to get group activity", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get group activity"})
-		return
-	}
-
-	c.JSON(http.StatusOK, results)
-}
-
 // GetGroupLiveProgress godoc
 // @Summary Get the merged per-learner live view of a class
 // @Description Returns one row per ACTIVE group member, joining supervision presence

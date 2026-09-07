@@ -121,34 +121,6 @@ func TestCalculateGrade_NoSteps(t *testing.T) {
 
 // --- Service-level dashboard tests ---
 
-func TestGetGroupActivity_Success(t *testing.T) {
-	db := setupTestDB(t)
-
-	groupID := uuid.New()
-	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
-		GroupID: groupID, UserID: "student-1", Role: "member", JoinedAt: time.Now(), IsActive: true,
-	}).Error)
-	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
-		GroupID: groupID, UserID: "student-2", Role: "member", JoinedAt: time.Now(), IsActive: true,
-	}).Error)
-
-	scenario := models.Scenario{
-		Name: "activity-test", Title: "Activity", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
-	}
-	require.NoError(t, db.Create(&scenario).Error)
-
-	// Student 1 has active session, student 2 has none
-	require.NoError(t, db.Create(&models.ScenarioSession{
-		ScenarioID: scenario.ID, UserID: "student-1", Status: "active", StartedAt: time.Now(),
-	}).Error)
-
-	svc := services.NewTeacherDashboardService(db, nil, nil)
-	activity, err := svc.GetGroupActivity(groupID)
-	require.NoError(t, err)
-	assert.Len(t, activity, 1)
-	assert.Equal(t, "student-1", activity[0].UserID)
-}
-
 func TestGetScenarioResults_Success(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -424,90 +396,6 @@ func TestBulkStartScenario_Success(t *testing.T) {
 
 // --- Teacher Controller HTTP tests ---
 
-func setupTeacherRouter(db *gorm.DB) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	api := r.Group("/api/v1")
-	api.Use(func(c *gin.Context) {
-		c.Set("userId", "teacher-1")
-		c.Set("userRoles", []string{"admin"})
-		c.Next()
-	})
-
-	dashboardService := services.NewTeacherDashboardService(db, nil, nil)
-	controller := &testTeacherController{dashboardService: dashboardService}
-
-	teacher := api.Group("/teacher")
-	teacher.GET("/groups/:groupId/activity", controller.GetGroupActivity)
-	teacher.POST("/groups/:groupId/scenarios/:scenarioId/bulk-start", controller.BulkStart)
-
-	return r
-}
-
-type testTeacherController struct {
-	dashboardService *services.TeacherDashboardService
-}
-
-func (tc *testTeacherController) GetGroupActivity(ctx *gin.Context) {
-	groupID, err := uuid.Parse(ctx.Param("groupId"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
-		return
-	}
-	activity, err := tc.dashboardService.GetGroupActivity(groupID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, activity)
-}
-
-func (tc *testTeacherController) BulkStart(ctx *gin.Context) {
-	groupID, err := uuid.Parse(ctx.Param("groupId"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
-		return
-	}
-	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scenario ID"})
-		return
-	}
-	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, services.ScenarioProvisioning{}, 0, "")
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusCreated, result)
-}
-
-func TestTeacherAPI_GetGroupActivity(t *testing.T) {
-	db := setupTestDB(t)
-	router := setupTeacherRouter(db)
-
-	groupID := uuid.New()
-	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
-		GroupID: groupID, UserID: "student-1", Role: "member", JoinedAt: time.Now(), IsActive: true,
-	}).Error)
-
-	scenario := models.Scenario{
-		Name: "api-activity", Title: "API Activity", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
-	}
-	require.NoError(t, db.Create(&scenario).Error)
-	require.NoError(t, db.Create(&models.ScenarioSession{
-		ScenarioID: scenario.ID, UserID: "student-1", Status: "active", StartedAt: time.Now(),
-	}).Error)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+groupID.String()+"/activity", nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	var response []map[string]any
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
-	assert.Len(t, response, 1)
-}
-
 func TestTeacherAPI_BulkStart(t *testing.T) {
 	t.Skip("BulkStartScenario now requires a non-nil TerminalTrainerService mock; needs dedicated mock implementation")
 }
@@ -546,7 +434,6 @@ func setupRealTeacherRouter(t *testing.T, db *gorm.DB, userID string, roles []st
 	ctrl := scenarioController.NewTeacherController(db)
 	teacher := api.Group("/teacher")
 	teacher.GET("/groups", ctrl.GetMyGroups)
-	teacher.GET("/groups/:groupId/activity", ctrl.GetGroupActivity)
 	teacher.GET("/groups/:groupId/live-progress", ctrl.GetGroupLiveProgress)
 	teacher.GET("/groups/:groupId/scenarios/:scenarioId/results", ctrl.GetScenarioResults)
 	teacher.GET("/groups/:groupId/scenarios/:scenarioId/analytics", ctrl.GetScenarioAnalytics)
@@ -569,7 +456,7 @@ func TestTeacherController_AccessDenied_NonTeacher(t *testing.T) {
 	router := setupRealTeacherRouter(t, db, "random-student", []string{"member"})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/activity", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/live-progress", nil)
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
@@ -587,7 +474,7 @@ func TestTeacherController_PlatformAdminAccess(t *testing.T) {
 	router := setupRealTeacherRouter(t, db, "platform-admin", []string{"admin"})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/activity", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/live-progress", nil)
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -611,7 +498,7 @@ func TestTeacherController_GroupOwnerAccess(t *testing.T) {
 	router := setupRealTeacherRouter(t, db, "teacher-own", []string{"member"})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/activity", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/live-progress", nil)
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -795,42 +682,6 @@ func TestResetGroupScenarioSessions_OnlyAffectsGroupMembers(t *testing.T) {
 }
 
 // --- Soft-delete (deleted_at IS NULL) tests ---
-
-func TestGetGroupActivity_ExcludesSoftDeletedSteps(t *testing.T) {
-	db := setupTestDB(t)
-
-	groupID := uuid.New()
-	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
-		GroupID: groupID, UserID: "sd-activity-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
-	}).Error)
-
-	scenario := models.Scenario{
-		Name: "sd-activity", Title: "Soft Delete Activity", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
-	}
-	require.NoError(t, db.Create(&scenario).Error)
-
-	// Create 3 steps, then soft-delete one
-	for i := 0; i < 3; i++ {
-		require.NoError(t, db.Create(&models.ScenarioStep{
-			ScenarioID: scenario.ID, Order: i, Title: "Step",
-		}).Error)
-	}
-	// Soft-delete step with order=2
-	var stepToDelete models.ScenarioStep
-	require.NoError(t, db.Where("scenario_id = ? AND \"order\" = ?", scenario.ID, 2).First(&stepToDelete).Error)
-	require.NoError(t, db.Delete(&stepToDelete).Error)
-
-	require.NoError(t, db.Create(&models.ScenarioSession{
-		ScenarioID: scenario.ID, UserID: "sd-activity-s1", Status: "active", StartedAt: time.Now(),
-	}).Error)
-
-	svc := services.NewTeacherDashboardService(db, nil, nil)
-	activity, err := svc.GetGroupActivity(groupID)
-	require.NoError(t, err)
-	require.Len(t, activity, 1)
-	// total_steps should be 2, not 3 (soft-deleted step excluded)
-	assert.Equal(t, int64(2), activity[0].TotalSteps)
-}
 
 func TestGetScenarioResults_ExcludesSoftDeletedSteps(t *testing.T) {
 	db := setupTestDB(t)

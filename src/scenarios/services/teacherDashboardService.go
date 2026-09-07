@@ -34,21 +34,6 @@ var (
 	ErrScenarioNotAssignedToGroup   = errors.New("scenario is not assigned to this group")
 )
 
-// GroupActivityItem represents an active session for a group member
-type GroupActivityItem struct {
-	SessionID         uuid.UUID `json:"session_id"`
-	UserID            string    `json:"user_id"`
-	UserName          string    `json:"user_name,omitempty"`
-	UserEmail         string    `json:"user_email,omitempty"`
-	ScenarioID        uuid.UUID `json:"scenario_id"`
-	ScenarioTitle     string    `json:"scenario_title"`
-	CurrentStep       int       `json:"current_step"`
-	TotalSteps        int64     `json:"total_steps"`
-	Status            string    `json:"status"`
-	StartedAt         time.Time `json:"started_at"`
-	TerminalSessionID *string   `json:"terminal_session_id,omitempty"`
-}
-
 // AssignmentProgressItem re-exports the DTO so callers reference it as
 // services.AssignmentProgressItem, consistent with the other item types here.
 type AssignmentProgressItem = dto.AssignmentProgressItem
@@ -178,14 +163,6 @@ func resolveUserIdentities[T any](items []T, userIDOf func(T) string, apply func
 	}
 }
 
-func enrichActivityUsers(items []GroupActivityItem) {
-	resolveUserIdentities(items,
-		func(item GroupActivityItem) string { return item.UserID },
-		func(item *GroupActivityItem, info userInfo) {
-			item.UserName, item.UserEmail = info.Name, info.Email
-		})
-}
-
 func enrichResultUsers(items []ScenarioResultItem) {
 	resolveUserIdentities(items,
 		func(item ScenarioResultItem) string { return item.UserID },
@@ -215,29 +192,6 @@ func NewTeacherDashboardService(db *gorm.DB, terminalService ttServices.Terminal
 		terminalService: terminalService,
 		sessionService:  sessionService,
 	}
-}
-
-// GetGroupActivity returns active sessions for all members of a group (single JOIN query, no N+1)
-func (s *TeacherDashboardService) GetGroupActivity(groupID uuid.UUID) ([]GroupActivityItem, error) {
-	var results []GroupActivityItem
-	err := s.db.Raw(`
-		SELECT ss.id as session_id, ss.user_id, ss.current_step, ss.status, ss.started_at, ss.terminal_session_id,
-		       sc.title as scenario_title, sc.id as scenario_id,
-		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = sc.id AND deleted_at IS NULL) as total_steps
-		FROM scenario_sessions ss
-		JOIN scenarios sc ON sc.id = ss.scenario_id
-		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
-		WHERE ss.status IN ('active', 'provisioning') AND ss.is_preview = false
-		ORDER BY ss.started_at DESC
-	`, groupID).Scan(&results).Error
-	if err != nil {
-		return nil, err
-	}
-	if results == nil {
-		results = []GroupActivityItem{}
-	}
-	enrichActivityUsers(results)
-	return results, nil
 }
 
 // GetGroupAssignmentsProgress returns one progress summary per scenario that has
