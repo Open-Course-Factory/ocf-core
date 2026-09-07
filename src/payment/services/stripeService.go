@@ -3500,6 +3500,7 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				Currency:        string(priceObj.Currency),
 				BillingInterval: string(priceObj.Recurring.Interval),
 				IsActive:        prod.Active,
+				IsCatalog:       true,
 				StripeCreated:   true,
 			}
 			// A new plan must state both axes: an unstated one would be created

@@ -591,23 +591,9 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 	}
 
 	for _, plan := range plans {
-		// Read the intent BEFORE Create: GORM omits zero-value bools on insert for
-		// a column declared `default:true`, then writes the applied default back
-		// into the struct — so after Create, a plan meant to be hidden reports
-		// IsCatalog=true and its own intent is gone. Same defect as #447 on the
-		// entity API.
-		wantsHiding := !plan.IsCatalog
-
 		if err := db.Create(plan).Error; err != nil {
 			log.Printf("Warning: Failed to create subscription plan %s: %v\n", plan.Name, err)
 			continue
-		}
-		// Writing it back explicitly is the documented workaround; Select("*") on
-		// Create does not work despite older comments saying so.
-		if wantsHiding {
-			if err := db.Model(plan).Update("is_catalog", false).Error; err != nil {
-				log.Printf("Warning: Failed to hide plan %s from the catalogue: %v\n", plan.Name, err)
-			}
 		}
 		log.Printf("Created subscription plan: %s\n", plan.Name)
 	}
