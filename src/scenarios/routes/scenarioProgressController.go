@@ -57,7 +57,7 @@ func NewScenarioProgressControllerWithTerminalService(db *gorm.DB, terminalServi
 	services.WireTerminalCallbacks(sessionService, terminalService)
 
 	return &scenarioProgressController{
-		scenarioControllerBase: scenarioControllerBase{db: db},
+		scenarioControllerBase: newScenarioControllerBase(db),
 		sessionService:         sessionService,
 		terminalService:        terminalService,
 	}

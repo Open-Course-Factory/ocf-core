@@ -8,11 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
-	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/scenarios/dto"
-	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	"soli/formations/src/scenarios/utils"
@@ -47,19 +44,17 @@ type scenarioController struct {
 	exportService    *services.ScenarioExportService
 	seedService      *services.ScenarioSeedService
 	duplicateService *services.ScenarioDuplicateService
-	groupService     groupServices.GroupService
 	sessionService   *services.ScenarioSessionService
 }
 
 // NewScenarioController creates a new scenario controller with its service dependencies
 func NewScenarioController(db *gorm.DB) ScenarioController {
 	return &scenarioController{
-		scenarioControllerBase: scenarioControllerBase{db: db},
+		scenarioControllerBase: newScenarioControllerBase(db),
 		importerService:        services.NewScenarioImporterService(db),
 		exportService:          services.NewScenarioExportService(db),
 		seedService:            services.NewScenarioSeedService(db),
 		duplicateService:       services.NewScenarioDuplicateService(db),
-		groupService:           groupServices.NewGroupService(db),
 		sessionService:         services.NewScenarioSessionService(db, services.NewFlagService(), services.NewVerificationService()),
 	}
 }
@@ -616,36 +611,6 @@ func (sc *scenarioController) DuplicateScenario(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(newScenario))
 }
 
-// canManageScenarioByID loads a scenario and answers whether the caller may
-// manage it — the one rule behind PATCH, DELETE, export and archive: platform
-// admin, creator, org manager of the scenario's org, or manager of any group
-// it is assigned to.
-//
-// It deliberately writes no response. The callers answer differently on
-// purpose: the single-scenario routes report a missing id as 404, while the
-// bulk export reports it as 403 so the endpoint cannot be used to probe which
-// ids exist. Returning the decision keeps that difference visible at each call
-// site instead of burying it in a shared responder.
-//
-// A missing scenario comes back as gorm.ErrRecordNotFound.
-func (sc *scenarioController) canManageScenarioByID(ctx *gin.Context, scenarioID uuid.UUID) (*models.Scenario, bool, error) {
-	var scenario models.Scenario
-	if err := sc.db.Where("id = ?", scenarioID).First(&scenario).Error; err != nil {
-		return nil, false, err
-	}
-
-	userRoles, _ := ctx.Get("userRoles")
-	roles, _ := userRoles.([]string)
-	if access.IsAdmin(roles) {
-		return &scenario, true, nil
-	}
-
-	allowed, err := scenarioHooks.CanManageScenario(sc.db, sc.groupService, &scenario, ctx.GetString("userId"))
-	if err != nil {
-		return nil, false, err
-	}
-	return &scenario, allowed, nil
-}
 
 // loadManageableScenario loads the scenario named by the :id parameter and
 // checks the caller may manage it — the same rule that guards PATCH, DELETE

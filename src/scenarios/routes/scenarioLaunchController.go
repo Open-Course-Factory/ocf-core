@@ -62,7 +62,7 @@ func NewScenarioLaunchController(db *gorm.DB) *scenarioLaunchController {
 	terminalServices.SetConsoleShellKilledObserver(sessionService.EndCrashTrapRun)
 
 	return &scenarioLaunchController{
-		scenarioControllerBase: scenarioControllerBase{db: db},
+		scenarioControllerBase: newScenarioControllerBase(db),
 		provisioningService:    services.NewScenarioProvisioningService(db, terminalService),
 		sessionService:         sessionService,
 		terminalService:        terminalService,

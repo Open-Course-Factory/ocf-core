@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"net/http"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
+	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/scenarios/dto"
+	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 
 	"github.com/gin-gonic/gin"
@@ -13,12 +16,43 @@ import (
 	"gorm.io/gorm"
 )
 
-// scenarioControllerBase holds dependencies and helpers shared by the
-// scenario controllers (the main scenarioController and the focused
-// scenarioProgressController). Both controllers embed it so they can reach
-// helpers such as getSessionIfOwned without duplication.
+// scenarioControllerBase holds dependencies and helpers shared by the four
+// scenario controllers (main, management, launch, progress). They embed it so
+// they can reach helpers such as getSessionIfOwned and canManageScenarioByID
+// without duplication.
 type scenarioControllerBase struct {
-	db *gorm.DB
+	db           *gorm.DB
+	groupService groupServices.GroupService
+}
+
+func newScenarioControllerBase(db *gorm.DB) scenarioControllerBase {
+	return scenarioControllerBase{db: db, groupService: groupServices.NewGroupService(db)}
+}
+
+// canManageScenarioByID loads the scenario and answers whether the caller may
+// manage it: a platform admin always may, anyone else through
+// CanManageScenario (creator, org manager, manager of an assigned group). It
+// is the one rule behind PATCH, DELETE, archive and every export, so a handler
+// that must refuse on its own (defense in depth behind Layer 2) calls this
+// rather than restating a narrower check. A missing scenario comes back as
+// gorm.ErrRecordNotFound.
+func (b *scenarioControllerBase) canManageScenarioByID(ctx *gin.Context, scenarioID uuid.UUID) (*models.Scenario, bool, error) {
+	var scenario models.Scenario
+	if err := b.db.Where("id = ?", scenarioID).First(&scenario).Error; err != nil {
+		return nil, false, err
+	}
+
+	userRoles, _ := ctx.Get("userRoles")
+	roles, _ := userRoles.([]string)
+	if access.IsAdmin(roles) {
+		return &scenario, true, nil
+	}
+
+	allowed, err := scenarioHooks.CanManageScenario(b.db, b.groupService, &scenario, ctx.GetString("userId"))
+	if err != nil {
+		return nil, false, err
+	}
+	return &scenario, allowed, nil
 }
 
 // getSessionIfOwned loads a session by ID and checks that the authenticated user owns it.

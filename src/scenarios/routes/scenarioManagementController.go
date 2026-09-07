@@ -40,7 +40,7 @@ type scenarioManagementController struct {
 // service dependencies wired to the given database handle.
 func NewScenarioManagementController(db *gorm.DB) *scenarioManagementController {
 	return &scenarioManagementController{
-		scenarioControllerBase: scenarioControllerBase{db: db},
+		scenarioControllerBase: newScenarioControllerBase(db),
 		seedService:            services.NewScenarioSeedService(db),
 		importerService:        services.NewScenarioImporterService(db),
 		exportService:          services.NewScenarioExportService(db),
@@ -89,6 +89,20 @@ func (sc *scenarioManagementController) GroupExportScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "Scenario not assigned to this group",
+		})
+		return
+	}
+
+	// Same rule as every other export (defense in depth behind Layer 2's
+	// GroupRole gate): the assignment says the scenario is here, not that the
+	// caller may take it away.
+	if _, allowed, err := sc.canManageScenarioByID(ctx, scenarioID); err != nil || !allowed {
+		if err != nil {
+			slog.Error("failed to check scenario management access", "err", err)
+		}
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "You do not have permission to export this scenario",
 		})
 		return
 	}
@@ -411,15 +425,16 @@ func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 		return
 	}
 
-	// In-handler membership check (defense in depth — do not rely solely on Layer 2).
-	// Admins bypass; all other users must be an active member of this org.
+	// In-handler check (defense in depth — do not rely solely on Layer 2's
+	// OrgRole gate). Admins bypass; everyone else must be an active manager
+	// or owner of this org, the same threshold Layer 2 enforces.
 	userID := ctx.GetString("userId")
 	userRoles, _ := ctx.Get("userRoles")
 	roles, _ := userRoles.([]string)
 	if !access.IsAdmin(roles) {
 		var orgMember orgModels.OrganizationMember
 		result := sc.db.Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).First(&orgMember)
-		if result.Error != nil {
+		if result.Error != nil || !orgMember.IsManager() {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: "Access denied",
