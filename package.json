@@ -1,14 +1,5 @@
 {
-  "marp": {
-    "author": "Thomas Saquet",
-    "bespoke": {
-      "progress": true
-    },
-    "inputDir": "src",
-    "output": "dist"
-  },
   "dependencies": {
-    "@marp-team/marp-core": "^3.7.0",
     "@slidev/cli": "^51.6.0",
     "codemirror-theme-vars": "^0.1.2",
     "markdown-it": "^13.0.1",

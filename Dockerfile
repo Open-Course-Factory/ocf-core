@@ -34,12 +34,6 @@ RUN NODE_MAJOR=21 \
 RUN apt-get update \
  && apt-get install nodejs -y
 
-# Install NPM dependencies
-RUN npm install -g @marp-team/marp-core \
-    && npm install -g markdown-it-include \
-    && npm install -g markdown-it-container \
-    && npm install -g markdown-it-attrs
-
 RUN useradd -ms /bin/bash ocf
 
 USER ocf
