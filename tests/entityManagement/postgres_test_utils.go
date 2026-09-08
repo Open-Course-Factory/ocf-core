@@ -3,8 +3,9 @@ package entityManagement_tests
 
 import (
 	"fmt"
-	"os"
 	"testing"
+
+	config "soli/formations/src/configuration"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -24,21 +25,13 @@ type PostgresTestConfig struct {
 // GetPostgresConfigFromEnv reads PostgreSQL configuration from environment variables
 func GetPostgresConfigFromEnv() PostgresTestConfig {
 	return PostgresTestConfig{
-		Host:     getEnvOrDefault("POSTGRES_HOST", "localhost"),
-		Port:     getEnvOrDefault("POSTGRES_PORT", "5432"),
-		User:     getEnvOrDefault("POSTGRES_USER", "postgres"),
-		Password: getEnvOrDefault("POSTGRES_PASSWORD", "postgres"),
-		DBName:   getEnvOrDefault("POSTGRES_DB", "ocf_test"),
-		SSLMode:  getEnvOrDefault("POSTGRES_SSLMODE", "disable"),
+		Host:     config.GetEnv("POSTGRES_HOST", "localhost"),
+		Port:     config.GetEnv("POSTGRES_PORT", "5432"),
+		User:     config.GetEnv("POSTGRES_USER", "postgres"),
+		Password: config.GetEnv("POSTGRES_PASSWORD", "postgres"),
+		DBName:   config.GetEnv("POSTGRES_DB", "ocf_test"),
+		SSLMode:  config.GetEnv("POSTGRES_SSLMODE", "disable"),
 	}
-}
-
-// getEnvOrDefault returns the environment variable value or a default
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 // BuildPostgresDSN creates a PostgreSQL DSN from config

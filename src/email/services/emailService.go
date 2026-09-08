@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
-	"os"
 	"time"
 
+	config "soli/formations/src/configuration"
 	"soli/formations/src/utils"
 
 	"gorm.io/gorm"
@@ -33,34 +33,27 @@ type emailService struct {
 
 func NewEmailService() EmailService {
 	return &emailService{
-		smtpHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
-		smtpPort:     getEnv("SMTP_PORT", "587"),
-		smtpUsername: getEnv("SMTP_USERNAME", ""),
-		smtpPassword: getEnv("SMTP_PASSWORD", ""),
-		fromEmail:    getEnv("SMTP_FROM_EMAIL", "noreply@yourdomain.com"),
-		fromName:     getEnv("SMTP_FROM_NAME", "OCF Platform"),
+		smtpHost:     config.GetEnv("SMTP_HOST", "smtp.gmail.com"),
+		smtpPort:     config.GetEnv("SMTP_PORT", "587"),
+		smtpUsername: config.GetEnv("SMTP_USERNAME", ""),
+		smtpPassword: config.GetEnv("SMTP_PASSWORD", ""),
+		fromEmail:    config.GetEnv("SMTP_FROM_EMAIL", "noreply@yourdomain.com"),
+		fromName:     config.GetEnv("SMTP_FROM_NAME", "OCF Platform"),
 		db:           nil, // Will be set when used with templates
 	}
 }
 
 func NewEmailServiceWithDB(db *gorm.DB) EmailService {
 	return &emailService{
-		smtpHost:        getEnv("SMTP_HOST", "smtp.gmail.com"),
-		smtpPort:        getEnv("SMTP_PORT", "587"),
-		smtpUsername:    getEnv("SMTP_USERNAME", ""),
-		smtpPassword:    getEnv("SMTP_PASSWORD", ""),
-		fromEmail:       getEnv("SMTP_FROM_EMAIL", "noreply@yourdomain.com"),
-		fromName:        getEnv("SMTP_FROM_NAME", "OCF Platform"),
+		smtpHost:        config.GetEnv("SMTP_HOST", "smtp.gmail.com"),
+		smtpPort:        config.GetEnv("SMTP_PORT", "587"),
+		smtpUsername:    config.GetEnv("SMTP_USERNAME", ""),
+		smtpPassword:    config.GetEnv("SMTP_PASSWORD", ""),
+		fromEmail:       config.GetEnv("SMTP_FROM_EMAIL", "noreply@yourdomain.com"),
+		fromName:        config.GetEnv("SMTP_FROM_NAME", "OCF Platform"),
 		db:              db,
 		templateService: NewTemplateService(db),
 	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 func (s *emailService) SendEmail(to, subject, body string) error {

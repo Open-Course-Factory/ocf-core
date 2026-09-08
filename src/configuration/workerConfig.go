@@ -16,7 +16,7 @@ type WorkerConfig struct {
 
 func LoadWorkerConfig() *WorkerConfig {
 	config := &WorkerConfig{
-		URL:          getEnv("OCF_WORKER_URL", "http://localhost:8081"),
+		URL:          GetEnv("OCF_WORKER_URL", "http://localhost:8081"),
 		Timeout:      getDurationEnv("OCF_WORKER_TIMEOUT", 300) * time.Second,
 		RetryCount:   getIntEnv("OCF_WORKER_RETRY_COUNT", 3),
 		PollInterval: getDurationEnv("OCF_WORKER_POLL_INTERVAL", 5) * time.Second,
@@ -24,7 +24,8 @@ func LoadWorkerConfig() *WorkerConfig {
 	return config
 }
 
-func getEnv(key, defaultValue string) string {
+// GetEnv returns the environment variable, or defaultValue when unset or empty.
+func GetEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
