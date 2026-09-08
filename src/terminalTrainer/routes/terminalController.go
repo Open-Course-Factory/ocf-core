@@ -145,10 +145,8 @@ func NewTerminalControllerWithService(db *gorm.DB, svc services.TerminalTrainerS
 func (tc *terminalController) hasTerminalAccess(ctx *gin.Context, terminalID, userID string) (bool, error) {
 	// Vérifier d'abord si l'utilisateur est admin
 	userRoles := ctx.GetStringSlice("userRoles")
-	for _, role := range userRoles {
-		if role == "administrator" {
-			return true, nil
-		}
+	if access.IsAdmin(userRoles) {
+		return true, nil
 	}
 
 	// Utiliser le service pour vérifier l'accès (propriétaire ou accès en tant que propriétaire du groupe)
@@ -842,13 +840,7 @@ func (tc *terminalController) SyncAllSessions(ctx *gin.Context) {
 	globalSync := ctx.Param("admin")
 
 	// Vérifier si l'utilisateur est admin
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(userRoles)
 
 	var response *dto.SyncAllSessionsResponse
 	var err error
@@ -914,13 +906,7 @@ func (tc *terminalController) SyncUserSessions(ctx *gin.Context) {
 	// Vérifier les permissions si ce n'est pas l'utilisateur lui-même
 	if targetUserId != currentUserId {
 		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
+		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
@@ -975,13 +961,7 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 	// Vérifier les droits d'accès
 	if terminal.UserID != userId {
 		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
+		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
@@ -1072,13 +1052,7 @@ func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
 	userRoles := ctx.GetStringSlice("userRoles")
 
 	// Vérifier les permissions
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(userRoles)
 
 	// Si pas admin et demande stats d'un autre user, refuser
 	if targetUserId != "" && targetUserId != currentUserId && !isAdmin {
@@ -1275,13 +1249,7 @@ func (tc *terminalController) GetBackends(ctx *gin.Context) {
 	} else {
 		// Unfiltered backend list requires admin role
 		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
+		isAdmin := access.IsAdmin(userRoles)
 		if !isAdmin {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
@@ -1321,13 +1289,7 @@ func (tc *terminalController) GetBackends(ctx *gin.Context) {
 //	@Router			/terminals/backends/{backendId}/set-default [patch]
 func (tc *terminalController) SetDefaultBackend(ctx *gin.Context) {
 	userRoles := ctx.GetStringSlice("userRoles")
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(userRoles)
 	if !isAdmin {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
@@ -1437,13 +1399,7 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 func (tc *terminalController) isSessionOwnerOrAdmin(ctx *gin.Context, terminal *models.Terminal) bool {
 	userId := ctx.GetString("userId")
 	userRoles := ctx.GetStringSlice("userRoles")
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(userRoles)
 	return tc.service.IsUserAuthorizedForSession(userId, terminal, isAdmin)
 }
 
@@ -1660,13 +1616,7 @@ func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) 
 	// Check if user is org owner/manager or admin
 	userId := ctx.GetString("userId")
 	userRoles := ctx.GetStringSlice("userRoles")
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(userRoles)
 	if !tc.service.IsUserOrgManagerOrAdmin(userId, orgID, isAdmin) {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
@@ -1722,13 +1672,7 @@ func (tc *terminalController) GetOrgTerminalUsage(ctx *gin.Context) {
 
 	userID := ctx.GetString("userId")
 	userRoles := ctx.GetStringSlice("userRoles")
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(userRoles)
 	if !tc.service.IsUserOrgManagerOrAdmin(userID, orgID, isAdmin) {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
@@ -1784,13 +1728,7 @@ func (tc *terminalController) GetOrgUsageExport(ctx *gin.Context) {
 	}
 
 	userID := ctx.GetString("userId")
-	isAdmin := false
-	for _, role := range ctx.GetStringSlice("userRoles") {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(ctx.GetStringSlice("userRoles"))
 	if !tc.service.IsUserOrgManagerOrAdmin(userID, orgID, isAdmin) {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,

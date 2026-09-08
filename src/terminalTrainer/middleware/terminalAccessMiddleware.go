@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
@@ -71,13 +72,9 @@ func (tam *TerminalAccessMiddleware) requireTerminalAccess(allowStopped bool) gi
 		}
 
 		// Check if user is admin (admins have access to everything)
-		userRoles := ctx.GetStringSlice("userRoles")
-		for _, role := range userRoles {
-			if role == "administrator" {
-				// Admin has full access
-				ctx.Next()
-				return
-			}
+		if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+			ctx.Next()
+			return
 		}
 
 		// Check terminal-specific access (owner or group owner)

@@ -273,10 +273,8 @@ func (c *IncusUIController) IsUserAuthorizedForBackend(userID string, userRoles 
 	}
 
 	// System administrators can access any backend
-	for _, role := range userRoles {
-		if role == "administrator" {
-			return true
-		}
+	if access.IsAdmin(userRoles) {
+		return true
 	}
 
 	// Non-admins are blocked from protected backends (e.g. system default)
