@@ -71,28 +71,19 @@ func (s sshClientController) ShellWeb(ctx *gin.Context) {
 
 	conn, upgradeErr := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if upgradeErr != nil {
-		ctx.JSON(websocket.CloseProtocolError, &errors.APIError{
-			ErrorCode:    websocket.CloseProtocolError,
-			ErrorMessage: upgradeErr.Error(),
-		})
+		errors.Respond(ctx, websocket.CloseProtocolError, upgradeErr.Error())
 		return
 	}
 
 	_, readContent, readErr := conn.ReadMessage()
 	if readErr != nil {
-		ctx.JSON(websocket.CloseInternalServerErr, &errors.APIError{
-			ErrorCode:    websocket.CloseInternalServerErr,
-			ErrorMessage: readErr.Error(),
-		})
+		errors.Respond(ctx, websocket.CloseInternalServerErr, readErr.Error())
 		return
 	}
 
 	sshClient, decodeError := decodeMsgToSSHClient(string(readContent))
 	if decodeError != nil {
-		ctx.JSON(websocket.CloseUnsupportedData, &errors.APIError{
-			ErrorCode:    websocket.CloseUnsupportedData,
-			ErrorMessage: decodeError.Error(),
-		})
+		errors.Respond(ctx, websocket.CloseUnsupportedData, decodeError.Error())
 		return
 	}
 
@@ -101,10 +92,7 @@ func (s sshClientController) ShellWeb(ctx *gin.Context) {
 
 	keysDto, errorGettingSshKeys := sshkeyService.GetKeysByUserId(userId)
 	if errorGettingSshKeys != nil {
-		ctx.JSON(websocket.CloseInternalServerErr, &errors.APIError{
-			ErrorCode:    websocket.CloseInternalServerErr,
-			ErrorMessage: errorGettingSshKeys.Error(),
-		})
+		errors.Respond(ctx, websocket.CloseInternalServerErr, errorGettingSshKeys.Error())
 	}
 
 	var keys []string
@@ -123,10 +111,7 @@ func (s sshClientController) ShellWeb(ctx *gin.Context) {
 	if err != nil {
 		conn.WriteMessage(1, []byte(err.Error()))
 		conn.Close()
-		ctx.JSON(websocket.CloseInternalServerErr, &errors.APIError{
-			ErrorCode:    websocket.CloseInternalServerErr,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, websocket.CloseInternalServerErr, err.Error())
 		return
 	}
 	sshClient.RequestTerminal(terminal)
