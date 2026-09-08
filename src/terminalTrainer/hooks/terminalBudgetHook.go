@@ -22,7 +22,6 @@
 package terminalHooks
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -202,14 +201,6 @@ func budgetExhaustedFromResult(
 		Current:   result.UsedCPU,
 		Requested: size.CPU,
 	}
-}
-
-// IsBudgetError reports whether err is the budget-related sentinel
-// raised by this hook. Useful for middleware that wants to translate
-// the hook error into a 402/403 HTTP response.
-func IsBudgetError(err error) bool {
-	var be *ErrBudgetExhausted
-	return errors.As(err, &be)
 }
 
 // Compile-time check that TerminalBudgetHook satisfies hooks.Hook. Catches

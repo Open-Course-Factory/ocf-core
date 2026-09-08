@@ -198,15 +198,6 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 	return tts
 }
 
-// SetQuotaServiceForTest replaces the wired QuotaService. Exported for unit
-// tests that need to inject a fake — production code must not call this.
-func (tts *terminalTrainerService) SetQuotaServiceForTest(qs paymentServices.QuotaService) {
-	tts.quotaService = qs
-	if tts.composer != nil {
-		tts.composer.quotaService = qs
-	}
-}
-
 // The following methods delegate to terminalProxyClient, which owns the
 // tt-backend HTTP layer. They keep terminalTrainerService satisfying the
 // TerminalTrainerService interface without exposing the proxy to callers.

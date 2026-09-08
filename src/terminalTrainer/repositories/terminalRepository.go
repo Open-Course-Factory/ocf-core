@@ -17,7 +17,6 @@ type TerminalRepository interface {
 	CreateUserTerminalKey(key *models.UserTerminalKey) error
 	GetUserTerminalKeyByUserID(userID string, lookForActive bool) (*models.UserTerminalKey, error)
 	UpdateUserTerminalKey(key *models.UserTerminalKey) error
-	DeleteUserTerminalKey(userID string) error
 
 	// Terminal session methods
 	CreateTerminalSession(terminal *models.Terminal) error
@@ -49,7 +48,6 @@ type TerminalRepository interface {
 	GetAllActiveUserKeys() (*[]models.UserTerminalKey, error)
 	GetTerminalSessionBySessionID(sessionID string) (*models.Terminal, error)
 	CreateTerminalSessionFromAPI(terminal *models.Terminal) error
-	GetOrphanedLocalSessions(apiSessionIDs []string) (*[]models.Terminal, error)
 	GetSyncStatistics(userID string) (map[string]int, error)
 
 	// Cleanup methods
@@ -86,10 +84,6 @@ func (r *terminalRepository) GetUserTerminalKeyByUserID(userID string, lookForAc
 
 func (r *terminalRepository) UpdateUserTerminalKey(key *models.UserTerminalKey) error {
 	return r.db.Save(key).Error
-}
-
-func (r *terminalRepository) DeleteUserTerminalKey(userID string) error {
-	return r.db.Where("user_id = ?", userID).Delete(&models.UserTerminalKey{}).Error
 }
 
 // Terminal session methods
@@ -376,48 +370,6 @@ func (tr *terminalRepository) CreateTerminalSessionFromAPI(terminal *models.Term
 	return tr.db.Create(terminal).Error
 }
 
-func (tr *terminalRepository) GetOrphanedLocalSessions(apiSessionIDs []string) (*[]models.Terminal, error) {
-	var orphanedSessions []models.Terminal
-
-	// "Alive" sessions are those whose State indicates they're still consumable.
-	// We don't include StateStopped because those are intentionally paused —
-	// they shouldn't be treated as orphans even if tt-backend doesn't list
-	// them on a /sessions sweep. The "paused" entry is an explicit TerminalState
-	// cast on a raw string because the literal is not part of the canonical
-	// TerminalState enum (legacy tt-backend value).
-	aliveStates := []models.TerminalState{
-		models.StateRunning,
-		models.StateResuming,
-		models.StateHibernating,
-		models.TerminalState("paused"),
-	}
-
-	if len(apiSessionIDs) == 0 {
-		// Si aucune session côté API, toutes les sessions locales vivantes sont orphelines
-		result := tr.db.Preload("UserTerminalKey").Where(
-			"state IN (?)", aliveStates,
-		).Find(&orphanedSessions)
-
-		if result.Error != nil {
-			return nil, result.Error
-		}
-	} else {
-		// Sessions vivantes qui ne sont pas dans la liste API
-		result := tr.db.Preload("UserTerminalKey").Where(
-			"state IN (?) AND session_id NOT IN (?)",
-			aliveStates,
-			apiSessionIDs,
-		).Find(&orphanedSessions)
-
-		if result.Error != nil {
-			return nil, result.Error
-		}
-	}
-
-	return &orphanedSessions, nil
-}
-
-// Méthode pour obtenir des statistiques de synchronisation
 func (tr *terminalRepository) GetSyncStatistics(userID string) (map[string]int, error) {
 	stats := make(map[string]int)
 
