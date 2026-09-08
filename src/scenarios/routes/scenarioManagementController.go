@@ -66,19 +66,13 @@ func NewScenarioManagementController(db *gorm.DB) *scenarioManagementController 
 func (sc *scenarioManagementController) GroupExportScenario(ctx *gin.Context) {
 	groupID, err := uuid.Parse(ctx.Param("groupId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid group ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid group ID")
 		return
 	}
 
 	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
@@ -86,10 +80,7 @@ func (sc *scenarioManagementController) GroupExportScenario(ctx *gin.Context) {
 	var assignment models.ScenarioAssignment
 	if err := sc.db.Where("scenario_id = ? AND group_id = ? AND is_active = true",
 		scenarioID, groupID).First(&assignment).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Scenario not assigned to this group",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not assigned to this group")
 		return
 	}
 
@@ -100,10 +91,7 @@ func (sc *scenarioManagementController) GroupExportScenario(ctx *gin.Context) {
 		if err != nil {
 			slog.Error("failed to check scenario management access", "err", err)
 		}
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "You do not have permission to export this scenario",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "You do not have permission to export this scenario")
 		return
 	}
 
@@ -114,10 +102,7 @@ func (sc *scenarioManagementController) GroupExportScenario(ctx *gin.Context) {
 		export, err := sc.exportService.ExportAsJSON(scenarioID)
 		if err != nil {
 			slog.Error("failed to export group scenario as JSON", "err", err)
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return
 		}
 		ctx.JSON(http.StatusOK, export)
@@ -126,20 +111,14 @@ func (sc *scenarioManagementController) GroupExportScenario(ctx *gin.Context) {
 		zipBytes, filename, err := sc.exportService.ExportAsArchive(scenarioID)
 		if err != nil {
 			slog.Error("failed to export group scenario as archive", "err", err)
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return
 		}
 		ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 		ctx.Data(http.StatusOK, "application/zip", zipBytes)
 
 	default:
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid format. Use 'json' or 'killerkoda'",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid format. Use 'json' or 'killerkoda'")
 	}
 }
 
@@ -160,19 +139,13 @@ func (sc *scenarioManagementController) GroupExportScenario(ctx *gin.Context) {
 func (sc *scenarioManagementController) GroupImportJSON(ctx *gin.Context) {
 	groupID, err := uuid.Parse(ctx.Param("groupId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid group ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid group ID")
 		return
 	}
 
 	var input dto.SeedScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -181,20 +154,14 @@ func (sc *scenarioManagementController) GroupImportJSON(ctx *gin.Context) {
 	// Get the group's organization ID
 	var group groupModels.ClassGroup
 	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Group not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Group not found")
 		return
 	}
 
 	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, group.OrganizationID)
 	if err != nil {
 		slog.Error("failed to import scenario for group", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to import scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
 		return
 	}
 
@@ -240,10 +207,7 @@ func (sc *scenarioManagementController) GroupImportJSON(ctx *gin.Context) {
 func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 	groupID, err := uuid.Parse(ctx.Param("groupId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid group ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid group ID")
 		return
 	}
 
@@ -252,29 +216,20 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 	// Get the group's organization ID
 	var group groupModels.ClassGroup
 	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Group not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Group not found")
 		return
 	}
 
 	// Get file from multipart form
 	file, err := ctx.FormFile("file")
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "File is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "File is required")
 		return
 	}
 
 	// Validate file size (10MB max)
 	if file.Size > 10*1024*1024 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "File size exceeds 10MB limit",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "File size exceeds 10MB limit")
 		return
 	}
 
@@ -289,10 +244,7 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 	case strings.HasSuffix(filename, ".zip"):
 		ext = ".zip"
 	default:
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "File must be .zip, .tar.gz, or .tgz",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "File must be .zip, .tar.gz, or .tgz")
 		return
 	}
 
@@ -300,10 +252,7 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 	tmpFile, err := os.CreateTemp("", "scenario-upload-*"+ext)
 	if err != nil {
 		slog.Error("failed to create temp file", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to process upload",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
 		return
 	}
 	defer os.Remove(tmpFile.Name())
@@ -312,10 +261,7 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 	if err != nil {
 		tmpFile.Close()
 		slog.Error("failed to open uploaded file", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to read uploaded file",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read uploaded file")
 		return
 	}
 
@@ -324,10 +270,7 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 	tmpFile.Close()
 	if err != nil {
 		slog.Error("failed to save uploaded file", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to save uploaded file",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to save uploaded file")
 		return
 	}
 
@@ -335,30 +278,21 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 	tmpDir, err := os.MkdirTemp("", "scenario-extract-*")
 	if err != nil {
 		slog.Error("failed to create temp dir", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to process upload",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
 		return
 	}
 	defer os.RemoveAll(tmpDir)
 
 	if err := utils.ExtractArchive(tmpFile.Name(), tmpDir); err != nil {
 		slog.Error("failed to extract archive", "err", err)
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Failed to extract archive: %s", err.Error()),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Failed to extract archive: %s", err.Error()))
 		return
 	}
 
 	// Find index.json
 	scenarioDir, err := utils.FindIndexJSON(tmpDir)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Archive must contain an index.json file",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Archive must contain an index.json file")
 		return
 	}
 
@@ -366,10 +300,7 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 	scenario, err := sc.importerService.ImportFromDirectory(scenarioDir, userID, group.OrganizationID, "upload")
 	if err != nil {
 		slog.Error("failed to import scenario from upload", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to import scenario: %s", err.Error()),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to import scenario: %s", err.Error()))
 		return
 	}
 
@@ -394,10 +325,7 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 	if err := sc.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
 	}).First(&loaded, "id = ?", scenario.ID).Error; err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to reload scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to reload scenario")
 		return
 	}
 
@@ -418,10 +346,7 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
@@ -434,10 +359,7 @@ func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 	if !access.IsAdmin(roles) {
 		canManage, err := scenarioHooks.CanUserManageOrg(sc.db, orgID, userID)
 		if err != nil || !canManage {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Access denied",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Access denied")
 			return
 		}
 	}
@@ -445,10 +367,7 @@ func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 	var scenarios []models.Scenario
 	if err := sc.db.Where("organization_id = ?", orgID).Preload("Steps").Find(&scenarios).Error; err != nil {
 		slog.Error("failed to list org scenarios", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to list scenarios",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to list scenarios")
 		return
 	}
 
@@ -476,19 +395,13 @@ func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 func (sc *scenarioManagementController) OrgImportJSON(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	var input dto.SeedScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -497,10 +410,7 @@ func (sc *scenarioManagementController) OrgImportJSON(ctx *gin.Context) {
 	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, &orgID)
 	if err != nil {
 		slog.Error("failed to import scenario for org", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to import scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
 		return
 	}
 
@@ -535,19 +445,13 @@ func (sc *scenarioManagementController) OrgImportJSON(ctx *gin.Context) {
 func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	var input dto.CreateScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -588,10 +492,7 @@ func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 
 	if err := sc.db.Create(scenario).Error; err != nil {
 		slog.Error("failed to create org scenario", "err", err, "org_id", orgID)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to create scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to create scenario")
 		return
 	}
 
@@ -625,29 +526,20 @@ func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 	groupID, err := uuid.Parse(ctx.Param("groupId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid group ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid group ID")
 		return
 	}
 
 	var input dto.CreateScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Look up the group to derive the organization scope.
 	var group groupModels.ClassGroup
 	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Group not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Group not found")
 		return
 	}
 
@@ -688,10 +580,7 @@ func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 
 	if err := sc.db.Create(scenario).Error; err != nil {
 		slog.Error("failed to create group scenario", "err", err, "group_id", groupID)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to create scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to create scenario")
 		return
 	}
 
@@ -729,10 +618,7 @@ func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
@@ -741,19 +627,13 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 	// Get file from multipart form
 	file, err := ctx.FormFile("file")
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "File is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "File is required")
 		return
 	}
 
 	// Validate file size (10MB max)
 	if file.Size > 10*1024*1024 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "File size exceeds 10MB limit",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "File size exceeds 10MB limit")
 		return
 	}
 
@@ -768,10 +648,7 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 	case strings.HasSuffix(filename, ".zip"):
 		ext = ".zip"
 	default:
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "File must be .zip, .tar.gz, or .tgz",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "File must be .zip, .tar.gz, or .tgz")
 		return
 	}
 
@@ -779,10 +656,7 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 	tmpFile, err := os.CreateTemp("", "scenario-upload-*"+ext)
 	if err != nil {
 		slog.Error("failed to create temp file", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to process upload",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
 		return
 	}
 	defer os.Remove(tmpFile.Name())
@@ -791,10 +665,7 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 	if err != nil {
 		tmpFile.Close()
 		slog.Error("failed to open uploaded file", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to read uploaded file",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read uploaded file")
 		return
 	}
 
@@ -803,10 +674,7 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 	tmpFile.Close()
 	if err != nil {
 		slog.Error("failed to save uploaded file", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to save uploaded file",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to save uploaded file")
 		return
 	}
 
@@ -814,30 +682,21 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 	tmpDir, err := os.MkdirTemp("", "scenario-extract-*")
 	if err != nil {
 		slog.Error("failed to create temp dir", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to process upload",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
 		return
 	}
 	defer os.RemoveAll(tmpDir)
 
 	if err := utils.ExtractArchive(tmpFile.Name(), tmpDir); err != nil {
 		slog.Error("failed to extract archive", "err", err)
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Failed to extract archive: %s", err.Error()),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Failed to extract archive: %s", err.Error()))
 		return
 	}
 
 	// Find index.json
 	scenarioDir, err := utils.FindIndexJSON(tmpDir)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Archive must contain an index.json file",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Archive must contain an index.json file")
 		return
 	}
 
@@ -845,10 +704,7 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 	scenario, err := sc.importerService.ImportFromDirectory(scenarioDir, userID, &orgID, "upload")
 	if err != nil {
 		slog.Error("failed to import scenario from upload", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to import scenario: %s", err.Error()),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to import scenario: %s", err.Error()))
 		return
 	}
 
@@ -859,10 +715,7 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 	if err := sc.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
 	}).First(&loaded, "id = ?", scenario.ID).Error; err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to reload scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to reload scenario")
 		return
 	}
 
@@ -887,29 +740,20 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 func (sc *scenarioManagementController) OrgExportScenario(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
 	// Verify scenario belongs to this organization
 	var scenario models.Scenario
 	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Scenario not found in this organization",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found in this organization")
 		return
 	}
 
@@ -920,10 +764,7 @@ func (sc *scenarioManagementController) OrgExportScenario(ctx *gin.Context) {
 		export, err := sc.exportService.ExportAsJSON(scenarioID)
 		if err != nil {
 			slog.Error("failed to export org scenario as JSON", "err", err)
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return
 		}
 		ctx.JSON(http.StatusOK, export)
@@ -932,20 +773,14 @@ func (sc *scenarioManagementController) OrgExportScenario(ctx *gin.Context) {
 		zipBytes, filename, err := sc.exportService.ExportAsArchive(scenarioID)
 		if err != nil {
 			slog.Error("failed to export org scenario as archive", "err", err)
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return
 		}
 		ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 		ctx.Data(http.StatusOK, "application/zip", zipBytes)
 
 	default:
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid format. Use 'json' or 'killerkoda'",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid format. Use 'json' or 'killerkoda'")
 	}
 }
 
@@ -964,29 +799,20 @@ func (sc *scenarioManagementController) OrgExportScenario(ctx *gin.Context) {
 func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
 	// Verify scenario belongs to this organization
 	var scenario models.Scenario
 	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Scenario not found in this organization",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found in this organization")
 		return
 	}
 
@@ -1009,10 +835,7 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 		return nil
 	}); err != nil {
 		slog.Error("failed to delete scenario", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to delete scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to delete scenario")
 		return
 	}
 
@@ -1033,20 +856,14 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Context) {
 	groupID, err := uuid.Parse(ctx.Param("groupId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid group ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid group ID")
 		return
 	}
 
 	// Get the group to find its organization ID
 	var group groupModels.ClassGroup
 	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Group not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Group not found")
 		return
 	}
 
@@ -1067,10 +884,7 @@ func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Con
 			Preload("Steps").
 			Find(&orgScenarios).Error; err != nil {
 			slog.Error("failed to fetch org scenarios", "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to fetch scenarios",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to fetch scenarios")
 			return
 		}
 		for _, s := range orgScenarios {
@@ -1088,10 +902,7 @@ func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Con
 		Preload("Scenario", models.NotArchived).Preload("Scenario.Steps").
 		Find(&groupAssignments).Error; err != nil {
 		slog.Error("failed to fetch group scenario assignments", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to fetch scenarios",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to fetch scenarios")
 		return
 	}
 	for _, a := range groupAssignments {
@@ -1111,10 +922,7 @@ func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Con
 		Preload("Steps").
 		Find(&publicScenarios).Error; err != nil {
 		slog.Error("failed to fetch public scenarios", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to fetch scenarios",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to fetch scenarios")
 		return
 	}
 	for _, s := range publicScenarios {
@@ -1169,19 +977,13 @@ func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Con
 func (sc *scenarioManagementController) OrgDuplicateScenario(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
@@ -1190,10 +992,7 @@ func (sc *scenarioManagementController) OrgDuplicateScenario(ctx *gin.Context) {
 	var scenario models.Scenario
 	ownedOrPublic := sc.db.Where("organization_id = ?", orgID).Or(models.PublicCatalogue(sc.db))
 	if err := sc.db.Where("id = ?", scenarioID).Where(ownedOrPublic).First(&scenario).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Scenario not found in this organization",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found in this organization")
 		return
 	}
 
@@ -1202,10 +1001,7 @@ func (sc *scenarioManagementController) OrgDuplicateScenario(ctx *gin.Context) {
 	newScenario, err := sc.duplicateService.DuplicateScenario(scenarioID, userID, &orgID)
 	if err != nil {
 		slog.Error("failed to duplicate org scenario", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to duplicate scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to duplicate scenario")
 		return
 	}
 

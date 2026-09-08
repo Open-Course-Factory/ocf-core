@@ -29,36 +29,24 @@ func NewProjectFileController(db *gorm.DB) *projectFileController {
 func (c *projectFileController) GetContent(ctx *gin.Context) {
 	fileID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid project file ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid project file ID")
 		return
 	}
 
 	var file models.ProjectFile
 	if err := c.db.First(&file, "id = ?", fileID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Project file not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Project file not found")
 			return
 		}
 		slog.Error("failed to load project file", "id", fileID, "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve file",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve file")
 		return
 	}
 
 	// Block script content for non-admin users (prevents verify script answer leakage)
 	if file.ContentType == "script" && !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Admin access required for script files",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Admin access required for script files")
 		return
 	}
 
@@ -67,10 +55,7 @@ func (c *projectFileController) GetContent(ctx *gin.Context) {
 		data, err := base64.StdEncoding.DecodeString(file.Content)
 		if err != nil {
 			slog.Error("failed to decode image content", "id", fileID, "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to decode image",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to decode image")
 			return
 		}
 		mimeType := file.MimeType
@@ -108,19 +93,13 @@ type projectFileListItem struct {
 // GET /api/v1/project-files/by-scenario/:scenarioId
 func (c *projectFileController) GetByScenario(ctx *gin.Context) {
 	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Admin access required",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Admin access required")
 		return
 	}
 
 	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
@@ -130,17 +109,11 @@ func (c *projectFileController) GetByScenario(ctx *gin.Context) {
 		return db.Order("\"order\" ASC")
 	}).First(&scenario, "id = ?", scenarioID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return
 		}
 		slog.Error("failed to load scenario", "id", scenarioID, "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve scenario")
 		return
 	}
 
@@ -192,10 +165,7 @@ func (c *projectFileController) GetByScenario(ctx *gin.Context) {
 	var files []models.ProjectFile
 	if err := c.db.Where("id IN ?", ids).Find(&files).Error; err != nil {
 		slog.Error("failed to load project files", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve project files",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve project files")
 		return
 	}
 
@@ -256,19 +226,13 @@ type usageRef struct {
 // GET /api/v1/project-files/:id/usage
 func (c *projectFileController) GetUsage(ctx *gin.Context) {
 	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Admin access required",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Admin access required")
 		return
 	}
 
 	fileID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid project file ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid project file ID")
 		return
 	}
 
@@ -276,17 +240,11 @@ func (c *projectFileController) GetUsage(ctx *gin.Context) {
 	var file models.ProjectFile
 	if err := c.db.Select("id").First(&file, "id = ?", fileID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Project file not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Project file not found")
 			return
 		}
 		slog.Error("failed to load project file", "id", fileID, "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve file",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve file")
 		return
 	}
 
@@ -350,10 +308,7 @@ func (c *projectFileController) GetUsage(ctx *gin.Context) {
 func (c *projectFileController) GetImage(ctx *gin.Context) {
 	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
@@ -363,10 +318,7 @@ func (c *projectFileController) GetImage(ctx *gin.Context) {
 		relPath = relPath[1:]
 	}
 	if relPath == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Missing image path",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Missing image path")
 		return
 	}
 
@@ -374,27 +326,18 @@ func (c *projectFileController) GetImage(ctx *gin.Context) {
 	if err := c.db.Where("scenario_id = ? AND rel_path = ? AND content_type = ?", scenarioID, relPath, "image").
 		First(&file).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Image not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Image not found")
 			return
 		}
 		slog.Error("failed to load image", "scenarioId", scenarioID, "relPath", relPath, "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve image",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve image")
 		return
 	}
 
 	data, err := base64.StdEncoding.DecodeString(file.Content)
 	if err != nil {
 		slog.Error("failed to decode image content", "id", file.ID, "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to decode image",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to decode image")
 		return
 	}
 

@@ -110,10 +110,7 @@ func PerUserRateLimit() gin.HandlerFunc {
 		if len(pruned) >= maxRequests {
 			bucket.timestamps = pruned
 			bucket.mu.Unlock()
-			ctx.JSON(http.StatusTooManyRequests, &errors.APIError{
-				ErrorCode:    http.StatusTooManyRequests,
-				ErrorMessage: "Rate limit exceeded. Try again later.",
-			})
+			errors.Respond(ctx, http.StatusTooManyRequests, "Rate limit exceeded. Try again later.")
 			ctx.Abort()
 			return
 		}

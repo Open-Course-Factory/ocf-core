@@ -59,10 +59,7 @@ func (b *scenarioControllerBase) canManageScenarioByID(ctx *gin.Context, scenari
 func (b *scenarioControllerBase) getSessionIfOwned(ctx *gin.Context) (*models.ScenarioSession, error) {
 	sessionID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid session ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid session ID")
 		return nil, err
 	}
 
@@ -70,18 +67,12 @@ func (b *scenarioControllerBase) getSessionIfOwned(ctx *gin.Context) (*models.Sc
 
 	var session models.ScenarioSession
 	if err := b.db.First(&session, "id = ?", sessionID).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return nil, err
 	}
 
 	if session.UserID != userID {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "You do not own this session",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "You do not own this session")
 		return nil, fmt.Errorf("forbidden")
 	}
 
@@ -96,10 +87,7 @@ func (b *scenarioControllerBase) rejectIfArchived(ctx *gin.Context, scenario *mo
 	if !scenario.IsArchived() {
 		return false
 	}
-	ctx.JSON(http.StatusConflict, &errors.APIError{
-		ErrorCode:    http.StatusConflict,
-		ErrorMessage: models.ErrScenarioArchived.Error(),
-	})
+	errors.Respond(ctx, http.StatusConflict, models.ErrScenarioArchived.Error())
 	return true
 }
 

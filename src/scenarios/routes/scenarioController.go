@@ -74,17 +74,11 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 func (sc *scenarioController) ImportScenario(ctx *gin.Context) {
 	var input dto.ImportScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	ctx.JSON(http.StatusNotImplemented, &errors.APIError{
-		ErrorCode:    http.StatusNotImplemented,
-		ErrorMessage: "Git import not yet implemented. Use directory import via admin API.",
-	})
+	errors.Respond(ctx, http.StatusNotImplemented, "Git import not yet implemented. Use directory import via admin API.")
 }
 
 // GetSessionByTerminal godoc
@@ -101,28 +95,19 @@ func (sc *scenarioController) ImportScenario(ctx *gin.Context) {
 func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 	terminalID := ctx.Param("terminalId")
 	if terminalID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Terminal session ID is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Terminal session ID is required")
 		return
 	}
 
 	session, err := sc.sessionService.FindSessionByTerminal(terminalID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No scenario session for this terminal",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "No scenario session for this terminal")
 		return
 	}
 
 	userID := ctx.GetString("userId")
 	if session.UserID != userID {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "You do not own this session",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "You do not own this session")
 		return
 	}
 
@@ -207,10 +192,7 @@ func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
 func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 	var input dto.SeedScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -219,10 +201,7 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, nil)
 	if err != nil {
 		slog.Error("failed to seed scenario", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to seed scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to seed scenario")
 		return
 	}
 
@@ -253,19 +232,13 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 	// Get file from multipart form
 	file, err := ctx.FormFile("file")
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "File is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "File is required")
 		return
 	}
 
 	// Validate file size (10MB max)
 	if file.Size > 10*1024*1024 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "File size exceeds 10MB limit",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "File size exceeds 10MB limit")
 		return
 	}
 
@@ -280,10 +253,7 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 	case strings.HasSuffix(filename, ".zip"):
 		ext = ".zip"
 	default:
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "File must be .zip, .tar.gz, or .tgz",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "File must be .zip, .tar.gz, or .tgz")
 		return
 	}
 
@@ -291,10 +261,7 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 	tmpFile, err := os.CreateTemp("", "scenario-upload-*"+ext)
 	if err != nil {
 		slog.Error("failed to create temp file", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to process upload",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
 		return
 	}
 	defer os.Remove(tmpFile.Name())
@@ -303,10 +270,7 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 	if err != nil {
 		tmpFile.Close()
 		slog.Error("failed to open uploaded file", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to read uploaded file",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read uploaded file")
 		return
 	}
 
@@ -315,10 +279,7 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 	tmpFile.Close()
 	if err != nil {
 		slog.Error("failed to save uploaded file", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to save uploaded file",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to save uploaded file")
 		return
 	}
 
@@ -326,30 +287,21 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 	tmpDir, err := os.MkdirTemp("", "scenario-extract-*")
 	if err != nil {
 		slog.Error("failed to create temp dir", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to process upload",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
 		return
 	}
 	defer os.RemoveAll(tmpDir)
 
 	if err := utils.ExtractArchive(tmpFile.Name(), tmpDir); err != nil {
 		slog.Error("failed to extract archive", "err", err)
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Failed to extract archive: %s", err.Error()),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Failed to extract archive: %s", err.Error()))
 		return
 	}
 
 	// Find index.json
 	scenarioDir, err := utils.FindIndexJSON(tmpDir)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Archive must contain an index.json file",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Archive must contain an index.json file")
 		return
 	}
 
@@ -357,10 +309,7 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 	scenario, err := sc.importerService.ImportFromDirectory(scenarioDir, userID, nil, "upload")
 	if err != nil {
 		slog.Error("failed to import scenario from upload", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to import scenario: %s", err.Error()),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to import scenario: %s", err.Error()))
 		return
 	}
 
@@ -369,10 +318,7 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 	if err := sc.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
 	}).First(&loaded, "id = ?", scenario.ID).Error; err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to reload scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to reload scenario")
 		return
 	}
 
@@ -396,10 +342,7 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 	scenarioID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
@@ -407,24 +350,15 @@ func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 	_, allowed, err := sc.canManageScenarioByID(ctx, scenarioID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return
 		}
 		slog.Error("failed to check scenario manage permission for export", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Internal error",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Internal error")
 		return
 	}
 	if !allowed {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied")
 		return
 	}
 
@@ -435,10 +369,7 @@ func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 		export, err := sc.exportService.ExportAsJSON(scenarioID)
 		if err != nil {
 			slog.Error("failed to export scenario as JSON", "err", err)
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return
 		}
 		ctx.JSON(http.StatusOK, export)
@@ -447,20 +378,14 @@ func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 		zipBytes, filename, err := sc.exportService.ExportAsArchive(scenarioID)
 		if err != nil {
 			slog.Error("failed to export scenario as archive", "err", err)
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return
 		}
 		ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 		ctx.Data(http.StatusOK, "application/zip", zipBytes)
 
 	default:
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid format. Use 'json' or 'killerkoda'",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid format. Use 'json' or 'killerkoda'")
 	}
 }
 
@@ -479,10 +404,7 @@ func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 func (sc *scenarioController) ExportScenarios(ctx *gin.Context) {
 	var input dto.ExportScenariosInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -493,20 +415,14 @@ func (sc *scenarioController) ExportScenarios(ctx *gin.Context) {
 		_, allowed, err := sc.canManageScenarioByID(ctx, id)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			slog.Error("failed to check scenario manage permission for bulk export", "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Internal error",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Internal error")
 			return
 		}
 		// A missing id answers 403, not 404: this endpoint takes a caller-supplied
 		// list, so distinguishing "does not exist" from "not yours" would turn it
 		// into a probe for which scenario ids exist.
 		if err == gorm.ErrRecordNotFound || !allowed {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Access denied: not authorized to export one or more scenarios",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Access denied: not authorized to export one or more scenarios")
 			return
 		}
 	}
@@ -514,10 +430,7 @@ func (sc *scenarioController) ExportScenarios(ctx *gin.Context) {
 	exports, err := sc.exportService.ExportMultipleAsJSON(input.IDs)
 	if err != nil {
 		slog.Error("failed to export scenarios", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to export scenarios",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to export scenarios")
 		return
 	}
 
@@ -540,10 +453,7 @@ func (sc *scenarioController) ExportScenarios(ctx *gin.Context) {
 func (sc *scenarioController) ImportJSON(ctx *gin.Context) {
 	var input dto.SeedScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -552,10 +462,7 @@ func (sc *scenarioController) ImportJSON(ctx *gin.Context) {
 	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, nil)
 	if err != nil {
 		slog.Error("failed to import scenario from JSON", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to import scenario",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
 		return
 	}
 
@@ -582,10 +489,7 @@ func (sc *scenarioController) ImportJSON(ctx *gin.Context) {
 func (sc *scenarioController) DuplicateScenario(ctx *gin.Context) {
 	scenarioID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
@@ -595,15 +499,9 @@ func (sc *scenarioController) DuplicateScenario(ctx *gin.Context) {
 	if err != nil {
 		slog.Error("failed to duplicate scenario", "err", err)
 		if strings.Contains(err.Error(), "not found") {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 		} else {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to duplicate scenario",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to duplicate scenario")
 		}
 		return
 	}
@@ -619,34 +517,22 @@ func (sc *scenarioController) DuplicateScenario(ctx *gin.Context) {
 func (sc *scenarioController) loadManageableScenario(ctx *gin.Context) *models.Scenario {
 	scenarioID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return nil
 	}
 
 	scenario, allowed, err := sc.canManageScenarioByID(ctx, scenarioID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Scenario not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return nil
 		}
 		slog.Error("failed to check scenario manage permission", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Internal error",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Internal error")
 		return nil
 	}
 	if !allowed {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied")
 		return nil
 	}
 
@@ -676,10 +562,7 @@ func (sc *scenarioController) GetTranslationCoverage(ctx *gin.Context) {
 	coverage, err := services.TranslationCoverage(sc.db, scenario.ID)
 	if err != nil {
 		slog.Error("failed to compute translation coverage", "scenario_id", scenario.ID, "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to compute translation coverage",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to compute translation coverage")
 		return
 	}
 
@@ -713,10 +596,7 @@ func (sc *scenarioController) GetLexicon(ctx *gin.Context) {
 	document, err := services.LoadLexiconDocument(sc.db, scenario.ID)
 	if err != nil {
 		slog.Error("failed to load lexicon", "scenario_id", scenario.ID, "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to load the scenario's vocabulary",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to load the scenario's vocabulary")
 		return
 	}
 	ctx.JSON(http.StatusOK, document)
@@ -746,30 +626,21 @@ func (sc *scenarioController) ReplaceLexicon(ctx *gin.Context) {
 
 	var input dto.ReplaceLexiconInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid vocabulary: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid vocabulary: " + err.Error())
 		return
 	}
 
 	if err := services.ReplaceLexicon(sc.db, scenario.ID, input.Entries); err != nil {
 		// A vocabulary that cannot resolve is the caller's mistake, and the
 		// message names which entry — an editor has to be able to point at it.
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	document, err := services.LoadLexiconDocument(sc.db, scenario.ID)
 	if err != nil {
 		slog.Error("failed to reload lexicon after save", "scenario_id", scenario.ID, "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Saved, but the vocabulary could not be read back",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Saved, but the vocabulary could not be read back")
 		return
 	}
 	ctx.JSON(http.StatusOK, document)
@@ -792,10 +663,7 @@ func (sc *scenarioController) GetScenarioHealth(ctx *gin.Context) {
 	var scenarios []models.Scenario
 	if err := sc.db.Order("name ASC").Find(&scenarios).Error; err != nil {
 		slog.Error("failed to list scenarios for the health report", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to read the scenarios",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read the scenarios")
 		return
 	}
 

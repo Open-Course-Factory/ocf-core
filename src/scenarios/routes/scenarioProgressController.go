@@ -71,10 +71,7 @@ func (pc *scenarioProgressController) abortIfSessionNotActive(ctx *gin.Context, 
 	if !stderrors.Is(err, services.ErrSessionNotActive) {
 		return false
 	}
-	ctx.JSON(http.StatusConflict, &errors.APIError{
-		ErrorCode:    http.StatusConflict,
-		ErrorMessage: err.Error(),
-	})
+	errors.Respond(ctx, http.StatusConflict, err.Error())
 	return true
 }
 
@@ -99,10 +96,7 @@ func (pc *scenarioProgressController) GetCurrentStep(ctx *gin.Context) {
 	step, err := pc.sessionService.GetCurrentStep(session.ID)
 	if err != nil {
 		slog.Error("failed to get current step", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get current step",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get current step")
 		return
 	}
 
@@ -130,27 +124,18 @@ func (pc *scenarioProgressController) GetStepByOrder(ctx *gin.Context) {
 
 	stepOrder, err := strconv.Atoi(ctx.Param("stepOrder"))
 	if err != nil || stepOrder < 0 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid step order",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid step order")
 		return
 	}
 
 	step, err := pc.sessionService.GetStepByOrder(session.ID, stepOrder)
 	if err != nil {
 		if err.Error() == "step is locked" {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Step is locked",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Step is locked")
 			return
 		}
 		slog.Error("failed to get step by order", "err", err)
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Step not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Step not found")
 		return
 	}
 
@@ -181,10 +166,7 @@ func (pc *scenarioProgressController) VerifyStep(ctx *gin.Context) {
 			return
 		}
 		slog.Error("failed to verify step", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to verify step",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify step")
 		return
 	}
 
@@ -213,10 +195,7 @@ func (pc *scenarioProgressController) SubmitFlag(ctx *gin.Context) {
 
 	var input dto.SubmitFlagInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -226,10 +205,7 @@ func (pc *scenarioProgressController) SubmitFlag(ctx *gin.Context) {
 			return
 		}
 		slog.Error("failed to submit flag", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to submit flag",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to submit flag")
 		return
 	}
 
@@ -259,10 +235,7 @@ func (pc *scenarioProgressController) SubmitQuiz(ctx *gin.Context) {
 
 	var input dto.SubmitQuizInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -275,10 +248,7 @@ func (pc *scenarioProgressController) SubmitQuiz(ctx *gin.Context) {
 		// question IDs / empty answers — surface as 422 so the frontend can
 		// distinguish from a 500.
 		slog.Warn("failed to submit quiz", "err", err)
-		ctx.JSON(http.StatusUnprocessableEntity, &errors.APIError{
-			ErrorCode:    http.StatusUnprocessableEntity,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
@@ -307,19 +277,13 @@ func (pc *scenarioProgressController) RevealHint(ctx *gin.Context) {
 
 	stepOrder, err := strconv.Atoi(ctx.Param("stepOrder"))
 	if err != nil || stepOrder < 0 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid step order",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid step order")
 		return
 	}
 
 	level, err := strconv.Atoi(ctx.Param("level"))
 	if err != nil || level < 1 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid hint level",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid hint level")
 		return
 	}
 
@@ -329,10 +293,7 @@ func (pc *scenarioProgressController) RevealHint(ctx *gin.Context) {
 			return
 		}
 		slog.Error("failed to reveal hint", "err", err)
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -363,18 +324,12 @@ func (pc *scenarioProgressController) AbandonSession(ctx *gin.Context) {
 		// The run is already over. That is a state the client can read — the
 		// session it holds is stale — not a server failure: as a 500 it made an
 		// abandon that had in fact succeeded look like one to retry.
-		ctx.JSON(http.StatusConflict, &errors.APIError{
-			ErrorCode:    http.StatusConflict,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusConflict, err.Error())
 		return
 	}
 	if err != nil {
 		slog.Error("failed to abandon session", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to abandon session",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to abandon session")
 		return
 	}
 
@@ -419,10 +374,7 @@ func (pc *scenarioProgressController) ReprovisionStep(ctx *gin.Context) {
 	var input dto.ReprovisionStepInput
 	if ctx.Request.ContentLength > 0 {
 		if err := ctx.ShouldBindJSON(&input); err != nil {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: err.Error(),
-			})
+			errors.Respond(ctx, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
@@ -433,10 +385,7 @@ func (pc *scenarioProgressController) ReprovisionStep(ctx *gin.Context) {
 		// (wrong status, no script, script failed) — a 400 tells the client the
 		// retry is not going to work as-is, which a 500 would not.
 		slog.Warn("failed to reprovision step", "session_id", session.ID, "err", err)
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 

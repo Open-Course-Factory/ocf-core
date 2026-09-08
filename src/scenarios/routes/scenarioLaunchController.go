@@ -83,20 +83,14 @@ func NewScenarioLaunchController(db *gorm.DB) *scenarioLaunchController {
 func (sc *scenarioLaunchController) GetMySessions(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	if userID == "" {
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-			ErrorCode:    http.StatusUnauthorized,
-			ErrorMessage: "Unauthorized",
-		})
+		errors.Respond(ctx, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	sessions, err := sc.sessionService.GetMySessions(userID)
 	if err != nil {
 		slog.Error("failed to get my sessions", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get sessions",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get sessions")
 		return
 	}
 
@@ -129,10 +123,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
 		if err := sc.db.Scopes(models.NotArchived).Preload("CompatibleInstanceTypes").Find(&scenarios).Error; err != nil {
 			slog.Error("failed to fetch all scenarios", "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to fetch scenarios",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to fetch scenarios")
 			return
 		}
 	} else {
@@ -187,10 +178,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 
 			if err := query.Find(&scenarios).Error; err != nil {
 				slog.Error("failed to fetch available scenarios", "err", err)
-				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-					ErrorCode:    http.StatusInternalServerError,
-					ErrorMessage: "Failed to fetch scenarios",
-				})
+				errors.Respond(ctx, http.StatusInternalServerError, "Failed to fetch scenarios")
 				return
 			}
 		}
@@ -408,17 +396,11 @@ const (
 func respondProvisioningFailure(ctx *gin.Context, scenarioName string, err error) {
 	if stderrors.Is(err, services.ErrBackendCatalogUnavailable) {
 		slog.Error("backend catalog unavailable for scenario", "scenario", scenarioName, "err", err)
-		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-			ErrorCode:    http.StatusServiceUnavailable,
-			ErrorMessage: "Terminal service unavailable",
-		})
+		errors.Respond(ctx, http.StatusServiceUnavailable, "Terminal service unavailable")
 		return
 	}
 	slog.Error("no compatible distribution for scenario", "scenario", scenarioName, "err", err)
-	ctx.JSON(http.StatusConflict, &errors.APIError{
-		ErrorCode:    http.StatusConflict,
-		ErrorMessage: "No compatible environment available for this scenario",
-	})
+	errors.Respond(ctx, http.StatusConflict, "No compatible environment available for this scenario")
 }
 
 // blockReasonForBudgetMiss names WHY the machine does not fit. A size larger
@@ -471,30 +453,21 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 
 	var input dto.LaunchScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid input: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid input: " + err.Error())
 		return
 	}
 
 	userID := ctx.GetString("userId")
 	scenarioID, err := uuid.Parse(input.ScenarioID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
 	// Load scenario with CompatibleInstanceTypes and Steps
 	var scenario models.Scenario
 	if err := sc.db.Preload("CompatibleInstanceTypes").Preload("Steps").First(&scenario, scenarioID).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Scenario not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 		return
 	}
 
@@ -507,17 +480,11 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		hasAccess, err := sc.checkScenarioAccess(userID, scenarioID)
 		if err != nil {
 			slog.Error("failed to check scenario access", "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to verify access",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify access")
 			return
 		}
 		if !hasAccess {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "No access to this scenario",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "No access to this scenario")
 			return
 		}
 	}
@@ -564,10 +531,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		}
 		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
 			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to provision terminal access",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to provision terminal access")
 			return
 		}
 	}
@@ -576,28 +540,19 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	terms, termsErr := sc.terminalService.GetTerms()
 	if termsErr != nil {
 		slog.Error("failed to fetch terminal terms", "err", termsErr)
-		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-			ErrorCode:    http.StatusServiceUnavailable,
-			ErrorMessage: "Terminal service unavailable",
-		})
+		errors.Respond(ctx, http.StatusServiceUnavailable, "Terminal service unavailable")
 		return
 	}
 
 	// Read plan from middleware context (set by InjectEffectivePlan + RequirePlan)
 	planInterface, exists := ctx.Get("subscription_plan")
 	if !exists {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "No active subscription plan",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "No active subscription plan")
 		return
 	}
 	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Invalid subscription plan",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Invalid subscription plan")
 		return
 	}
 
@@ -630,10 +585,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: termErr.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, termErr.Error())
 		return
 	}
 
@@ -649,10 +601,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 			return
 		}
 		slog.Error("failed to start scenario session", "userID", userID, "scenarioID", scenarioID, "err", startErr)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to start scenario session. Please try again or contact support.",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start scenario session. Please try again or contact support.")
 		return
 	}
 
@@ -736,10 +685,7 @@ func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioI
 func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	scenarioID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
 		return
 	}
 
@@ -748,10 +694,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	// Load scenario with CompatibleInstanceTypes and Steps
 	var scenario models.Scenario
 	if err := sc.db.Preload("CompatibleInstanceTypes").Preload("Steps").First(&scenario, scenarioID).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Scenario not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 		return
 	}
 
@@ -801,10 +744,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		}
 		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
 			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to provision terminal access",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to provision terminal access")
 			return
 		}
 	}
@@ -813,10 +753,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	terms, termsErr := sc.terminalService.GetTerms()
 	if termsErr != nil {
 		slog.Error("failed to fetch terminal terms", "err", termsErr)
-		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-			ErrorCode:    http.StatusServiceUnavailable,
-			ErrorMessage: "Terminal service unavailable",
-		})
+		errors.Respond(ctx, http.StatusServiceUnavailable, "Terminal service unavailable")
 		return
 	}
 
@@ -836,10 +773,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	}
 	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID, orgIDForPlan)
 	if planErr != nil || planResult == nil || planResult.Plan == nil {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "No active subscription plan",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "No active subscription plan")
 		return
 	}
 
@@ -879,10 +813,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to start terminal session. Please try again or contact support.",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start terminal session. Please try again or contact support.")
 		return
 	}
 
@@ -894,10 +825,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		if strings.Contains(startErr.Error(), "not authorized") {
 			statusCode = http.StatusForbidden
 		}
-		ctx.JSON(statusCode, &errors.APIError{
-			ErrorCode:    statusCode,
-			ErrorMessage: startErr.Error(),
-		})
+		errors.Respond(ctx, statusCode, startErr.Error())
 		return
 	}
 
