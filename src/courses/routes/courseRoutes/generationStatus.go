@@ -29,19 +29,13 @@ func (c courseController) GetGenerationStatus(ctx *gin.Context) {
 	generationID := ctx.Param("id")
 
 	if generationID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "ID de génération requis",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "ID de génération requis")
 		return
 	}
 
 	status, err := c.service.CheckGenerationStatus(generationID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Génération non trouvée: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
 		return
 	}
 
@@ -69,38 +63,26 @@ func (c courseController) DownloadGenerationResults(ctx *gin.Context) {
 	generationID := ctx.Param("id")
 
 	if generationID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "ID de génération requis",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "ID de génération requis")
 		return
 	}
 
 	// Vérifier d'abord le statut
 	status, err := c.service.CheckGenerationStatus(generationID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Génération non trouvée: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
 		return
 	}
 
 	if status.Status != "completed" {
-		ctx.JSON(http.StatusConflict, &errors.APIError{
-			ErrorCode:    http.StatusConflict,
-			ErrorMessage: "La génération n'est pas terminée (statut: " + status.Status + ")",
-		})
+		errors.Respond(ctx, http.StatusConflict, "La génération n'est pas terminée (statut: "+status.Status+")")
 		return
 	}
 
 	// Télécharger les résultats
 	zipData, err := c.service.DownloadGenerationResults(generationID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Erreur lors du téléchargement: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Erreur lors du téléchargement: "+err.Error())
 		return
 	}
 
@@ -134,10 +116,7 @@ func (c courseController) RetryGeneration(ctx *gin.Context) {
 	generationID := ctx.Param("id")
 
 	if generationID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "ID de génération requis",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "ID de génération requis")
 		return
 	}
 
@@ -151,10 +130,7 @@ func (c courseController) RetryGeneration(ctx *gin.Context) {
 			statusCode = http.StatusNotFound
 		}
 
-		ctx.JSON(statusCode, &errors.APIError{
-			ErrorCode:    statusCode,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, statusCode, err.Error())
 		return
 	}
 

@@ -32,19 +32,13 @@ func (c courseController) CreateCourseFromSource(ctx *gin.Context) {
 
 	bindError := ctx.BindJSON(&createCourseFromSourceDTO)
 	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json: " + bindError.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Impossible de parser le json: "+bindError.Error())
 		return
 	}
 
 	// Validate source type
 	if createCourseFromSourceDTO.SourceType != "git" && createCourseFromSourceDTO.SourceType != "local" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Source type must be 'git' or 'local'",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Source type must be 'git' or 'local'")
 		return
 	}
 
@@ -59,10 +53,7 @@ func (c courseController) CreateCourseFromSource(ctx *gin.Context) {
 	_, errGetCourse := c.service.GetCourse(userId, createCourseFromSourceDTO.Name, createCourseFromSourceDTO.SourceType, createCourseFromSourceDTO.Source, branch, "course.json")
 
 	if errGetCourse != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de récupérer le cours : " + errGetCourse.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Impossible de récupérer le cours : "+errGetCourse.Error())
 		return
 	}
 

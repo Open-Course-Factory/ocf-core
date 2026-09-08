@@ -32,10 +32,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 
 	bindError := ctx.BindJSON(&createCourseFromGitDTO)
 	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json" + bindError.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Impossible de parser le json"+bindError.Error())
 		return
 	}
 
@@ -44,10 +41,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 	_, errGetCourse := c.service.GetGitCourse(userId, createCourseFromGitDTO.Name, createCourseFromGitDTO.Url, createCourseFromGitDTO.BranchName, "course.json")
 
 	if errGetCourse != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de récupérer le cours : " + errGetCourse.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Impossible de récupérer le cours : "+errGetCourse.Error())
 		return
 	}
 

@@ -31,19 +31,13 @@ func (c courseController) GenerateCourse(ctx *gin.Context) {
 
 	bindError := ctx.BindJSON(&courseGenerateDTO)
 	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json: " + bindError.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Impossible de parser le json: "+bindError.Error())
 		return
 	}
 
 	result, err := c.service.GenerateCourseAsync(courseGenerateDTO)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Erreur lors de la génération: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Erreur lors de la génération: "+err.Error())
 		return
 	}
 
