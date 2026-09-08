@@ -31,7 +31,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	paymentController "soli/formations/src/payment/routes"
-	config "soli/formations/src/configuration"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -70,7 +69,7 @@ func setupAdminRouteTestRouter(t *testing.T, role string) *gin.Engine {
 		c.Next()
 	})
 
-	paymentController.UserSubscriptionRoutes(apiGroup, &config.Configuration{}, db)
+	paymentController.UserSubscriptionRoutes(apiGroup, db)
 
 	return router
 }

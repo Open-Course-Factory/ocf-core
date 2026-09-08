@@ -2,14 +2,13 @@ package feedback
 
 import (
 	auth "soli/formations/src/auth"
-	config "soli/formations/src/configuration"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // FeedbackRoutes registers the feedback endpoints
-func FeedbackRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.DB) {
+func FeedbackRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	controller := NewFeedbackController(db)
 	middleware := auth.NewAuthMiddleware(db)
 

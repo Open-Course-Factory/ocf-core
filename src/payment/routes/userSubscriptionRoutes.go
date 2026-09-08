@@ -6,13 +6,12 @@ import (
 
 	auth "soli/formations/src/auth"
 	authMiddleware "soli/formations/src/auth/middleware"
-	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
 )
 
 // UserSubscriptionRoutes définit les routes pour les abonnements
-func UserSubscriptionRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func UserSubscriptionRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	subscriptionController := NewSubscriptionController(db)
 	authMw := auth.NewAuthMiddleware(db)
 	verificationMw := authMiddleware.NewEmailVerificationMiddleware(db)

@@ -3,14 +3,12 @@ package courseController
 import (
 	"github.com/gin-gonic/gin"
 
-	config "soli/formations/src/configuration"
-
 	"gorm.io/gorm"
 
 	auth "soli/formations/src/auth"
 )
 
-func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func CoursesRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	courseController := NewCourseController(db)
 
 	routes := router.Group("/courses")

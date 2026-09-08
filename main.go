@@ -260,31 +260,31 @@ func main() {
 	apiGroup.GET("/version", versionCtrl.GetVersion)
 
 	// Register module routes
-	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	courseController.CoursesRoutes(apiGroup, sqldb.DB)
+	authController.AuthRoutes(apiGroup, sqldb.DB)
 	passwordResetController.PasswordResetRoutes(apiGroup.Group("/auth"), sqldb.DB) // Public password reset routes
 	emailVerificationController.EmailVerificationRoutes(apiGroup.Group("/auth"), sqldb.DB) // Public email verification routes
-	genericController.HooksRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	genericController.HooksRoutes(apiGroup, sqldb.DB)
 
-userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+userController.UsersRoutes(apiGroup, sqldb.DB)
 	// NOTE: Commented out legacy Casdoor group routes - replaced by new class-groups system
-	// groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	accessController.AccessRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	sshClientController.SshClientRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	generationController.GenerationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	terminalController.TerminalRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	organizationController.OrganizationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	// groupController.GroupRoutes(apiGroup, sqldb.DB)
+	accessController.AccessRoutes(apiGroup, sqldb.DB)
+	sshClientController.SshClientRoutes(apiGroup, sqldb.DB)
+	generationController.GenerationsRoutes(apiGroup, sqldb.DB)
+	terminalController.TerminalRoutes(apiGroup, sqldb.DB)
+	terminalController.UserTerminalKeyRoutes(apiGroup, sqldb.DB)
+	organizationController.OrganizationRoutes(apiGroup, sqldb.DB)
 	securityAdminController.SecurityAdminRoutes(apiGroup, sqldb.DB)
 	permissionReferenceRoutes.PermissionReferenceRoutes(apiGroup)
-	scenarioController.ScenarioRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	feedback.FeedbackRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	scenarioController.ScenarioRoutes(apiGroup, sqldb.DB)
+	feedback.FeedbackRoutes(apiGroup, sqldb.DB)
 	impersonationController.ImpersonationRoutes(apiGroup, sqldb.DB, impersonationSvc, impersonationValidator)
 	adminUsersController.RegisterRoutes(apiGroup, sqldb.DB)
 	observabilityController.RegisterRoutes(apiGroup, sqldb.DB)
 
 	// Initialize payment routes
-	payment.InitPaymentRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	payment.InitPaymentRoutes(apiGroup, sqldb.DB)
 
 	// Admin Stripe queue visibility (admin only) — shares the queue instance
 	// constructed in InitPaymentEntities so the hook, worker, and endpoint all

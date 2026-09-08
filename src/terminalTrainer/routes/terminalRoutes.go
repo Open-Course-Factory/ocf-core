@@ -9,7 +9,6 @@ import (
 
 	auth "soli/formations/src/auth"
 	access "soli/formations/src/auth/access"
-	config "soli/formations/src/configuration"
 	configRepositories "soli/formations/src/configuration/repositories"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	paymentMiddleware "soli/formations/src/payment/middleware"
@@ -19,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	terminalController := NewTerminalController(db)
 	middleware := auth.NewAuthMiddleware(db)
 	terminalService := terminalServices.NewTerminalTrainerService(db)
@@ -215,7 +214,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	incusUIRoutes.Any("/:backendId/*path", incusCookieAuth(), middleware.AuthManagement(), incusUIController.ProxyIncusUI)
 }
 
-func UserTerminalKeyRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func UserTerminalKeyRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	userTerminalKeyController := NewUserTerminalKeyController(db)
 	middleware := auth.NewAuthMiddleware(db)
 

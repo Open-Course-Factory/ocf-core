@@ -3,7 +3,6 @@ package routes
 import (
 	auth "soli/formations/src/auth"
 	authServices "soli/formations/src/auth/services"
-	config "soli/formations/src/configuration"
 	"soli/formations/src/organizations/controller"
 	"soli/formations/src/organizations/services"
 	paymentServices "soli/formations/src/payment/services"
@@ -13,7 +12,7 @@ import (
 )
 
 // OrganizationRoutes sets up custom organization routes
-func OrganizationRoutes(rg *gin.RouterGroup, conf *config.Configuration, db *gorm.DB) {
+func OrganizationRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// Initialize services
 	casdoorClient := authServices.NewCasdoorUserClient()
 	orgService := services.NewOrganizationServiceWithIdentity(db, casdoorClient)

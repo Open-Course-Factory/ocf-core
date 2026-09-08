@@ -3,14 +3,12 @@ package generationController
 import (
 	"github.com/gin-gonic/gin"
 
-	config "soli/formations/src/configuration"
-
 	"gorm.io/gorm"
 
 	auth "soli/formations/src/auth"
 )
 
-func GenerationsRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func GenerationsRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	generationController := NewGenerationController(db)
 
 	routes := router.Group("/generations")

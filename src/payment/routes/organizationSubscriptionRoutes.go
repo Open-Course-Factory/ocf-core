@@ -4,13 +4,12 @@ package paymentController
 import (
 	"github.com/gin-gonic/gin"
 	auth "soli/formations/src/auth"
-	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
 )
 
 // OrganizationSubscriptionRoutes defines routes for organization subscriptions (Phase 2)
-func OrganizationSubscriptionRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func OrganizationSubscriptionRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	orgSubController := NewOrganizationSubscriptionController(db)
 	authMiddleware := auth.NewAuthMiddleware(db)
 

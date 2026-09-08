@@ -3,14 +3,13 @@ package paymentController
 
 import (
 	auth "soli/formations/src/auth"
-	config "soli/formations/src/configuration"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // BulkLicenseRoutes defines routes for bulk license management
-func BulkLicenseRoutes(router *gin.RouterGroup, configuration *config.Configuration, db *gorm.DB) {
+func BulkLicenseRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	bulkController := NewBulkLicenseController(db)
 	authMiddleware := auth.NewAuthMiddleware(db)
 

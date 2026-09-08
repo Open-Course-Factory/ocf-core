@@ -4,7 +4,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	auth "soli/formations/src/auth"
-	config "soli/formations/src/configuration"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	scenarioMiddleware "soli/formations/src/scenarios/middleware"
@@ -13,7 +12,7 @@ import (
 )
 
 // ScenarioRoutes registers the custom (non-CRUD) scenario endpoints
-func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.DB) {
+func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	controller := NewScenarioController(db)
 	launchController := NewScenarioLaunchController(db)
 	progressController := NewScenarioProgressController(db)

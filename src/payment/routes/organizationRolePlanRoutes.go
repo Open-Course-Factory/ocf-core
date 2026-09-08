@@ -4,7 +4,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	auth "soli/formations/src/auth"
-	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
 )
@@ -12,7 +11,7 @@ import (
 // OrganizationRolePlanRoutes mounts the org-scoped role→plan listing. The flat
 // /organization-role-plans entity route stays platform-admin-only; this sibling
 // gives org managers a server-side, org-scoped read of their own mappings.
-func OrganizationRolePlanRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func OrganizationRolePlanRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	rolePlanController := NewOrganizationRolePlanController(db)
 	authMiddleware := auth.NewAuthMiddleware(db)
 

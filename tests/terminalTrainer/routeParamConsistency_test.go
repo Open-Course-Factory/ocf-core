@@ -34,7 +34,7 @@ func TestRouteRegistration_NoParamConflicts(t *testing.T) {
 
 	// This must NOT panic — if it does, there's a param name mismatch
 	require.NotPanics(t, func() {
-		terminalController.TerminalRoutes(apiGroup, nil, db)
+		terminalController.TerminalRoutes(apiGroup, db)
 	}, "TerminalRoutes registration panicked due to route parameter name conflict — "+
 		"a custom route likely uses a non-standard param name (e.g. :orgId, :groupId) "+
 		"instead of :id")

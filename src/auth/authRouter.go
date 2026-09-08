@@ -3,12 +3,10 @@ package authController
 import (
 	"github.com/gin-gonic/gin"
 
-	config "soli/formations/src/configuration"
-
 	"gorm.io/gorm"
 )
 
-func AuthRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func AuthRoutes(router *gin.RouterGroup, db *gorm.DB) {
 
 	authController := NewAuthController()
 

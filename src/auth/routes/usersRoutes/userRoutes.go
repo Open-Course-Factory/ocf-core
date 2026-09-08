@@ -4,12 +4,11 @@ import (
 	"github.com/gin-gonic/gin"
 
 	auth "soli/formations/src/auth"
-	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
 )
 
-func UsersRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func UsersRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	userController := NewUserController()
 
 	routes := router.Group("/users")

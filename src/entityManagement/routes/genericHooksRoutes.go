@@ -4,13 +4,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	auth "soli/formations/src/auth"
-	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
 )
 
 // HooksRoutes définit les routes pour la gestion des hooks (admin seulement)
-func HooksRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func HooksRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	hooksController := NewGenericHooksController()
 	authMiddleware := auth.NewAuthMiddleware(db)
 

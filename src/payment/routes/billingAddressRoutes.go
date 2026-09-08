@@ -4,13 +4,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	auth "soli/formations/src/auth"
-	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
 )
 
 // BillingAddressRoutes définit les routes pour les adresses de facturation
-func BillingAddressRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+func BillingAddressRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	billingController := NewBillingAddressController(db)
 	authMiddleware := auth.NewAuthMiddleware(db)
 

@@ -16,7 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	config "soli/formations/src/configuration"
 	paymentController "soli/formations/src/payment/routes"
 
 	"gorm.io/driver/sqlite"
@@ -80,7 +79,7 @@ func setupUsageMetricsRealRouter(t *testing.T, role string) *gin.Engine {
 		c.Next()
 	})
 
-	paymentController.UsageMetricsRoutes(apiGroup, &config.Configuration{}, db)
+	paymentController.UsageMetricsRoutes(apiGroup, db)
 
 	return router
 }
