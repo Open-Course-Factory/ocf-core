@@ -2,10 +2,8 @@ package scenarioController
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 
 	"soli/formations/src/auth/errors"
@@ -13,7 +11,6 @@ import (
 	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
-	"soli/formations/src/scenarios/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -41,21 +38,13 @@ type ScenarioController interface {
 
 type scenarioController struct {
 	scenarioControllerBase
-	importerService  *services.ScenarioImporterService
-	exportService    *services.ScenarioExportService
-	seedService      *services.ScenarioSeedService
-	duplicateService *services.ScenarioDuplicateService
-	sessionService   *services.ScenarioSessionService
+	sessionService *services.ScenarioSessionService
 }
 
 // NewScenarioController creates a new scenario controller with its service dependencies
 func NewScenarioController(db *gorm.DB) ScenarioController {
 	return &scenarioController{
 		scenarioControllerBase: newScenarioControllerBase(db),
-		importerService:        services.NewScenarioImporterService(db),
-		exportService:          services.NewScenarioExportService(db),
-		seedService:            services.NewScenarioSeedService(db),
-		duplicateService:       services.NewScenarioDuplicateService(db),
 		sessionService:         services.NewScenarioSessionService(db, services.NewFlagService(), services.NewVerificationService()),
 	}
 }
@@ -228,102 +217,7 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 // @Router /scenarios/upload [post]
 // @Security BearerAuth
 func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
-	userID := ctx.GetString("userId")
-
-	// Get file from multipart form
-	file, err := ctx.FormFile("file")
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "File is required")
-		return
-	}
-
-	// Validate file size (10MB max)
-	if file.Size > 10*1024*1024 {
-		errors.Respond(ctx, http.StatusBadRequest, "File size exceeds 10MB limit")
-		return
-	}
-
-	// Validate extension
-	filename := strings.ToLower(file.Filename)
-	var ext string
-	switch {
-	case strings.HasSuffix(filename, ".tar.gz"):
-		ext = ".tar.gz"
-	case strings.HasSuffix(filename, ".tgz"):
-		ext = ".tgz"
-	case strings.HasSuffix(filename, ".zip"):
-		ext = ".zip"
-	default:
-		errors.Respond(ctx, http.StatusBadRequest, "File must be .zip, .tar.gz, or .tgz")
-		return
-	}
-
-	// Save to temp file
-	tmpFile, err := os.CreateTemp("", "scenario-upload-*"+ext)
-	if err != nil {
-		slog.Error("failed to create temp file", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
-		return
-	}
-	defer os.Remove(tmpFile.Name())
-
-	src, err := file.Open()
-	if err != nil {
-		tmpFile.Close()
-		slog.Error("failed to open uploaded file", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read uploaded file")
-		return
-	}
-
-	_, err = io.Copy(tmpFile, src)
-	src.Close()
-	tmpFile.Close()
-	if err != nil {
-		slog.Error("failed to save uploaded file", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to save uploaded file")
-		return
-	}
-
-	// Extract archive
-	tmpDir, err := os.MkdirTemp("", "scenario-extract-*")
-	if err != nil {
-		slog.Error("failed to create temp dir", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
-		return
-	}
-	defer os.RemoveAll(tmpDir)
-
-	if err := utils.ExtractArchive(tmpFile.Name(), tmpDir); err != nil {
-		slog.Error("failed to extract archive", "err", err)
-		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Failed to extract archive: %s", err.Error()))
-		return
-	}
-
-	// Find index.json
-	scenarioDir, err := utils.FindIndexJSON(tmpDir)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Archive must contain an index.json file")
-		return
-	}
-
-	// Import scenario
-	scenario, err := sc.importerService.ImportFromDirectory(scenarioDir, userID, nil, "upload")
-	if err != nil {
-		slog.Error("failed to import scenario from upload", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to import scenario: %s", err.Error()))
-		return
-	}
-
-	// Reload with steps
-	var loaded models.Scenario
-	if err := sc.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).First(&loaded, "id = ?", scenario.ID).Error; err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to reload scenario")
-		return
-	}
-
-	ctx.JSON(http.StatusOK, scenarioRegistration.ScenarioToOutput(&loaded))
+	sc.importUploadedArchive(ctx, nil, nil)
 }
 
 // ExportScenario godoc

@@ -2,11 +2,8 @@ package scenarioController
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"strings"
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
@@ -15,8 +12,6 @@ import (
 	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
-	"soli/formations/src/scenarios/services"
-	"soli/formations/src/scenarios/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -31,10 +26,6 @@ import (
 // handlers remain on scenarioController.
 type scenarioManagementController struct {
 	scenarioControllerBase
-	seedService      *services.ScenarioSeedService
-	importerService  *services.ScenarioImporterService
-	exportService    *services.ScenarioExportService
-	duplicateService *services.ScenarioDuplicateService
 }
 
 // NewScenarioManagementController creates a management controller with its
@@ -42,10 +33,6 @@ type scenarioManagementController struct {
 func NewScenarioManagementController(db *gorm.DB) *scenarioManagementController {
 	return &scenarioManagementController{
 		scenarioControllerBase: newScenarioControllerBase(db),
-		seedService:            services.NewScenarioSeedService(db),
-		importerService:        services.NewScenarioImporterService(db),
-		exportService:          services.NewScenarioExportService(db),
-		duplicateService:       services.NewScenarioDuplicateService(db),
 	}
 }
 
@@ -212,125 +199,13 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 		return
 	}
 
-	userID := ctx.GetString("userId")
-
-	// Get the group's organization ID
 	var group groupModels.ClassGroup
 	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
 		errors.Respond(ctx, http.StatusNotFound, "Group not found")
 		return
 	}
 
-	// Get file from multipart form
-	file, err := ctx.FormFile("file")
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "File is required")
-		return
-	}
-
-	// Validate file size (10MB max)
-	if file.Size > 10*1024*1024 {
-		errors.Respond(ctx, http.StatusBadRequest, "File size exceeds 10MB limit")
-		return
-	}
-
-	// Validate extension
-	filename := strings.ToLower(file.Filename)
-	var ext string
-	switch {
-	case strings.HasSuffix(filename, ".tar.gz"):
-		ext = ".tar.gz"
-	case strings.HasSuffix(filename, ".tgz"):
-		ext = ".tgz"
-	case strings.HasSuffix(filename, ".zip"):
-		ext = ".zip"
-	default:
-		errors.Respond(ctx, http.StatusBadRequest, "File must be .zip, .tar.gz, or .tgz")
-		return
-	}
-
-	// Save to temp file
-	tmpFile, err := os.CreateTemp("", "scenario-upload-*"+ext)
-	if err != nil {
-		slog.Error("failed to create temp file", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
-		return
-	}
-	defer os.Remove(tmpFile.Name())
-
-	src, err := file.Open()
-	if err != nil {
-		tmpFile.Close()
-		slog.Error("failed to open uploaded file", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read uploaded file")
-		return
-	}
-
-	_, err = io.Copy(tmpFile, src)
-	src.Close()
-	tmpFile.Close()
-	if err != nil {
-		slog.Error("failed to save uploaded file", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to save uploaded file")
-		return
-	}
-
-	// Extract archive
-	tmpDir, err := os.MkdirTemp("", "scenario-extract-*")
-	if err != nil {
-		slog.Error("failed to create temp dir", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
-		return
-	}
-	defer os.RemoveAll(tmpDir)
-
-	if err := utils.ExtractArchive(tmpFile.Name(), tmpDir); err != nil {
-		slog.Error("failed to extract archive", "err", err)
-		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Failed to extract archive: %s", err.Error()))
-		return
-	}
-
-	// Find index.json
-	scenarioDir, err := utils.FindIndexJSON(tmpDir)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Archive must contain an index.json file")
-		return
-	}
-
-	// Import scenario with org ID from group
-	scenario, err := sc.importerService.ImportFromDirectory(scenarioDir, userID, group.OrganizationID, "upload")
-	if err != nil {
-		slog.Error("failed to import scenario from upload", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to import scenario: %s", err.Error()))
-		return
-	}
-
-	// Auto-create ScenarioAssignment for the group (if not already assigned)
-	var existingAssignment models.ScenarioAssignment
-	if err := sc.db.Where("scenario_id = ? AND group_id = ?",
-		scenario.ID, groupID).First(&existingAssignment).Error; err != nil {
-		assignment := models.ScenarioAssignment{
-			ScenarioID:  scenario.ID,
-			GroupID:     &groupID,
-			Scope:       "group",
-			CreatedByID: userID,
-			IsActive:    true,
-		}
-		if err := sc.db.Create(&assignment).Error; err != nil {
-			slog.Error("failed to create scenario assignment", "err", err)
-		}
-	}
-
-	// Reload with steps
-	var loaded models.Scenario
-	if err := sc.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).First(&loaded, "id = ?", scenario.ID).Error; err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to reload scenario")
-		return
-	}
-
-	ctx.JSON(http.StatusOK, scenarioRegistration.ScenarioToOutput(&loaded))
+	sc.importUploadedArchive(ctx, group.OrganizationID, &groupID)
 }
 
 // OrgListScenarios godoc
@@ -623,104 +498,7 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 		return
 	}
 
-	userID := ctx.GetString("userId")
-
-	// Get file from multipart form
-	file, err := ctx.FormFile("file")
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "File is required")
-		return
-	}
-
-	// Validate file size (10MB max)
-	if file.Size > 10*1024*1024 {
-		errors.Respond(ctx, http.StatusBadRequest, "File size exceeds 10MB limit")
-		return
-	}
-
-	// Validate extension
-	filename := strings.ToLower(file.Filename)
-	var ext string
-	switch {
-	case strings.HasSuffix(filename, ".tar.gz"):
-		ext = ".tar.gz"
-	case strings.HasSuffix(filename, ".tgz"):
-		ext = ".tgz"
-	case strings.HasSuffix(filename, ".zip"):
-		ext = ".zip"
-	default:
-		errors.Respond(ctx, http.StatusBadRequest, "File must be .zip, .tar.gz, or .tgz")
-		return
-	}
-
-	// Save to temp file
-	tmpFile, err := os.CreateTemp("", "scenario-upload-*"+ext)
-	if err != nil {
-		slog.Error("failed to create temp file", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
-		return
-	}
-	defer os.Remove(tmpFile.Name())
-
-	src, err := file.Open()
-	if err != nil {
-		tmpFile.Close()
-		slog.Error("failed to open uploaded file", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read uploaded file")
-		return
-	}
-
-	_, err = io.Copy(tmpFile, src)
-	src.Close()
-	tmpFile.Close()
-	if err != nil {
-		slog.Error("failed to save uploaded file", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to save uploaded file")
-		return
-	}
-
-	// Extract archive
-	tmpDir, err := os.MkdirTemp("", "scenario-extract-*")
-	if err != nil {
-		slog.Error("failed to create temp dir", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to process upload")
-		return
-	}
-	defer os.RemoveAll(tmpDir)
-
-	if err := utils.ExtractArchive(tmpFile.Name(), tmpDir); err != nil {
-		slog.Error("failed to extract archive", "err", err)
-		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Failed to extract archive: %s", err.Error()))
-		return
-	}
-
-	// Find index.json
-	scenarioDir, err := utils.FindIndexJSON(tmpDir)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Archive must contain an index.json file")
-		return
-	}
-
-	// Import scenario with org ID directly
-	scenario, err := sc.importerService.ImportFromDirectory(scenarioDir, userID, &orgID, "upload")
-	if err != nil {
-		slog.Error("failed to import scenario from upload", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to import scenario: %s", err.Error()))
-		return
-	}
-
-	// Do NOT create ScenarioAssignment (unlike GroupUploadScenario)
-
-	// Reload with steps
-	var loaded models.Scenario
-	if err := sc.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).First(&loaded, "id = ?", scenario.ID).Error; err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to reload scenario")
-		return
-	}
-
-	ctx.JSON(http.StatusOK, scenarioRegistration.ScenarioToOutput(&loaded))
+	sc.importUploadedArchive(ctx, &orgID, nil)
 }
 
 // OrgExportScenario godoc
