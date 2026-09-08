@@ -22,7 +22,7 @@ import (
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/users/batch [post]
-func (u userController) GetUsersBatch(ctx *gin.Context) {
+func (u UserController) GetUsersBatch(ctx *gin.Context) {
 	var batchInput dto.BatchUsersInput
 
 	bindError := ctx.ShouldBindJSON(&batchInput)

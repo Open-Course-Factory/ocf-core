@@ -21,7 +21,7 @@ import (
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/users/search [get]
-func (u userController) SearchUsers(ctx *gin.Context) {
+func (u UserController) SearchUsers(ctx *gin.Context) {
 	query := ctx.Query("q")
 	if query == "" {
 		errors.Respond(ctx, http.StatusBadRequest, "Search query is required")

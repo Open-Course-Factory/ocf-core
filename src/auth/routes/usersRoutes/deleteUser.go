@@ -33,7 +33,7 @@ import (
 //	@Failure		500	{object}	errors.APIError	"Erasure failed (retryable)"
 //
 //	@Router			/users/{id} [delete]
-func (u userController) DeleteUser(ctx *gin.Context) {
+func (u UserController) DeleteUser(ctx *gin.Context) {
 	userRoles := ctx.GetStringSlice("userRoles")
 	isAdmin := access.IsAdmin(userRoles)
 	if !isAdmin {

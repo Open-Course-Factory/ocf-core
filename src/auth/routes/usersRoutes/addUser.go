@@ -24,7 +24,7 @@ import (
 //	@Failure		400		{object}	errors.APIError	"Impossible de créer un user"
 //	@Failure		409		{object}	errors.APIError	"Le user existe déjà"
 //	@Router			/users [post]
-func (u userController) AddUser(ctx *gin.Context) {
+func (u UserController) AddUser(ctx *gin.Context) {
 	userCreateDTO := dto.CreateUserInput{}
 
 	bindError := ctx.BindJSON(&userCreateDTO)

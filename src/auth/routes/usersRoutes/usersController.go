@@ -14,21 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type UserController interface {
-	AddUser(ctx *gin.Context)
-	DeleteUser(ctx *gin.Context)
-	DeleteMyAccount(ctx *gin.Context)
-	GetUsers(ctx *gin.Context)
-	GetUser(ctx *gin.Context)
-	GetUsersBatch(ctx *gin.Context)
-	SearchUsers(ctx *gin.Context)
-	GetMySettings(ctx *gin.Context)
-	UpdateMySettings(ctx *gin.Context)
-	ChangePassword(ctx *gin.Context)
-	ForceChangePassword(ctx *gin.Context)
-}
-
-type userController struct {
+type UserController struct {
 	service         services.UserService
 	settingsService *services.UserSettingsService
 	deletionService services.UserDeletionService
@@ -36,7 +22,7 @@ type userController struct {
 
 // NewUserController wires the production collaborators (real Casdoor client,
 // Stripe-backed payment helper, global DB).
-func NewUserController() UserController {
+func NewUserController() *UserController {
 	userService := services.NewUserService(
 		services.NewCasdoorUserClient(),
 		paymentServices.NewPaymentDeletionHelper(sqldb.DB),
@@ -54,8 +40,8 @@ func NewUserControllerWithServices(
 	userService services.UserService,
 	settingsService *services.UserSettingsService,
 	deletionService services.UserDeletionService,
-) UserController {
-	return &userController{
+) *UserController {
+	return &UserController{
 		service:         userService,
 		settingsService: settingsService,
 		deletionService: deletionService,
@@ -73,7 +59,7 @@ func NewUserControllerWithServices(
 // @Failure 500 {object} map[string]string
 // @Router /users/me/settings [get]
 // @Security Bearer
-func (uc *userController) GetMySettings(ctx *gin.Context) {
+func (uc *UserController) GetMySettings(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	if userID == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
@@ -125,7 +111,7 @@ func (uc *userController) GetMySettings(ctx *gin.Context) {
 // @Failure 500 {object} map[string]string
 // @Router /users/me/settings [patch]
 // @Security Bearer
-func (uc *userController) UpdateMySettings(ctx *gin.Context) {
+func (uc *UserController) UpdateMySettings(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	if userID == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
@@ -186,7 +172,7 @@ func (uc *userController) UpdateMySettings(ctx *gin.Context) {
 // @Failure 500 {object} map[string]string
 // @Router /users/me/change-password [post]
 // @Security Bearer
-func (uc *userController) ChangePassword(ctx *gin.Context) {
+func (uc *UserController) ChangePassword(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	if userID == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
@@ -240,7 +226,7 @@ func (uc *userController) ChangePassword(ctx *gin.Context) {
 // @Failure 403 {object} map[string]string
 // @Router /users/me/force-change-password [post]
 // @Security Bearer
-func (uc *userController) ForceChangePassword(ctx *gin.Context) {
+func (uc *UserController) ForceChangePassword(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	if userID == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})

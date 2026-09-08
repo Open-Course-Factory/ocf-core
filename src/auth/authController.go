@@ -19,16 +19,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type AuthController interface {
-	Callback(ctx *gin.Context)
-	Login(ctx *gin.Context)
+type AuthController struct {
 }
 
-type authController struct {
-}
-
-func NewAuthController() AuthController {
-	return &authController{}
+func NewAuthController() *AuthController {
+	return &AuthController{}
 }
 
 // Callback godoc
@@ -44,7 +39,7 @@ func NewAuthController() AuthController {
 //	@Failure		404	{object}	errors.APIError	"Utilisateur non trouvé"
 //
 //	@Router			/auth/callback [get]
-func (ac *authController) Callback(ctx *gin.Context) {
+func (ac *AuthController) Callback(ctx *gin.Context) {
 	codeParam := ctx.Query("code")
 	stateParam := ctx.Query("state")
 
@@ -87,7 +82,7 @@ func (ac *authController) Callback(ctx *gin.Context) {
 //	@Failure		500		{object}	errors.APIError	"Erreur serveur"
 //
 //	@Router			/auth/login [post]
-func (ac *authController) Login(ctx *gin.Context) {
+func (ac *AuthController) Login(ctx *gin.Context) {
 
 	user, shouldReturn := getUserFromContext(ctx)
 	if shouldReturn {

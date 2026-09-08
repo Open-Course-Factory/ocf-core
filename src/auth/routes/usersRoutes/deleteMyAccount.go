@@ -33,7 +33,7 @@ type deleteMyAccountRequest struct {
 //	@Failure		409	{object}	map[string]string	"User owns organizations or groups"
 //	@Failure		500	{object}	map[string]string	"Deletion failed"
 //	@Router			/users/me/account [delete]
-func (uc *userController) DeleteMyAccount(ctx *gin.Context) {
+func (uc *UserController) DeleteMyAccount(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	if userID == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})

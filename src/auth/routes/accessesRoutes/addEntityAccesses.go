@@ -27,7 +27,7 @@ import (
 //	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
 //	@Failure		500	{object}	errors.APIError	"Impossible de créer l'accès"
 //	@Router			/accesses [post]
-func (u accessController) AddEntityAccesses(ctx *gin.Context) {
+func (u AccessController) AddEntityAccesses(ctx *gin.Context) {
 	groupAccessesCreateDTO := dto.CreateEntityAccessInput{}
 
 	bindError := ctx.BindJSON(&groupAccessesCreateDTO)

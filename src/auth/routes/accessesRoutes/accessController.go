@@ -1,17 +1,8 @@
 package accessController
 
-import (
-	"github.com/gin-gonic/gin"
-)
-
-type AccessController interface {
-	AddEntityAccesses(ctx *gin.Context)
-	DeleteEntityAccesses(ctx *gin.Context)
+type AccessController struct {
 }
 
-type accessController struct {
-}
-
-func NewAccessController() AccessController {
-	return &accessController{}
+func NewAccessController() *AccessController {
+	return &AccessController{}
 }

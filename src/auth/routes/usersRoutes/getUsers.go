@@ -19,7 +19,7 @@ import (
 //	@Success		200	{array}		dto.UserOutput
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/users [get]
-func (u userController) GetUsers(ctx *gin.Context) {
+func (u UserController) GetUsers(ctx *gin.Context) {
 	users, userError := u.service.GetAllUsers()
 	if userError != nil {
 		errors.Respond(ctx, http.StatusInternalServerError, userError.Error())

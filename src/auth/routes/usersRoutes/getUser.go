@@ -29,7 +29,7 @@ import (
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		404	{object}	errors.APIError	"User not found"
 //	@Router			/users/{id} [get]
-func (u userController) GetUser(ctx *gin.Context) {
+func (u UserController) GetUser(ctx *gin.Context) {
 	userID := ctx.Param("id")
 	if userID == "" {
 		errors.Respond(ctx, http.StatusBadRequest, "User ID is required")

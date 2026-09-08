@@ -28,7 +28,7 @@ import (
 //	@Failure		500	{object}	errors.APIError	"Impossible de supprimer l'accès"
 //
 //	@Router			/accesses [delete]
-func (u accessController) DeleteEntityAccesses(ctx *gin.Context) {
+func (u AccessController) DeleteEntityAccesses(ctx *gin.Context) {
 	groupAccessesDeleteDTO := dto.DeleteEntityAccessInput{}
 
 	bindError := ctx.BindJSON(&groupAccessesDeleteDTO)
