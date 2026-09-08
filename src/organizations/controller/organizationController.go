@@ -71,10 +71,7 @@ func (oc *OrganizationController) GetOrganizationMembers(ctx *gin.Context) {
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
@@ -103,10 +100,7 @@ func (oc *OrganizationController) GetOrganizationMembers(ctx *gin.Context) {
 	}
 
 	if members == nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Organization not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Organization not found")
 		return
 	}
 
@@ -200,10 +194,7 @@ func (oc *OrganizationController) GetOrganizationGroups(ctx *gin.Context) {
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
@@ -213,10 +204,7 @@ func (oc *OrganizationController) GetOrganizationGroups(ctx *gin.Context) {
 		return
 	}
 	if org == nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Organization not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Organization not found")
 		return
 	}
 
@@ -284,20 +272,14 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	// Get current user from context
 	userID, exists := ctx.Get("userId")
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-			ErrorCode:    http.StatusUnauthorized,
-			ErrorMessage: "User not authenticated",
-		})
+		errors.Respond(ctx, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
@@ -307,28 +289,19 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 		return
 	}
 	if org == nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Organization not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Organization not found")
 		return
 	}
 
 	if !org.CanUserManageOrganization(userID.(string)) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "You are not authorized to import data into this organization",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "You are not authorized to import data into this organization")
 		return
 	}
 
 	// Parse multipart form
 	usersFile, err := ctx.FormFile("users")
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Users file is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Users file is required")
 		return
 	}
 
@@ -368,10 +341,7 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 			return
 		}
 
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to import data: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import data: " + err.Error())
 		return
 	}
 
@@ -404,20 +374,14 @@ func (oc *OrganizationController) ConvertToTeam(ctx *gin.Context) {
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	// Get requesting user ID from context
 	userID, exists := ctx.Get("userId")
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-			ErrorCode:    http.StatusUnauthorized,
-			ErrorMessage: "User not authenticated",
-		})
+		errors.Respond(ctx, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
@@ -443,10 +407,7 @@ func (oc *OrganizationController) ConvertToTeam(ctx *gin.Context) {
 			statusCode = http.StatusBadRequest
 		}
 
-		ctx.JSON(statusCode, &errors.APIError{
-			ErrorCode:    statusCode,
-			ErrorMessage: errorMessage,
-		})
+		errors.Respond(ctx, statusCode, errorMessage)
 		return
 	}
 
@@ -489,30 +450,21 @@ func (oc *OrganizationController) GetOrganizationBackends(ctx *gin.Context) {
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	org, err := oc.service.GetOrganization(orgID, false)
 	if err != nil {
 		if goerrors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Organization not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Organization not found")
 			return
 		}
 		errors.HandleError(http.StatusInternalServerError, err, ctx)
 		return
 	}
 	if org == nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Organization not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Organization not found")
 		return
 	}
 
@@ -541,36 +493,24 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 	userRoles, _ := ctx.Get("userRoles")
 	roles, ok := userRoles.([]string)
 	if !ok {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Admin access required",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Admin access required")
 		return
 	}
 	if !access.IsAdmin(roles) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Admin access required",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Admin access required")
 		return
 	}
 
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	var input dto.UpdateOrganizationBackendsInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid request body: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body: " + err.Error())
 		return
 	}
 
@@ -584,10 +524,7 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 			}
 		}
 		if !found {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "default_backend must be in allowed_backends list",
-			})
+			errors.Respond(ctx, http.StatusBadRequest, "default_backend must be in allowed_backends list")
 			return
 		}
 	}
@@ -596,20 +533,14 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 	org, err := oc.service.GetOrganization(orgID, false)
 	if err != nil {
 		if goerrors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Organization not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Organization not found")
 			return
 		}
 		errors.HandleError(http.StatusInternalServerError, err, ctx)
 		return
 	}
 	if org == nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Organization not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Organization not found")
 		return
 	}
 
@@ -618,10 +549,7 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 	// so we must JSON-marshal the slice ourselves for the text column.
 	backendsJSON, err := json.Marshal(input.AllowedBackends)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to encode backends",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to encode backends")
 		return
 	}
 	updateMap := map[string]any{
@@ -629,10 +557,7 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 		"default_backend":  input.DefaultBackend,
 	}
 	if err := oc.db.Model(org).Updates(updateMap).Error; err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to update backends: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to update backends: " + err.Error())
 		return
 	}
 
@@ -665,10 +590,7 @@ func (oc *OrganizationController) RegenerateGroupMemberPasswords(ctx *gin.Contex
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
@@ -676,30 +598,21 @@ func (oc *OrganizationController) RegenerateGroupMemberPasswords(ctx *gin.Contex
 	groupIDStr := ctx.Param("groupId")
 	groupID, err := uuid.Parse(groupIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid group ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid group ID")
 		return
 	}
 
 	// Get current user from context
 	userID, exists := ctx.Get("userId")
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-			ErrorCode:    http.StatusUnauthorized,
-			ErrorMessage: "User not authenticated",
-		})
+		errors.Respond(ctx, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
 	// Bind request body
 	var request dto.RegeneratePasswordsRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid request body: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body: " + err.Error())
 		return
 	}
 
@@ -715,10 +628,7 @@ func (oc *OrganizationController) RegenerateGroupMemberPasswords(ctx *gin.Contex
 			statusCode = http.StatusForbidden
 		}
 
-		ctx.JSON(statusCode, &errors.APIError{
-			ErrorCode:    statusCode,
-			ErrorMessage: errorMessage,
-		})
+		errors.Respond(ctx, statusCode, errorMessage)
 		return
 	}
 

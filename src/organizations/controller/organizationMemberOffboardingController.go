@@ -36,7 +36,7 @@ func (oc *OrganizationController) OffboardMembers(ctx *gin.Context) {
 	}
 	var input dto.OffboardMembersInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{ErrorCode: http.StatusBadRequest, ErrorMessage: "user_ids is required"})
+		errors.Respond(ctx, http.StatusBadRequest, "user_ids is required")
 		return
 	}
 
@@ -46,7 +46,7 @@ func (oc *OrganizationController) OffboardMembers(ctx *gin.Context) {
 		if status == http.StatusInternalServerError {
 			utils.Error("Offboarding in organization %s failed: %v", orgID, err)
 		}
-		ctx.JSON(status, &errors.APIError{ErrorCode: status, ErrorMessage: message})
+		errors.Respond(ctx, status, message)
 		return
 	}
 	ctx.Status(http.StatusNoContent)
@@ -76,7 +76,7 @@ func (oc *OrganizationController) ReinstateMember(ctx *gin.Context) {
 		if status == http.StatusInternalServerError {
 			utils.Error("Reinstating %s in organization %s failed: %v", ctx.Param("userId"), orgID, err)
 		}
-		ctx.JSON(status, &errors.APIError{ErrorCode: status, ErrorMessage: message})
+		errors.Respond(ctx, status, message)
 		return
 	}
 	ctx.Status(http.StatusNoContent)
@@ -107,7 +107,7 @@ func (oc *OrganizationController) EraseMember(ctx *gin.Context) {
 		if status == http.StatusInternalServerError {
 			utils.Error("Erasing %s from organization %s failed: %v", ctx.Param("userId"), orgID, err)
 		}
-		ctx.JSON(status, &errors.APIError{ErrorCode: status, ErrorMessage: message})
+		errors.Respond(ctx, status, message)
 		return
 	}
 	ctx.Status(http.StatusNoContent)
@@ -144,7 +144,7 @@ func offboardingErrorResponse(err error) (int, string) {
 func parseOrganizationID(ctx *gin.Context) (uuid.UUID, bool) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{ErrorCode: http.StatusBadRequest, ErrorMessage: "Invalid organization ID"})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return uuid.Nil, false
 	}
 	return orgID, true
