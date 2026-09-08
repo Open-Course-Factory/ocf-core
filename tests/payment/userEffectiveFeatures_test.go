@@ -83,7 +83,7 @@ func TestUserEffectiveFeatures_IgnoresASoftDeletedPlan(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "member-of-stale-org"
 
-	stale := seedPlan(t, db, "Trainer Plan", 1200)
+	stale := seedGroupPlan(t, db, "Trainer Plan", 1200)
 	orgSubscriptionOn(t, db, userID, stale)
 	require.NoError(t, db.Delete(stale).Error) // soft delete, exactly as in the real data
 
@@ -114,7 +114,7 @@ func TestUserEffectiveFeatures_PersonalPlanCanOutrankTheOrg(t *testing.T) {
 	require.NoError(t, db.Create(formateur).Error)
 	personalSubscription(t, db, userID, formateur)
 
-	trial := seedPlan(t, db, "Trial", 0)
+	trial := seedGroupPlan(t, db, "Trial", 0)
 	orgSubscriptionOn(t, db, userID, trial)
 
 	got, err := services.NewOrganizationSubscriptionService(db).GetUserEffectiveFeatures(userID)

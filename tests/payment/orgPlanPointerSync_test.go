@@ -41,7 +41,7 @@ func TestOrgPlanPointer_SetWhenSubscriptionActivates(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "school-owner"
 	org := seedOrgForSubscription(t, db, userID)
-	bespoke := seedPlan(t, db, "École / OF", 49900)
+	bespoke := seedGroupPlan(t, db, "École / OF", 49900)
 
 	_, err := services.NewOrganizationSubscriptionService(db).
 		CreateOrganizationSubscription(org.ID, bespoke.ID, userID, true)
@@ -58,7 +58,7 @@ func TestOrgPlanPointer_ClearedOnImmediateCancel(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "school-owner"
 	org := seedOrgForSubscription(t, db, userID)
-	bespoke := seedPlan(t, db, "École / OF", 49900)
+	bespoke := seedGroupPlan(t, db, "École / OF", 49900)
 
 	svc := services.NewOrganizationSubscriptionService(db)
 	_, err := svc.CreateOrganizationSubscription(org.ID, bespoke.ID, userID, true)
@@ -77,7 +77,7 @@ func TestOrgPlanPointer_KeptWhenCancellingAtPeriodEnd(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "school-owner"
 	org := seedOrgForSubscription(t, db, userID)
-	bespoke := seedPlan(t, db, "École / OF", 49900)
+	bespoke := seedGroupPlan(t, db, "École / OF", 49900)
 
 	svc := services.NewOrganizationSubscriptionService(db)
 	_, err := svc.CreateOrganizationSubscription(org.ID, bespoke.ID, userID, true)
@@ -97,7 +97,7 @@ func TestOrgPlanPointer_RefusedPurchaseLeavesItAlone(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "trainer"
 	org := seedOrgForSubscription(t, db, userID)
-	formateur := seedPlan(t, db, "Formateur", 1990)
+	formateur := seedGroupPlan(t, db, "Formateur", 1990)
 
 	_, _ = services.NewOrganizationSubscriptionService(db).
 		CreateOrganizationSubscription(org.ID, formateur.ID, userID, false)

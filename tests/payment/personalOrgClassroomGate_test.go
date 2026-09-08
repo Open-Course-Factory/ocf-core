@@ -45,18 +45,7 @@ type classroomEntitlementResponse struct {
 // group management: the Formateur shape that opened #475.
 func seedClassroomPlanFor(t *testing.T, db *gorm.DB, userID string, groupManagement bool) *models.SubscriptionPlan {
 	t.Helper()
-
-	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Formateur",
-		Priority:               20,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
-		IsCatalog:              true,
-		GroupManagementEnabled: groupManagement,
-	}
-	require.NoError(t, db.Create(plan).Error)
+	plan := seedPlan(t, db, models.SubscriptionPlan{Name: "Formateur", Priority: 20, IsCatalog: true, GroupManagementEnabled: groupManagement})
 	createUserSubscription(t, db, userID, plan)
 	return plan
 }

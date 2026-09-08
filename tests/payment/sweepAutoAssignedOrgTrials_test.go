@@ -67,7 +67,7 @@ func subscriptionStatus(t *testing.T, db *gorm.DB, orgID uuid.UUID) string {
 // TestSweep_CancelsTeamOrgTrial is the migration: marc-corp's exact state.
 func TestSweep_CancelsTeamOrgTrial(t *testing.T) {
 	db := freshTestDB(t)
-	trial := seedPlan(t, db, "Trial", 0)
+	trial := seedGroupPlan(t, db, "Trial", 0)
 	org := seedOrgWithSubscription(t, db, organizationModels.OrgTypeTeam, trial)
 
 	// The startup sequence: the legacy free plan is renamed and elected before
@@ -87,8 +87,8 @@ func TestSweep_CancelsTeamOrgTrial(t *testing.T) {
 // real commercial arrangement. Sweeping it would cancel a paying customer.
 func TestSweep_LeavesBespokeOrgPlansAlone(t *testing.T) {
 	db := freshTestDB(t)
-	_ = seedPlan(t, db, "Trial", 0)
-	bespoke := seedPlan(t, db, "École / OF", 49900)
+	_ = seedGroupPlan(t, db, "Trial", 0)
+	bespoke := seedGroupPlan(t, db, "École / OF", 49900)
 	org := seedOrgWithSubscription(t, db, organizationModels.OrgTypeTeam, bespoke)
 
 	initialization.RenameLegacyPlans(db)
@@ -104,7 +104,7 @@ func TestSweep_LeavesBespokeOrgPlansAlone(t *testing.T) {
 // no-op rather than touching rows again.
 func TestSweep_IsIdempotent(t *testing.T) {
 	db := freshTestDB(t)
-	trial := seedPlan(t, db, "Trial", 0)
+	trial := seedGroupPlan(t, db, "Trial", 0)
 	org := seedOrgWithSubscription(t, db, organizationModels.OrgTypeTeam, trial)
 
 	// The startup sequence: the legacy free plan is renamed and elected before
@@ -129,7 +129,7 @@ func TestSweep_IsIdempotent(t *testing.T) {
 // nothing to sweep, not a panic and not a wildcard UPDATE.
 func TestSweep_SurvivesAnEmptyCatalog(t *testing.T) {
 	db := freshTestDB(t)
-	paid := seedPlan(t, db, "Formateur", 1990)
+	paid := seedGroupPlan(t, db, "Formateur", 1990)
 	org := seedOrgWithSubscription(t, db, organizationModels.OrgTypeTeam, paid)
 
 	initialization.SweepAutoAssignedOrgTrials(db)

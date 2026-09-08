@@ -100,18 +100,8 @@ func provisionBulkBatchViaWebhook(t *testing.T, db *gorm.DB, router *gin.Engine,
 }
 
 func seedBulkIncreasePlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
-	t.Helper()
 	priceID := "price_bulk_tx"
-	plan := &models.SubscriptionPlan{
-		Name:            "Bulk Increase Plan",
-		PriceAmount:     1999,
-		Currency:        "eur",
-		BillingInterval: "month",
-		StripePriceID:   &priceID,
-		IsActive:        true,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+	return seedPlan(t, db, models.SubscriptionPlan{Name: "Bulk Increase Plan", PriceAmount: 1999, StripePriceID: &priceID})
 }
 
 // TestWebhook_BulkSubscriptionUpdated_QuantityIncrease_CreatesExactDelta pins the

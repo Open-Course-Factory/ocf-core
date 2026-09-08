@@ -29,7 +29,6 @@ import (
 
 	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/entityManagement/hooks"
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	entityServices "soli/formations/src/entityManagement/services"
 	"soli/formations/src/payment/dto"
 	paymentHooks "soli/formations/src/payment/hooks"
@@ -184,19 +183,7 @@ func patchPlanPersistence(t *testing.T, db *gorm.DB, planID uuid.UUID, gb string
 
 // seedEditablePlan persists a plan at 100 GB to be updated by the PATCH tests.
 func seedEditablePlan(t *testing.T, db *gorm.DB) uuid.UUID {
-	t.Helper()
-	id := uuid.New()
-	require.NoError(t, db.Create(&models.SubscriptionPlan{
-		BaseModel:         entityManagementModels.BaseModel{ID: id},
-		Name:              "Editable Plan",
-		PriceAmount:       1000,
-		Currency:          "eur",
-		BillingInterval:   "month",
-		IsActive:          true,
-		IsCatalog:         true,
-		DataPersistenceGB: 100,
-	}).Error)
-	return id
+	return seedPlan(t, db, models.SubscriptionPlan{Name: "Editable Plan", PriceAmount: 1000, IsCatalog: true, DataPersistenceGB: 100}).ID
 }
 
 // TestSubscriptionPlan_UpdateOver500_RejectedEndToEnd drives a real PATCH raising

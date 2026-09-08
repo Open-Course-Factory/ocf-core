@@ -54,17 +54,7 @@ func seedExpiringSub(t *testing.T, db *gorm.DB, userID string, planID uuid.UUID,
 }
 
 func seedAnyPlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            "Seat under expiry test",
-		Currency:        "eur",
-		BillingInterval: "month",
-		IsActive:        true,
-		PriceAmount:     600,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+	return seedPlan(t, db, models.SubscriptionPlan{Name: "Seat under expiry test", PriceAmount: 600})
 }
 
 // TestExpiry_LapsedSubscriptionStopsEntitling is the point of the issue: a

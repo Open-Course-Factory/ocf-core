@@ -17,14 +17,7 @@ import (
 
 // seedBulkLicenseTestData creates a plan, batch, and unassigned licenses for testing
 func seedBulkLicenseTestData(t *testing.T, db *gorm.DB, purchaserID string, totalQty int, assignedQty int) (*models.SubscriptionPlan, *models.SubscriptionBatch, []models.UserSubscription) {
-	plan := &models.SubscriptionPlan{
-		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:        "Test Pro Plan",
-		PriceAmount: 1000,
-		Currency:    "eur",
-		IsActive:    true,
-	}
-	require.NoError(t, db.Create(plan).Error)
+	plan := seedPlan(t, db, models.SubscriptionPlan{Name: "Test Pro Plan", PriceAmount: 1000})
 
 	batch := &models.SubscriptionBatch{
 		BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},

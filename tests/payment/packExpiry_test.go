@@ -35,19 +35,7 @@ func seedAssignedLicence(t *testing.T, db *gorm.DB, userID string, planID uuid.U
 }
 
 func seedPackPlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            "Pack journée",
-		Priority:        10,
-		IsActive:        true,
-		BulkPurchasable: true,
-		SeatUnit:        models.SeatUnitLearnerDay,
-		MaxCPU:          4000,
-		MaxMemoryMB:     4096,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+	return seedPlan(t, db, models.SubscriptionPlan{Name: "Pack journée", Priority: 10, BulkPurchasable: true, SeatUnit: models.SeatUnitLearnerDay, MaxCPU: 4000, MaxMemoryMB: 4096})
 }
 
 // A pack licence still inside its window entitles its holder.

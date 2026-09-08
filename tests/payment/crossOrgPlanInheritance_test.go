@@ -30,18 +30,7 @@ import (
 
 // seedPlanFor creates a plan at the given priority.
 func seedPlanFor(t *testing.T, db *gorm.DB, name string, priority int) *models.SubscriptionPlan {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   name,
-		Priority:               priority,
-		IsActive:               true,
-		GroupManagementEnabled: true,
-		MaxCPU:                 8000,
-		MaxMemoryMB:            8192,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+	return seedPlan(t, db, models.SubscriptionPlan{Name: name, Priority: priority, GroupManagementEnabled: true, MaxCPU: 8000, MaxMemoryMB: 8192})
 }
 
 // seedOrgOwning creates a team org owned by ownerID, optionally holding a plan,

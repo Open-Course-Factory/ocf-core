@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"soli/formations/src/initialization"
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/payment/models"
 
 	"github.com/google/uuid"
@@ -32,22 +31,7 @@ import (
 // gorm:"default:true" and GORM omits zero-value bools on Create, so the DB
 // default would otherwise win.
 func seedPlanForBackfill(t *testing.T, db *gorm.DB, name string, catalog, groupMgmt bool) *models.SubscriptionPlan {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            name,
-		Currency:        "eur",
-		PriceAmount:     1990,
-		BillingInterval: "month",
-		IsActive:        true,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	require.NoError(t, db.Model(plan).Updates(map[string]interface{}{
-		"is_catalog":               catalog,
-		"group_management_enabled": groupMgmt,
-		"bulk_purchasable":         false,
-	}).Error)
-	return plan
+	return seedPlan(t, db, models.SubscriptionPlan{Name: name, PriceAmount: 1990, IsCatalog: catalog, GroupManagementEnabled: groupMgmt})
 }
 
 func bulkPurchasable(t *testing.T, db *gorm.DB, id uuid.UUID) bool {

@@ -27,11 +27,8 @@ import (
 
 func seedSellableSeat(t *testing.T, db *gorm.DB, name string, active bool) *models.SubscriptionPlan {
 	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:        entityManagementModels.BaseModel{ID: uuid.New()},
+	plan := seedPlan(t, db, models.SubscriptionPlan{
 		Name:             name,
-		Currency:         "eur",
-		BillingInterval:  "month",
 		PriceAmount:      900,
 		BulkPurchasable:  true,
 		UseTieredPricing: true,
@@ -39,15 +36,11 @@ func seedSellableSeat(t *testing.T, db *gorm.DB, name string, active bool) *mode
 			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 900},
 			{MinQuantity: 6, MaxQuantity: 0, UnitAmount: 700},
 		},
-	}
-	require.NoError(t, db.Create(plan).Error)
-	// Hidden from the catalogue, and inactive when asked: both are zero-value
-	// bools on a default:true column, so Create cannot set them (#447).
-	updates := map[string]interface{}{"is_catalog": false}
+	})
 	if !active {
-		updates["is_active"] = false
+		// is_active is default:true, so Create cannot clear it (#447).
+		require.NoError(t, db.Model(plan).Update("is_active", false).Error)
 	}
-	require.NoError(t, db.Model(plan).Updates(updates).Error)
 	return plan
 }
 

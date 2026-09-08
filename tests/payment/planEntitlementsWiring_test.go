@@ -22,11 +22,9 @@ import (
 	"testing"
 
 	orgServices "soli/formations/src/organizations/services"
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -35,20 +33,7 @@ import (
 // seedTypedGroupPlan creates a plan whose TYPED entitlement fields are set but
 // whose legacy Features array is empty.
 func seedTypedGroupPlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                 "Typed Entitlement Plan",
-		Priority:             20,
-		Currency:             "eur",
-		BillingInterval:      "month",
-		IsActive:             true,
-		IsCatalog:            true,
-		GroupManagementEnabled: true,
-		NetworkAccessEnabled: true,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+	return seedPlan(t, db, models.SubscriptionPlan{Name: "Typed Entitlement Plan", Priority: 20, IsCatalog: true, GroupManagementEnabled: true, NetworkAccessEnabled: true})
 }
 
 // seedLegacyStringPlan creates a plan whose legacy "group_management" /
@@ -57,17 +42,8 @@ func seedTypedGroupPlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
 // surface nothing from those strings.
 func seedLegacyStringPlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
 	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            "Legacy String Plan",
-		Priority:        20,
-		Currency:        "eur",
-		BillingInterval: "month",
-		IsActive:        true,
-		IsCatalog:       true,
-		// all typed entitlement fields default false
-	}
-	require.NoError(t, db.Create(plan).Error)
+	// all typed entitlement fields default false
+	plan := seedPlan(t, db, models.SubscriptionPlan{Name: "Legacy String Plan", Priority: 20, IsCatalog: true})
 	seedLegacyFeaturesColumn(t, db, plan.ID, `["group_management","legacy_only_string"]`)
 	return plan
 }

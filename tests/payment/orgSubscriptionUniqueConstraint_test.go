@@ -56,18 +56,7 @@ func insertOrgSubWithStatus(
 // seedOrgAndPlanForUniqueTest creates a single plan and organization used by
 // the partial-unique-index tests.
 func seedOrgAndPlanForUniqueTest(t *testing.T, db *gorm.DB) (planID uuid.UUID, orgID uuid.UUID) {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            "PlanUniqueIdxTest_" + uuid.NewString()[:8],
-		Priority:        0,
-		PriceAmount:     0,
-		Currency:        "eur",
-		BillingInterval: "month",
-		IsActive:        true,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan.ID, uuid.New()
+	return seedPlan(t, db, models.SubscriptionPlan{Name: "PlanUniqueIdxTest_" + uuid.NewString()[:8]}).ID, uuid.New()
 }
 
 // isUniqueViolation returns true if the error looks like a unique-constraint

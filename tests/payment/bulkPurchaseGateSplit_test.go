@@ -37,17 +37,7 @@ import (
 // that grants group management — i.e. a legitimate seat purchaser.
 func seedTrainerWithGroupManagement(t *testing.T, db *gorm.DB, userID string) *models.SubscriptionPlan {
 	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Formateur (purchaser)",
-		Currency:               "eur",
-		PriceAmount:            1990,
-		BillingInterval:        "month",
-		IsActive:               true,
-		Priority:               20,
-		GroupManagementEnabled: true,
-	}
-	require.NoError(t, db.Create(plan).Error)
+	plan := seedPlan(t, db, models.SubscriptionPlan{Name: "Formateur (purchaser)", PriceAmount: 1990, Priority: 20, GroupManagementEnabled: true})
 
 	now := time.Now()
 	require.NoError(t, db.Create(&models.UserSubscription{
@@ -65,24 +55,8 @@ func seedTrainerWithGroupManagement(t *testing.T, db *gorm.DB, userID string) *m
 // seedSeatPlan creates the learner-seat plan: hidden from the public catalogue,
 // cheap, granting no group management, but explicitly sellable in bulk.
 func seedSeatPlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            "Siège élève",
-		Currency:        "eur",
-		PriceAmount:     600,
-		BillingInterval: "month",
-		IsActive:        true,
-		Priority:        5,
-		BulkPurchasable: true,
-		// GroupManagementEnabled deliberately false — students must not get it.
-	}
-	require.NoError(t, db.Create(plan).Error)
-	// IsCatalog carries gorm:"default:true", and GORM omits a zero-value bool on
-	// Create, so the DB default wins. Force it false explicitly — the same
-	// footgun the other catalog tests work around.
-	require.NoError(t, db.Model(plan).Update("is_catalog", false).Error)
-	return plan
+	// GroupManagementEnabled deliberately false — students must not get it.
+	return seedPlan(t, db, models.SubscriptionPlan{Name: "Siège élève", PriceAmount: 600, Priority: 5, BulkPurchasable: true})
 }
 
 // TestBulkPurchase_HiddenSeatPlanIsPurchasableByATrainer is the case the old gate

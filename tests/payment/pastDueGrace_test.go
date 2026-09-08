@@ -81,14 +81,8 @@ func buildInvoiceWebhook(eventID, eventType, invoiceID, customerID string) []byt
 }
 
 func seedPastDuePlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
-	t.Helper()
 	priceID := "price_pastdue_" + uuid.NewString()
-	plan := &models.SubscriptionPlan{
-		Name: "Past Due Plan", PriceAmount: 1999, Currency: "eur",
-		BillingInterval: "month", StripePriceID: &priceID, IsActive: true, Priority: 5,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+	return seedPlan(t, db, models.SubscriptionPlan{Name: "Past Due Plan", PriceAmount: 1999, StripePriceID: &priceID, Priority: 5})
 }
 
 // 1. invoice.payment_failed must set status=past_due AND stamp PastDueSince.

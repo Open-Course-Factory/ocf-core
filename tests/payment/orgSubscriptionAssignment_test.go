@@ -44,29 +44,9 @@ func seedOrgAndTwoPlans(t *testing.T, db *gorm.DB) (
 
 	// Both are org-assignable: these tests assign them to an ORGANIZATION, and an
 	// individual plan may no longer govern one (#458).
-	freePlan = &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "FreeAssignTest",
-		Priority:               0,
-		PriceAmount:            0,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
-		GroupManagementEnabled: true,
-	}
-	require.NoError(t, db.Create(freePlan).Error)
-
-	proPlan = &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "ProAssignTest",
-		Priority:               20,
-		PriceAmount:            0, // free-priced so the service marks it active immediately
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
-		GroupManagementEnabled: true,
-	}
-	require.NoError(t, db.Create(proPlan).Error)
+	freePlan = seedPlan(t, db, models.SubscriptionPlan{Name: "FreeAssignTest", GroupManagementEnabled: true})
+	// free-priced so the service marks it active immediately
+	proPlan = seedPlan(t, db, models.SubscriptionPlan{Name: "ProAssignTest", Priority: 20, GroupManagementEnabled: true})
 
 	userID = "test_user_org_assign"
 

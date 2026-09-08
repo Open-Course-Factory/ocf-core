@@ -55,7 +55,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	controller "soli/formations/src/entityManagement/routes"
 	registration "soli/formations/src/payment/entityRegistration"
@@ -63,7 +62,6 @@ import (
 	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -116,18 +114,7 @@ type planListResponse struct {
 
 // seedCatalogPlan creates an is_catalog=true plan.
 func seedCatalogPlan(t *testing.T, db *gorm.DB, name string) *models.SubscriptionPlan {
-	t.Helper()
-	p := &models.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            name,
-		PriceAmount:     1200,
-		Currency:        "eur",
-		BillingInterval: "month",
-		IsActive:        true,
-		IsCatalog:       true,
-	}
-	require.NoError(t, db.Create(p).Error)
-	return p
+	return seedPlan(t, db, models.SubscriptionPlan{Name: name, PriceAmount: 1200, IsCatalog: true})
 }
 
 // seedHiddenPlan creates an is_catalog=false plan. GORM's Create skips the
@@ -136,16 +123,7 @@ func seedCatalogPlan(t *testing.T, db *gorm.DB, name string) *models.Subscriptio
 // subscriptionPlan_catalog_test.go documents.
 func seedHiddenPlan(t *testing.T, db *gorm.DB, name string) *models.SubscriptionPlan {
 	t.Helper()
-	p := &models.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            name,
-		PriceAmount:     9900,
-		Currency:        "eur",
-		BillingInterval: "month",
-		IsActive:        true,
-	}
-	require.NoError(t, db.Create(p).Error)
-	require.NoError(t, db.Model(p).Update("is_catalog", false).Error)
+	p := seedPlan(t, db, models.SubscriptionPlan{Name: name, PriceAmount: 9900})
 
 	var fetched models.SubscriptionPlan
 	require.NoError(t, db.First(&fetched, "id = ?", p.ID).Error)

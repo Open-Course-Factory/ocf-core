@@ -35,20 +35,11 @@ import (
 
 // seedFreeTrialPlan creates the free plan the heal path looks up by name.
 func seedFreeTrialPlan(t *testing.T, db *gorm.DB) *paymentModels.SubscriptionPlan {
-	t.Helper()
-	plan := &paymentModels.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            paymentServices.FreePlanName,
-		Description:     "Free trial plan",
-		IsDefaultFree:   true, // the election FindFreePlan reads, made at startup
-		Priority:        0,
-		PriceAmount:     0,
-		Currency:        "eur",
-		BillingInterval: "month",
-		IsActive:        true,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+	return seedPlan(t, db, paymentModels.SubscriptionPlan{
+		Name:          paymentServices.FreePlanName,
+		Description:   "Free trial plan",
+		IsDefaultFree: true, // the election FindFreePlan reads, made at startup
+	})
 }
 
 // countSubscriptions returns how many subscription rows a user holds, in any status.

@@ -135,24 +135,13 @@ func agreedSeatLadder() []models.PricingTier {
 }
 
 func seedTieredPlan(t *testing.T, db *gorm.DB, stripePriceID *string) *models.SubscriptionPlan {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:        entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:             "Siège élève — mensuel",
-		Currency:         "eur",
-		BillingInterval:  "month",
-		IsActive:         true,
-		PriceAmount:      900,
-		UseTieredPricing: true,
-		PricingTiers:     agreedSeatLadder(),
-	}
+	plan := models.SubscriptionPlan{Name: "Siège élève — mensuel", PriceAmount: 900, UseTieredPricing: true, PricingTiers: agreedSeatLadder()}
 	if stripePriceID != nil {
 		productID := "prod_tiered"
 		plan.StripeProductID = &productID
 		plan.StripePriceID = stripePriceID
 	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+	return seedPlan(t, db, plan)
 }
 
 // TestCreateTieredPlan_EmitsGraduatedTiers pins that a ladder actually reaches

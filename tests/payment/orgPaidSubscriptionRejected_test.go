@@ -49,18 +49,8 @@ func seedOrgForSubscription(t *testing.T, db *gorm.DB, userID string) *organizat
 // individual plan landing there silently downgrades everyone. Tests that need a
 // plan which must be REFUSED should build it inline rather than widening this
 // helper.
-func seedPlan(t *testing.T, db *gorm.DB, name string, amount int64) *models.SubscriptionPlan {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   name,
-		PriceAmount:            amount,
-		Currency:               "eur",
-		IsActive:               true,
-		GroupManagementEnabled: true,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+func seedGroupPlan(t *testing.T, db *gorm.DB, name string, amount int64) *models.SubscriptionPlan {
+	return seedPlan(t, db, models.SubscriptionPlan{Name: name, PriceAmount: amount, GroupManagementEnabled: true})
 }
 
 func countOrgSubscriptions(t *testing.T, db *gorm.DB, orgID uuid.UUID) int64 {
@@ -76,7 +66,7 @@ func TestPaidOrgSubscription_IsRejected(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "trainer"
 	org := seedOrgForSubscription(t, db, userID)
-	formateur := seedPlan(t, db, "Formateur", 1990)
+	formateur := seedGroupPlan(t, db, "Formateur", 1990)
 
 	sub, err := services.NewOrganizationSubscriptionService(db).
 		CreateOrganizationSubscription(org.ID, formateur.ID, userID, false)
@@ -94,7 +84,7 @@ func TestPaidOrgSubscription_AdminAssignedStillWorks(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "school-owner"
 	org := seedOrgForSubscription(t, db, userID)
-	bespoke := seedPlan(t, db, "École / OF", 49900)
+	bespoke := seedGroupPlan(t, db, "École / OF", 49900)
 
 	sub, err := services.NewOrganizationSubscriptionService(db).
 		CreateOrganizationSubscription(org.ID, bespoke.ID, userID, true)
@@ -111,7 +101,7 @@ func TestFreeOrgSubscription_StillWorks(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "owner"
 	org := seedOrgForSubscription(t, db, userID)
-	free := seedPlan(t, db, "École / OF (sur devis)", 0)
+	free := seedGroupPlan(t, db, "École / OF (sur devis)", 0)
 
 	sub, err := services.NewOrganizationSubscriptionService(db).
 		CreateOrganizationSubscription(org.ID, free.ID, userID, false)
@@ -127,7 +117,7 @@ func TestPaidOrgSubscription_LeavesThePlanPointerAlone(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "trainer"
 	org := seedOrgForSubscription(t, db, userID)
-	formateur := seedPlan(t, db, "Formateur", 1990)
+	formateur := seedGroupPlan(t, db, "Formateur", 1990)
 
 	_, _ = services.NewOrganizationSubscriptionService(db).
 		CreateOrganizationSubscription(org.ID, formateur.ID, userID, false)

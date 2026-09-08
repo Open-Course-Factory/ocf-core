@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"soli/formations/src/entityManagement/hooks"
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	paymentHooks "soli/formations/src/payment/hooks"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
@@ -26,17 +25,7 @@ import (
 )
 
 func seedPlanWithGroupManagement(t *testing.T, db *gorm.DB, name string, groupManagement bool) *models.SubscriptionPlan {
-	t.Helper()
-	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   name,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
-		GroupManagementEnabled: groupManagement,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
+	return seedPlan(t, db, models.SubscriptionPlan{Name: name, GroupManagementEnabled: groupManagement})
 }
 
 func TestValidateOrgAssignablePlan_Rule(t *testing.T) {
