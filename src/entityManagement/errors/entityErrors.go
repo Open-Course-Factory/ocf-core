@@ -185,47 +185,36 @@ var (
 
 // Helper constructors for common error scenarios
 
+// with returns a copy of the base error carrying details. The value receiver
+// makes the copy explicit: the package-level sentinels are never mutated, so
+// errors.Is(err, ErrX) keeps matching on Code/Message equality of the copy.
+func (e EntityError) with(details map[string]any) *EntityError {
+	e.Details = details
+	return &e
+}
+
 // NewEntityNotFound creates an EntityNotFound error with entity details.
 //
 // Example:
 //
 //	return nil, errors.NewEntityNotFound("Course", courseID)
 func NewEntityNotFound(entityName string, id any) *EntityError {
-	err := *ErrEntityNotFound // Copy the base error
-	err.Details = map[string]any{
-		"entityName": entityName,
-		"id":         fmt.Sprintf("%v", id),
-	}
-	return &err
+	return ErrEntityNotFound.with(map[string]any{"entityName": entityName, "id": fmt.Sprintf("%v", id)})
 }
 
 // NewEntityNotRegistered creates an EntityNotRegistered error with entity name.
 func NewEntityNotRegistered(entityName string) *EntityError {
-	err := *ErrEntityNotRegistered
-	err.Details = map[string]any{
-		"entityName": entityName,
-	}
-	return &err
+	return ErrEntityNotRegistered.with(map[string]any{"entityName": entityName})
 }
 
 // NewConversionError creates a ConversionFailed error with context.
 func NewConversionError(entityName string, reason string) *EntityError {
-	err := *ErrConversionFailed
-	err.Details = map[string]any{
-		"entityName": entityName,
-		"reason":     reason,
-	}
-	return &err
+	return ErrConversionFailed.with(map[string]any{"entityName": entityName, "reason": reason})
 }
 
 // NewValidationError creates a ValidationFailed error with field details.
 func NewValidationError(field string, reason string) *EntityError {
-	err := *ErrValidationFailed
-	err.Details = map[string]any{
-		"field":  field,
-		"reason": reason,
-	}
-	return &err
+	return ErrValidationFailed.with(map[string]any{"field": field, "reason": reason})
 }
 
 // WrapDatabaseError wraps a database error with context.
@@ -240,24 +229,14 @@ func NewValidationError(field string, reason string) *EntityError {
 //	    return errors.WrapDatabaseError(result.Error, "create entity")
 //	}
 func WrapDatabaseError(dbErr error, operation string) *EntityError {
-	err := *ErrDatabaseError
+	err := ErrDatabaseError.with(map[string]any{"operation": operation, "original": dbErr.Error()})
 	err.Err = dbErr
-	err.Details = map[string]any{
-		"operation": operation,
-		"original":  dbErr.Error(),
-	}
-	return &err
+	return err
 }
 
 // NewUnauthorizedError creates an Unauthorized error with user and resource context.
 func NewUnauthorizedError(userId string, resource string, action string) *EntityError {
-	err := *ErrUnauthorized
-	err.Details = map[string]any{
-		"userId":   userId,
-		"resource": resource,
-		"action":   action,
-	}
-	return &err
+	return ErrUnauthorized.with(map[string]any{"userId": userId, "resource": resource, "action": action})
 }
 
 // WrapHookError wraps a hook execution error with context.
@@ -273,69 +252,38 @@ func WrapHookError(hookName string, entityName string, hookErr error) *EntityErr
 		return structured
 	}
 
-	err := *ErrHookExecutionFailed
+	err := ErrHookExecutionFailed.with(map[string]any{"hookName": hookName, "entityName": entityName, "original": hookErr.Error()})
 	err.Err = hookErr
-	err.Details = map[string]any{
-		"hookName":   hookName,
-		"entityName": entityName,
-		"original":   hookErr.Error(),
-	}
-	return &err
+	return err
 }
 
 // NewInvalidInputError creates an InvalidInput error with field context.
 func NewInvalidInputError(field string, value any, reason string) *EntityError {
-	err := *ErrInvalidInput
-	err.Details = map[string]any{
-		"field":  field,
-		"value":  fmt.Sprintf("%v", value),
-		"reason": reason,
-	}
-	return &err
+	return ErrInvalidInput.with(map[string]any{"field": field, "value": fmt.Sprintf("%v", value), "reason": reason})
 }
 
 // NewInvalidPaginationError creates an InvalidPagination error with parameter details.
 func NewInvalidPaginationError(param string, value any, reason string) *EntityError {
-	err := *ErrInvalidPagination
-	err.Details = map[string]any{
-		"parameter": param,
-		"value":     fmt.Sprintf("%v", value),
-		"reason":    reason,
-	}
-	return &err
+	return ErrInvalidPagination.with(map[string]any{"parameter": param, "value": fmt.Sprintf("%v", value), "reason": reason})
 }
 
 // NewInvalidCursorError creates an InvalidCursor error with cursor details.
 func NewInvalidCursorError(cursor string, reason string) *EntityError {
-	err := *ErrInvalidCursor
-	err.Details = map[string]any{
-		"cursor": cursor,
-		"reason": reason,
-	}
-	return &err
+	return ErrInvalidCursor.with(map[string]any{"cursor": cursor, "reason": reason})
 }
 
 // NewStateConflictError wraps the domain reason (a sentinel such as
 // groupModels.ErrClassArchived) so errors.Is still finds it, and carries its
 // text in the details for the client.
 func NewStateConflictError(entityName string, reason error) *EntityError {
-	err := *ErrStateConflict
+	err := ErrStateConflict.with(map[string]any{"entityName": entityName, "reason": reason.Error()})
 	err.Err = reason
-	err.Details = map[string]any{
-		"entityName": entityName,
-		"reason":     reason.Error(),
-	}
-	return &err
+	return err
 }
 
 // NewConstraintViolationError creates a constraint violation error with details.
 func NewConstraintViolationError(operation string, dbErr error) *EntityError {
-	err := *ErrConstraintViolation
+	err := ErrConstraintViolation.with(map[string]any{"operation": operation, "original": dbErr.Error(), "fix": "Delete or reassign the referencing records before retrying"})
 	err.Err = dbErr
-	err.Details = map[string]any{
-		"operation": operation,
-		"original":  dbErr.Error(),
-		"fix":       "Delete or reassign the referencing records before retrying",
-	}
-	return &err
+	return err
 }
