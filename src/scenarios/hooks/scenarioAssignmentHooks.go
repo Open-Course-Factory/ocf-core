@@ -98,7 +98,7 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeCreate(ctx *hooks.Hook
 
 	// Check org-level authorization when assigning to an organization
 	if assignment.OrganizationID != nil && ctx.UserID != "" {
-		canManage, err := h.canUserManageOrg(*assignment.OrganizationID, ctx.UserID)
+		canManage, err := CanUserManageOrg(h.db, *assignment.OrganizationID, ctx.UserID)
 		if err != nil {
 			return fmt.Errorf("permission check failed: %w", err)
 		}
@@ -135,7 +135,7 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeUpdate(ctx *hooks.Hook
 
 	// Check org-level authorization for org-scoped assignments
 	if assignment.OrganizationID != nil && ctx.UserID != "" {
-		canManage, err := h.canUserManageOrg(*assignment.OrganizationID, ctx.UserID)
+		canManage, err := CanUserManageOrg(h.db, *assignment.OrganizationID, ctx.UserID)
 		if err != nil {
 			return fmt.Errorf("permission check failed: %w", err)
 		}
@@ -171,7 +171,7 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeDelete(ctx *hooks.Hook
 
 	// Check org-level authorization when deleting an org-scoped assignment
 	if assignment.OrganizationID != nil && ctx.UserID != "" {
-		canManage, err := h.canUserManageOrg(*assignment.OrganizationID, ctx.UserID)
+		canManage, err := CanUserManageOrg(h.db, *assignment.OrganizationID, ctx.UserID)
 		if err != nil {
 			return fmt.Errorf("permission check failed: %w", err)
 		}
@@ -237,15 +237,16 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 	return nil
 }
 
-// canUserManageOrg checks if a user is a manager or owner of the given organization.
-func (h *ScenarioAssignmentAuthorizationHook) canUserManageOrg(orgID uuid.UUID, userID string) (bool, error) {
+// CanUserManageOrg reports whether the user is an active manager or owner of
+// the organization: the one owner of that predicate for scenario management.
+func CanUserManageOrg(db *gorm.DB, orgID uuid.UUID, userID string) (bool, error) {
 	var orgMember orgModels.OrganizationMember
-	result := h.db.Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).First(&orgMember)
-	if result.Error != nil {
-		if result.Error == gorm.ErrRecordNotFound {
-			return false, nil
-		}
-		return false, result.Error
+	err := db.Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).First(&orgMember).Error
+	if err == gorm.ErrRecordNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
 	}
 	return orgMember.IsManager(), nil
 }

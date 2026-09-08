@@ -2,6 +2,7 @@ package models
 
 import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
+	"soli/formations/src/utils"
 	"strings"
 
 	"github.com/google/uuid"
@@ -51,7 +52,7 @@ func (c Chapter) getTitle(toUpper bool) string {
 	if toUpper {
 		title = strings.ToUpper(title)
 	}
-	return removeAccents(title)
+	return utils.RemoveAccents(title)
 }
 
 type CourseChapters struct {

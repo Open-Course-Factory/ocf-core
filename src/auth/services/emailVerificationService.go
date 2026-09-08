@@ -200,7 +200,7 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 	}
 
 	casdoor.MarkEmailVerified(user, time.Now())
-	affected, err := writeCasdoorUserColumns(user, casdoor.EmailVerifiedColumns())
+	affected, err := writeCasdoorUserColumns(user, casdoor.EmailVerifiedColumns)
 	if err != nil {
 		return fmt.Errorf("failed to update user verification status: %w", err)
 	}

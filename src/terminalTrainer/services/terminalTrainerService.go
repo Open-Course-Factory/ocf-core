@@ -1147,8 +1147,7 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 		}
 	}
 
-	scope := dto.ScopeUser
-	opts.Quota = tts.quotaService.BudgetSnapshot(plan, usedCPU, usedMem, scope)
+	opts.Quota = tts.quotaService.BudgetSnapshot(plan, usedCPU, usedMem, dto.ScopeUser)
 }
 
 // StartComposedSession delegates to terminalComposer, which owns the

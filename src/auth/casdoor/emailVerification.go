@@ -25,6 +25,4 @@ func MarkEmailVerified(user *casdoorsdk.User, at time.Time) {
 // not `email_verified`: written without this list the flag silently never
 // lands, which is how production ended up full of accounts carrying an
 // email_verified_at stamp next to a false flag.
-func EmailVerifiedColumns() []string {
-	return []string{"email_verified", "properties"}
-}
+var EmailVerifiedColumns = []string{"email_verified", "properties"}

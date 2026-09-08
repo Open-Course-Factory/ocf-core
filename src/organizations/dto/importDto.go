@@ -38,14 +38,6 @@ type MembershipImportRow struct {
 
 // Request/Response Structures
 
-// ImportOrganizationDataRequest represents the bulk import request
-type ImportOrganizationDataRequest struct {
-	DryRun         bool `form:"dry_run"`         // Validate only, don't persist
-	UpdateExisting bool `form:"update_existing"` // Update existing users/groups vs skip
-	VerifyEmails   bool `form:"verify_emails"`   // Mark imported addresses verified; absent means true (the organization vouches for them)
-	SendInvites    bool `form:"send_invites"`    // Send email invitations (future)
-}
-
 // ImportOrganizationDataResponse represents the import operation result
 type ImportOrganizationDataResponse struct {
 	Success     bool              `json:"success"`

@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -25,9 +24,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	stdssh "golang.org/x/crypto/ssh"
-
-	"golang.org/x/text/transform"
-	"golang.org/x/text/unicode/norm"
 
 	authServices "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
@@ -49,16 +45,6 @@ func contains(intArray []int, intToFind int) bool {
 		}
 	}
 	return false
-}
-
-func isMn(r rune) bool {
-	return unicode.Is(unicode.Mn, r) // Mn: nonspacing marks
-}
-
-func removeAccents(input string) string {
-	t := transform.Chain(norm.NFD, transform.RemoveFunc(isMn), norm.NFC)
-	result, _, _ := transform.String(t, input)
-	return result
 }
 
 func fileExists(filename string) bool {

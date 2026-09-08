@@ -132,7 +132,10 @@ func InjectEffectivePlan(effectivePlanService services.EffectivePlanService) gin
 			roles, _ := ctx.Get("userRoles")
 			userRoles, _ := roles.([]string)
 			if orgID != nil && access.IsAdmin(userRoles) {
-				result = resolveOrgPlanForAdmin(effectivePlanService, *orgID)
+				// The service answers the admin bypass too, so the organization's
+				// plan — budget, scope, dangling-plan rule — is the one a member
+				// would resolve; an error means no usable plan.
+				result, _ = effectivePlanService.GetOrganizationPlan(*orgID)
 			}
 
 			if result == nil {
@@ -149,19 +152,6 @@ func InjectEffectivePlan(effectivePlanService services.EffectivePlanService) gin
 		ctx.Set("planSource", string(result.Source))
 		ctx.Next()
 	}
-}
-
-// resolveOrgPlanForAdmin answers the admin bypass through the service, so the
-// organization's plan — budget, scope and the dangling-plan rule included — is
-// the same one a member would resolve. Returns nil when the organization has
-// no usable plan.
-func resolveOrgPlanForAdmin(effectivePlanService services.EffectivePlanService, orgID uuid.UUID) *services.EffectivePlanResult {
-	result, err := effectivePlanService.GetOrganizationPlan(orgID)
-	if err != nil {
-		utils.Debug("Admin fallback: no plan for org %s: %v", orgID, err)
-		return nil
-	}
-	return result
 }
 
 // RequirePlan aborts the request with 403 if no effective plan was resolved

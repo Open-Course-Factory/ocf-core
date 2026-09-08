@@ -5,7 +5,6 @@ import (
 
 	"soli/formations/src/entityManagement/hooks"
 	groupServices "soli/formations/src/groups/services"
-	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/utils"
 
@@ -37,14 +36,12 @@ func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 
 	// Org manager / owner can manage scenarios of their org.
 	if scenario.OrganizationID != nil {
-		var orgMember orgModels.OrganizationMember
-		err := db.Where("organization_id = ? AND user_id = ? AND is_active = ?",
-			*scenario.OrganizationID, userID, true).First(&orgMember).Error
-		if err == nil && orgMember.IsManager() {
-			return true, nil
-		}
-		if err != nil && err != gorm.ErrRecordNotFound {
+		canManage, err := CanUserManageOrg(db, *scenario.OrganizationID, userID)
+		if err != nil {
 			return false, fmt.Errorf("load org member: %w", err)
+		}
+		if canManage {
+			return true, nil
 		}
 	}
 

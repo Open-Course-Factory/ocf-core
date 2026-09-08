@@ -205,13 +205,9 @@ func EntityNotFoundError(entityType string) error {
 // hook-failure 500 an opaque error becomes (#493, #483). The message keeps the
 // word "permission": a few controllers still classify errors by it.
 func PermissionDeniedError(action, entityType string) error {
-	err := *entityErrors.ErrUnauthorized
+	err := entityErrors.NewUnauthorizedError("", entityType, action)
 	err.Message = fmt.Sprintf("you don't have permission to %s this %s", action, entityType)
-	err.Details = map[string]any{
-		"action":   action,
-		"resource": entityType,
-	}
-	return &err
+	return err
 }
 
 // CapacityExceededError creates a capacity limit error

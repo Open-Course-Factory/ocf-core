@@ -633,7 +633,12 @@ func (s *importService) updateExistingUser(existingUser *casdoorsdk.User, row dt
 
 	if verifyEmails {
 		casdoor.MarkEmailVerified(existingUser, time.Now())
-		columns = appendMissingColumns(columns, casdoor.EmailVerifiedColumns()...)
+		// force_reset and the verified mark both touch `properties`: add each column once.
+		for _, column := range casdoor.EmailVerifiedColumns {
+			if !slices.Contains(columns, column) {
+				columns = append(columns, column)
+			}
+		}
 	}
 
 	// A password stated in the row is applied through Casdoor's set-password
@@ -653,17 +658,6 @@ func (s *importService) updateExistingUser(existingUser *casdoorsdk.User, row dt
 		return fmt.Errorf("casdoor did not persist the update of %s", row.Email)
 	}
 	return nil
-}
-
-// appendMissingColumns adds each column once: force_reset and the verified
-// mark both touch `properties`.
-func appendMissingColumns(columns []string, more ...string) []string {
-	for _, column := range more {
-		if !slices.Contains(columns, column) {
-			columns = append(columns, column)
-		}
-	}
-	return columns
 }
 
 // assignFreeTrialPlan assigns the free Trial plan to a new user.

@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"soli/formations/src/payment/catalog"
@@ -192,12 +193,7 @@ func isBlank(s *string) bool { return s == nil || *s == "" }
 // affordsAnySize reports whether the plan can pay for one whole session of at
 // least one catalog size, asking the budget engine itself with nothing in use.
 func affordsAnySize(quota QuotaService, plan *models.SubscriptionPlan) bool {
-	for _, size := range quota.ComputeRemainingBySize(plan, 0, 0) {
-		if size.RemainingCount >= 1 {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(quota.ComputeRemainingBySize(plan, 0, 0), func(s SizeRemaining) bool { return s.RemainingCount >= 1 })
 }
 
 // axisImbalanceFinding reports a plan whose two budgets afford materially
@@ -235,14 +231,12 @@ func axisImbalanceFinding(plan *models.SubscriptionPlan) (PlanHealthFinding, boo
 			continue
 		}
 
-		smaller, larger := byCPU, byMem
+		if max(byCPU, byMem) < min(byCPU, byMem)*axisImbalanceRatio {
+			return PlanHealthFinding{}, false
+		}
 		binding := "CPU"
 		if byMem < byCPU {
-			smaller, larger = byMem, byCPU
 			binding = "memory"
-		}
-		if larger < smaller*axisImbalanceRatio {
-			return PlanHealthFinding{}, false
 		}
 
 		return PlanHealthFinding{

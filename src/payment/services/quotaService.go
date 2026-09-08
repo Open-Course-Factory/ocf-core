@@ -222,19 +222,18 @@ func (s *quotaService) CheckBudget(
 }
 
 // cpuRemainingForReport produces the "remaining" CPU value used in
-// rejection responses, clamped to >= 0.
+// rejection responses, clamped to >= 0: usage can exceed a cap after a plan is
+// downgraded, and a negative "remaining" is not something a caller should
+// have to interpret.
 func cpuRemainingForReport(plan *models.SubscriptionPlan, usedCPU int) int {
-	return clampNonNegative(plan.MaxCPU - usedCPU)
+	return max(plan.MaxCPU-usedCPU, 0)
 }
 
 // memRemainingForReport mirrors cpuRemainingForReport for the memory axis.
 func memRemainingForReport(plan *models.SubscriptionPlan, usedMemMB int) int {
-	return clampNonNegative(plan.MaxMemoryMB - usedMemMB)
+	return max(plan.MaxMemoryMB-usedMemMB, 0)
 }
 
-// clampNonNegative floors an over-spent budget at zero: usage can exceed a
-// cap after a plan is downgraded, and a negative "remaining" is not something
-// any caller should have to interpret.
 func (s *quotaService) BudgetSnapshot(plan *models.SubscriptionPlan, usedCPU, usedMemMB int, scope terminalDto.QuotaScope) *terminalDto.SessionQuotaInfo {
 	if plan == nil {
 		return &terminalDto.SessionQuotaInfo{Scope: terminalDto.ScopeUnknown}
@@ -250,13 +249,6 @@ func (s *quotaService) BudgetSnapshot(plan *models.SubscriptionPlan, usedCPU, us
 	}
 }
 
-func clampNonNegative(v int) int {
-	if v < 0 {
-		return 0
-	}
-	return v
-}
-
 // ComputeRemainingBySize — see interface doc.
 func (s *quotaService) ComputeRemainingBySize(
 	plan *models.SubscriptionPlan,
@@ -269,8 +261,8 @@ func (s *quotaService) ComputeRemainingBySize(
 	// and "no capacity" are the same answer, and it is the safe one.
 	remCPU, remMem := 0, 0
 	if plan != nil {
-		remCPU = clampNonNegative(plan.MaxCPU - usedCPU)
-		remMem = clampNonNegative(plan.MaxMemoryMB - usedMemMB)
+		remCPU = cpuRemainingForReport(plan, usedCPU)
+		remMem = memRemainingForReport(plan, usedMemMB)
 	}
 
 	for _, key := range canonicalKeys {
@@ -282,12 +274,7 @@ func (s *quotaService) ComputeRemainingBySize(
 		// catalog defect, and "fits infinitely" is the wrong way to fail it.
 		count := 0
 		if size.CPU > 0 && size.MemoryMB > 0 {
-			byCPU := remCPU / size.CPU
-			byMem := remMem / size.MemoryMB
-			count = byCPU
-			if byMem < count {
-				count = byMem
-			}
+			count = min(remCPU/size.CPU, remMem/size.MemoryMB)
 		}
 		out = append(out, SizeRemaining{
 			Key:            key,

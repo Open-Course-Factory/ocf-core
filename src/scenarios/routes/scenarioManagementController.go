@@ -11,8 +11,8 @@ import (
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
-	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/dto"
+	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	"soli/formations/src/scenarios/utils"
@@ -432,9 +432,8 @@ func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 	userRoles, _ := ctx.Get("userRoles")
 	roles, _ := userRoles.([]string)
 	if !access.IsAdmin(roles) {
-		var orgMember orgModels.OrganizationMember
-		result := sc.db.Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).First(&orgMember)
-		if result.Error != nil || !orgMember.IsManager() {
+		canManage, err := scenarioHooks.CanUserManageOrg(sc.db, orgID, userID)
+		if err != nil || !canManage {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: "Access denied",

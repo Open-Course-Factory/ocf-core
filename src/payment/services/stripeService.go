@@ -228,7 +228,7 @@ func stripeIdempotencyKey(operation string, parts ...string) string {
 	return operation + ":" + hex.EncodeToString(sum[:])
 }
 
-// stripeRequestFingerprint hashes a request exactly as stripe-go will encode it
+// stripeRequestFingerprint encodes a request exactly as stripe-go will put it
 // on the wire, so a key that folds it can only ever be reused for that request.
 //
 // Stripe refuses a key reused with different parameters (idempotency_error),
@@ -240,8 +240,7 @@ func stripeIdempotencyKey(operation string, parts ...string) string {
 func stripeRequestFingerprint(params interface{}) string {
 	values := &form.Values{}
 	form.AppendTo(values, params)
-	sum := sha256.Sum256([]byte(values.Encode()))
-	return hex.EncodeToString(sum[:])
+	return values.Encode() // stripeIdempotencyKey hashes it
 }
 
 // idempotencyDateBucket returns today's UTC date (YYYY-MM-DD). Time-bucketing a
@@ -3818,8 +3817,7 @@ func (ss *stripeService) archiveSupersededPrices(plan *models.SubscriptionPlan, 
 	if plan.StripeProductID == nil || plan.StripePriceID == nil {
 		return
 	}
-	listParams := &stripe.PriceListParams{Product: plan.StripeProductID}
-	listParams.Filters.AddFilter("active", "", "true")
+	listParams := &stripe.PriceListParams{Product: plan.StripeProductID, Active: stripe.Bool(true)}
 
 	iter := price.List(listParams)
 	for iter.Next() {

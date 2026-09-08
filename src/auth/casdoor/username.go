@@ -1,62 +1,26 @@
 package casdoor
 
 import (
+	"regexp"
 	"strings"
-	"unicode"
 
-	"golang.org/x/text/runes"
-	"golang.org/x/text/transform"
-	"golang.org/x/text/unicode/norm"
+	"soli/formations/src/utils"
 )
 
-// Casdoor accepts a username made of letters, digits, hyphens and underscores,
-// with no consecutive separators and no separator at either end. Anything else
-// is refused at account creation with a message the importing teacher cannot
-// act on, since the name came from their class list.
-//
-// UsernameFrom is the one place that rule is applied when OCF derives a
-// username from a person's name: accents are stripped, letters lowered, every
-// run of other characters becomes a single hyphen, and the ends are trimmed.
-// It returns "" when nothing usable remains, so the caller can fall back.
-func UsernameFrom(parts ...string) string {
-	joined := strings.Join(parts, " ")
-	ascii, _, err := transform.String(transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC), joined)
-	if err != nil {
-		ascii = joined
-	}
+var (
+	nonAlnum      = regexp.MustCompile("[^a-z0-9]+")
+	validUsername = regexp.MustCompile(`^[A-Za-z0-9]+([-_][A-Za-z0-9]+)*$`)
+)
 
-	var b strings.Builder
-	pendingSeparator := false
-	for _, r := range strings.ToLower(ascii) {
-		isAlnum := r >= 'a' && r <= 'z' || r >= '0' && r <= '9'
-		if !isAlnum {
-			pendingSeparator = b.Len() > 0
-			continue
-		}
-		if pendingSeparator {
-			b.WriteByte('-')
-			pendingSeparator = false
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+// UsernameFrom lowercases and de-accents the parts and joins every run of
+// anything else with one hyphen: "Élodie  DUPONT-Martin" → "elodie-dupont-martin".
+func UsernameFrom(parts ...string) string {
+	ascii := strings.ToLower(utils.RemoveAccents(strings.Join(parts, " ")))
+	return strings.Trim(nonAlnum.ReplaceAllString(ascii, "-"), "-")
 }
 
-// IsValidUsername reports whether Casdoor would accept the username. It exists
-// so tests can pin UsernameFrom to the rule rather than to a sample of outputs.
+// IsValidUsername accepts what casdoor accepts: alphanumerics with single
+// "-" or "_" separators, none at either end.
 func IsValidUsername(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i, r := range name {
-		isAlnum := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
-		isSep := r == '-' || r == '_'
-		if !isAlnum && !isSep {
-			return false
-		}
-		if isSep && (i == 0 || i == len(name)-1 || name[i-1] == '-' || name[i-1] == '_') {
-			return false
-		}
-	}
-	return true
+	return validUsername.MatchString(name)
 }

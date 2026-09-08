@@ -282,18 +282,6 @@ type SyncStatisticsResponse struct {
 	// Informations de synchronisation
 	LastSyncAt    *time.Time `json:"last_sync_at,omitempty"`
 	SyncFrequency string     `json:"sync_frequency"`
-
-	// Utilisation des ressources
-	APIKeyInfo APIKeyUsageInfo `json:"api_key_info"`
-}
-
-// APIKeyUsageInfo informations sur l'utilisation de la clé API
-type APIKeyUsageInfo struct {
-	KeyID           int64     `json:"key_id"`
-	IsActive        bool      `json:"is_active"`
-	CurrentSessions int       `json:"current_sessions"`
-	UsagePercentage float64   `json:"usage_percentage"`
-	LastUsed        time.Time `json:"last_used,omitempty"`
 }
 
 // CompareSessionsRequest pour comparer les sessions entre local et API

@@ -344,7 +344,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, subscriptionDTO)
 
 	case services.PlanSourceOrganization:
-		output := sc.orgSubscriptionToUserDTO(userId, result.OrganizationSubscription, result.Plan)
+		output := OrganizationPlanToUserDTO(userId, result.OrganizationSubscription, result.Plan)
 		output.IsFallback = result.IsFallback
 		ctx.JSON(http.StatusOK, output)
 
@@ -1507,12 +1507,6 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 	}
 
 	ctx.JSON(http.StatusOK, subscriptionDTO)
-}
-
-// orgSubscriptionToUserDTO converts an org subscription to UserSubscriptionOutput format
-// so the frontend can use it transparently via /user-subscriptions/current
-func (sc *userSubscriptionController) orgSubscriptionToUserDTO(userID string, sub *paymentModels.OrganizationSubscription, plan *paymentModels.SubscriptionPlan) dto.UserSubscriptionOutput {
-	return OrganizationPlanToUserDTO(userID, sub, plan)
 }
 
 // OrganizationPlanToUserDTO presents the plan a user holds through an

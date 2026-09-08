@@ -161,26 +161,20 @@ func intField(m map[string]any, key string) (int, bool) {
 // branch asks the model, the one owner of the positive-budget rule; the map
 // branch keeps intField for the partial-patch semantics.
 func validatePlanBudget(ctx *hooks.HookContext) error {
-	fields := nonPositiveBudgetFields(ctx.NewEntity)
-	if len(fields) == 0 {
-		return nil
-	}
-	return entityErrors.NewValidationError(fields[0],
-		"must be greater than 0, a plan with no budget cannot launch anything")
-}
-
-func nonPositiveBudgetFields(entity any) []string {
-	switch v := entity.(type) {
+	var fields []string
+	switch v := ctx.NewEntity.(type) {
 	case *models.SubscriptionPlan:
-		return v.MissingBudgetAxes()
+		fields = v.MissingBudgetAxes()
 	case map[string]any:
-		var fields []string
 		for _, field := range []string{"max_cpu", "max_memory_mb"} {
 			if value, stated := intField(v, field); stated && value <= 0 {
 				fields = append(fields, field)
 			}
 		}
-		return fields
 	}
-	return nil
+	if len(fields) == 0 {
+		return nil
+	}
+	return entityErrors.NewValidationError(fields[0],
+		"must be greater than 0, a plan with no budget cannot launch anything")
 }

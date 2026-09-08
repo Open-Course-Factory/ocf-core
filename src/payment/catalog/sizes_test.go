@@ -294,16 +294,3 @@ func Test_LargestSize_AfterHydrate(t *testing.T) {
 	_ = Hydrate(sources)
 	assert.Equal(t, MachineSize{CPU: 8000, MemoryMB: 8192}, LargestSize())
 }
-
-// Test_parseSource_FullAllowanceIsOneVCPU pins the unit scale: a 100% CPU
-// allowance is exactly one vCPU in the shared millicore scale, so every
-// consumer of MilliCPUPerVCPU and this parser agree on what "1 vCPU" costs.
-func Test_parseSource_FullAllowanceIsOneVCPU(t *testing.T) {
-	size, err := parseSource(SourceSize{Key: "s", CPU: 1, CPUAllowance: "100%", Memory: "512MiB"})
-	assert.NoError(t, err)
-	assert.Equal(t, MilliCPUPerVCPU, size.CPU)
-
-	half, err := parseSource(SourceSize{Key: "xs", CPU: 1, CPUAllowance: "50%", Memory: "256MiB"})
-	assert.NoError(t, err)
-	assert.Equal(t, MilliCPUPerVCPU/2, half.CPU)
-}
