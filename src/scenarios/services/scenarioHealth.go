@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"soli/formations/src/scenarios/models"
@@ -162,7 +163,7 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 				Detail:   strings.Join(problems, "; "),
 			})
 		}
-		if contains(offered, locale) {
+		if slices.Contains(offered, locale) {
 			continue
 		}
 		// Declared and not offered: the card shows no language picker and the
@@ -186,7 +187,7 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 // rather than with the health check — a second opinion about what makes a quiz
 // passable is exactly the drift this report exists to catch.
 func stepHasAWayThrough(db *gorm.DB, step models.ScenarioStep) bool {
-	switch normalizeStepType(step.StepType) {
+	switch ResolveStepType(step.StepType, false) {
 	case "quiz":
 		// Answering is the way through, so a quiz needs questions and nothing
 		// else. One with none is a dead end wearing a different hat.
@@ -221,13 +222,4 @@ func coverageDetail(c LocaleCoverage) string {
 		return ""
 	}
 	return strings.Join(parts, ", ")
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, item := range haystack {
-		if item == needle {
-			return true
-		}
-	}
-	return false
 }

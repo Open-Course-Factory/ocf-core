@@ -174,7 +174,7 @@ func enrichResultUsers(items []ScenarioResultItem) {
 // TeacherDashboardService provides teacher-facing queries for group activity and scenario results
 type TeacherDashboardService struct {
 	db              *gorm.DB
-	sessionRepo     repositories.ScenarioSessionRepository
+	sessionRepo     *repositories.ScenarioSessionRepository
 	terminalService ttServices.TerminalTrainerService
 	sessionService  *ScenarioSessionService
 }
@@ -1116,7 +1116,7 @@ func (s *TeacherDashboardService) loadScenarioGraph(scenarioIDs []uuid.UUID) (*s
 		if _, exists := stepByOrder[st.ScenarioID][st.Order]; !exists {
 			stepByOrder[st.ScenarioID][st.Order] = st
 		}
-		if normalizeStepType(st.StepType) == "quiz" {
+		if ResolveStepType(st.StepType, false) == "quiz" {
 			allQuizStepIDs = append(allQuizStepIDs, st.ID)
 		}
 	}
@@ -1370,7 +1370,7 @@ func computeSessionCorrectCounts(db *gorm.DB, scenarioID, sessionID uuid.UUID) (
 	// soft-deleted questions).
 	quizStepIDs := make([]uuid.UUID, 0, len(steps))
 	for _, st := range steps {
-		if normalizeStepType(st.StepType) == "quiz" {
+		if ResolveStepType(st.StepType, false) == "quiz" {
 			quizStepIDs = append(quizStepIDs, st.ID)
 		}
 	}

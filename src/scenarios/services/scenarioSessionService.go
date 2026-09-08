@@ -46,34 +46,23 @@ var defaultAllowedFlagPaths = []string{"/tmp/", "/home/", "/var/", "/opt/", "/Wo
 // Each prefix is trimmed of whitespace. Empty entries are ignored.
 func parseAllowedFlagPaths(raw string) []string {
 	parts := strings.Split(raw, ",")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			result = append(result, p)
-		}
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
 	}
-	return result
+	return slices.DeleteFunc(parts, func(p string) bool { return p == "" })
 }
 
 // isFlagPathAllowed checks whether flagPath starts with any of the allowed prefixes.
 func isFlagPathAllowed(flagPath string, allowedPrefixes []string) bool {
-	for _, prefix := range allowedPrefixes {
-		if strings.HasPrefix(flagPath, prefix) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(allowedPrefixes, func(prefix string) bool { return strings.HasPrefix(flagPath, prefix) })
 }
 
 // findStepByOrder returns the step whose Order matches, or nil. Step orders are
 // data-driven (0- or 1-based depending on the authoring path), so every lookup
 // goes through the Order field rather than through slice indexing.
 func findStepByOrder(steps []models.ScenarioStep, order int) *models.ScenarioStep {
-	for i := range steps {
-		if steps[i].Order == order {
-			return &steps[i]
-		}
+	if i := slices.IndexFunc(steps, func(s models.ScenarioStep) bool { return s.Order == order }); i >= 0 {
+		return &steps[i]
 	}
 	return nil
 }
@@ -81,10 +70,8 @@ func findStepByOrder(steps []models.ScenarioStep, order int) *models.ScenarioSte
 // findFlagByStepOrder returns the flag generated for a given step, or nil when
 // the step has none.
 func findFlagByStepOrder(flags []models.ScenarioFlag, order int) *models.ScenarioFlag {
-	for i := range flags {
-		if flags[i].StepOrder == order {
-			return &flags[i]
-		}
+	if i := slices.IndexFunc(flags, func(f models.ScenarioFlag) bool { return f.StepOrder == order }); i >= 0 {
+		return &flags[i]
 	}
 	return nil
 }
@@ -1177,7 +1164,7 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 		Hint:                  hintContent,
 		Status:                stepStatus,
 		HasFlag:               currentStep.HasFlag,
-		StepType:              normalizeStepType(currentStep.StepType),
+		StepType:              ResolveStepType(currentStep.StepType, false),
 		TextContent:           textContent,
 		ShowImmediateFeedback: currentStep.ShowImmediateFeedback,
 	}
@@ -1216,12 +1203,7 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 // `order + 1` is right for some scenarios and off by one for others. The
 // validated-flags list showed raw orders and so numbered the first level 0.
 func StepPosition(steps []models.ScenarioStep, order int) int {
-	for i := range steps {
-		if steps[i].Order == order {
-			return i + 1
-		}
-	}
-	return 0
+	return slices.IndexFunc(steps, func(s models.ScenarioStep) bool { return s.Order == order }) + 1
 }
 
 // stepPositionInfo returns the step's display position plus the full ordered
@@ -1232,15 +1214,6 @@ func stepPositionInfo(steps []models.ScenarioStep, order int) (int, []int) {
 		orders[i] = steps[i].Order
 	}
 	return StepPosition(steps, order), orders
-}
-
-// normalizeStepType returns the canonical step_type string. Empty values from
-// pre-migration rows default to "terminal" so the frontend never sees a blank.
-func normalizeStepType(stepType string) string {
-	if stepType == "" {
-		return "terminal"
-	}
-	return stepType
 }
 
 // loadSanitizedQuestions fetches the quiz questions for a step and returns them
@@ -1316,7 +1289,7 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 		Hint:                  hintContent,
 		Status:                stepStatus,
 		HasFlag:               targetStep.HasFlag,
-		StepType:              normalizeStepType(targetStep.StepType),
+		StepType:              ResolveStepType(targetStep.StepType, false),
 		TextContent:           textContent,
 		ShowImmediateFeedback: targetStep.ShowImmediateFeedback,
 	}
@@ -1371,7 +1344,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
 	}
 
-	stepType := normalizeStepType(currentStep.StepType)
+	stepType := ResolveStepType(currentStep.StepType, false)
 
 	// Branch on step_type. Flag and quiz steps have dedicated submission
 	// endpoints; calling /verify on them is a client error.
@@ -1510,7 +1483,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
 	}
 
-	if normalizeStepType(currentStep.StepType) != "quiz" {
+	if ResolveStepType(currentStep.StepType, false) != "quiz" {
 		return nil, fmt.Errorf("current step is not a quiz step")
 	}
 

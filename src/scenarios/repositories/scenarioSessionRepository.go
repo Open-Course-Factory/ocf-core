@@ -23,23 +23,19 @@ type SessionAggregate struct {
 // ScenarioSessionRepository is the (deliberately narrow) query surface the
 // teacher dashboard needs from scenario sessions. Extend it method by method
 // as callers migrate off inline SQL; don't widen it speculatively.
-type ScenarioSessionRepository interface {
-	// GetSessionAggregatesForGroupScenario returns the analytics projection
-	// for every non-preview session of the scenario run by an active member
-	// of the group. Soft-deleted sessions are excluded by GORM's default
-	// scope on the model.
-	GetSessionAggregatesForGroupScenario(groupID, scenarioID uuid.UUID) ([]SessionAggregate, error)
-}
-
-type scenarioSessionRepository struct {
+type ScenarioSessionRepository struct {
 	db *gorm.DB
 }
 
-func NewScenarioSessionRepository(db *gorm.DB) ScenarioSessionRepository {
-	return &scenarioSessionRepository{db: db}
+func NewScenarioSessionRepository(db *gorm.DB) *ScenarioSessionRepository {
+	return &ScenarioSessionRepository{db: db}
 }
 
-func (r *scenarioSessionRepository) GetSessionAggregatesForGroupScenario(groupID, scenarioID uuid.UUID) ([]SessionAggregate, error) {
+// GetSessionAggregatesForGroupScenario returns the analytics projection
+// for every non-preview session of the scenario run by an active member
+// of the group. Soft-deleted sessions are excluded by GORM's default
+// scope on the model.
+func (r *ScenarioSessionRepository) GetSessionAggregatesForGroupScenario(groupID, scenarioID uuid.UUID) ([]SessionAggregate, error) {
 	var rows []SessionAggregate
 	err := r.db.Model(&models.ScenarioSession{}).
 		Select("scenario_sessions.status", "scenario_sessions.grade",
