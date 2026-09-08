@@ -116,6 +116,10 @@ func runTestMigrations(db *gorm.DB) error {
 //   - user_terminal_key_id becomes nullable; the model declares it NOT NULL.
 //     Its foreign key to user_terminal_keys goes first, since SQLite refuses
 //     to drop a column that a constraint still references.
+//
+// Each drop rebuilds the table and loses every index, so the model's indexes
+// are recreated at the end. A second AutoMigrate would not do: it re-tightens
+// the two columns.
 func relaxTerminalColumnsForRawInserts(db *gorm.DB) error {
 	terminal := &terminalModels.Terminal{}
 	if err := db.Migrator().DropConstraint(terminal, "fk_user_terminal_keys_terminals"); err != nil {
@@ -130,7 +134,15 @@ func relaxTerminalColumnsForRawInserts(db *gorm.DB) error {
 	if err := db.Migrator().DropColumn(terminal, "user_terminal_key_id"); err != nil {
 		return err
 	}
-	return db.Exec("ALTER TABLE terminals ADD COLUMN user_terminal_key_id TEXT").Error
+	if err := db.Exec("ALTER TABLE terminals ADD COLUMN user_terminal_key_id TEXT").Error; err != nil {
+		return err
+	}
+	for _, field := range []string{"SessionID", "UserID", "OrganizationID", "SubscriptionPlanID", "UserTerminalKeyID", "DeletedAt"} {
+		if err := db.Migrator().CreateIndex(terminal, field); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // freshTestDB returns the shared DB after cleaning all rows.
