@@ -106,7 +106,12 @@ type TerminalTrainerService interface {
 	IsUserOrgManagerOrAdmin(userID string, orgID uuid.UUID, isAdmin bool) bool
 
 	// Composed session (Phase 4)
+	// GetDistributions returns every distribution the backend can run.
+	// This is the one to call when resolving an image by name — the scenario
+	// launcher does, and a scenario naming a withheld image must still start.
 	GetDistributions(backend string) ([]dto.TTDistribution, error)
+	// GetOfferedDistributions returns only what a person may pick, and belongs
+	// to presentation. See terminalCatalogService.GetOfferedDistributions.
 	GetOfferedDistributions(backend string) ([]dto.TTDistribution, error)
 	SetWithheldDistributions(names []string) error
 	GetCatalogSizes() ([]dto.TTSize, error)
@@ -142,7 +147,7 @@ type terminalTrainerService struct {
 	effectivePlanService   paymentServices.EffectivePlanService
 	enumService            TerminalTrainerEnumService
 	db                     *gorm.DB
-	proxy                  *terminalProxyClient
+	*terminalProxyClient
 	catalog                *terminalCatalogService
 	sync                   *terminalSyncService
 	lifecycle              *terminalLifecycleService
@@ -183,7 +188,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		effectivePlanService:   eps,
 		enumService:            enumService,
 		db:                     db,
-		proxy:                  proxy,
+		terminalProxyClient:    proxy,
 		catalog:                catalog,
 		sync:                   sync,
 		lifecycle:              newTerminalLifecycleService(proxy, sync, repository, db),
@@ -198,42 +203,6 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 	return tts
 }
 
-// The following methods delegate to terminalProxyClient, which owns the
-// tt-backend HTTP layer. They keep terminalTrainerService satisfying the
-// TerminalTrainerService interface without exposing the proxy to callers.
-
-func (tts *terminalTrainerService) GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error) {
-	return tts.proxy.GetAllSessionsFromAPI(userAPIKey)
-}
-
-func (tts *terminalTrainerService) GetSessionInfoFromAPI(sessionID string) (*dto.TerminalTrainerSessionInfo, error) {
-	return tts.proxy.GetSessionInfoFromAPI(sessionID)
-}
-
-func (tts *terminalTrainerService) GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error) {
-	return tts.proxy.GetServerMetrics(nocache, backend)
-}
-
-func (tts *terminalTrainerService) GetBackends() ([]dto.BackendInfo, error) {
-	return tts.proxy.GetBackends()
-}
-
-func (tts *terminalTrainerService) IsBackendOnline(backendName string) (bool, error) {
-	return tts.proxy.IsBackendOnline(backendName)
-}
-
-func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error) {
-	return tts.proxy.SetSystemDefaultBackend(backendID)
-}
-
-// GetDistributions returns every distribution the backend can run.
-//
-// This is the one to call when resolving an image by name — the scenario
-// launcher does, and a scenario naming a withheld image must still start.
-func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
-	return tts.proxy.GetDistributions(backend)
-}
-
 // GetOfferedDistributions returns only what a person may pick, and belongs to
 // presentation. See terminalCatalogService.GetOfferedDistributions.
 func (tts *terminalTrainerService) GetOfferedDistributions(backend string) ([]dto.TTDistribution, error) {
@@ -243,10 +212,6 @@ func (tts *terminalTrainerService) GetOfferedDistributions(backend string) ([]dt
 // SetWithheldDistributions replaces the set withheld from the picker.
 func (tts *terminalTrainerService) SetWithheldDistributions(names []string) error {
 	return tts.catalog.SetWithheldDistributions(names)
-}
-
-func (tts *terminalTrainerService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {
-	return tts.proxy.FetchRawSizes(ctx)
 }
 
 // The following methods delegate to terminalCatalogService, which owns the
@@ -476,7 +441,7 @@ func (tts *terminalTrainerService) GetBackendsForContext(orgID uuid.UUID, userID
 	}
 
 	// Filter all backends by plan's AllowedBackends
-	allBackends, err := tts.proxy.getBackendsCached()
+	allBackends, err := tts.getBackendsCached()
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +483,7 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 		return nil, fmt.Errorf("organization not found: %w", err)
 	}
 
-	allBackends, err := tts.proxy.getBackendsCached()
+	allBackends, err := tts.getBackendsCached()
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +494,7 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 		// Priority: org default → system default → first backend in list
 		defaultID := org.DefaultBackend
 		if defaultID == "" {
-			defaultID = tts.proxy.getSystemDefault()
+			defaultID = tts.getSystemDefault()
 		}
 		if defaultID == "" && len(allBackends) > 0 {
 			defaultID = allBackends[0].ID
@@ -555,7 +520,7 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 
 	defaultID := org.DefaultBackend
 	if defaultID == "" {
-		defaultID = tts.proxy.getSystemDefault()
+		defaultID = tts.getSystemDefault()
 	}
 
 	var filtered []dto.BackendInfo

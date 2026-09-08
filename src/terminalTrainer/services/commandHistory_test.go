@@ -82,7 +82,7 @@ func newCommandHistoryTestService(baseURL, apiVersion string, db *gorm.DB) *term
 		apiVersion: apiVersion,
 		repository: repo,
 		db:         db,
-		proxy:      proxy,
+		terminalProxyClient: proxy,
 	}
 	tts.history = newTerminalHistoryService(proxy, repo, db, baseURL, apiVersion, tts.adminKey)
 	return tts
