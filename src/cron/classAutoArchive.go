@@ -16,17 +16,7 @@ import (
 // hour. expires_at is the auto-archive trigger (#491): a school pre-dates the
 // whole year at import and the classes retire themselves.
 func StartClassAutoArchiveJob(db *gorm.DB) {
-	ticker := time.NewTicker(1 * time.Hour)
-
-	log.Println("✅ Class auto-archive job started (runs hourly)")
-
-	ArchiveExpiredClasses(db)
-
-	go func() {
-		for range ticker.C {
-			ArchiveExpiredClasses(db)
-		}
-	}()
+	startJob("Class auto-archive", time.Hour, func() { ArchiveExpiredClasses(db) })
 }
 
 // ArchiveExpiredClasses stamps archived_at on every expired, not yet archived

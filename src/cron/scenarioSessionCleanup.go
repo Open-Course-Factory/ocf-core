@@ -14,19 +14,7 @@ import (
 // expired/stopped/disappeared, and sessions stalled in "provisioning" because
 // their setup goroutine died. Runs every 5 minutes.
 func StartScenarioSessionCleanupJob(db *gorm.DB) {
-	ticker := time.NewTicker(5 * time.Minute)
-
-	log.Println("✅ Scenario session cleanup job started (runs every 5 minutes)")
-
-	// Run immediately on startup
-	sweepScenarioSessions(db)
-
-	// Then run on schedule
-	go func() {
-		for range ticker.C {
-			sweepScenarioSessions(db)
-		}
-	}()
+	startJob("Scenario session cleanup", 5*time.Minute, func() { sweepScenarioSessions(db) })
 }
 
 func sweepScenarioSessions(db *gorm.DB) {

@@ -11,19 +11,7 @@ import (
 
 // StartEmailVerificationCleanupJob starts a daily job to clean up expired email verification tokens
 func StartEmailVerificationCleanupJob(db *gorm.DB) {
-	ticker := time.NewTicker(24 * time.Hour)
-
-	go func() {
-		log.Println("✅ Email verification cleanup job started (runs daily)")
-
-		// Run immediately on startup
-		cleanupExpiredVerificationTokens(db)
-
-		// Then run daily
-		for range ticker.C {
-			cleanupExpiredVerificationTokens(db)
-		}
-	}()
+	startJob("Email verification cleanup", 24*time.Hour, func() { cleanupExpiredVerificationTokens(db) })
 }
 
 // cleanupExpiredVerificationTokens deletes email verification tokens that expired more than 48 hours ago

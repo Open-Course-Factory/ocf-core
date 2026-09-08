@@ -35,17 +35,7 @@ type MemberErasureReport struct {
 // elapsed. Runs daily; the first run happens at startup like the other cleanup
 // jobs.
 func StartMemberErasureJob(db *gorm.DB, eraser DepartedMemberEraser) {
-	ticker := time.NewTicker(24 * time.Hour)
-
-	log.Println("✅ Member erasure job started (runs daily)")
-
-	runMemberErasureAndLog(db, eraser)
-
-	go func() {
-		for range ticker.C {
-			runMemberErasureAndLog(db, eraser)
-		}
-	}()
+	startJob("Member erasure", 24*time.Hour, func() { runMemberErasureAndLog(db, eraser) })
 }
 
 func runMemberErasureAndLog(db *gorm.DB, eraser DepartedMemberEraser) {
