@@ -149,7 +149,7 @@ type terminalTrainerService struct {
 	db                     *gorm.DB
 	*terminalProxyClient
 	*terminalCatalogService
-	sync                   *terminalSyncService
+	*terminalSyncService
 	lifecycle              *terminalLifecycleService
 	composer               *terminalComposer
 	history                *terminalHistoryService
@@ -190,7 +190,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		db:                     db,
 		terminalProxyClient:    proxy,
 		terminalCatalogService: catalog,
-		sync:                   sync,
+		terminalSyncService:    sync,
 		lifecycle:              newTerminalLifecycleService(proxy, sync, repository, db),
 		history:                newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
 	}
@@ -339,19 +339,6 @@ func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 
 func (tts *terminalTrainerService) BuildComplete(sessionID string) error {
 	return tts.lifecycle.BuildComplete(sessionID)
-}
-
-// The following methods delegate to terminalSyncService, which owns the
-// tt-backend session reconciliation (treating the API session list as the
-// source of truth, creating/updating/soft-deleting local rows). The shared
-// markSessionStopped SSOT also lives there; StopSession routes through it.
-
-func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAllSessionsResponse, error) {
-	return tts.sync.SyncUserSessions(userID)
-}
-
-func (tts *terminalTrainerService) SyncAllActiveSessions() error {
-	return tts.sync.SyncAllActiveSessions()
 }
 
 // GetRepository expose le repository pour les contrôleurs
