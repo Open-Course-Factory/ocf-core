@@ -148,7 +148,7 @@ type terminalTrainerService struct {
 	enumService            TerminalTrainerEnumService
 	db                     *gorm.DB
 	*terminalProxyClient
-	catalog                *terminalCatalogService
+	*terminalCatalogService
 	sync                   *terminalSyncService
 	lifecycle              *terminalLifecycleService
 	composer               *terminalComposer
@@ -189,7 +189,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		enumService:            enumService,
 		db:                     db,
 		terminalProxyClient:    proxy,
-		catalog:                catalog,
+		terminalCatalogService: catalog,
 		sync:                   sync,
 		lifecycle:              newTerminalLifecycleService(proxy, sync, repository, db),
 		history:                newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
@@ -201,33 +201,6 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 	tts.composer = newTerminalComposer(proxy, catalog, repository, quotaService, enumService, db, baseURL, apiVersion, tts.CreateUserKey)
 
 	return tts
-}
-
-// GetOfferedDistributions returns only what a person may pick, and belongs to
-// presentation. See terminalCatalogService.GetOfferedDistributions.
-func (tts *terminalTrainerService) GetOfferedDistributions(backend string) ([]dto.TTDistribution, error) {
-	return tts.catalog.GetOfferedDistributions(backend)
-}
-
-// SetWithheldDistributions replaces the set withheld from the picker.
-func (tts *terminalTrainerService) SetWithheldDistributions(names []string) error {
-	return tts.catalog.SetWithheldDistributions(names)
-}
-
-// The following methods delegate to terminalCatalogService, which owns the
-// distribution/size/feature catalog reads, their 60s TTL caches, and the
-// session-options computation.
-
-func (tts *terminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
-	return tts.catalog.GetCatalogSizes()
-}
-
-func (tts *terminalTrainerService) GetCatalogFeatures() ([]dto.TTFeature, error) {
-	return tts.catalog.GetCatalogFeatures()
-}
-
-func (tts *terminalTrainerService) GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error) {
-	return tts.catalog.GetSessionOptions(plan, distribution, backend)
 }
 
 // CreateUserKey crée une clé Terminal Trainer et la stocke en DB
