@@ -18,115 +18,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[models.Scenario, dto.CreateScenarioInput, dto.EditScenarioInput, dto.ScenarioOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.Scenario, dto.CreateScenarioInput, dto.EditScenarioInput, dto.ScenarioOutput]{
 				ModelToDto: func(model *models.Scenario) (dto.ScenarioOutput, error) {
-					output := dto.ScenarioOutput{
-						ID:             model.ID,
-						Name:           model.Name,
-						Title:          model.Title,
-						Description:    model.Description,
-						Difficulty:     model.Difficulty,
-						EstimatedTimeMinutes:  model.EstimatedTimeMinutes,
-						InstanceType:   model.InstanceType,
-						Hostname:       model.Hostname,
-						OsType:           model.OsType,
-						RequiredFeatures: model.RequiredFeatures,
-						SourceType:       model.SourceType,
-						GitRepository:  model.GitRepository,
-						GitBranch:      model.GitBranch,
-						SourcePath:     model.SourcePath,
-						FlagsEnabled:     model.FlagsEnabled,
-						AllowedFlagPaths: model.AllowedFlagPaths,
-						CrashTraps:     model.CrashTraps,
-						DefaultLocale:  model.DefaultLocale,
-						Locales:        model.Locales,
-						Objectives:     model.Objectives,
-						Prerequisites:  model.Prerequisites,
-						IntroText:      model.IntroText,
-						FinishText:     model.FinishText,
-						CreatedByID:    model.CreatedByID,
-						OrganizationID: model.OrganizationID,
-						IsPublic:       model.IsPublic,
-						SetupScript:    model.SetupScript,
-						SetupScriptID:  model.SetupScriptID,
-						IntroFileID:    model.IntroFileID,
-						FinishFileID:   model.FinishFileID,
-						ArchivedAt:     model.ArchivedAt,
-						CreatedAt:      model.CreatedAt,
-						UpdatedAt:      model.UpdatedAt,
-					}
-
-					if len(model.Steps) > 0 {
-						steps := make([]dto.ScenarioStepOutput, 0, len(model.Steps))
-						for _, step := range model.Steps {
-							stepDto := dto.ScenarioStepOutput{
-								ID:                 step.ID,
-								ScenarioID:         step.ScenarioID,
-								Order:              step.Order,
-								Title:              step.Title,
-								StepType:           step.StepType,
-								ShowImmediateFeedback: step.ShowImmediateFeedback,
-								TextContent:        step.TextContent,
-								HintContent:        step.HintContent,
-								HasFlag:            step.HasFlag,
-								FlagPath:           step.FlagPath,
-								FlagLevel:          step.FlagLevel,
-								VerifyScriptID:     step.VerifyScriptID,
-								BackgroundScriptID: step.BackgroundScriptID,
-								ForegroundScriptID: step.ForegroundScriptID,
-								TextFileID:         step.TextFileID,
-								HintFileID:         step.HintFileID,
-								CreatedAt:          step.CreatedAt,
-								UpdatedAt:          step.UpdatedAt,
-							}
-							if len(step.Questions) > 0 {
-								// GORM's nested Preload ("Steps.Questions")
-								// doesn't apply ordering. Sort here so the
-								// editor and player see questions in
-								// author-defined order.
-								sortedQuestions := make([]models.ScenarioStepQuestion, len(step.Questions))
-								copy(sortedQuestions, step.Questions)
-								sort.SliceStable(sortedQuestions, func(i, j int) bool {
-									return sortedQuestions[i].Order < sortedQuestions[j].Order
-								})
-								questions := make([]dto.ScenarioStepQuestionOutput, 0, len(sortedQuestions))
-								for _, q := range sortedQuestions {
-									questions = append(questions, dto.ScenarioStepQuestionOutput{
-										ID:            q.ID,
-										StepID:        q.StepID,
-										Order:         q.Order,
-										QuestionText:  q.QuestionText,
-										QuestionType:  q.QuestionType,
-										Options:       q.Options,
-										CorrectAnswer: q.CorrectAnswer,
-										Explanation:   q.Explanation,
-										Points:        q.Points,
-										CreatedAt:     q.CreatedAt,
-										UpdatedAt:     q.UpdatedAt,
-									})
-								}
-								stepDto.Questions = questions
-							}
-							steps = append(steps, stepDto)
-						}
-						output.Steps = steps
-					}
-
-					if len(model.CompatibleInstanceTypes) > 0 {
-						types := make([]dto.ScenarioInstanceTypeOutput, 0, len(model.CompatibleInstanceTypes))
-						for _, t := range model.CompatibleInstanceTypes {
-							types = append(types, dto.ScenarioInstanceTypeOutput{
-								ID:           t.ID,
-								ScenarioID:   t.ScenarioID,
-								InstanceType: t.InstanceType,
-								OsType:       t.OsType,
-								Priority:     t.Priority,
-								CreatedAt:    t.CreatedAt,
-								UpdatedAt:    t.UpdatedAt,
-							})
-						}
-						output.CompatibleInstanceTypes = types
-					}
-
-					return output, nil
+					return ScenarioToOutput(model), nil
 				},
 				DtoToModel: func(input dto.CreateScenarioInput) *models.Scenario {
 					scenario := &models.Scenario{
@@ -308,4 +200,118 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 	// Register the read-time redactor so the generic GET handlers strip
 	// step + question content from non-managers (issue #293).
 	service.RegisterDtoRedactor("Scenario", scenarioRedactor)
+}
+
+// ScenarioToOutput is the one Scenario -> ScenarioOutput mapper, shared by the
+// generic entity routes and the custom scenario handlers.
+func ScenarioToOutput(model *models.Scenario) dto.ScenarioOutput {
+	output := dto.ScenarioOutput{
+		ID:             model.ID,
+		Name:           model.Name,
+		Title:          model.Title,
+		Description:    model.Description,
+		Difficulty:     model.Difficulty,
+		EstimatedTimeMinutes:  model.EstimatedTimeMinutes,
+		InstanceType:   model.InstanceType,
+		Hostname:       model.Hostname,
+		OsType:           model.OsType,
+		RequiredFeatures: model.RequiredFeatures,
+		SourceType:       model.SourceType,
+		GitRepository:  model.GitRepository,
+		GitBranch:      model.GitBranch,
+		SourcePath:     model.SourcePath,
+		FlagsEnabled:     model.FlagsEnabled,
+		AllowedFlagPaths: model.AllowedFlagPaths,
+		CrashTraps:     model.CrashTraps,
+		DefaultLocale:  model.DefaultLocale,
+		Locales:        model.Locales,
+		Objectives:     model.Objectives,
+		Prerequisites:  model.Prerequisites,
+		IntroText:      model.IntroText,
+		FinishText:     model.FinishText,
+		CreatedByID:    model.CreatedByID,
+		OrganizationID: model.OrganizationID,
+		IsPublic:       model.IsPublic,
+		SetupScript:    model.SetupScript,
+		SetupScriptID:  model.SetupScriptID,
+		IntroFileID:    model.IntroFileID,
+		FinishFileID:   model.FinishFileID,
+		ArchivedAt:     model.ArchivedAt,
+		CreatedAt:      model.CreatedAt,
+		UpdatedAt:      model.UpdatedAt,
+	}
+
+	if len(model.Steps) > 0 {
+		steps := make([]dto.ScenarioStepOutput, 0, len(model.Steps))
+		for _, step := range model.Steps {
+			stepDto := dto.ScenarioStepOutput{
+				ID:                 step.ID,
+				ScenarioID:         step.ScenarioID,
+				Order:              step.Order,
+				Title:              step.Title,
+				StepType:           step.StepType,
+				ShowImmediateFeedback: step.ShowImmediateFeedback,
+				TextContent:        step.TextContent,
+				HintContent:        step.HintContent,
+				HasFlag:            step.HasFlag,
+				FlagPath:           step.FlagPath,
+				FlagLevel:          step.FlagLevel,
+				VerifyScriptID:     step.VerifyScriptID,
+				BackgroundScriptID: step.BackgroundScriptID,
+				ForegroundScriptID: step.ForegroundScriptID,
+				TextFileID:         step.TextFileID,
+				HintFileID:         step.HintFileID,
+				CreatedAt:          step.CreatedAt,
+				UpdatedAt:          step.UpdatedAt,
+			}
+			if len(step.Questions) > 0 {
+				// GORM's nested Preload ("Steps.Questions")
+				// doesn't apply ordering. Sort here so the
+				// editor and player see questions in
+				// author-defined order.
+				sortedQuestions := make([]models.ScenarioStepQuestion, len(step.Questions))
+				copy(sortedQuestions, step.Questions)
+				sort.SliceStable(sortedQuestions, func(i, j int) bool {
+					return sortedQuestions[i].Order < sortedQuestions[j].Order
+				})
+				questions := make([]dto.ScenarioStepQuestionOutput, 0, len(sortedQuestions))
+				for _, q := range sortedQuestions {
+					questions = append(questions, dto.ScenarioStepQuestionOutput{
+						ID:            q.ID,
+						StepID:        q.StepID,
+						Order:         q.Order,
+						QuestionText:  q.QuestionText,
+						QuestionType:  q.QuestionType,
+						Options:       q.Options,
+						CorrectAnswer: q.CorrectAnswer,
+						Explanation:   q.Explanation,
+						Points:        q.Points,
+						CreatedAt:     q.CreatedAt,
+						UpdatedAt:     q.UpdatedAt,
+					})
+				}
+				stepDto.Questions = questions
+			}
+			steps = append(steps, stepDto)
+		}
+		output.Steps = steps
+	}
+
+	if len(model.CompatibleInstanceTypes) > 0 {
+		types := make([]dto.ScenarioInstanceTypeOutput, 0, len(model.CompatibleInstanceTypes))
+		for _, t := range model.CompatibleInstanceTypes {
+			types = append(types, dto.ScenarioInstanceTypeOutput{
+				ID:           t.ID,
+				ScenarioID:   t.ScenarioID,
+				InstanceType: t.InstanceType,
+				OsType:       t.OsType,
+				Priority:     t.Priority,
+				CreatedAt:    t.CreatedAt,
+				UpdatedAt:    t.UpdatedAt,
+			})
+		}
+		output.CompatibleInstanceTypes = types
+	}
+
+	return output
 }

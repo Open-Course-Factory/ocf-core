@@ -10,6 +10,7 @@ import (
 
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/scenarios/dto"
+	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	"soli/formations/src/scenarios/utils"
@@ -210,7 +211,7 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 		statusCode = http.StatusOK
 	}
 
-	ctx.JSON(statusCode, sc.buildScenarioOutput(scenario))
+	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
 }
 
 // UploadScenario godoc
@@ -322,7 +323,7 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, sc.buildScenarioOutput(&loaded))
+	ctx.JSON(http.StatusOK, scenarioRegistration.ScenarioToOutput(&loaded))
 }
 
 // ExportScenario godoc
@@ -470,7 +471,7 @@ func (sc *scenarioController) ImportJSON(ctx *gin.Context) {
 	if isUpdate {
 		statusCode = http.StatusOK
 	}
-	ctx.JSON(statusCode, sc.buildScenarioOutput(scenario))
+	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
 }
 
 // DuplicateScenario godoc
@@ -506,7 +507,7 @@ func (sc *scenarioController) DuplicateScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(newScenario))
+	ctx.JSON(http.StatusCreated, scenarioRegistration.ScenarioToOutput(newScenario))
 }
 
 

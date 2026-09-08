@@ -12,6 +12,7 @@ import (
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/dto"
+	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
@@ -26,7 +27,7 @@ import (
 // management endpoints: creating, uploading, importing, exporting, listing,
 // deleting, and duplicating scenarios under a group or an organization. It
 // embeds scenarioControllerBase to reach the shared db handle and helpers
-// (notably buildScenarioOutput). Platform-wide scenario CRUD and session-read
+// (canManageScenarioByID, rejectIfArchived). Platform-wide scenario CRUD and session-read
 // handlers remain on scenarioController.
 type scenarioManagementController struct {
 	scenarioControllerBase
@@ -187,7 +188,7 @@ func (sc *scenarioManagementController) GroupImportJSON(ctx *gin.Context) {
 	if isUpdate {
 		statusCode = http.StatusOK
 	}
-	ctx.JSON(statusCode, sc.buildScenarioOutput(scenario))
+	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
 }
 
 // GroupUploadScenario godoc
@@ -329,7 +330,7 @@ func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, sc.buildScenarioOutput(&loaded))
+	ctx.JSON(http.StatusOK, scenarioRegistration.ScenarioToOutput(&loaded))
 }
 
 // OrgListScenarios godoc
@@ -373,7 +374,7 @@ func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 
 	output := make([]dto.ScenarioOutput, 0, len(scenarios))
 	for i := range scenarios {
-		output = append(output, sc.buildScenarioOutput(&scenarios[i]))
+		output = append(output, scenarioRegistration.ScenarioToOutput(&scenarios[i]))
 	}
 	ctx.JSON(http.StatusOK, output)
 }
@@ -420,7 +421,7 @@ func (sc *scenarioManagementController) OrgImportJSON(ctx *gin.Context) {
 	if isUpdate {
 		statusCode = http.StatusOK
 	}
-	ctx.JSON(statusCode, sc.buildScenarioOutput(scenario))
+	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
 }
 
 // OrgCreateScenario creates a blank scenario inside an organization.
@@ -496,7 +497,7 @@ func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(scenario))
+	ctx.JSON(http.StatusCreated, scenarioRegistration.ScenarioToOutput(scenario))
 }
 
 // GroupCreateScenario creates a blank scenario inside a group's organization
@@ -598,7 +599,7 @@ func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 		// Don't fail the whole request — the scenario was already created.
 	}
 
-	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(scenario))
+	ctx.JSON(http.StatusCreated, scenarioRegistration.ScenarioToOutput(scenario))
 }
 
 // OrgUploadScenario godoc
@@ -719,7 +720,7 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, sc.buildScenarioOutput(&loaded))
+	ctx.JSON(http.StatusOK, scenarioRegistration.ScenarioToOutput(&loaded))
 }
 
 // OrgExportScenario godoc
@@ -937,7 +938,7 @@ func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Con
 	// Build output with source field
 	output := make([]gin.H, 0, len(scenarioMap))
 	for _, sw := range scenarioMap {
-		scenarioOutput := sc.buildScenarioOutput(&sw.Scenario)
+		scenarioOutput := scenarioRegistration.ScenarioToOutput(&sw.Scenario)
 		output = append(output, gin.H{
 			"id":              scenarioOutput.ID,
 			"name":            scenarioOutput.Name,
@@ -1005,5 +1006,5 @@ func (sc *scenarioManagementController) OrgDuplicateScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(newScenario))
+	ctx.JSON(http.StatusCreated, scenarioRegistration.ScenarioToOutput(newScenario))
 }

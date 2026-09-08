@@ -36,7 +36,7 @@ import (
 // A scenario always provisions a fresh machine sized for it; attaching a
 // scenario to a terminal already running was retired in #507. It embeds
 // scenarioControllerBase to reach the shared db handle and helpers
-// (buildScenarioOutput).
+// (rejectIfArchived).
 type scenarioLaunchController struct {
 	scenarioControllerBase
 	sessionService      *services.ScenarioSessionService

@@ -7,7 +7,6 @@ import (
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	groupServices "soli/formations/src/groups/services"
-	"soli/formations/src/scenarios/dto"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 
@@ -89,49 +88,4 @@ func (b *scenarioControllerBase) rejectIfArchived(ctx *gin.Context, scenario *mo
 	}
 	errors.Respond(ctx, http.StatusConflict, models.ErrScenarioArchived.Error())
 	return true
-}
-
-// buildScenarioOutput converts a Scenario model to a ScenarioOutput DTO
-func (b *scenarioControllerBase) buildScenarioOutput(scenario *models.Scenario) dto.ScenarioOutput {
-	output := dto.ScenarioOutput{
-		ID:               scenario.ID,
-		Name:             scenario.Name,
-		Title:            scenario.Title,
-		Description:      scenario.Description,
-		Difficulty:       scenario.Difficulty,
-		EstimatedTimeMinutes:    scenario.EstimatedTimeMinutes,
-		InstanceType:     scenario.InstanceType,
-		OsType:           scenario.OsType,
-		SourceType:       scenario.SourceType,
-		FlagsEnabled:     scenario.FlagsEnabled,
-		AllowedFlagPaths: scenario.AllowedFlagPaths,
-		CrashTraps:       scenario.CrashTraps,
-		IntroText:        scenario.IntroText,
-		FinishText:       scenario.FinishText,
-		CreatedByID:      scenario.CreatedByID,
-		OrganizationID:   scenario.OrganizationID,
-		ArchivedAt:       scenario.ArchivedAt,
-		CreatedAt:        scenario.CreatedAt,
-		UpdatedAt:        scenario.UpdatedAt,
-	}
-	if len(scenario.Steps) > 0 {
-		steps := make([]dto.ScenarioStepOutput, 0, len(scenario.Steps))
-		for _, step := range scenario.Steps {
-			steps = append(steps, dto.ScenarioStepOutput{
-				ID:          step.ID,
-				ScenarioID:  step.ScenarioID,
-				Order:       step.Order,
-				Title:       step.Title,
-				TextContent: step.TextContent,
-				HintContent: step.HintContent,
-				HasFlag:     step.HasFlag,
-				FlagPath:    step.FlagPath,
-				FlagLevel:   step.FlagLevel,
-				CreatedAt:   step.CreatedAt,
-				UpdatedAt:   step.UpdatedAt,
-			})
-		}
-		output.Steps = steps
-	}
-	return output
 }
