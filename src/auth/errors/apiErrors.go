@@ -22,3 +22,13 @@ func HandleError(code int, err error, ctx *gin.Context) bool {
 	}
 	return false
 }
+
+// Respond writes an APIError whose ErrorCode mirrors the HTTP status.
+func Respond(ctx *gin.Context, code int, message string) {
+	ctx.JSON(code, &APIError{ErrorCode: code, ErrorMessage: message})
+}
+
+// Abort is Respond for middleware: it also stops the handler chain.
+func Abort(ctx *gin.Context, code int, message string) {
+	ctx.AbortWithStatusJSON(code, &APIError{ErrorCode: code, ErrorMessage: message})
+}
