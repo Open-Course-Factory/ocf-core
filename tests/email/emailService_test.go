@@ -75,16 +75,11 @@ func TestEmailService_SendEmailWithAttachment_MissingCredentials(t *testing.T) {
 
 // --- SendPasswordResetEmail ---
 
-func TestEmailService_SendPasswordResetEmail_WithoutDB_FallbackTemplate(t *testing.T) {
-	// Without DB, the method falls back to the hardcoded template
-	// It will still fail at SendEmail due to missing SMTP credentials
-	os.Unsetenv("SMTP_USERNAME")
-	os.Unsetenv("SMTP_PASSWORD")
-
+func TestEmailService_SendPasswordResetEmail_WithoutDB_Errors(t *testing.T) {
 	svc := services.NewEmailService()
 	err := svc.SendPasswordResetEmail("test@example.com", "token123", "https://example.com/reset")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "SMTP credentials not configured")
+	assert.Contains(t, err.Error(), "template service not initialized")
 }
 
 func TestEmailService_SendPasswordResetEmail_WithDB_UsesTemplate(t *testing.T) {
