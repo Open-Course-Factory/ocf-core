@@ -48,10 +48,7 @@ func NewFeedbackController(db *gorm.DB) *feedbackController {
 func (fc *feedbackController) SendFeedback(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	if userID == "" {
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-			ErrorCode:    http.StatusUnauthorized,
-			ErrorMessage: "User not authenticated",
-		})
+		errors.Respond(ctx, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
@@ -64,10 +61,7 @@ func (fc *feedbackController) SendFeedback(ctx *gin.Context) {
 
 	var input dto.SendFeedbackInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Invalid input: %v", err),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid input: %v", err))
 		return
 	}
 
