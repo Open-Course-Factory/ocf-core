@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 
+	auditModels "soli/formations/src/audit/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -22,49 +24,8 @@ func TestMain(m *testing.M) {
 		panic("failed to open test DB: " + err.Error())
 	}
 
-	// Create audit_logs table manually because the AuditLog model uses PostgreSQL-specific
-	// defaults (gen_random_uuid()) that SQLite cannot parse via AutoMigrate.
-	err = db.Exec(`CREATE TABLE IF NOT EXISTS audit_logs (
-		id TEXT PRIMARY KEY,
-		event_type TEXT NOT NULL,
-		severity TEXT NOT NULL,
-		actor_id TEXT,
-		actor_email TEXT,
-		actor_ip TEXT,
-		actor_user_agent TEXT,
-		target_id TEXT,
-		target_type TEXT,
-		target_name TEXT,
-		organization_id TEXT,
-		group_id TEXT,
-		on_behalf_of_id TEXT,
-		action TEXT NOT NULL,
-		status TEXT NOT NULL,
-		error_message TEXT,
-		metadata TEXT,
-		amount REAL,
-		currency TEXT,
-		request_id TEXT,
-		session_id TEXT,
-		created_at DATETIME NOT NULL,
-		expires_at DATETIME NOT NULL
-	)`).Error
-	if err != nil {
-		panic("failed to create audit_logs table: " + err.Error())
-	}
-
-	err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_on_behalf_of_id ON audit_logs(on_behalf_of_id)`).Error
-	if err != nil {
-		panic("failed to create idx_audit_logs_on_behalf_of_id: " + err.Error())
-	}
-
-	// group_id (#430): dedicated managing-group column for supervision events,
-	// replacing the OrganizationID overload. Mirrors the on_behalf_of_id column
-	// added above — the hardcoded SQLite schema must carry it because the
-	// AuditLog model uses PostgreSQL-specific defaults that block AutoMigrate.
-	err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_group_id ON audit_logs(group_id)`).Error
-	if err != nil {
-		panic("failed to create idx_audit_logs_group_id: " + err.Error())
+	if err := db.AutoMigrate(&auditModels.AuditLog{}); err != nil {
+		panic("failed to migrate audit_logs: " + err.Error())
 	}
 
 	sharedTestDB = db

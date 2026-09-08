@@ -13,6 +13,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -79,60 +80,12 @@ func runTestMigrations(db *gorm.DB) error {
 	// OrganizationSubscription per org" at the DB level.
 	models.MigrateUniqueActiveOrgSubscriptionIndex(db)
 
-	// Create tables with PostgreSQL-specific defaults using raw SQL for SQLite compatibility
-	// UserTerminalKey table (referenced by Terminal via foreign key)
-	db.Exec(`CREATE TABLE IF NOT EXISTS user_terminal_keys (
-		id TEXT PRIMARY KEY,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME,
-		owner_ids TEXT,
-		user_id TEXT NOT NULL,
-		api_key TEXT NOT NULL,
-		key_name TEXT NOT NULL,
-		is_active BOOLEAN DEFAULT true,
-		terminal_trainer_key_id INTEGER DEFAULT 0
-	)`)
-
-	// Terminal table (has no PostgreSQL-specific defaults but isn't in the payment models package).
-	//
-	// expires_at defaults to a far-future timestamp (year 2099) so raw
-	// `INSERT INTO terminals (id, user_id, state) VALUES (...)` statements
-	// that omit the column still produce a row that satisfies the
-	// OccupiesSlotScope predicate (`expires_at > NOW()`). Production rows
-	// always have an expires_at — the schema default is a test-only
-	// convenience that mirrors that invariant. See
-	// src/terminalTrainer/models/terminal.go::OccupiesSlotScope.
-	//
-	// MR !239: the legacy `status` column was dropped. `state` is the SSOT.
-	db.Exec(`CREATE TABLE IF NOT EXISTS terminals (
-		id TEXT PRIMARY KEY,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME,
-		owner_ids TEXT,
-		session_id TEXT UNIQUE,
-		user_id TEXT NOT NULL,
-		name TEXT,
-		state TEXT DEFAULT 'running',
-		persistence_mode TEXT DEFAULT 'ephemeral',
-		last_started_at DATETIME,
-		idle_until DATETIME,
-		expires_at DATETIME DEFAULT '2099-12-31 23:59:59',
-		instance_type TEXT,
-		machine_size TEXT,
-		backend TEXT DEFAULT '',
-		organization_id TEXT,
-		subscription_plan_id TEXT,
-		user_terminal_key_id TEXT REFERENCES user_terminal_keys(id),
-		is_hidden_by_owner BOOLEAN DEFAULT false,
-		hidden_by_owner_at DATETIME,
-		composed_distribution TEXT,
-		composed_size TEXT,
-		composed_features TEXT,
-		size_cpu INTEGER DEFAULT 0,
-		size_memory_mb INTEGER DEFAULT 0
-	)`)
+	if err := db.AutoMigrate(&terminalModels.UserTerminalKey{}, &terminalModels.Terminal{}); err != nil {
+		return err
+	}
+	if err := relaxTerminalColumnsForRawInserts(db); err != nil {
+		return err
+	}
 
 	// Webhook events table (WebhookEvent model uses gen_random_uuid() which is PostgreSQL-only)
 	// `status` column is part of the planned reservation-status fix (#261):
@@ -149,6 +102,35 @@ func runTestMigrations(db *gorm.DB) error {
 	)`)
 
 	return nil
+}
+
+// relaxTerminalColumnsForRawInserts loosens two columns of the AutoMigrated
+// terminals table for the raw `INSERT INTO terminals (...)` statements in
+// this package, which bind neither of them. SQLite cannot alter a column in
+// place, so each is dropped and re-added:
+//
+//   - expires_at defaults to a far-future timestamp so an omitted value still
+//     satisfies OccupiesSlotScope (`expires_at > NOW()`). Production rows
+//     always carry an expires_at; the default is a test-only convenience.
+//     See src/terminalTrainer/models/terminal.go::OccupiesSlotScope.
+//   - user_terminal_key_id becomes nullable; the model declares it NOT NULL.
+//     Its foreign key to user_terminal_keys goes first, since SQLite refuses
+//     to drop a column that a constraint still references.
+func relaxTerminalColumnsForRawInserts(db *gorm.DB) error {
+	terminal := &terminalModels.Terminal{}
+	if err := db.Migrator().DropConstraint(terminal, "fk_user_terminal_keys_terminals"); err != nil {
+		return err
+	}
+	if err := db.Migrator().DropColumn(terminal, "expires_at"); err != nil {
+		return err
+	}
+	if err := db.Exec("ALTER TABLE terminals ADD COLUMN expires_at DATETIME DEFAULT '2099-12-31 23:59:59'").Error; err != nil {
+		return err
+	}
+	if err := db.Migrator().DropColumn(terminal, "user_terminal_key_id"); err != nil {
+		return err
+	}
+	return db.Exec("ALTER TABLE terminals ADD COLUMN user_terminal_key_id TEXT").Error
 }
 
 // freshTestDB returns the shared DB after cleaning all rows.
