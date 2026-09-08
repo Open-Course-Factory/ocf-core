@@ -13,30 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type OrganizationSubscriptionService interface {
-	// Subscription management
-	GetOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error)
-	GetOrganizationSubscriptionByID(id uuid.UUID) (*models.OrganizationSubscription, error)
-	// CreateOrganizationSubscription assigns a plan to an organization.
-	//
-	// It takes no seat quantity: an organization's plan is not sold per seat.
-	// Seats are a trainer's licence batch, counted on SubscriptionBatch, and a
-	// school or OF is on a bespoke plan whose terms are the plan itself (#456).
-	CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, isAdminAssigned bool) (*models.OrganizationSubscription, error)
-	UpdateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID) (*models.OrganizationSubscription, error)
-	CancelOrganizationSubscription(orgID uuid.UUID, cancelAtPeriodEnd bool) error
-
-	// Admin bulk access
-	GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error)
-
-	// Feature access (for members)
-	GetOrganizationFeatures(orgID uuid.UUID, userID string) (*models.SubscriptionPlan, error)
-	GetOrganizationUsageLimits(orgID uuid.UUID) (*OrganizationLimits, error)
-
-	// User-level feature aggregation
-	GetUserEffectiveFeatures(userID string) (*UserEffectiveFeatures, error)
-}
-
 // Business types for organization limits
 type OrganizationLimits struct {
 	OrganizationID   uuid.UUID
@@ -62,14 +38,14 @@ type OrganizationFeatureInfo struct {
 	IsManager        bool
 }
 
-type organizationSubscriptionService struct {
-	repository  repositories.OrganizationSubscriptionRepository
+type OrganizationSubscriptionService struct {
+	repository  *repositories.OrganizationSubscriptionRepository
 	paymentRepo repositories.PaymentRepository
 	db          *gorm.DB
 }
 
-func NewOrganizationSubscriptionService(db *gorm.DB) OrganizationSubscriptionService {
-	return &organizationSubscriptionService{
+func NewOrganizationSubscriptionService(db *gorm.DB) *OrganizationSubscriptionService {
+	return &OrganizationSubscriptionService{
 		repository:  repositories.NewOrganizationSubscriptionRepository(db),
 		paymentRepo: repositories.NewPaymentRepository(db),
 		db:          db,
@@ -77,17 +53,17 @@ func NewOrganizationSubscriptionService(db *gorm.DB) OrganizationSubscriptionSer
 }
 
 // GetOrganizationSubscription retrieves the active subscription for an organization
-func (oss *organizationSubscriptionService) GetOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error) {
+func (oss *OrganizationSubscriptionService) GetOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error) {
 	return oss.repository.GetActiveOrganizationSubscription(orgID)
 }
 
 // GetOrganizationSubscriptionByID retrieves a subscription by its ID
-func (oss *organizationSubscriptionService) GetOrganizationSubscriptionByID(id uuid.UUID) (*models.OrganizationSubscription, error) {
+func (oss *OrganizationSubscriptionService) GetOrganizationSubscriptionByID(id uuid.UUID) (*models.OrganizationSubscription, error) {
 	return oss.repository.GetOrganizationSubscription(id)
 }
 
 // GetAllActiveOrganizationSubscriptions retrieves all active or trialing organization subscriptions
-func (oss *organizationSubscriptionService) GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error) {
+func (oss *OrganizationSubscriptionService) GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error) {
 	return oss.repository.GetAllActiveOrganizationSubscriptions()
 }
 
@@ -95,7 +71,7 @@ func (oss *organizationSubscriptionService) GetAllActiveOrganizationSubscription
 // For free plans (IsFree), creates an active subscription
 // For paid plans, creates an incomplete subscription that will be activated by Stripe webhook
 // When isAdminAssigned is true, paid plans are activated immediately (no Stripe flow)
-func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, isAdminAssigned bool) (*models.OrganizationSubscription, error) {
+func (oss *OrganizationSubscriptionService) CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, isAdminAssigned bool) (*models.OrganizationSubscription, error) {
 	// Verify the organization exists
 	var org organizationModels.Organization
 	if err := oss.db.Where("id = ?", orgID).First(&org).Error; err != nil {
@@ -171,7 +147,7 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 }
 
 // UpdateOrganizationSubscription updates an organization's subscription plan
-func (oss *organizationSubscriptionService) UpdateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID) (*models.OrganizationSubscription, error) {
+func (oss *OrganizationSubscriptionService) UpdateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID) (*models.OrganizationSubscription, error) {
 	// Get the organization's active subscription
 	subscription, err := oss.repository.GetActiveOrganizationSubscription(orgID)
 	if err != nil {
@@ -199,7 +175,7 @@ func (oss *organizationSubscriptionService) UpdateOrganizationSubscription(orgID
 }
 
 // CancelOrganizationSubscription cancels an organization's subscription
-func (oss *organizationSubscriptionService) CancelOrganizationSubscription(orgID uuid.UUID, cancelAtPeriodEnd bool) error {
+func (oss *OrganizationSubscriptionService) CancelOrganizationSubscription(orgID uuid.UUID, cancelAtPeriodEnd bool) error {
 	subscription, err := oss.repository.GetActiveOrganizationSubscription(orgID)
 	if err != nil {
 		return fmt.Errorf("no active subscription found for organization: %w", err)
@@ -244,7 +220,7 @@ func (oss *organizationSubscriptionService) CancelOrganizationSubscription(orgID
 // So the column gets exactly one writer, and that writer derives rather than
 // assumes. Call it after any change to the org's subscription state; never set
 // the column directly at a call site (#449).
-func (oss *organizationSubscriptionService) syncOrgPlanPointer(orgID uuid.UUID) {
+func (oss *OrganizationSubscriptionService) syncOrgPlanPointer(orgID uuid.UUID) {
 	var planID *uuid.UUID
 	if sub, err := oss.repository.GetActiveOrganizationSubscription(orgID); err == nil && sub != nil {
 		planID = &sub.SubscriptionPlanID
@@ -266,7 +242,7 @@ func (oss *organizationSubscriptionService) syncOrgPlanPointer(orgID uuid.UUID) 
 // Reading the subscription directly made this endpoint 404 for a healthy org
 // while GET /terminals/session-options returned every machine size for the same
 // user and org — two endpoints answering one question two ways (#451).
-func (oss *organizationSubscriptionService) GetOrganizationFeatures(orgID uuid.UUID, userID string) (*models.SubscriptionPlan, error) {
+func (oss *OrganizationSubscriptionService) GetOrganizationFeatures(orgID uuid.UUID, userID string) (*models.SubscriptionPlan, error) {
 	result, err := NewEffectivePlanService(oss.db).GetUserEffectivePlan(userID, &orgID)
 	if err != nil {
 		return nil, fmt.Errorf("no plan applies for user %s in organization %s: %w", userID, orgID, err)
@@ -282,14 +258,14 @@ func (oss *organizationSubscriptionService) GetOrganizationFeatures(orgID uuid.U
 // Thin wrapper kept for backward compatibility with existing callers and
 // test mocks. The actual quota-counting and limit-extraction logic lives
 // in QuotaService.GetOrgQuota — see src/payment/services/quotaService.go.
-func (oss *organizationSubscriptionService) GetOrganizationUsageLimits(orgID uuid.UUID) (*OrganizationLimits, error) {
+func (oss *OrganizationSubscriptionService) GetOrganizationUsageLimits(orgID uuid.UUID) (*OrganizationLimits, error) {
 	eps := NewEffectivePlanService(oss.db)
 	quotaSvc := NewQuotaService(oss.db, eps)
 	return quotaSvc.GetOrgQuota(orgID)
 }
 
 // GetUserEffectiveFeatures returns the highest-tier features from all user's organizations
-func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID string) (*UserEffectiveFeatures, error) {
+func (oss *OrganizationSubscriptionService) GetUserEffectiveFeatures(userID string) (*UserEffectiveFeatures, error) {
 	// Get all organization subscriptions for the user
 	subscriptions, err := oss.repository.GetUserOrganizationSubscriptions(userID)
 	if err != nil {

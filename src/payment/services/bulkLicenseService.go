@@ -21,32 +21,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type BulkLicenseService interface {
-	// ListPurchasableSeatPlans answers "what may this trainer buy for learners?".
-	// Seat plans are hidden from the catalogue, so they need their own listing.
-	ListPurchasableSeatPlans(purchaserUserID string) (*dto.PurchasableSeatPlansOutput, error)
-	PurchaseBulkLicenses(purchaserUserID string, input dto.BulkPurchaseInput) (*models.SubscriptionBatch, *[]models.UserSubscription, error)
-	AssignLicense(batchID uuid.UUID, requestingUserID string, targetUserID string) (*models.UserSubscription, error)
-	RevokeLicense(licenseID uuid.UUID, requestingUserID string) error
-	UpdateBatchQuantity(batchID uuid.UUID, requestingUserID string, newQuantity int) error
-	GetBatchesByPurchaser(purchaserUserID string) (*[]models.SubscriptionBatch, error)
-	GetAccessibleBatches(userID string) (*[]models.SubscriptionBatch, error)
-	GetAccessibleBatchByID(batchID uuid.UUID, userID string) (*models.SubscriptionBatch, error)
-	GetBatchLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error)
-	GetAvailableLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error)
-	PermanentlyDeleteBatch(batchID uuid.UUID, requestingUserID string) error
-}
-
-type bulkLicenseService struct {
+type BulkLicenseService struct {
 	db               *gorm.DB
-	batchRepository  repositories.SubscriptionBatchRepository
+	batchRepository  *repositories.SubscriptionBatchRepository
 	subscriptionRepo repositories.PaymentRepository
-	planRepository   repositories.SubscriptionPlanRepository
+	planRepository   *repositories.SubscriptionPlanRepository
 	stripeService    StripeService
 }
 
-func NewBulkLicenseService(db *gorm.DB) BulkLicenseService {
-	return &bulkLicenseService{
+func NewBulkLicenseService(db *gorm.DB) *BulkLicenseService {
+	return &BulkLicenseService{
 		db:               db,
 		batchRepository:  repositories.NewSubscriptionBatchRepository(db),
 		subscriptionRepo: repositories.NewPaymentRepository(db),
@@ -56,8 +40,8 @@ func NewBulkLicenseService(db *gorm.DB) BulkLicenseService {
 }
 
 // NewBulkLicenseServiceWithDeps creates a BulkLicenseService with injectable dependencies (for testing)
-func NewBulkLicenseServiceWithDeps(db *gorm.DB, stripeService StripeService) BulkLicenseService {
-	return &bulkLicenseService{
+func NewBulkLicenseServiceWithDeps(db *gorm.DB, stripeService StripeService) *BulkLicenseService {
+	return &BulkLicenseService{
 		db:               db,
 		batchRepository:  repositories.NewSubscriptionBatchRepository(db),
 		subscriptionRepo: repositories.NewPaymentRepository(db),
@@ -130,7 +114,7 @@ func validateBulkPurchaser(db *gorm.DB, purchaserUserID string) error {
 //
 // An ineligible caller gets an empty list, not a filtered one — these are hidden
 // products and someone who cannot buy them has no reason to see their prices.
-func (s *bulkLicenseService) ListPurchasableSeatPlans(purchaserUserID string) (*dto.PurchasableSeatPlansOutput, error) {
+func (s *BulkLicenseService) ListPurchasableSeatPlans(purchaserUserID string) (*dto.PurchasableSeatPlansOutput, error) {
 	out := &dto.PurchasableSeatPlansOutput{Plans: []dto.PurchasableSeatPlan{}}
 
 	if err := validateBulkPurchaser(s.db, purchaserUserID); err != nil {
@@ -180,7 +164,7 @@ func (s *bulkLicenseService) ListPurchasableSeatPlans(purchaserUserID string) (*
 	return out, nil
 }
 
-func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input dto.BulkPurchaseInput) (*models.SubscriptionBatch, *[]models.UserSubscription, error) {
+func (s *BulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input dto.BulkPurchaseInput) (*models.SubscriptionBatch, *[]models.UserSubscription, error) {
 	// Get the subscription plan
 	plan, err := s.planRepository.GetByID(input.SubscriptionPlanID)
 	if err != nil {
@@ -312,7 +296,7 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 // AssignLicense assigns an unassigned license to a user.
 // Uses a database transaction with row-level locking to prevent race conditions
 // where concurrent requests could exceed TotalQuantity.
-func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID string, targetUserID string) (*models.UserSubscription, error) {
+func (s *BulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID string, targetUserID string) (*models.UserSubscription, error) {
 	// Get the batch (outside transaction for access check — read-only, no race risk)
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
@@ -404,7 +388,7 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 }
 
 // RevokeLicense removes a license assignment and returns it to the pool
-func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID string) error {
+func (s *BulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID string) error {
 	// Get the license
 	license, err := s.subscriptionRepo.GetUserSubscription(licenseID)
 	if err != nil {
@@ -473,7 +457,7 @@ func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID
 }
 
 // UpdateBatchQuantity scales the batch up or down
-func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUserID string, newQuantity int) error {
+func (s *BulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUserID string, newQuantity int) error {
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
 		return fmt.Errorf("batch not found: %w", err)
@@ -605,20 +589,20 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 }
 
 // GetBatchesByPurchaser returns all batches purchased by a user
-func (s *bulkLicenseService) GetBatchesByPurchaser(purchaserUserID string) (*[]models.SubscriptionBatch, error) {
+func (s *BulkLicenseService) GetBatchesByPurchaser(purchaserUserID string) (*[]models.SubscriptionBatch, error) {
 	return s.batchRepository.GetByPurchaser(purchaserUserID)
 }
 
 // GetAccessibleBatches returns all batches accessible to a user through:
 // 1. Direct purchase (user is the purchaser)
 // 2. Organization membership (batches purchased by other members of their team organizations)
-func (s *bulkLicenseService) GetAccessibleBatches(userID string) (*[]models.SubscriptionBatch, error) {
+func (s *BulkLicenseService) GetAccessibleBatches(userID string) (*[]models.SubscriptionBatch, error) {
 	return s.batchRepository.GetAccessibleByUser(userID)
 }
 
 // GetAccessibleBatchByID returns a specific batch if the user can access it
 // (either as the purchaser or through shared team organization membership)
-func (s *bulkLicenseService) GetAccessibleBatchByID(batchID uuid.UUID, userID string) (*models.SubscriptionBatch, error) {
+func (s *BulkLicenseService) GetAccessibleBatchByID(batchID uuid.UUID, userID string) (*models.SubscriptionBatch, error) {
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
 		return nil, fmt.Errorf("batch not found: %w", err)
@@ -636,7 +620,7 @@ func (s *bulkLicenseService) GetAccessibleBatchByID(batchID uuid.UUID, userID st
 }
 
 // GetBatchLicenses returns all licenses in a batch
-func (s *bulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error) {
+func (s *BulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error) {
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
 		return nil, fmt.Errorf("batch not found: %w", err)
@@ -666,7 +650,7 @@ func (s *bulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserI
 }
 
 // GetAvailableLicenses returns unassigned licenses in a batch
-func (s *bulkLicenseService) GetAvailableLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error) {
+func (s *BulkLicenseService) GetAvailableLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error) {
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
 		return nil, fmt.Errorf("batch not found: %w", err)
@@ -696,7 +680,7 @@ func (s *bulkLicenseService) GetAvailableLicenses(batchID uuid.UUID, requestingU
 
 // autoCancelBatchFromStripeError cancels a batch locally when Stripe reports it's already cancelled
 // This handles the case where a subscription was cancelled in Stripe but the webhook wasn't received
-func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) error {
+func (s *BulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) error {
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
 		return fmt.Errorf("batch not found: %w", err)
@@ -749,7 +733,7 @@ func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) e
 // 3. Terminate all active terminals for users with assigned licenses
 // 4. Delete all licenses in the batch
 // 5. Delete the batch record
-func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestingUserID string) error {
+func (s *BulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestingUserID string) error {
 	// Get the batch
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
@@ -826,7 +810,7 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 
 // getUserFromCasdoor safely fetches a user from Casdoor, recovering from SDK panics
 // when the Casdoor client is not initialized (e.g., in unit tests)
-func (s *bulkLicenseService) getUserFromCasdoor(userID string) (user *casdoorsdk.User, err error) {
+func (s *BulkLicenseService) getUserFromCasdoor(userID string) (user *casdoorsdk.User, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			user = nil
@@ -845,7 +829,7 @@ func (s *bulkLicenseService) getUserFromCasdoor(userID string) (user *casdoorsdk
 //
 // This is the lenient check used for read-only endpoints. Destructive
 // operations must use canUserManageBatch instead.
-func (s *bulkLicenseService) canUserReadBatch(batch *models.SubscriptionBatch, userID string) (bool, error) {
+func (s *BulkLicenseService) canUserReadBatch(batch *models.SubscriptionBatch, userID string) (bool, error) {
 	// Check if user is the direct purchaser
 	if batch.PurchaserUserID == userID {
 		return true, nil
@@ -878,7 +862,7 @@ func (s *bulkLicenseService) canUserReadBatch(batch *models.SubscriptionBatch, u
 //
 // Regular org "members" are intentionally denied even if they would pass the
 // lenient read check.
-func (s *bulkLicenseService) canUserManageBatch(batch *models.SubscriptionBatch, userID string) (bool, error) {
+func (s *BulkLicenseService) canUserManageBatch(batch *models.SubscriptionBatch, userID string) (bool, error) {
 	// Purchaser always has full control
 	if batch.PurchaserUserID == userID {
 		return true, nil
@@ -924,7 +908,7 @@ func (s *bulkLicenseService) canUserManageBatch(batch *models.SubscriptionBatch,
 // Failures stay non-blocking: the licence is already assigned and paid for, and
 // an enrolment problem must not undo that. They are logged, and the trainer can
 // add the learner by hand.
-func (s *bulkLicenseService) autoAddUserToGroup(groupID uuid.UUID, purchaserUserID string, targetUserID string) {
+func (s *BulkLicenseService) autoAddUserToGroup(groupID uuid.UUID, purchaserUserID string, targetUserID string) {
 	err := groupServices.NewGroupService(s.db).AddMembersToGroup(
 		groupID,
 		purchaserUserID,

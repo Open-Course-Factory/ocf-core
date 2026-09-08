@@ -137,7 +137,7 @@ type terminalTrainerService struct {
 	apiVersion             string
 	terminalType           string
 	repository             repositories.TerminalRepository
-	orgSubscriptionService paymentServices.OrganizationSubscriptionService
+	orgSubscriptionService *paymentServices.OrganizationSubscriptionService
 	quotaService           paymentServices.QuotaService
 	effectivePlanService   paymentServices.EffectivePlanService
 	enumService            TerminalTrainerEnumService

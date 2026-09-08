@@ -18,7 +18,7 @@ import (
 
 type OrganizationRolePlanController struct {
 	controller.GenericController
-	orgSubRepo repositories.OrganizationSubscriptionRepository
+	orgSubRepo *repositories.OrganizationSubscriptionRepository
 }
 
 func NewOrganizationRolePlanController(db *gorm.DB) *OrganizationRolePlanController {

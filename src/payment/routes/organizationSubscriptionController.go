@@ -18,7 +18,7 @@ import (
 
 type OrganizationSubscriptionController struct {
 	db                   *gorm.DB
-	orgSubService        services.OrganizationSubscriptionService
+	orgSubService        *services.OrganizationSubscriptionService
 	effectivePlanService services.EffectivePlanService
 }
 

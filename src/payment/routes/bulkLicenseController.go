@@ -16,7 +16,7 @@ import (
 
 type BulkLicenseController struct {
 	db                *gorm.DB
-	bulkService       services.BulkLicenseService
+	bulkService       *services.BulkLicenseService
 	stripeService     services.StripeService
 }
 

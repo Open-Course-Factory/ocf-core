@@ -151,7 +151,7 @@ type UserBudgetCeiling struct {
 
 type effectivePlanService struct {
 	paymentRepo repositories.PaymentRepository
-	orgSubRepo  repositories.OrganizationSubscriptionRepository
+	orgSubRepo  *repositories.OrganizationSubscriptionRepository
 	db          *gorm.DB
 }
 

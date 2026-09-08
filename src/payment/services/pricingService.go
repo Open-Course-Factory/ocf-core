@@ -11,20 +11,12 @@ import (
 	"gorm.io/gorm"
 )
 
-type PricingService interface {
-	CalculatePricingPreview(planID uuid.UUID, quantity int) (*dto.PricingBreakdown, error)
-	GetTotalCost(plan *models.SubscriptionPlan, quantity int) int64
-	// PreviewProspectiveTiers prices a ladder that has not been saved yet, so an
-	// admin can judge brackets before committing them.
-	PreviewProspectiveTiers(input dto.ProspectivePricingInput) (*dto.ProspectivePricingOutput, error)
+type PricingService struct {
+	planRepository *repositories.SubscriptionPlanRepository
 }
 
-type pricingService struct {
-	planRepository repositories.SubscriptionPlanRepository
-}
-
-func NewPricingService(db *gorm.DB) PricingService {
-	return &pricingService{
+func NewPricingService(db *gorm.DB) *PricingService {
+	return &PricingService{
 		planRepository: repositories.NewSubscriptionPlanRepository(db),
 	}
 }
@@ -104,7 +96,7 @@ func tiersFromDTO(in []dto.PricingTier) []models.PricingTier {
 }
 
 // CalculatePricingPreview calculates a detailed pricing breakdown for a SAVED plan.
-func (ps *pricingService) CalculatePricingPreview(planID uuid.UUID, quantity int) (*dto.PricingBreakdown, error) {
+func (ps *PricingService) CalculatePricingPreview(planID uuid.UUID, quantity int) (*dto.PricingBreakdown, error) {
 	plan, err := ps.planRepository.GetByID(planID)
 	if err != nil {
 		return nil, fmt.Errorf("plan not found: %w", err)
@@ -141,7 +133,7 @@ func (ps *pricingService) CalculatePricingPreview(planID uuid.UUID, quantity int
 }
 
 // GetTotalCost is the same computation without the breakdown.
-func (ps *pricingService) GetTotalCost(plan *models.SubscriptionPlan, quantity int) int64 {
+func (ps *PricingService) GetTotalCost(plan *models.SubscriptionPlan, quantity int) int64 {
 	if !plan.UseTieredPricing || len(plan.PricingTiers) == 0 {
 		return plan.PriceAmount * int64(quantity)
 	}
@@ -150,7 +142,7 @@ func (ps *pricingService) GetTotalCost(plan *models.SubscriptionPlan, quantity i
 }
 
 // PreviewProspectiveTiers prices an unsaved ladder at each requested quantity.
-func (ps *pricingService) PreviewProspectiveTiers(input dto.ProspectivePricingInput) (*dto.ProspectivePricingOutput, error) {
+func (ps *PricingService) PreviewProspectiveTiers(input dto.ProspectivePricingInput) (*dto.ProspectivePricingOutput, error) {
 	if len(input.Quantities) == 0 {
 		return nil, fmt.Errorf("at least one quantity is required to price a ladder")
 	}

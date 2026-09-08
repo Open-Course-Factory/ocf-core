@@ -8,23 +8,17 @@ import (
 	"gorm.io/gorm"
 )
 
-type SubscriptionPlanRepository interface {
-	GetByID(id uuid.UUID) (*models.SubscriptionPlan, error)
-	GetAll(activeOnly bool) (*[]models.SubscriptionPlan, error)
-	GetByStripePriceID(stripePriceID string) (*models.SubscriptionPlan, error)
-}
-
-type subscriptionPlanRepository struct {
+type SubscriptionPlanRepository struct {
 	db *gorm.DB
 }
 
-func NewSubscriptionPlanRepository(db *gorm.DB) SubscriptionPlanRepository {
-	return &subscriptionPlanRepository{
+func NewSubscriptionPlanRepository(db *gorm.DB) *SubscriptionPlanRepository {
+	return &SubscriptionPlanRepository{
 		db: db,
 	}
 }
 
-func (r *subscriptionPlanRepository) GetByID(id uuid.UUID) (*models.SubscriptionPlan, error) {
+func (r *SubscriptionPlanRepository) GetByID(id uuid.UUID) (*models.SubscriptionPlan, error) {
 	var plan models.SubscriptionPlan
 	err := r.db.Where("id = ?", id).First(&plan).Error
 	if err != nil {
@@ -33,7 +27,7 @@ func (r *subscriptionPlanRepository) GetByID(id uuid.UUID) (*models.Subscription
 	return &plan, nil
 }
 
-func (r *subscriptionPlanRepository) GetAll(activeOnly bool) (*[]models.SubscriptionPlan, error) {
+func (r *SubscriptionPlanRepository) GetAll(activeOnly bool) (*[]models.SubscriptionPlan, error) {
 	var plans []models.SubscriptionPlan
 	query := r.db.Model(&models.SubscriptionPlan{})
 
@@ -48,7 +42,7 @@ func (r *subscriptionPlanRepository) GetAll(activeOnly bool) (*[]models.Subscrip
 	return &plans, nil
 }
 
-func (r *subscriptionPlanRepository) GetByStripePriceID(stripePriceID string) (*models.SubscriptionPlan, error) {
+func (r *SubscriptionPlanRepository) GetByStripePriceID(stripePriceID string) (*models.SubscriptionPlan, error) {
 	var plan models.SubscriptionPlan
 	err := r.db.Where("stripe_price_id = ?", stripePriceID).First(&plan).Error
 	if err != nil {

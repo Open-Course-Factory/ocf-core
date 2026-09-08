@@ -9,51 +9,18 @@ import (
 	"gorm.io/gorm"
 )
 
-type OrganizationSubscriptionRepository interface {
-	// OrganizationSubscription operations
-	CreateOrganizationSubscription(subscription *models.OrganizationSubscription) error
-	// CreateOrganizationSubscriptionAtomic atomically deactivates any
-	// existing active/trialing subscription for the org and inserts the new
-	// one inside a single transaction. Use this for any assignment path that
-	// must enforce the "one active subscription per organization" invariant.
-	CreateOrganizationSubscriptionAtomic(subscription *models.OrganizationSubscription) error
-	GetOrganizationSubscription(id uuid.UUID) (*models.OrganizationSubscription, error)
-	GetOrganizationSubscriptionByOrgID(orgID uuid.UUID) (*models.OrganizationSubscription, error)
-	GetOrganizationSubscriptionByStripeID(stripeSubscriptionID string) (*models.OrganizationSubscription, error)
-	GetActiveOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error)
-	// GetActiveOrganizationSubscriptionByStripeCustomerID resolves the active or
-	// trialing organization subscription that owns a Stripe customer. It is the
-	// org-side sibling of PaymentRepository.GetActiveSubscriptionByCustomerID and
-	// is the single fallback the invoice webhook handlers use when no user
-	// subscription owns the customer.
-	GetActiveOrganizationSubscriptionByStripeCustomerID(customerID string) (*models.OrganizationSubscription, error)
-	GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error)
-	GetUserOrganizationSubscriptions(userID string) ([]models.OrganizationSubscription, error)
-	UpdateOrganizationSubscription(subscription *models.OrganizationSubscription) error
-
-	// OrganizationRolePlan operations
-	// GetOrganizationRolePlan fetches the role→plan entitlement mapping for a
-	// given organization and member role, with its SubscriptionPlan preloaded.
-	// Returns gorm.ErrRecordNotFound when no mapping exists for that role.
-	GetOrganizationRolePlan(orgID uuid.UUID, role string) (*models.OrganizationRolePlan, error)
-	// GetOrganizationRolePlans lists every role→plan entitlement mapping for an
-	// organization, each with its SubscriptionPlan preloaded, ordered by role for
-	// a stable listing. Returns an empty slice when the org has no mappings.
-	GetOrganizationRolePlans(orgID uuid.UUID) ([]models.OrganizationRolePlan, error)
-}
-
-type organizationSubscriptionRepository struct {
+type OrganizationSubscriptionRepository struct {
 	db *gorm.DB
 }
 
-func NewOrganizationSubscriptionRepository(db *gorm.DB) OrganizationSubscriptionRepository {
-	return &organizationSubscriptionRepository{
+func NewOrganizationSubscriptionRepository(db *gorm.DB) *OrganizationSubscriptionRepository {
+	return &OrganizationSubscriptionRepository{
 		db: db,
 	}
 }
 
 // CreateOrganizationSubscription creates a new organization subscription
-func (r *organizationSubscriptionRepository) CreateOrganizationSubscription(subscription *models.OrganizationSubscription) error {
+func (r *OrganizationSubscriptionRepository) CreateOrganizationSubscription(subscription *models.OrganizationSubscription) error {
 	return r.db.Create(subscription).Error
 }
 
@@ -66,7 +33,7 @@ func (r *organizationSubscriptionRepository) CreateOrganizationSubscription(subs
 // trial bootstrap, Stripe webhook). The new subscription is created regardless
 // of its own status — if the caller is inserting an "incomplete" subscription
 // (paid plan awaiting Stripe confirmation), no prior subscription is touched.
-func (r *organizationSubscriptionRepository) CreateOrganizationSubscriptionAtomic(subscription *models.OrganizationSubscription) error {
+func (r *OrganizationSubscriptionRepository) CreateOrganizationSubscriptionAtomic(subscription *models.OrganizationSubscription) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		// Only deactivate the previous active subscription when the new one
 		// is being activated. Inserting an "incomplete" subscription (paid
@@ -99,7 +66,7 @@ func deactivatePreviousOrgSubscription(tx *gorm.DB, orgID uuid.UUID) error {
 }
 
 // GetOrganizationSubscription retrieves a subscription by ID
-func (r *organizationSubscriptionRepository) GetOrganizationSubscription(id uuid.UUID) (*models.OrganizationSubscription, error) {
+func (r *OrganizationSubscriptionRepository) GetOrganizationSubscription(id uuid.UUID) (*models.OrganizationSubscription, error) {
 	var subscription models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").Where("id = ?", id).First(&subscription).Error
 	if err != nil {
@@ -109,7 +76,7 @@ func (r *organizationSubscriptionRepository) GetOrganizationSubscription(id uuid
 }
 
 // GetOrganizationSubscriptionByOrgID retrieves the subscription for an organization
-func (r *organizationSubscriptionRepository) GetOrganizationSubscriptionByOrgID(orgID uuid.UUID) (*models.OrganizationSubscription, error) {
+func (r *OrganizationSubscriptionRepository) GetOrganizationSubscriptionByOrgID(orgID uuid.UUID) (*models.OrganizationSubscription, error) {
 	var subscription models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
 		Where("organization_id = ?", orgID).
@@ -122,7 +89,7 @@ func (r *organizationSubscriptionRepository) GetOrganizationSubscriptionByOrgID(
 }
 
 // GetOrganizationSubscriptionByStripeID retrieves a subscription by Stripe subscription ID
-func (r *organizationSubscriptionRepository) GetOrganizationSubscriptionByStripeID(stripeSubscriptionID string) (*models.OrganizationSubscription, error) {
+func (r *OrganizationSubscriptionRepository) GetOrganizationSubscriptionByStripeID(stripeSubscriptionID string) (*models.OrganizationSubscription, error) {
 	var subscription models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
 		Where("stripe_subscription_id = ?", stripeSubscriptionID).
@@ -136,7 +103,7 @@ func (r *organizationSubscriptionRepository) GetOrganizationSubscriptionByStripe
 // GetActiveOrganizationSubscription retrieves the entitling subscription for an
 // organization. Entitling, so an org in dunning still resolves its plan — the
 // same grace behaviour the user side has always had.
-func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error) {
+func (r *OrganizationSubscriptionRepository) GetActiveOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error) {
 	var subscription models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
 		Scopes(models.ScopeEntitling).
@@ -153,7 +120,7 @@ func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscription(o
 // trialing subscription bound to a Stripe customer. Mirrors the user-side
 // GetActiveSubscriptionByCustomerID (same active/trialing status filter), and
 // returns the newest match if several exist.
-func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscriptionByStripeCustomerID(customerID string) (*models.OrganizationSubscription, error) {
+func (r *OrganizationSubscriptionRepository) GetActiveOrganizationSubscriptionByStripeCustomerID(customerID string) (*models.OrganizationSubscription, error) {
 	var subscription models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
 		Scopes(models.ScopeBillable).
@@ -167,7 +134,7 @@ func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscriptionBy
 }
 
 // GetAllActiveOrganizationSubscriptions retrieves all active or trialing organization subscriptions
-func (r *organizationSubscriptionRepository) GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error) {
+func (r *OrganizationSubscriptionRepository) GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error) {
 	var subscriptions []models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
 		// Billable: this is an operational listing of cleanly-paid org
@@ -183,7 +150,7 @@ func (r *organizationSubscriptionRepository) GetAllActiveOrganizationSubscriptio
 
 // GetUserOrganizationSubscriptions retrieves all organization subscriptions for a user
 // Returns subscriptions from all organizations the user is a member of
-func (r *organizationSubscriptionRepository) GetUserOrganizationSubscriptions(userID string) ([]models.OrganizationSubscription, error) {
+func (r *OrganizationSubscriptionRepository) GetUserOrganizationSubscriptions(userID string) ([]models.OrganizationSubscription, error) {
 	var subscriptions []models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
 		Joins("JOIN organization_members ON organization_members.organization_id = organization_subscriptions.organization_id").
@@ -200,14 +167,14 @@ func (r *organizationSubscriptionRepository) GetUserOrganizationSubscriptions(us
 }
 
 // UpdateOrganizationSubscription updates an organization subscription
-func (r *organizationSubscriptionRepository) UpdateOrganizationSubscription(subscription *models.OrganizationSubscription) error {
+func (r *OrganizationSubscriptionRepository) UpdateOrganizationSubscription(subscription *models.OrganizationSubscription) error {
 	return r.db.Save(subscription).Error
 }
 
 // GetOrganizationRolePlan retrieves the role→plan entitlement mapping for a
 // given organization and member role, with its SubscriptionPlan preloaded.
 // Returns gorm.ErrRecordNotFound when no mapping exists for that (org, role).
-func (r *organizationSubscriptionRepository) GetOrganizationRolePlan(orgID uuid.UUID, role string) (*models.OrganizationRolePlan, error) {
+func (r *OrganizationSubscriptionRepository) GetOrganizationRolePlan(orgID uuid.UUID, role string) (*models.OrganizationRolePlan, error) {
 	var rolePlan models.OrganizationRolePlan
 	err := r.db.Preload("SubscriptionPlan").
 		Where("organization_id = ? AND role = ?", orgID, role).
@@ -221,7 +188,7 @@ func (r *organizationSubscriptionRepository) GetOrganizationRolePlan(orgID uuid.
 // GetOrganizationRolePlans retrieves every role→plan entitlement mapping for a
 // given organization, each with its SubscriptionPlan preloaded, ordered by role
 // for a stable listing.
-func (r *organizationSubscriptionRepository) GetOrganizationRolePlans(orgID uuid.UUID) ([]models.OrganizationRolePlan, error) {
+func (r *OrganizationSubscriptionRepository) GetOrganizationRolePlans(orgID uuid.UUID) ([]models.OrganizationRolePlan, error) {
 	var rolePlans []models.OrganizationRolePlan
 	err := r.db.Preload("SubscriptionPlan").
 		Where("organization_id = ?", orgID).

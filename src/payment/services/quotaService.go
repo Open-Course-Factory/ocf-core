@@ -154,7 +154,7 @@ type SizeRemaining = paymentDto.SizeRemaining
 type quotaService struct {
 	db                   *gorm.DB
 	effectivePlanService EffectivePlanService
-	orgSubRepo           repositories.OrganizationSubscriptionRepository
+	orgSubRepo           *repositories.OrganizationSubscriptionRepository
 }
 
 // NewQuotaService creates a QuotaService. The EffectivePlanService is
