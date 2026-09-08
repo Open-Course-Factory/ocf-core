@@ -554,15 +554,6 @@ func (sm *SwaggerSpecMerger) getTags(spec map[string]any) any {
 	return nil
 }
 
-// SwaggerMergeMiddleware permet d'exposer la spec mergée
-func SwaggerMergeMiddleware() func() map[string]any {
-	merger := NewSwaggerSpecMerger()
-
-	return func() map[string]any {
-		return merger.MergeSpecs()
-	}
-}
-
 // convertBodyParamsToRequestBody convertit les paramètres body Swagger 2.0 en requestBody OpenAPI 3.0
 func (sm *SwaggerSpecMerger) convertBodyParamsToRequestBody(spec map[string]any) {
 	paths := sm.getPaths(spec)

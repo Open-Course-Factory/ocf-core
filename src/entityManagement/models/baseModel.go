@@ -1,7 +1,6 @@
 package models
 
 import (
-	"reflect"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -29,23 +28,4 @@ func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
 	}
 
 	return
-}
-
-type InterfaceWithBaseModel interface {
-	GetBaseModel() BaseModel
-	GetReferenceObject() string
-}
-
-func GetBaseModel(obj any) (BaseModel, bool) {
-	if v, ok := obj.(InterfaceWithBaseModel); ok {
-		return v.GetBaseModel(), true
-	}
-	return BaseModel{}, false
-}
-
-func GetReferenceObject(obj any) (string, bool) {
-	if v, ok := obj.(InterfaceWithBaseModel); ok {
-		return v.GetReferenceObject(), true
-	}
-	return reflect.TypeOf(obj).Name(), false
 }

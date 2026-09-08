@@ -129,12 +129,6 @@ type HookRegistry interface {
 	SetErrorCallback(callback HookErrorCallback)
 }
 
-// AsyncHook pour les hooks qui peuvent être exécutés en arrière-plan
-type AsyncHook interface {
-	Hook
-	ExecuteAsync(ctx *HookContext) error
-}
-
 // ConditionalHook pour les hooks avec des conditions d'exécution
 type ConditionalHook interface {
 	Hook

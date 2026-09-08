@@ -9,7 +9,6 @@ import (
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/entityManagement/models"
 	"soli/formations/src/entityManagement/repositories"
-	"soli/formations/src/entityManagement/utils"
 	appUtils "soli/formations/src/utils"
 	"time"
 
@@ -61,7 +60,6 @@ type GenericService interface {
 	EditEntityWithUser(id uuid.UUID, entityName string, entity any, data any, userID string, userRoles ...string) error
 	SetArchived(entityName string, id uuid.UUID, at *time.Time, userID string, userRoles []string) (any, error)
 	GetEntityModelInterface(entityName string) any
-	AddOwnerIDs(entity any, userId string) (any, error)
 	ExtractUuidFromReflectEntity(entity any) uuid.UUID
 	GetDtoArrayFromEntitiesPages(allEntitiesPages []any, entityModelInterface any, entityName string) ([]any, bool)
 	GetEntityFromResult(entityName string, item any) (any, bool)
@@ -396,21 +394,6 @@ func (g *genericService) GetEntityModelInterface(entityName string) any {
 	var result any
 	result, _ = ems.GlobalEntityRegistrationService.GetEntityInterface(entityName)
 	return result
-}
-
-func (g *genericService) AddOwnerIDs(entity any, userId string) (any, error) {
-	// Add owner ID to entity (modifies in-place)
-	if err := utils.AddOwnerIDToEntity(entity, userId); err != nil {
-		return nil, err
-	}
-
-	// Save entity with updated OwnerIDs
-	entityWithOwnerIds, entitySavingError := g.SaveEntity(entity)
-	if entitySavingError != nil {
-		return nil, entitySavingError
-	}
-
-	return entityWithOwnerIds, nil
 }
 
 func (g *genericService) ExtractUuidFromReflectEntity(entity any) uuid.UUID {

@@ -20,12 +20,9 @@ type PermissionManager interface {
 // MemberManagementService provides generic member management operations
 // This reduces code duplication between Groups and Organizations
 type MemberManagementService interface {
-	AddMembers(entityID uuid.UUID, requestingUserID string, userIDs []string, role string) error
 	RemoveMember(entityID uuid.UUID, requestingUserID string, userID string) error
 	UpdateMemberRole(entityID uuid.UUID, requestingUserID string, userID string, newRole string) error
 	GetMembers(entityID uuid.UUID) ([]any, error)
-	IsUserMember(entityID uuid.UUID, userID string) (bool, error)
-	GetUserRole(entityID uuid.UUID, userID string) (string, error)
 }
 
 // MemberEntity represents an entity that can have members (Group, Organization, etc.)
@@ -85,75 +82,6 @@ func NewMemberManagementService(
 		permissionService: permissionService,
 		config:            config,
 	}
-}
-
-// AddMembers adds multiple users as members to an entity
-func (mms *memberManagementService) AddMembers(
-	entityID uuid.UUID,
-	requestingUserID string,
-	userIDs []string,
-	role string,
-) error {
-	// Get entity
-	entity, err := mms.repository.GetEntityByID(entityID)
-	if err != nil {
-		return utils.ErrEntityNotFound(mms.config.EntityType, entityID)
-	}
-
-	// Check if requesting user can manage this entity
-	canManage, err := mms.canUserManage(entityID, requestingUserID)
-	if err != nil {
-		return err
-	}
-	if !canManage {
-		return utils.ErrPermissionDenied(mms.config.EntityType, "add members to")
-	}
-
-	// Validate entity is active and not expired
-	if !entity.IsActive() {
-		return utils.ErrEntityInactive(mms.config.EntityType, entityID)
-	}
-	if entity.IsExpired() {
-		return utils.ErrEntityExpired(mms.config.EntityType, entityID)
-	}
-
-	// Validate role
-	if !mms.isValidRole(role) {
-		return utils.ErrInvalidRole(mms.config.EntityType, role)
-	}
-
-	// Check member limit
-	maxMembers := entity.GetMaxMembers()
-	currentMembers := entity.GetCurrentMemberCount()
-	if maxMembers != -1 && currentMembers+len(userIDs) > maxMembers {
-		return utils.CapacityWillExceedError(mms.config.EntityType, currentMembers, len(userIDs), maxMembers)
-	}
-
-	// Add each user
-	var multiErr utils.MultiError
-	for _, userID := range userIDs {
-		// Check if already a member
-		isMember, _ := mms.IsUserMember(entityID, userID)
-		if isMember {
-			multiErr.AddError(fmt.Errorf("user %s is already a member", userID))
-			continue
-		}
-
-		// Create member (implementation depends on specific member type)
-		// This would need to be handled by a factory or builder pattern
-		// For now, we'll use the repository directly
-
-		// Grant permissions
-		err = mms.grantMemberPermissions(userID, entityID, role)
-		if err != nil {
-			utils.Warn("Failed to grant permissions to user %s: %v", userID, err)
-			multiErr.AddError(err)
-		}
-
-		utils.Info("User %s added to %s %s with role %s", userID, mms.config.EntityType, entityID, role)
-	}
-
-	return multiErr.ToError()
 }
 
 // RemoveMember removes a user from an entity
@@ -235,7 +163,7 @@ func (mms *memberManagementService) UpdateMemberRole(
 	// check. Roles are config strings; if a config uses names outside the standard
 	// owner/manager/member hierarchy, IsRoleAtLeast returns false and the update is denied.
 	if entity.GetOwnerUserID() != requestingUserID {
-		granterRole, err := mms.GetUserRole(entityID, requestingUserID)
+		granterRole, err := mms.userRole(entityID, requestingUserID)
 		if err != nil {
 			return utils.ErrPermissionDenied(mms.config.EntityType, "update roles in")
 		}
@@ -276,17 +204,8 @@ func (mms *memberManagementService) GetMembers(entityID uuid.UUID) ([]any, error
 	return result, nil
 }
 
-// IsUserMember checks if a user is a member of an entity
-func (mms *memberManagementService) IsUserMember(entityID uuid.UUID, userID string) (bool, error) {
-	member, err := mms.repository.GetMember(entityID, userID)
-	if err != nil || member == nil {
-		return false, nil
-	}
-	return member.IsActive(), nil
-}
-
-// GetUserRole returns a user's role in an entity
-func (mms *memberManagementService) GetUserRole(entityID uuid.UUID, userID string) (string, error) {
+// userRole returns a user's role in an entity
+func (mms *memberManagementService) userRole(entityID uuid.UUID, userID string) (string, error) {
 	member, err := mms.repository.GetMember(entityID, userID)
 	if err != nil || member == nil {
 		return "", utils.ErrMemberNotFound(mms.config.EntityType, userID)

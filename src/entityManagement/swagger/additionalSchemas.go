@@ -139,11 +139,6 @@ func (ass *AdditionalSchemasService) RegisterSchema(name string, structInstance 
 	ass.schemas[name] = schema
 }
 
-// RegisterCustomSchema enregistre un schéma personnalisé
-func (ass *AdditionalSchemasService) RegisterCustomSchema(name string, schema map[string]any) {
-	ass.schemas[name] = schema
-}
-
 // GetAllSchemas retourne tous les schémas enregistrés
 func (ass *AdditionalSchemasService) GetAllSchemas() map[string]any {
 	result := make(map[string]any)
@@ -151,20 +146,6 @@ func (ass *AdditionalSchemasService) GetAllSchemas() map[string]any {
 		result[name] = schema
 	}
 	return result
-}
-
-// GetSchema retourne un schéma spécifique
-func (ass *AdditionalSchemasService) GetSchema(name string) (map[string]any, bool) {
-	schema, exists := ass.schemas[name]
-	if !exists {
-		return nil, false
-	}
-
-	if schemaMap, ok := schema.(map[string]any); ok {
-		return schemaMap, true
-	}
-
-	return nil, false
 }
 
 // generateSchemaFromStruct génère un schéma OpenAPI à partir d'un struct Go
@@ -392,20 +373,6 @@ func (ass *AdditionalSchemasService) getSwaggerTypeFromGoType(goType reflect.Typ
 			"description": "Unknown type: " + goType.String(),
 		}
 	}
-}
-
-// GetSchemaCount retourne le nombre de schémas enregistrés
-func (ass *AdditionalSchemasService) GetSchemaCount() int {
-	return len(ass.schemas)
-}
-
-// ListSchemaNames retourne la liste des noms de schémas
-func (ass *AdditionalSchemasService) ListSchemaNames() []string {
-	names := make([]string, 0, len(ass.schemas))
-	for name := range ass.schemas {
-		names = append(names, name)
-	}
-	return names
 }
 
 // Instance globale du service (optionnelle, pour usage simple)

@@ -18,7 +18,6 @@ type GenericController interface {
 	GetEntities(ctx *gin.Context)
 	DeleteEntity(ctx *gin.Context, scoped bool)
 	EditEntity(ctx *gin.Context)
-	GetGenericService() *services.GenericService
 }
 
 type genericController struct {
@@ -39,10 +38,6 @@ func NewGenericController(db *gorm.DB, enforcer authInterfaces.EnforcerInterface
 	}
 
 	return controller
-}
-
-func (genericController genericController) GetGenericService() *services.GenericService {
-	return &genericController.genericService
 }
 
 func GetEntityNameFromPath(path string) string {
