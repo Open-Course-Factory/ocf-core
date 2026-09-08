@@ -1,11 +1,5 @@
 package config
 
-import (
-	"encoding/json"
-	"log"
-	"os"
-)
-
 const COURSES_ROOT = "./courses/"
 const COURSES_OUTPUT_DIR = "./dist/"
 
@@ -22,21 +16,6 @@ type Configuration struct {
 	SecretJwt        string `mapstructure:"SECRET_JWT"`
 	SecretRefreshJwt string `mapstructure:"SECRET_REFRESH_JWT"`
 	Worker           WorkerConfig
-}
-
-func ReadJsonConfigurationFile(jsonConfigurationFilePath string) Configuration {
-	jsonFile, err := os.ReadFile(jsonConfigurationFilePath)
-
-	if err != nil {
-		log.Fatal("Error during ReadFile(): ", err)
-	}
-
-	var configuration Configuration
-	err = json.Unmarshal(jsonFile, &configuration)
-	if err != nil {
-		log.Fatal("Error during Unmarshal(): ", err)
-	}
-	return configuration
 }
 
 type Format int

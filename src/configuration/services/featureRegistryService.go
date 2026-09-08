@@ -86,8 +86,3 @@ func (frs *FeatureRegistryService) SeedRegisteredFeatures() {
 
 	log.Println("✅ Feature seeding complete")
 }
-
-// GetRegisteredFeatures returns all registered features (for debugging)
-func (frs *FeatureRegistryService) GetRegisteredFeatures() []models.FeatureDefinition {
-	return frs.registeredFeatures
-}

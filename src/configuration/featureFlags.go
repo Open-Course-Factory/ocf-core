@@ -12,22 +12,6 @@ type FeatureFlags struct {
 	TerminalsEnabled bool
 }
 
-// FeatureFlagsProvider is the interface for getting feature flags
-type FeatureFlagsProvider interface {
-	GetFeatureFlags() FeatureFlags
-}
-
-// GetFeatureFlags reads feature flags from environment variables
-// Defaults to all features enabled if not specified
-// This is the fallback method when database is not available
-func GetFeatureFlags() FeatureFlags {
-	return FeatureFlags{
-		CoursesEnabled:   GetEnvBool("FEATURE_COURSES_ENABLED", false),
-		LabsEnabled:      GetEnvBool("FEATURE_LABS_ENABLED", true),
-		TerminalsEnabled: GetEnvBool("FEATURE_TERMINALS_ENABLED", true),
-	}
-}
-
 // GetFeatureFlagsFromDB reads feature flags from the database
 // Uses the feature keys: "course_conception", "labs", "terminals"
 func GetFeatureFlagsFromDB(repo interface {
