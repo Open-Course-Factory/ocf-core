@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
@@ -35,7 +36,7 @@ import (
 // A scenario always provisions a fresh machine sized for it; attaching a
 // scenario to a terminal already running was retired in #507. It embeds
 // scenarioControllerBase to reach the shared db handle and helpers
-// (hasAdminRole, buildScenarioOutput).
+// (buildScenarioOutput).
 type scenarioLaunchController struct {
 	scenarioControllerBase
 	sessionService      *services.ScenarioSessionService
@@ -125,7 +126,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 
 	var scenarios []models.Scenario
 
-	if sc.hasAdminRole(ctx) {
+	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
 		if err := sc.db.Scopes(models.NotArchived).Preload("CompatibleInstanceTypes").Find(&scenarios).Error; err != nil {
 			slog.Error("failed to fetch all scenarios", "err", err)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -212,7 +213,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	// For admins: determine which scenarios they'd see as a regular user
 	// so we can flag admin-only visibility
 	assignedScenarioIDs := make(map[uuid.UUID]bool)
-	isAdmin := sc.hasAdminRole(ctx)
+	isAdmin := access.IsAdmin(ctx.GetStringSlice("userRoles"))
 	if isAdmin {
 		groupIDs, _ := sc.openClassMembershipIDs(userID)
 		var orgIDs []uuid.UUID
@@ -502,7 +503,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	}
 
 	// Check assignment access: admin OR user has group/org assignment
-	if !sc.hasAdminRole(ctx) {
+	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
 		hasAccess, err := sc.checkScenarioAccess(userID, scenarioID)
 		if err != nil {
 			slog.Error("failed to check scenario access", "err", err)
@@ -760,7 +761,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 
 	// Build preview options
 	var previewOpts []services.PreviewOption
-	if sc.hasAdminRole(ctx) {
+	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
 		previewOpts = append(previewOpts, services.WithAdminBypass())
 	}
 	// Inject org manager check

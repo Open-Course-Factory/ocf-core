@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/scenarios/models"
 )
@@ -21,17 +22,6 @@ type projectFileController struct {
 
 func NewProjectFileController(db *gorm.DB) *projectFileController {
 	return &projectFileController{db: db}
-}
-
-// isProjectFileAdmin checks if the current user has the administrator role.
-func isProjectFileAdmin(ctx *gin.Context) bool {
-	userRoles := ctx.GetStringSlice("userRoles")
-	for _, role := range userRoles {
-		if role == "administrator" || role == "admin" {
-			return true
-		}
-	}
-	return false
 }
 
 // GetContent returns the raw content of a ProjectFile with an appropriate Content-Type header.
@@ -64,7 +54,7 @@ func (c *projectFileController) GetContent(ctx *gin.Context) {
 	}
 
 	// Block script content for non-admin users (prevents verify script answer leakage)
-	if file.ContentType == "script" && !isProjectFileAdmin(ctx) {
+	if file.ContentType == "script" && !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
 			ErrorMessage: "Admin access required for script files",
@@ -117,7 +107,7 @@ type projectFileListItem struct {
 // Admin-only: exposes file metadata including script references.
 // GET /api/v1/project-files/by-scenario/:scenarioId
 func (c *projectFileController) GetByScenario(ctx *gin.Context) {
-	if !isProjectFileAdmin(ctx) {
+	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
 			ErrorMessage: "Admin access required",
@@ -265,7 +255,7 @@ type usageRef struct {
 // Admin-only: exposes cross-scenario reference information.
 // GET /api/v1/project-files/:id/usage
 func (c *projectFileController) GetUsage(ctx *gin.Context) {
-	if !isProjectFileAdmin(ctx) {
+	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
 			ErrorMessage: "Admin access required",

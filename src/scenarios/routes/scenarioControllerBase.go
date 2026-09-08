@@ -103,19 +103,6 @@ func (b *scenarioControllerBase) rejectIfArchived(ctx *gin.Context, scenario *mo
 	return true
 }
 
-// hasAdminRole checks if the context has admin/administrator role without writing a response.
-func (b *scenarioControllerBase) hasAdminRole(ctx *gin.Context) bool {
-	userRoles, _ := ctx.Get("userRoles")
-	if roles, ok := userRoles.([]string); ok {
-		for _, role := range roles {
-			if role == "admin" || role == "administrator" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // buildScenarioOutput converts a Scenario model to a ScenarioOutput DTO
 func (b *scenarioControllerBase) buildScenarioOutput(scenario *models.Scenario) dto.ScenarioOutput {
 	output := dto.ScenarioOutput{
