@@ -1,12 +1,7 @@
 package scenarioRegistration
 
 import (
-	"fmt"
-
-	"soli/formations/src/auth/access"
-	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/scenarios/dto"
-	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 
 	"github.com/gin-gonic/gin"
@@ -30,56 +25,15 @@ import (
 // GET /scenario-steps/:id always preloads Questions. Stripping the slice
 // here covers both the default case and any `?include=Questions` request.
 func scenarioStepRedactor(c *gin.Context, dtoPtr any, db *gorm.DB) error {
-	wrapper, ok := dtoPtr.(*any)
-	if !ok {
-		return nil
-	}
-	output, ok := (*wrapper).(dto.ScenarioStepOutput)
-	if !ok {
-		return nil
-	}
+	return redactUnlessManager(c, dtoPtr, db, "scenarioStepRedactor", scenarioOfStepOutput, stripScenarioStepDto)
+}
 
-	// Admin always sees full content.
-	roles := readRoles(c)
-	if access.IsAdmin(roles) {
-		return nil
-	}
-
-	userID := c.GetString("userId")
-	if userID == "" {
-		stripScenarioStepDto(&output)
-		*wrapper = output
-		return nil
-	}
-
-	if db == nil {
-		stripScenarioStepDto(&output)
-		*wrapper = output
-		return nil
-	}
-
-	// Look up the parent scenario via the step's ScenarioID. The DTO does
-	// not carry CreatedByID / OrganizationID, so we must hit the DB.
+// scenarioOfStepOutput loads the parent scenario via the step's ScenarioID.
+// The DTO does not carry CreatedByID / OrganizationID, so we must hit the DB.
+func scenarioOfStepOutput(db *gorm.DB, output *dto.ScenarioStepOutput) (*models.Scenario, error) {
 	var scenario models.Scenario
-	if err := db.Where("id = ?", output.ScenarioID).First(&scenario).Error; err != nil {
-		// Parent scenario missing — fail closed.
-		stripScenarioStepDto(&output)
-		*wrapper = output
-		return nil
-	}
-
-	groupSvc := groupServices.NewGroupService(db)
-	allowed, err := scenarioHooks.CanManageScenario(db, groupSvc, &scenario, userID)
-	if err != nil {
-		return fmt.Errorf("scenarioStepRedactor: check manage permission: %w", err)
-	}
-	if allowed {
-		return nil
-	}
-
-	stripScenarioStepDto(&output)
-	*wrapper = output
-	return nil
+	err := db.Where("id = ?", output.ScenarioID).First(&scenario).Error
+	return &scenario, err
 }
 
 // stripScenarioStepDto zeros the sensitive fields on a ScenarioStepOutput in

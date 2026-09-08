@@ -1,12 +1,7 @@
 package scenarioRegistration
 
 import (
-	"fmt"
-
-	"soli/formations/src/auth/access"
-	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/scenarios/dto"
-	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 
 	"github.com/gin-gonic/gin"
@@ -24,62 +19,18 @@ import (
 //
 // The DTO has no parent-scenario field, so two DB lookups are required.
 func scenarioStepQuestionRedactor(c *gin.Context, dtoPtr any, db *gorm.DB) error {
-	wrapper, ok := dtoPtr.(*any)
-	if !ok {
-		return nil
-	}
-	output, ok := (*wrapper).(dto.ScenarioStepQuestionOutput)
-	if !ok {
-		return nil
-	}
+	return redactUnlessManager(c, dtoPtr, db, "scenarioStepQuestionRedactor", scenarioOfQuestionOutput, stripScenarioStepQuestionDto)
+}
 
-	// Admin always sees full content.
-	roles := readRoles(c)
-	if access.IsAdmin(roles) {
-		return nil
-	}
-
-	userID := c.GetString("userId")
-	if userID == "" {
-		stripScenarioStepQuestionDto(&output)
-		*wrapper = output
-		return nil
-	}
-
-	if db == nil {
-		stripScenarioStepQuestionDto(&output)
-		*wrapper = output
-		return nil
-	}
-
-	// Hop 1: question.StepID → ScenarioStep
+// scenarioOfQuestionOutput resolves question.StepID → ScenarioStep.ScenarioID → Scenario.
+func scenarioOfQuestionOutput(db *gorm.DB, output *dto.ScenarioStepQuestionOutput) (*models.Scenario, error) {
 	var step models.ScenarioStep
 	if err := db.Where("id = ?", output.StepID).First(&step).Error; err != nil {
-		stripScenarioStepQuestionDto(&output)
-		*wrapper = output
-		return nil
+		return nil, err
 	}
-
-	// Hop 2: step.ScenarioID → Scenario
 	var scenario models.Scenario
-	if err := db.Where("id = ?", step.ScenarioID).First(&scenario).Error; err != nil {
-		stripScenarioStepQuestionDto(&output)
-		*wrapper = output
-		return nil
-	}
-
-	groupSvc := groupServices.NewGroupService(db)
-	allowed, err := scenarioHooks.CanManageScenario(db, groupSvc, &scenario, userID)
-	if err != nil {
-		return fmt.Errorf("scenarioStepQuestionRedactor: check manage permission: %w", err)
-	}
-	if allowed {
-		return nil
-	}
-
-	stripScenarioStepQuestionDto(&output)
-	*wrapper = output
-	return nil
+	err := db.Where("id = ?", step.ScenarioID).First(&scenario).Error
+	return &scenario, err
 }
 
 // stripScenarioStepQuestionDto zeros CorrectAnswer + Explanation in place.

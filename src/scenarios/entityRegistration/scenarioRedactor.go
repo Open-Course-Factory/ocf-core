@@ -34,58 +34,76 @@ import (
 // the client sends — fixing the leak even when default preloads or explicit
 // includes have already populated the steps in the model.
 func scenarioRedactor(c *gin.Context, dtoPtr any, db *gorm.DB) error {
-	// The handler passes &entityDto (interface holding ScenarioOutput).
-	// Unwrap to the concrete value.
-	wrapper, ok := dtoPtr.(*any)
-	if !ok {
-		// Defensive: if the contract changes, do not panic — just leave
-		// the DTO untouched. This is a redaction layer, not validation.
-		return nil
-	}
-	output, ok := (*wrapper).(dto.ScenarioOutput)
-	if !ok {
-		return nil
-	}
+	return redactUnlessManager(c, dtoPtr, db, "scenarioRedactor", scenarioFromOutput, stripScenarioDto)
+}
 
-	// Admin always sees full content.
-	roles := readRoles(c)
-	if access.IsAdmin(roles) {
-		return nil
-	}
-
-	userID := c.GetString("userId")
-	if userID == "" {
-		// No identified user — strip defensively.
-		stripScenarioDto(&output)
-		*wrapper = output
-		return nil
-	}
-
-	if db == nil {
-		// Without DB we cannot run the manage check — strip defensively.
-		stripScenarioDto(&output)
-		*wrapper = output
-		return nil
-	}
-
-	// Reload a thin Scenario model for the manage check (the DTO already
-	// has the scope fields, but CanManageScenario takes *models.Scenario).
+// scenarioFromOutput builds a thin Scenario for the manage check from the
+// scope fields the DTO already carries — no DB round-trip needed.
+func scenarioFromOutput(_ *gorm.DB, output *dto.ScenarioOutput) (*models.Scenario, error) {
 	scenario := &models.Scenario{}
 	scenario.ID = output.ID
 	scenario.CreatedByID = output.CreatedByID
 	scenario.OrganizationID = output.OrganizationID
+	return scenario, nil
+}
+
+// redactUnlessManager is the skeleton shared by the scenario, step and
+// question redactors: unwrap the handler's &entityDto (an interface holding
+// T), let admins through, resolve the parent scenario, and strip the DTO in
+// place unless the user can manage that scenario (scenarioHooks.CanManageScenario).
+//
+// Fail-closed rules: no identified user, no DB, or an unresolvable parent
+// scenario all strip. A wrapper of an unexpected type is left untouched —
+// this is a redaction layer, not validation. Only a failing manage check
+// surfaces as an error, prefixed with name for log attribution.
+func redactUnlessManager[T any](
+	c *gin.Context,
+	dtoPtr any,
+	db *gorm.DB,
+	name string,
+	parentScenario func(*gorm.DB, *T) (*models.Scenario, error),
+	strip func(*T),
+) error {
+	wrapper, ok := dtoPtr.(*any)
+	if !ok {
+		return nil
+	}
+	output, ok := (*wrapper).(T)
+	if !ok {
+		return nil
+	}
+
+	if access.IsAdmin(readRoles(c)) {
+		return nil
+	}
+
+	stripAndStore := func() {
+		strip(&output)
+		*wrapper = output
+	}
+
+	userID := c.GetString("userId")
+	if userID == "" || db == nil {
+		stripAndStore()
+		return nil
+	}
+
+	scenario, err := parentScenario(db, &output)
+	if err != nil {
+		stripAndStore()
+		return nil
+	}
 
 	groupSvc := groupServices.NewGroupService(db)
 	allowed, err := scenarioHooks.CanManageScenario(db, groupSvc, scenario, userID)
 	if err != nil {
-		return fmt.Errorf("scenarioRedactor: check manage permission: %w", err)
+		return fmt.Errorf("%s: check manage permission: %w", name, err)
 	}
 	if allowed {
 		return nil
 	}
 
-	stripScenarioDto(&output)
-	*wrapper = output
+	stripAndStore()
 	return nil
 }
 
