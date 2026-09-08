@@ -49,7 +49,6 @@ func InitAllowedOrigins() []string {
 	return origins
 }
 
-// GetAllowedOrigins returns the list of allowed origins.
 // parseOriginList splits a comma-separated env-var value into a clean list
 // of origins. Whitespace is trimmed; empty entries are dropped.
 func parseOriginList(raw string) []string {
