@@ -37,7 +37,7 @@ func readWebhookControllerSource(t *testing.T) string {
 // extractHandlerBody extracts the HandleStripeWebhook method body from source.
 func extractHandlerBody(t *testing.T, source string) string {
 	t.Helper()
-	handlerStart := strings.Index(source, "func (wc *webhookController) HandleStripeWebhook")
+	handlerStart := strings.Index(source, "func (wc *WebhookController) HandleStripeWebhook")
 	require.Greater(t, handlerStart, 0, "HandleStripeWebhook should exist in source")
 
 	handlerBody := source[handlerStart:]

@@ -18,22 +18,14 @@ import (
 // Invoice Controller
 // ==========================================
 
-type InvoiceController interface {
-	GetUserInvoices(ctx *gin.Context)
-	GetOrganizationInvoices(ctx *gin.Context)
-	DownloadInvoice(ctx *gin.Context)
-	SyncUserInvoices(ctx *gin.Context)
-	CleanupInvoices(ctx *gin.Context)
-}
-
-type invoiceController struct {
+type InvoiceController struct {
 	controller.GenericController
 	subscriptionService services.UserSubscriptionService
 	stripeService       services.StripeService
 }
 
-func NewInvoiceController(db *gorm.DB) InvoiceController {
-	return &invoiceController{
+func NewInvoiceController(db *gorm.DB) *InvoiceController {
+	return &InvoiceController{
 		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
 		stripeService:       services.NewStripeService(db),
@@ -52,7 +44,7 @@ func NewInvoiceController(db *gorm.DB) InvoiceController {
 //	@Success		200	{array}		dto.InvoiceOutput
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/invoices/user [get]
-func (ic *invoiceController) GetUserInvoices(ctx *gin.Context) {
+func (ic *InvoiceController) GetUserInvoices(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Récupérer depuis le service (retourne des models)
@@ -81,7 +73,7 @@ func (ic *invoiceController) GetUserInvoices(ctx *gin.Context) {
 //	@Failure		400	{object}	errors.APIError	"Invalid organization ID"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/organizations/{id}/invoices [get]
-func (ic *invoiceController) GetOrganizationInvoices(ctx *gin.Context) {
+func (ic *InvoiceController) GetOrganizationInvoices(ctx *gin.Context) {
 	// Layer 2 (OrgRole, manager+) has already authorized the caller for this
 	// organization before the handler runs, so the :id param is trusted here.
 	orgID := ctx.Param("id")
@@ -115,7 +107,7 @@ func (ic *invoiceController) GetOrganizationInvoices(ctx *gin.Context) {
 //	@Failure		404	{object}	errors.APIError	"Invoice not found"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/invoices/{id}/download [get]
-func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
+func (ic *InvoiceController) DownloadInvoice(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	invoiceID := ctx.Param("id")
 
@@ -162,7 +154,7 @@ func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
 //	@Success		200	{object}	services.SyncInvoicesResult
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/invoices/sync [post]
-func (ic *invoiceController) SyncUserInvoices(ctx *gin.Context) {
+func (ic *InvoiceController) SyncUserInvoices(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	result, err := ic.stripeService.SyncUserInvoices(userId)
@@ -188,7 +180,7 @@ func (ic *invoiceController) SyncUserInvoices(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError				"Access denied (admin only)"
 //	@Failure		500	{object}	errors.APIError				"Internal server error"
 //	@Router			/invoices/admin/cleanup [post]
-func (ic *invoiceController) CleanupInvoices(ctx *gin.Context) {
+func (ic *InvoiceController) CleanupInvoices(ctx *gin.Context) {
 	// Parse request body
 	var input dto.CleanupInvoicesInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {

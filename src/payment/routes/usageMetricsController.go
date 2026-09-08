@@ -16,25 +16,19 @@ import (
 // Usage Metrics Controller
 // ==========================================
 
-type UsageMetricsController interface {
-	GetUserUsageMetrics(ctx *gin.Context)
-	IncrementUsageMetric(ctx *gin.Context)
-	ResetUserUsage(ctx *gin.Context)
-}
-
-type usageMetricsController struct {
+type UsageMetricsController struct {
 	controller.GenericController
 	subscriptionService services.UserSubscriptionService
 }
 
-func NewUsageMetricsController(db *gorm.DB) UsageMetricsController {
-	return &usageMetricsController{
+func NewUsageMetricsController(db *gorm.DB) *UsageMetricsController {
+	return &UsageMetricsController{
 		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
 	}
 }
 
-func (umc *usageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
+func (umc *UsageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Manual admin check for user targeting: this endpoint is SelfScoped (member-accessible),
@@ -65,7 +59,7 @@ func (umc *usageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, metricsDTO)
 }
 
-func (umc *usageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
+func (umc *UsageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
 	// Admin-only endpoint (enforced by Layer 1 + Layer 2 middleware).
 	// Optionally target a specific user via ?user_id= query param.
 	userId := ctx.GetString("userId")
@@ -96,7 +90,7 @@ func (umc *usageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "Usage metric incremented"})
 }
 
-func (umc *usageMetricsController) ResetUserUsage(ctx *gin.Context) {
+func (umc *UsageMetricsController) ResetUserUsage(ctx *gin.Context) {
 	// Admin-only endpoint (enforced by Layer 1 + Layer 2 middleware).
 	// Optionally target a specific user via ?user_id= query param.
 	userId := ctx.GetString("userId")

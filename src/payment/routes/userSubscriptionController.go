@@ -23,47 +23,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type SubscriptionController interface {
-
-	// Méthodes spécialisées pour les abonnements
-	CreateCheckoutSession(ctx *gin.Context)
-	CreatePortalSession(ctx *gin.Context)
-	GetUserSubscription(ctx *gin.Context)
-	GetAllUserSubscriptions(ctx *gin.Context)
-	CancelSubscription(ctx *gin.Context)
-	ReactivateSubscription(ctx *gin.Context)
-	UpgradeUserPlan(ctx *gin.Context)
-	GetSubscriptionAnalytics(ctx *gin.Context)
-	GetUserUsage(ctx *gin.Context)
-
-	// Plan health
-	GetPlanHealth(ctx *gin.Context)
-
-	// Pricing preview
-	GetPricingPreview(ctx *gin.Context)
-	PreviewProspectivePricing(ctx *gin.Context)
-	CheckSeatPricingCoherence(ctx *gin.Context)
-
-	// Méthodes pour la synchronisation Stripe des plans d'abonnement
-	SyncSubscriptionPlanWithStripe(ctx *gin.Context)
-	SyncAllSubscriptionPlansWithStripe(ctx *gin.Context)
-	MirrorSubscriptionPlansToStripe(ctx *gin.Context)
-	ImportPlansFromStripe(ctx *gin.Context)
-
-	// Méthodes pour la synchronisation des abonnements existants
-	SyncExistingSubscriptions(ctx *gin.Context)
-	SyncUserSubscriptions(ctx *gin.Context)
-	SyncSubscriptionsWithMissingMetadata(ctx *gin.Context)
-	LinkSubscriptionToUser(ctx *gin.Context)
-
-	// Utility methods
-	SyncUsageLimits(ctx *gin.Context)
-
-	// Admin operations
-	AdminAssignSubscription(ctx *gin.Context)
-}
-
-type userSubscriptionController struct {
+type SubscriptionController struct {
 	controller.GenericController
 	db                   *gorm.DB
 	subscriptionService  services.UserSubscriptionService
@@ -71,12 +31,12 @@ type userSubscriptionController struct {
 	effectivePlanService services.EffectivePlanService
 }
 
-func NewSubscriptionController(db *gorm.DB) SubscriptionController {
+func NewSubscriptionController(db *gorm.DB) *SubscriptionController {
 	svc := services.NewSubscriptionService(db)
 	svc.SetUserLookupFunc(func(userID string) (interface{}, error) {
 		return casdoorsdk.GetUserByUserId(userID)
 	})
-	return &userSubscriptionController{
+	return &SubscriptionController{
 		GenericController:    controller.NewGenericController(db, casdoor.Enforcer),
 		db:                   db,
 		subscriptionService:  svc,
@@ -101,7 +61,7 @@ func NewSubscriptionController(db *gorm.DB) SubscriptionController {
 //	@Failure		404	{object}	errors.APIError	"Plan not found"
 //	@Failure		500	{object}	errors.APIError	"Stripe error"
 //	@Router			/user-subscriptions/checkout [post]
-func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
+func (sc *SubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	var input dto.CreateCheckoutSessionInput
@@ -218,7 +178,7 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		404	{object}	errors.APIError	"No active subscription"
 //	@Router			/user-subscriptions/portal [post]
-func (sc *userSubscriptionController) CreatePortalSession(ctx *gin.Context) {
+func (sc *SubscriptionController) CreatePortalSession(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	var input dto.CreatePortalSessionInput
@@ -248,7 +208,7 @@ func (sc *userSubscriptionController) CreatePortalSession(ctx *gin.Context) {
 //	@Success		200	{object}	dto.UserSubscriptionOutput
 //	@Failure		404	{object}	errors.APIError	"No active subscription"
 //	@Router			/user-subscriptions/current [get]
-func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
+func (sc *SubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Check for optional organization_id query param for org-context-aware resolution
@@ -312,7 +272,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 //	@Success		200	{array}		dto.UserSubscriptionOutput
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/all [get]
-func (sc *userSubscriptionController) GetAllUserSubscriptions(ctx *gin.Context) {
+func (sc *SubscriptionController) GetAllUserSubscriptions(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Get ALL active subscriptions
@@ -363,7 +323,7 @@ func (sc *userSubscriptionController) GetAllUserSubscriptions(ctx *gin.Context) 
 //	@Failure		404	{object}	errors.APIError	"Subscription not found"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/user-subscriptions/{id}/cancel [post]
-func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
+func (sc *SubscriptionController) CancelSubscription(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	subscriptionID := ctx.Param("id")
 	cancelImmediately := ctx.Query("cancel_immediately") == "true"
@@ -466,7 +426,7 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 //	@Failure		404	{object}	errors.APIError	"Subscription not found"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/user-subscriptions/{id}/reactivate [post]
-func (sc *userSubscriptionController) ReactivateSubscription(ctx *gin.Context) {
+func (sc *SubscriptionController) ReactivateSubscription(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	subscriptionID := ctx.Param("id")
 
@@ -525,7 +485,7 @@ func (sc *userSubscriptionController) ReactivateSubscription(ctx *gin.Context) {
 //	@Failure		404	{object}	errors.APIError	"No active subscription or plan not found"
 //	@Failure		500	{object}	errors.APIError	"Internal server error or Stripe update failed"
 //	@Router			/user-subscriptions/upgrade [post]
-func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
+func (sc *SubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	var input dto.UpgradePlanInput
@@ -628,7 +588,7 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 //	@Success		200	{object}	dto.SubscriptionAnalyticsOutput
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/user-subscriptions/analytics [get]
-func (sc *userSubscriptionController) GetSubscriptionAnalytics(ctx *gin.Context) {
+func (sc *SubscriptionController) GetSubscriptionAnalytics(ctx *gin.Context) {
 	userRoles := ctx.GetStringSlice("userRoles")
 	isAdmin := access.IsAdmin(userRoles)
 
@@ -661,7 +621,7 @@ func (sc *userSubscriptionController) GetSubscriptionAnalytics(ctx *gin.Context)
 //	@Success		200	{array}		dto.UsageMetricsOutput
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/usage [get]
-func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
+func (sc *SubscriptionController) GetUserUsage(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Parse optional org context to scope the usage metrics.
@@ -709,7 +669,7 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 //	@Failure		404	{object}	errors.APIError	"Plan not found"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/{id}/sync-stripe [post]
-func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Context) {
+func (sc *SubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Context) {
 	planIDStr := ctx.Param("id")
 	planID, ok := parseUUIDParam(ctx, planIDStr, "Invalid plan ID")
 	if !ok {
@@ -767,7 +727,7 @@ func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Co
 //	@Success		200	{object}	map[string]any	"Sync results"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/sync-stripe [post]
-func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gin.Context) {
+func (sc *SubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gin.Context) {
 	// Safe push (Mirror:false): create/update/migrate local plans on Stripe, but
 	// never archive a Stripe product. This endpoint has no dry-run concept, so it
 	// always executes. Per-plan failures are reported inside the result rather
@@ -808,7 +768,7 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 //	@Success		200	{object}	services.StripeSyncResult	"Sync results"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/sync-stripe/mirror [post]
-func (sc *userSubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.Context) {
+func (sc *SubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.Context) {
 	// Safe by default: only the exact string "false" opts into real execution.
 	// Absent, malformed, or any other value stays a dry run — an accidental or
 	// malformed dry_run parameter must never trigger destructive archival.
@@ -874,7 +834,7 @@ func parseActorUUID(ctx *gin.Context) *uuid.UUID {
 //	@Success		200	{object}	services.SyncPlansResult	"Import results"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/import-stripe [post]
-func (sc *userSubscriptionController) ImportPlansFromStripe(ctx *gin.Context) {
+func (sc *SubscriptionController) ImportPlansFromStripe(ctx *gin.Context) {
 	// Import plans from Stripe
 	result, err := sc.stripeService.ImportPlansFromStripe()
 	if err != nil {
@@ -896,7 +856,7 @@ func (sc *userSubscriptionController) ImportPlansFromStripe(ctx *gin.Context) {
 //	@Success		200	{object}	services.SyncSubscriptionsResult	"Sync results"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/sync-existing [post]
-func (sc *userSubscriptionController) SyncExistingSubscriptions(ctx *gin.Context) {
+func (sc *SubscriptionController) SyncExistingSubscriptions(ctx *gin.Context) {
 	// Synchroniser tous les abonnements depuis Stripe
 	result, err := sc.stripeService.SyncExistingSubscriptions()
 	if err != nil {
@@ -920,7 +880,7 @@ func (sc *userSubscriptionController) SyncExistingSubscriptions(ctx *gin.Context
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/users/{user_id}/sync [post]
-func (sc *userSubscriptionController) SyncUserSubscriptions(ctx *gin.Context) {
+func (sc *SubscriptionController) SyncUserSubscriptions(ctx *gin.Context) {
 	userID := ctx.Param("user_id")
 	if userID == "" {
 		errors.Respond(ctx, http.StatusBadRequest, "User ID is required")
@@ -948,7 +908,7 @@ func (sc *userSubscriptionController) SyncUserSubscriptions(ctx *gin.Context) {
 //	@Success		200	{object}	services.SyncSubscriptionsResult	"Sync results"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/sync-missing-metadata [post]
-func (sc *userSubscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *gin.Context) {
+func (sc *SubscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *gin.Context) {
 	// Synchroniser les abonnements avec métadonnées manquantes
 	result, err := sc.stripeService.SyncSubscriptionsWithMissingMetadata()
 	if err != nil {
@@ -974,7 +934,7 @@ func (sc *userSubscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/link/{subscription_id} [post]
-func (sc *userSubscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
+func (sc *SubscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
 	subscriptionID := ctx.Param("subscription_id")
 	if subscriptionID == "" {
 		errors.Respond(ctx, http.StatusBadRequest, "Subscription ID is required")
@@ -1007,7 +967,7 @@ func (sc *userSubscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
 }
 
 // Delete entity (subscription plan)
-func (sc *userSubscriptionController) DeleteEntity(ctx *gin.Context) {
+func (sc *SubscriptionController) DeleteEntity(ctx *gin.Context) {
 	sc.GenericController.DeleteEntity(ctx, true)
 }
 
@@ -1023,7 +983,7 @@ func (sc *userSubscriptionController) DeleteEntity(ctx *gin.Context) {
 //	@Failure		404	{object}	errors.APIError	"No active subscription"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/sync-usage-limits [post]
-func (sc *userSubscriptionController) SyncUsageLimits(ctx *gin.Context) {
+func (sc *SubscriptionController) SyncUsageLimits(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Get active subscription
@@ -1069,7 +1029,7 @@ func (sc *userSubscriptionController) SyncUsageLimits(ctx *gin.Context) {
 //	@Failure		404						{object}	errors.APIError	"Plan not found"
 //	@Failure		500						{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/pricing-preview [get]
-func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
+func (sc *SubscriptionController) GetPricingPreview(ctx *gin.Context) {
 	// Parse query parameters
 	planIDStr := ctx.Query("subscription_plan_id")
 	quantityStr := ctx.Query("quantity")
@@ -1119,7 +1079,7 @@ func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
 //	@Failure		403		{object}	errors.APIError
 //	@Security		Bearer
 //	@Router			/subscription-plans/pricing-preview [post]
-func (sc *userSubscriptionController) PreviewProspectivePricing(ctx *gin.Context) {
+func (sc *SubscriptionController) PreviewProspectivePricing(ctx *gin.Context) {
 	var input dto.ProspectivePricingInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
 		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid input: %v", err))
@@ -1148,7 +1108,7 @@ func (sc *userSubscriptionController) PreviewProspectivePricing(ctx *gin.Context
 //	@Failure		403		{object}	errors.APIError
 //	@Security		Bearer
 //	@Router			/subscription-plans/seat-pricing-check [post]
-func (sc *userSubscriptionController) CheckSeatPricingCoherence(ctx *gin.Context) {
+func (sc *SubscriptionController) CheckSeatPricingCoherence(ctx *gin.Context) {
 	var input dto.SeatPricingCheckInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
 		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid input: %v", err))
@@ -1179,7 +1139,7 @@ func (sc *userSubscriptionController) CheckSeatPricingCoherence(ctx *gin.Context
 //	@Failure		400	{object}	errors.APIError
 //	@Failure		500	{object}	errors.APIError
 //	@Router			/user-subscriptions/admin-assign [post]
-func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) {
+func (sc *SubscriptionController) AdminAssignSubscription(ctx *gin.Context) {
 	// Check admin role
 	userRoles := ctx.GetStringSlice("userRoles")
 	isAdmin := access.IsAdmin(userRoles)
@@ -1277,7 +1237,7 @@ func OrganizationPlanToUserDTO(userID string, sub *paymentModels.OrganizationSub
 //	@Failure		500	{object}	errors.APIError
 //	@Router			/subscription-plans/health [get]
 //	@Security		BearerAuth
-func (sc *userSubscriptionController) GetPlanHealth(ctx *gin.Context) {
+func (sc *SubscriptionController) GetPlanHealth(ctx *gin.Context) {
 	quota := services.NewQuotaService(sc.db, sc.effectivePlanService)
 	report, err := services.CheckAllPlanHealth(sc.db, quota)
 	if err != nil {

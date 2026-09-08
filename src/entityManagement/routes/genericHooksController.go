@@ -9,16 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type GenericHooksController interface {
-	ListHooks(ctx *gin.Context)
-	EnableHook(ctx *gin.Context)
-	DisableHook(ctx *gin.Context)
-}
+type GenericHooksController struct{}
 
-type genericHooksController struct{}
-
-func NewGenericHooksController() GenericHooksController {
-	return &genericHooksController{}
+func NewGenericHooksController() *GenericHooksController {
+	return &GenericHooksController{}
 }
 
 // List Hooks godoc
@@ -32,7 +26,7 @@ func NewGenericHooksController() GenericHooksController {
 //	@Success		200	{object}	map[string]any
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/hooks [get]
-func (hc *genericHooksController) ListHooks(ctx *gin.Context) {
+func (hc *GenericHooksController) ListHooks(ctx *gin.Context) {
 	// Pour l'instant, retourner des infos basiques
 	// Dans une vraie implémentation, on ajouterait une méthode GetAllHooks au registre
 	hooksInfo := map[string]any{
@@ -70,7 +64,7 @@ func (hc *genericHooksController) ListHooks(ctx *gin.Context) {
 //	@Success		200	{object}	string
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/hooks/{hook_name}/enable [post]
-func (hc *genericHooksController) EnableHook(ctx *gin.Context) {
+func (hc *GenericHooksController) EnableHook(ctx *gin.Context) {
 	hookName := ctx.Param("hook_name")
 	err := hooks.GlobalHookRegistry.EnableHook(hookName, true)
 	if err != nil {
@@ -97,7 +91,7 @@ func (hc *genericHooksController) EnableHook(ctx *gin.Context) {
 //	@Success		200	{object}	string
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/hooks/{hook_name}/disable [post]
-func (hc *genericHooksController) DisableHook(ctx *gin.Context) {
+func (hc *GenericHooksController) DisableHook(ctx *gin.Context) {
 	hookName := ctx.Param("hook_name")
 	err := hooks.GlobalHookRegistry.EnableHook(hookName, false)
 	if err != nil {

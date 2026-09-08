@@ -14,33 +14,20 @@ import (
 	"gorm.io/gorm"
 )
 
-type UserTerminalKeyController interface {
-	// Méthodes génériques (héritées)
-	AddEntity(ctx *gin.Context)
-	EditEntity(ctx *gin.Context)
-	DeleteEntity(ctx *gin.Context)
-	GetEntities(ctx *gin.Context)
-	GetEntity(ctx *gin.Context)
-
-	// Méthodes spécialisées
-	RegenerateKey(ctx *gin.Context)
-	GetMyKey(ctx *gin.Context)
-}
-
-type userTerminalKeyController struct {
+type UserTerminalKeyController struct {
 	controller.GenericController
 	service services.TerminalTrainerService
 }
 
-func NewUserTerminalKeyController(db *gorm.DB) UserTerminalKeyController {
-	return &userTerminalKeyController{
+func NewUserTerminalKeyController(db *gorm.DB) *UserTerminalKeyController {
+	return &UserTerminalKeyController{
 		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
 		service:           services.NewTerminalTrainerService(db),
 	}
 }
 
 // DeleteEntity override pour gérer la suppression des clés avec hard delete
-func (utc *userTerminalKeyController) DeleteEntity(ctx *gin.Context) {
+func (utc *UserTerminalKeyController) DeleteEntity(ctx *gin.Context) {
 	utc.GenericController.DeleteEntity(ctx, false) // hard delete
 }
 
@@ -58,7 +45,7 @@ func (utc *userTerminalKeyController) DeleteEntity(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-terminal-keys/regenerate [post]
-func (utc *userTerminalKeyController) RegenerateKey(ctx *gin.Context) {
+func (utc *UserTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 	// Rotating the key disables the old one: irreversible and self-scoped,
 	// so never under an impersonated session.
 	if authMiddleware.RefuseIfImpersonated(ctx, "Regenerating the terminal key") {
@@ -113,7 +100,7 @@ func (utc *userTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 //	@Failure		404	{object}	errors.APIError	"Key not found"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-terminal-keys/my-key [get]
-func (utc *userTerminalKeyController) GetMyKey(ctx *gin.Context) {
+func (utc *UserTerminalKeyController) GetMyKey(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Récupérer la clé de l'utilisateur

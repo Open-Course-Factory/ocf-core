@@ -13,20 +13,14 @@ import (
 )
 
 // Payment Method Controller
-type PaymentMethodController interface {
-	SetDefaultPaymentMethod(ctx *gin.Context)
-	GetUserPaymentMethods(ctx *gin.Context)
-	SyncUserPaymentMethods(ctx *gin.Context)
-}
-
-type paymentMethodController struct {
+type PaymentMethodController struct {
 	controller.GenericController
 	subscriptionService services.UserSubscriptionService
 	stripeService       services.StripeService
 }
 
-func NewPaymentMethodController(db *gorm.DB) PaymentMethodController {
-	return &paymentMethodController{
+func NewPaymentMethodController(db *gorm.DB) *PaymentMethodController {
+	return &PaymentMethodController{
 		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
 		stripeService:       services.NewStripeService(db),
@@ -46,7 +40,7 @@ func NewPaymentMethodController(db *gorm.DB) PaymentMethodController {
 //	@Failure		404	{object}	errors.APIError	"Payment method not found"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/payment-methods/{id}/set-default [post]
-func (pmc *paymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
+func (pmc *PaymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	paymentMethodID := ctx.Param("id")
 
@@ -77,7 +71,7 @@ func (pmc *paymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 //	@Success		200	{array}		dto.PaymentMethodOutput
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/payment-methods/user [get]
-func (pmc *paymentMethodController) GetUserPaymentMethods(ctx *gin.Context) {
+func (pmc *PaymentMethodController) GetUserPaymentMethods(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Récupérer depuis le service (retourne des models)
@@ -104,7 +98,7 @@ func (pmc *paymentMethodController) GetUserPaymentMethods(ctx *gin.Context) {
 //	@Success		200	{object}	services.SyncPaymentMethodsResult
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/payment-methods/sync [post]
-func (pmc *paymentMethodController) SyncUserPaymentMethods(ctx *gin.Context) {
+func (pmc *PaymentMethodController) SyncUserPaymentMethods(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	result, err := pmc.stripeService.SyncUserPaymentMethods(userId)

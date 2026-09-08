@@ -14,27 +14,14 @@ import (
 	"gorm.io/gorm"
 )
 
-type BulkLicenseController interface {
-	CreateBulkCheckoutSession(ctx *gin.Context)
-	PurchaseBulkLicenses(ctx *gin.Context)
-	ListPurchasableSeatPlans(ctx *gin.Context)
-	GetMyBatches(ctx *gin.Context)
-	GetBatchDetails(ctx *gin.Context)
-	GetBatchLicenses(ctx *gin.Context)
-	AssignLicense(ctx *gin.Context)
-	RevokeLicense(ctx *gin.Context)
-	UpdateBatchQuantity(ctx *gin.Context)
-	PermanentlyDeleteBatch(ctx *gin.Context)
-}
-
-type bulkLicenseController struct {
+type BulkLicenseController struct {
 	db                *gorm.DB
 	bulkService       services.BulkLicenseService
 	stripeService     services.StripeService
 }
 
-func NewBulkLicenseController(db *gorm.DB) BulkLicenseController {
-	return &bulkLicenseController{
+func NewBulkLicenseController(db *gorm.DB) *BulkLicenseController {
+	return &BulkLicenseController{
 		db:                db,
 		bulkService:       services.NewBulkLicenseService(db),
 		stripeService:     services.NewStripeService(db),
@@ -55,7 +42,7 @@ func NewBulkLicenseController(db *gorm.DB) BulkLicenseController {
 //	@Failure		404			{object}	errors.APIError				"Subscription plan not found"
 //	@Failure		500			{object}	errors.APIError				"Failed to create checkout session"
 //	@Router			/subscription-batches/create-checkout-session [post]
-func (bc *bulkLicenseController) CreateBulkCheckoutSession(ctx *gin.Context) {
+func (bc *BulkLicenseController) CreateBulkCheckoutSession(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
 	var input dto.CreateBulkCheckoutSessionInput
@@ -97,7 +84,7 @@ func (bc *bulkLicenseController) CreateBulkCheckoutSession(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError	"Feature not available in your plan"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/purchase-bulk [post]
-func (c *bulkLicenseController) PurchaseBulkLicenses(ctx *gin.Context) {
+func (c *BulkLicenseController) PurchaseBulkLicenses(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
 	var input dto.BulkPurchaseInput
@@ -160,7 +147,7 @@ func (c *bulkLicenseController) PurchaseBulkLicenses(ctx *gin.Context) {
 //	@Success		200	{object}	dto.PurchasableSeatPlansOutput
 //	@Failure		500	{object}	errors.APIError
 //	@Router			/subscription-batches/purchasable-plans [get]
-func (c *bulkLicenseController) ListPurchasableSeatPlans(ctx *gin.Context) {
+func (c *BulkLicenseController) ListPurchasableSeatPlans(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
 	out, err := c.bulkService.ListPurchasableSeatPlans(userID)
@@ -175,7 +162,7 @@ func (c *bulkLicenseController) ListPurchasableSeatPlans(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, out)
 }
 
-func (c *bulkLicenseController) GetMyBatches(ctx *gin.Context) {
+func (c *BulkLicenseController) GetMyBatches(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
 	batches, err := c.bulkService.GetAccessibleBatches(userID)
@@ -226,7 +213,7 @@ func (c *bulkLicenseController) GetMyBatches(ctx *gin.Context) {
 //	@Success		200	{object}	dto.SubscriptionBatchOutput
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/subscription-batches/{id} [get]
-func (c *bulkLicenseController) GetBatchDetails(ctx *gin.Context) {
+func (c *BulkLicenseController) GetBatchDetails(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 
@@ -277,7 +264,7 @@ func (c *bulkLicenseController) GetBatchDetails(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/subscription-batches/{id}/licenses [get]
-func (c *bulkLicenseController) GetBatchLicenses(ctx *gin.Context) {
+func (c *BulkLicenseController) GetBatchLicenses(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 
@@ -321,7 +308,7 @@ func (c *bulkLicenseController) GetBatchLicenses(ctx *gin.Context) {
 //	@Failure		400	{object}	errors.APIError
 //	@Failure		403	{object}	errors.APIError
 //	@Router			/subscription-batches/{id}/assign [post]
-func (c *bulkLicenseController) AssignLicense(ctx *gin.Context) {
+func (c *BulkLicenseController) AssignLicense(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 
@@ -360,7 +347,7 @@ func (c *bulkLicenseController) AssignLicense(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/subscription-batches/{id}/licenses/{license_id}/revoke [delete]
-func (c *bulkLicenseController) RevokeLicense(ctx *gin.Context) {
+func (c *BulkLicenseController) RevokeLicense(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	licenseIDStr := ctx.Param("license_id")
 
@@ -410,7 +397,7 @@ func (c *bulkLicenseController) RevokeLicense(ctx *gin.Context) {
 //	@Failure		400	{object}	errors.APIError
 //	@Failure		403	{object}	errors.APIError
 //	@Router			/subscription-batches/{id}/quantity [patch]
-func (c *bulkLicenseController) UpdateBatchQuantity(ctx *gin.Context) {
+func (c *BulkLicenseController) UpdateBatchQuantity(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 
@@ -451,7 +438,7 @@ func (c *bulkLicenseController) UpdateBatchQuantity(ctx *gin.Context) {
 //	@Failure		404	{object}	errors.APIError	"Batch not found"
 //	@Failure		500	{object}	errors.APIError
 //	@Router			/subscription-batches/{id}/permanent [delete]
-func (c *bulkLicenseController) PermanentlyDeleteBatch(ctx *gin.Context) {
+func (c *BulkLicenseController) PermanentlyDeleteBatch(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 

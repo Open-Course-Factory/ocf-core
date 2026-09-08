@@ -16,29 +16,14 @@ import (
 	"gorm.io/gorm"
 )
 
-type OrganizationSubscriptionController interface {
-	// Organization subscription management
-	CreateOrganizationSubscription(ctx *gin.Context)
-	GetOrganizationSubscription(ctx *gin.Context)
-	CancelOrganizationSubscription(ctx *gin.Context)
-
-	// Admin bulk access
-	GetAllOrganizationSubscriptions(ctx *gin.Context)
-
-	// User feature access
-	GetUserEffectiveFeatures(ctx *gin.Context)
-	GetOrganizationFeatures(ctx *gin.Context)
-	GetOrganizationUsageLimits(ctx *gin.Context)
-}
-
-type organizationSubscriptionController struct {
+type OrganizationSubscriptionController struct {
 	db                   *gorm.DB
 	orgSubService        services.OrganizationSubscriptionService
 	effectivePlanService services.EffectivePlanService
 }
 
-func NewOrganizationSubscriptionController(db *gorm.DB) OrganizationSubscriptionController {
-	return &organizationSubscriptionController{
+func NewOrganizationSubscriptionController(db *gorm.DB) *OrganizationSubscriptionController {
+	return &OrganizationSubscriptionController{
 		db:                   db,
 		orgSubService:        services.NewOrganizationSubscriptionService(db),
 		effectivePlanService: services.NewEffectivePlanService(db),
@@ -60,7 +45,7 @@ func NewOrganizationSubscriptionController(db *gorm.DB) OrganizationSubscription
 //	@Failure		403	{object}	errors.APIError
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/organizations/{orgID}/subscribe [post]
-func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ctx *gin.Context) {
+func (osc *OrganizationSubscriptionController) CreateOrganizationSubscription(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
 	// Parse organization ID from URL
@@ -127,7 +112,7 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 //	@Failure		403	{object}	errors.APIError
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/organizations/{orgID}/subscription [get]
-func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *gin.Context) {
+func (osc *OrganizationSubscriptionController) GetOrganizationSubscription(ctx *gin.Context) {
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
 	orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization ID")
@@ -172,7 +157,7 @@ func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *
 //	@Success		200	{object}	map[string][]dto.OrganizationSubscriptionOutput
 //	@Failure		403	{object}	errors.APIError
 //	@Router			/admin/organizations/subscriptions [get]
-func (osc *organizationSubscriptionController) GetAllOrganizationSubscriptions(ctx *gin.Context) {
+func (osc *OrganizationSubscriptionController) GetAllOrganizationSubscriptions(ctx *gin.Context) {
 	subscriptions, err := osc.orgSubService.GetAllActiveOrganizationSubscriptions()
 	if err != nil {
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve subscriptions: "+err.Error())
@@ -216,7 +201,7 @@ func (osc *organizationSubscriptionController) GetAllOrganizationSubscriptions(c
 //	@Failure		403	{object}	errors.APIError
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/organizations/{orgID}/subscription [delete]
-func (osc *organizationSubscriptionController) CancelOrganizationSubscription(ctx *gin.Context) {
+func (osc *OrganizationSubscriptionController) CancelOrganizationSubscription(ctx *gin.Context) {
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
 	orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization ID")
@@ -262,7 +247,7 @@ func (osc *organizationSubscriptionController) CancelOrganizationSubscription(ct
 //	@Success		200	{object}	dto.UserEffectiveFeaturesOutput
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/users/me/features [get]
-func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin.Context) {
+func (osc *OrganizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
 	// Check for optional organization_id query param for org-context-aware resolution
@@ -367,7 +352,7 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 //	@Failure		403	{object}	errors.APIError
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/organizations/{orgID}/features [get]
-func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.Context) {
+func (osc *OrganizationSubscriptionController) GetOrganizationFeatures(ctx *gin.Context) {
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
 	orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization ID")
@@ -399,7 +384,7 @@ func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.
 //	@Failure		403	{object}	errors.APIError
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/organizations/{orgID}/usage-limits [get]
-func (osc *organizationSubscriptionController) GetOrganizationUsageLimits(ctx *gin.Context) {
+func (osc *OrganizationSubscriptionController) GetOrganizationUsageLimits(ctx *gin.Context) {
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
 	orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization ID")

@@ -16,17 +16,13 @@ import (
 // Organization Role Plan Controller
 // ==========================================
 
-type OrganizationRolePlanController interface {
-	GetOrganizationRolePlans(ctx *gin.Context)
-}
-
-type organizationRolePlanController struct {
+type OrganizationRolePlanController struct {
 	controller.GenericController
 	orgSubRepo repositories.OrganizationSubscriptionRepository
 }
 
-func NewOrganizationRolePlanController(db *gorm.DB) OrganizationRolePlanController {
-	return &organizationRolePlanController{
+func NewOrganizationRolePlanController(db *gorm.DB) *OrganizationRolePlanController {
+	return &OrganizationRolePlanController{
 		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
 		orgSubRepo:        repositories.NewOrganizationSubscriptionRepository(db),
 	}
@@ -45,7 +41,7 @@ func NewOrganizationRolePlanController(db *gorm.DB) OrganizationRolePlanControll
 //	@Failure		400	{object}	errors.APIError	"Invalid organization ID"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/organizations/{id}/role-plans [get]
-func (c *organizationRolePlanController) GetOrganizationRolePlans(ctx *gin.Context) {
+func (c *OrganizationRolePlanController) GetOrganizationRolePlans(ctx *gin.Context) {
 	// Layer 2 (OrgRole, manager+) has already authorized the caller for this
 	// organization before the handler runs, so the :id param is trusted here.
 	orgID := ctx.Param("id")

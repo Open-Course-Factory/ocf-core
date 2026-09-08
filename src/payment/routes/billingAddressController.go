@@ -15,24 +15,19 @@ import (
 // Billing Address Controller
 // ==========================================
 
-type BillingAddressController interface {
-	GetUserBillingAddresses(ctx *gin.Context)
-	SetDefaultBillingAddress(ctx *gin.Context)
-}
-
-type billingAddressController struct {
+type BillingAddressController struct {
 	controller.GenericController
 	subscriptionService services.UserSubscriptionService
 }
 
-func NewBillingAddressController(db *gorm.DB) BillingAddressController {
-	return &billingAddressController{
+func NewBillingAddressController(db *gorm.DB) *BillingAddressController {
+	return &BillingAddressController{
 		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
 	}
 }
 
-func (bac *billingAddressController) GetUserBillingAddresses(ctx *gin.Context) {
+func (bac *BillingAddressController) GetUserBillingAddresses(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Récupérer depuis le service (retourne des models)
@@ -48,7 +43,7 @@ func (bac *billingAddressController) GetUserBillingAddresses(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, addressesDTO)
 }
 
-func (bac *billingAddressController) SetDefaultBillingAddress(ctx *gin.Context) {
+func (bac *BillingAddressController) SetDefaultBillingAddress(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	addressID := ctx.Param("id")
 
@@ -66,6 +61,6 @@ func (bac *billingAddressController) SetDefaultBillingAddress(ctx *gin.Context) 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Default billing address updated"})
 }
 
-func (bac *billingAddressController) DeleteEntity(ctx *gin.Context) {
+func (bac *BillingAddressController) DeleteEntity(ctx *gin.Context) {
 	bac.GenericController.DeleteEntity(ctx, true)
 }

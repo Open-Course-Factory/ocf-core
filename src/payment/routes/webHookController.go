@@ -15,17 +15,13 @@ import (
 )
 
 // Webhook Controller pour traiter les événements Stripe
-type WebhookController interface {
-	HandleStripeWebhook(ctx *gin.Context)
-}
-
-type webhookController struct {
+type WebhookController struct {
 	stripeService services.StripeService
 	db            *gorm.DB // ✅ SECURITY: Use database instead of in-memory map
 }
 
-func NewWebhookController(db *gorm.DB) WebhookController {
-	return &webhookController{
+func NewWebhookController(db *gorm.DB) *WebhookController {
+	return &WebhookController{
 		stripeService: services.NewStripeService(db),
 		db:            db,
 	}
@@ -36,8 +32,8 @@ func NewWebhookController(db *gorm.DB) WebhookController {
 // NewWebhookControllerWithService is a test-only constructor that allows
 // injecting a custom StripeService implementation (typically a mock).
 // Production code should always use NewWebhookController.
-func NewWebhookControllerWithService(db *gorm.DB, stripeService services.StripeService) WebhookController {
-	return &webhookController{
+func NewWebhookControllerWithService(db *gorm.DB, stripeService services.StripeService) *WebhookController {
+	return &WebhookController{
 		stripeService: stripeService,
 		db:            db,
 	}
@@ -53,7 +49,7 @@ func NewWebhookControllerWithService(db *gorm.DB, stripeService services.StripeS
 //	@Success		200	{object}	string
 //	@Failure		400	{object}	errors.APIError	"Invalid webhook"
 //	@Router			/webhooks/stripe [post]
-func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
+func (wc *WebhookController) HandleStripeWebhook(ctx *gin.Context) {
 	// 1 : Vérifications de sécurité de base
 	if !wc.basicSecurityChecks(ctx) {
 		return // La réponse d'erreur est déjà envoyée
@@ -146,7 +142,7 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 }
 
 // 🔐 Vérifications de sécurité de base
-func (wc *webhookController) basicSecurityChecks(ctx *gin.Context) bool {
+func (wc *WebhookController) basicSecurityChecks(ctx *gin.Context) bool {
 	// Vérification User-Agent
 	userAgent := ctx.GetHeader("User-Agent")
 	if !strings.Contains(userAgent, "Stripe") {
@@ -172,7 +168,7 @@ func (wc *webhookController) basicSecurityChecks(ctx *gin.Context) bool {
 	return true
 }
 
-func (wc *webhookController) validatePayloadAndSignature(ctx *gin.Context) ([]byte, string, bool) {
+func (wc *WebhookController) validatePayloadAndSignature(ctx *gin.Context) ([]byte, string, bool) {
 	// Récupérer le payload brut
 	payload, err := ctx.GetRawData()
 	if err != nil {
@@ -233,7 +229,7 @@ func (wc *webhookController) validatePayloadAndSignature(ctx *gin.Context) ([]by
 //     `WHERE event_id = ? AND status = 'failed'`. We then use RowsAffected
 //     to decide who won: exactly one transaction sees RowsAffected==1; the
 //     other sees 0 and treats it as "lost the race".
-func (wc *webhookController) reserveEvent(eventID, eventType string, payload []byte) (bool, error) {
+func (wc *WebhookController) reserveEvent(eventID, eventType string, payload []byte) (bool, error) {
 	now := time.Now()
 
 	var reserved bool
@@ -315,7 +311,7 @@ func (wc *webhookController) reserveEvent(eventID, eventType string, payload []b
 // markProcessed transitions an existing reservation row to status=processed
 // after ProcessWebhook ran to success. This is the terminal state — future
 // deliveries for the same event_id short-circuit on the row.
-func (wc *webhookController) markProcessed(eventID string) {
+func (wc *WebhookController) markProcessed(eventID string) {
 	if err := wc.db.Model(&models.WebhookEvent{}).
 		Where("event_id = ?", eventID).
 		Updates(map[string]interface{}{
@@ -333,7 +329,7 @@ func (wc *webhookController) markProcessed(eventID string) {
 // ProcessWebhook returned an error. Replaces the previous hard DELETE: the
 // row stays around so a transient DB glitch on cleanup can no longer wedge
 // the event in `reserved` forever — `failed` is re-reservable.
-func (wc *webhookController) markFailed(eventID string) {
+func (wc *WebhookController) markFailed(eventID string) {
 	if err := wc.db.Model(&models.WebhookEvent{}).
 		Where("event_id = ?", eventID).
 		Update("status", models.WebhookEventStatusFailed).Error; err != nil {
