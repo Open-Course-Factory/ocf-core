@@ -55,19 +55,13 @@ func (pmc *paymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 
 	parsedID, parseErr := uuid.Parse(paymentMethodID)
 	if parseErr != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid payment method ID format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid payment method ID format")
 		return
 	}
 
 	err := pmc.subscriptionService.SetDefaultPaymentMethod(userId, parsedID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -93,20 +87,14 @@ func (pmc *paymentMethodController) GetUserPaymentMethods(ctx *gin.Context) {
 	// Récupérer depuis le service (retourne des models)
 	paymentMethods, err := pmc.subscriptionService.GetUserPaymentMethods(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Convertir vers DTO
 	paymentMethodsDTO, err := pmc.conversionService.PaymentMethodsToDTO(paymentMethods)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert payment methods",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert payment methods")
 		return
 	}
 
@@ -129,10 +117,7 @@ func (pmc *paymentMethodController) SyncUserPaymentMethods(ctx *gin.Context) {
 
 	result, err := pmc.stripeService.SyncUserPaymentMethods(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 

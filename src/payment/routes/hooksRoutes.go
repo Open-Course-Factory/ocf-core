@@ -40,19 +40,13 @@ func toggleStripeSync(ctx *gin.Context) {
 	var input Input
 
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	err := paymentHooks.EnableStripeSync(*input.Enable)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 

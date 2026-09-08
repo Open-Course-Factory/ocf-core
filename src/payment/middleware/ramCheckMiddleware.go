@@ -70,10 +70,7 @@ func CheckRAMAvailability(terminalService terminalServices.TerminalTrainerServic
 				utils.Warn("Terminal creation blocked: insufficient RAM for size=%q (%.2f GB available)",
 					chosenSize, metrics.RAMAvailableGB)
 			}
-			ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-				ErrorCode:    http.StatusServiceUnavailable,
-				ErrorMessage: msg,
-			})
+			errors.Respond(ctx, http.StatusServiceUnavailable, msg)
 			ctx.Abort()
 			return
 		}

@@ -63,10 +63,7 @@ func (bc *bulkLicenseController) CreateBulkCheckoutSession(ctx *gin.Context) {
 
 	var input dto.CreateBulkCheckoutSessionInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Invalid input: %v", err),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid input: %v", err))
 		return
 	}
 
@@ -82,10 +79,7 @@ func (bc *bulkLicenseController) CreateBulkCheckoutSession(ctx *gin.Context) {
 			statusCode = http.StatusBadRequest
 		}
 
-		ctx.JSON(statusCode, &errors.APIError{
-			ErrorCode:    statusCode,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, statusCode, err.Error())
 		return
 	}
 
@@ -111,10 +105,7 @@ func (c *bulkLicenseController) PurchaseBulkLicenses(ctx *gin.Context) {
 
 	var input dto.BulkPurchaseInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -122,10 +113,7 @@ func (c *bulkLicenseController) PurchaseBulkLicenses(ctx *gin.Context) {
 	batch, _, err := c.bulkService.PurchaseBulkLicenses(userID, input)
 	if err != nil {
 		utils.Error("Failed to create bulk purchase: %v", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to create bulk purchase: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to create bulk purchase: %v", err))
 		return
 	}
 
@@ -180,10 +168,7 @@ func (c *bulkLicenseController) ListPurchasableSeatPlans(ctx *gin.Context) {
 
 	out, err := c.bulkService.ListPurchasableSeatPlans(userID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to list purchasable seat plans",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to list purchasable seat plans")
 		return
 	}
 
@@ -198,10 +183,7 @@ func (c *bulkLicenseController) GetMyBatches(ctx *gin.Context) {
 
 	batches, err := c.bulkService.GetAccessibleBatches(userID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve batches",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve batches")
 		return
 	}
 
@@ -253,19 +235,13 @@ func (c *bulkLicenseController) GetBatchDetails(ctx *gin.Context) {
 
 	batchID, err := uuid.Parse(batchIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid batch ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
 		return
 	}
 
 	batch, err := c.bulkService.GetAccessibleBatchByID(batchID, userID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Batch not found or access denied",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Batch not found or access denied")
 		return
 	}
 
@@ -311,25 +287,16 @@ func (c *bulkLicenseController) GetBatchLicenses(ctx *gin.Context) {
 
 	batchID, err := uuid.Parse(batchIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid batch ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
 		return
 	}
 
 	licenses, err := c.bulkService.GetBatchLicenses(batchID, userID)
 	if err != nil {
 		if strings.Contains(err.Error(), "access denied") {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Access denied",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Access denied")
 		} else {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Batch not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Batch not found")
 		}
 		return
 	}
@@ -365,29 +332,20 @@ func (c *bulkLicenseController) AssignLicense(ctx *gin.Context) {
 
 	batchID, err := uuid.Parse(batchIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid batch ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
 		return
 	}
 
 	var input dto.AssignLicenseInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	license, err := c.bulkService.AssignLicense(batchID, userID, input.UserID)
 	if err != nil {
 		utils.Error("Failed to assign license: %v", err)
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -414,10 +372,7 @@ func (c *bulkLicenseController) RevokeLicense(ctx *gin.Context) {
 
 	licenseID, err := uuid.Parse(licenseIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid license ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid license ID")
 		return
 	}
 
@@ -439,10 +394,7 @@ func (c *bulkLicenseController) RevokeLicense(ctx *gin.Context) {
 			msg = "This license is not part of a batch"
 		}
 
-		ctx.JSON(statusCode, &errors.APIError{
-			ErrorCode:    statusCode,
-			ErrorMessage: msg,
-		})
+		errors.Respond(ctx, statusCode, msg)
 		return
 	}
 
@@ -471,29 +423,20 @@ func (c *bulkLicenseController) UpdateBatchQuantity(ctx *gin.Context) {
 
 	batchID, err := uuid.Parse(batchIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid batch ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
 		return
 	}
 
 	var input dto.UpdateBatchQuantityInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	err = c.bulkService.UpdateBatchQuantity(batchID, userID, input.NewQuantity)
 	if err != nil {
 		utils.Error("Failed to update batch quantity: %v", err)
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -522,10 +465,7 @@ func (c *bulkLicenseController) PermanentlyDeleteBatch(ctx *gin.Context) {
 
 	batchID, err := uuid.Parse(batchIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid batch ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
 		return
 	}
 
@@ -544,10 +484,7 @@ func (c *bulkLicenseController) PermanentlyDeleteBatch(ctx *gin.Context) {
 			msg = "Access denied"
 		}
 
-		ctx.JSON(statusCode, &errors.APIError{
-			ErrorCode:    statusCode,
-			ErrorMessage: msg,
-		})
+		errors.Respond(ctx, statusCode, msg)
 		return
 	}
 

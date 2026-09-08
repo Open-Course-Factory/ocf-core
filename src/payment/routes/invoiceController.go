@@ -61,20 +61,14 @@ func (ic *invoiceController) GetUserInvoices(ctx *gin.Context) {
 	// Récupérer depuis le service (retourne des models)
 	invoices, err := ic.subscriptionService.GetUserInvoices(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Convertir vers DTO
 	invoicesDTO, err := ic.conversionService.InvoicesToDTO(invoices)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert invoices",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert invoices")
 		return
 	}
 
@@ -101,28 +95,19 @@ func (ic *invoiceController) GetOrganizationInvoices(ctx *gin.Context) {
 
 	parsedID, parseErr := uuid.Parse(orgID)
 	if parseErr != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID format")
 		return
 	}
 
 	invoices, err := ic.subscriptionService.GetOrganizationInvoices(parsedID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	invoicesDTO, err := ic.conversionService.InvoicesToDTO(invoices)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert invoices",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert invoices")
 		return
 	}
 
@@ -148,20 +133,14 @@ func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
 
 	parsedID, parseErr := uuid.Parse(invoiceID)
 	if parseErr != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid invoice ID format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid invoice ID format")
 		return
 	}
 
 	// Récupérer la facture depuis le service (retourne un model)
 	invoice, err := ic.subscriptionService.GetInvoiceByID(parsedID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Invoice not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Invoice not found")
 		return
 	}
 
@@ -171,19 +150,13 @@ func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
 		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Access denied to this invoice",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Access denied to this invoice")
 			return
 		}
 	}
 
 	if invoice.DownloadURL == "" {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Download URL not available",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Download URL not available")
 		return
 	}
 
@@ -207,10 +180,7 @@ func (ic *invoiceController) SyncUserInvoices(ctx *gin.Context) {
 
 	result, err := ic.stripeService.SyncUserInvoices(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -235,20 +205,14 @@ func (ic *invoiceController) CleanupInvoices(ctx *gin.Context) {
 	// Parse request body
 	var input dto.CleanupInvoicesInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Invalid request: %v", err),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid request: %v", err))
 		return
 	}
 
 	// Call service to perform cleanup
 	result, err := ic.stripeService.CleanupIncompleteInvoices(input)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 

@@ -108,10 +108,7 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 
 	var input dto.CreateCheckoutSessionInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -133,29 +130,20 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 			// User has personal subscription already
 			if !input.AllowReplace {
 				// No allow_replace flag - reject
-				ctx.JSON(http.StatusBadRequest, &errors.APIError{
-					ErrorCode:    http.StatusBadRequest,
-					ErrorMessage: "User already has an active personal subscription",
-				})
+				errors.Respond(ctx, http.StatusBadRequest, "User already has an active personal subscription")
 				return
 			}
 
 			// allow_replace is true - check if current subscription is free
 			currentPlan, err := sc.subscriptionService.GetSubscriptionPlan(existingSubscription.SubscriptionPlanID)
 			if err != nil {
-				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-					ErrorCode:    http.StatusInternalServerError,
-					ErrorMessage: "Failed to get current subscription plan: " + err.Error(),
-				})
+				errors.Respond(ctx, http.StatusInternalServerError, "Failed to get current subscription plan: " + err.Error())
 				return
 			}
 
 			if !currentPlan.IsFree() {
 				// Current plan is paid - don't allow replacement, require upgrade endpoint
-				ctx.JSON(http.StatusBadRequest, &errors.APIError{
-					ErrorCode:    http.StatusBadRequest,
-					ErrorMessage: "Cannot replace paid personal subscription. Please use the upgrade endpoint instead.",
-				})
+				errors.Respond(ctx, http.StatusBadRequest, "Cannot replace paid personal subscription. Please use the upgrade endpoint instead.")
 				return
 			}
 
@@ -168,10 +156,7 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 	// Get the plan to check if it's free
 	plan, err := sc.subscriptionService.GetSubscriptionPlan(input.SubscriptionPlanID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Subscription plan not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Subscription plan not found")
 		return
 	}
 
@@ -188,10 +173,7 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 				err := sc.stripeService.CancelSubscription(*existingSubscription.StripeSubscriptionID, false) // false = cancel immediately
 				if err != nil {
 					utils.Error("❌ Failed to cancel Stripe subscription %s: %v", existingSubscription.StripeSubscriptionID, err)
-					ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-						ErrorCode:    http.StatusInternalServerError,
-						ErrorMessage: "Failed to cancel existing Stripe subscription: " + err.Error(),
-					})
+					errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel existing Stripe subscription: " + err.Error())
 					return
 				}
 
@@ -201,20 +183,14 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 
 		subscription, err := sc.subscriptionService.CreateUserSubscription(userId, input.SubscriptionPlanID)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to create free subscription: " + err.Error(),
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to create free subscription: " + err.Error())
 			return
 		}
 
 		// Convert to DTO and return
 		subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to convert subscription data",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert subscription data")
 			return
 		}
 
@@ -228,10 +204,7 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 	// PAID PLAN: Create Stripe checkout session
 	checkoutSession, err := sc.stripeService.CreateCheckoutSession(userId, input, replaceSubscriptionID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to create checkout session: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to create checkout session: " + err.Error())
 		return
 	}
 
@@ -256,20 +229,14 @@ func (sc *userSubscriptionController) CreatePortalSession(ctx *gin.Context) {
 
 	var input dto.CreatePortalSessionInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Créer la session du portail
 	portalSession, err := sc.stripeService.CreatePortalSession(userId, input)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -295,10 +262,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
 		parsed, err := uuid.Parse(orgIDStr)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "Invalid organization_id format",
-			})
+			errors.Respond(ctx, http.StatusBadRequest, "Invalid organization_id format")
 			return
 		}
 		orgID = &parsed
@@ -323,10 +287,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	}
 
 	if err != nil || result == nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No active subscription found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "No active subscription found")
 		return
 	}
 
@@ -334,10 +295,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	case services.PlanSourcePersonal:
 		subscriptionDTO, convErr := sc.conversionService.UserSubscriptionToDTO(result.UserSubscription)
 		if convErr != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to convert subscription data",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert subscription data")
 			return
 		}
 		subscriptionDTO.IsPrimary = true
@@ -350,10 +308,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, output)
 
 	default:
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Unexpected subscription source",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Unexpected subscription source")
 	}
 }
 
@@ -374,10 +329,7 @@ func (sc *userSubscriptionController) GetAllUserSubscriptions(ctx *gin.Context) 
 	// Get ALL active subscriptions
 	subscriptions, err := sc.subscriptionService.GetAllActiveUserSubscriptions(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve subscriptions: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve subscriptions: " + err.Error())
 		return
 	}
 
@@ -434,20 +386,14 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 	// Vérifier que l'ID est un UUID valide
 	parsedID, parseErr := uuid.Parse(subscriptionID)
 	if parseErr != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid subscription ID format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid subscription ID format")
 		return
 	}
 
 	// Vérifier que l'abonnement appartient à l'utilisateur
 	subscription, err := sc.subscriptionService.GetUserSubscriptionByID(parsedID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Subscription not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Subscription not found")
 		return
 	}
 
@@ -456,10 +402,7 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Access denied to this subscription",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Access denied to this subscription")
 			return
 		}
 	}
@@ -469,10 +412,7 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 		// Free subscription - cancel directly in our database
 		updateErr := sc.stripeService.MarkSubscriptionAsCancelled(subscription)
 		if updateErr != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to cancel free subscription: " + updateErr.Error(),
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel free subscription: " + updateErr.Error())
 			return
 		}
 
@@ -490,10 +430,7 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 			// L'abonnement a déjà été supprimé dans Stripe, mettre à jour notre base de données
 			updateErr := sc.stripeService.MarkSubscriptionAsCancelled(subscription)
 			if updateErr != nil {
-				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-					ErrorCode:    http.StatusInternalServerError,
-					ErrorMessage: "Failed to update subscription status: " + updateErr.Error(),
-				})
+				errors.Respond(ctx, http.StatusInternalServerError, "Failed to update subscription status: " + updateErr.Error())
 				return
 			}
 
@@ -503,10 +440,7 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 			return
 		}
 
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to cancel subscription: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel subscription: " + err.Error())
 		return
 	}
 
@@ -555,20 +489,14 @@ func (sc *userSubscriptionController) ReactivateSubscription(ctx *gin.Context) {
 	// Vérifier que l'ID est un UUID valide
 	parsedID, parseErr := uuid.Parse(subscriptionID)
 	if parseErr != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid subscription ID format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid subscription ID format")
 		return
 	}
 
 	// Vérifier l'accès
 	subscription, err := sc.subscriptionService.GetUserSubscriptionByID(parsedID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Subscription not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Subscription not found")
 		return
 	}
 
@@ -577,30 +505,21 @@ func (sc *userSubscriptionController) ReactivateSubscription(ctx *gin.Context) {
 		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Access denied to this subscription",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Access denied to this subscription")
 			return
 		}
 	}
 
 	// Check if this is a free subscription
 	if subscription.StripeSubscriptionID == nil || *subscription.StripeSubscriptionID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Cannot reactivate free subscription via Stripe",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Cannot reactivate free subscription via Stripe")
 		return
 	}
 
 	// Réactiver via Stripe
 	err = sc.stripeService.ReactivateSubscription(*subscription.StripeSubscriptionID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to reactivate subscription: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to reactivate subscription: " + err.Error())
 		return
 	}
 
@@ -628,57 +547,39 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 
 	var input dto.UpgradePlanInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Parse the new plan ID
 	newPlanID, err := uuid.Parse(input.NewPlanID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid plan ID format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid plan ID format")
 		return
 	}
 
 	// Get the current subscription to retrieve Stripe subscription ID
 	currentSubscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No active subscription found for user",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "No active subscription found for user")
 		return
 	}
 
 	// Get the new plan to retrieve Stripe price ID
 	newPlan, err := sc.subscriptionService.GetSubscriptionPlan(newPlanID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Subscription plan not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Subscription plan not found")
 		return
 	}
 
 	if newPlan.StripePriceID == nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "New plan does not have a Stripe price configured",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "New plan does not have a Stripe price configured")
 		return
 	}
 
 	// Check if current subscription has a Stripe ID
 	if currentSubscription.StripeSubscriptionID == nil || *currentSubscription.StripeSubscriptionID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Cannot upgrade free subscription via Stripe - please create a new paid subscription",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Cannot upgrade free subscription via Stripe - please create a new paid subscription")
 		return
 	}
 
@@ -689,10 +590,7 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 		input.ProrationBehavior,
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to update subscription in Stripe: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to update subscription in Stripe: " + err.Error())
 		return
 	}
 
@@ -725,20 +623,14 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 			utils.Error("MANUAL RECONCILIATION REQUIRED: Stripe subscription %s was charged at new price %s but the local plan upgrade (old plan %s) failed to persist, and the old plan has no Stripe price to revert to. The customer is billed for a plan they were not granted; reconcile Stripe and the local subscription manually.",
 				*currentSubscription.StripeSubscriptionID, *newPlan.StripePriceID, currentSubscription.SubscriptionPlanID)
 		}
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to upgrade plan in database: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to upgrade plan in database: " + err.Error())
 		return
 	}
 
 	// Convert to DTO
 	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert subscription data",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert subscription data")
 		return
 	}
 
@@ -763,20 +655,14 @@ func (sc *userSubscriptionController) GetSubscriptionAnalytics(ctx *gin.Context)
 	isAdmin := access.IsAdmin(userRoles)
 
 	if !isAdmin {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied - admin role required",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied - admin role required")
 		return
 	}
 
 	// Récupérer les analytics depuis le service (retourne un objet métier)
 	analytics, err := sc.subscriptionService.GetSubscriptionAnalytics()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get analytics: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get analytics: " + err.Error())
 		return
 	}
 
@@ -804,10 +690,7 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	var orgID string
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
 		if _, err := uuid.Parse(orgIDStr); err != nil {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "Invalid organization_id format",
-			})
+			errors.Respond(ctx, http.StatusBadRequest, "Invalid organization_id format")
 			return
 		}
 		orgID = orgIDStr
@@ -819,10 +702,7 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	// engine, so metrics here are recorded for observability only.
 	usageMetrics, err := sc.subscriptionService.GetUserUsageMetrics(userId, orgID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -835,10 +715,7 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	// Convertir vers DTO
 	usageMetricsDTO, err := sc.conversionService.UsageMetricsListToDTO(usageMetrics)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert usage metrics",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert usage metrics")
 		return
 	}
 
@@ -863,69 +740,48 @@ func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Co
 	planIDStr := ctx.Param("id")
 	planID, err := uuid.Parse(planIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid plan ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid plan ID")
 		return
 	}
 
 	// Récupérer le plan
 	plan, err := sc.subscriptionService.GetSubscriptionPlan(planID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Subscription plan not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Subscription plan not found")
 		return
 	}
 
 	// Vérifier si le plan a déjà un prix Stripe
 	if plan.StripePriceID != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Plan already has a Stripe price configured",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Plan already has a Stripe price configured")
 		return
 	}
 
 	// Les plans gratuits (ex: Trial) sont volontairement découplés de Stripe :
 	// les synchroniser créerait un produit/prix €0/mois bidon. On refuse.
 	if plan.IsFree() {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Cannot sync a free plan with Stripe: free plans are decoupled from billing",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Cannot sync a free plan with Stripe: free plans are decoupled from billing")
 		return
 	}
 
 	// Créer le produit et prix dans Stripe
 	err = sc.stripeService.CreateSubscriptionPlanInStripe(plan)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to sync plan with Stripe: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync plan with Stripe: " + err.Error())
 		return
 	}
 
 	// Récupérer le plan mis à jour
 	updatedPlan, err := sc.subscriptionService.GetSubscriptionPlan(planID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve updated plan",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve updated plan")
 		return
 	}
 
 	// Convertir en DTO
 	planDTO, err := sc.conversionService.SubscriptionPlanToDTO(updatedPlan)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert plan to DTO",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert plan to DTO")
 		return
 	}
 
@@ -950,10 +806,7 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 	// than aborting the whole run.
 	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to sync plans to Stripe: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync plans to Stripe: " + err.Error())
 		return
 	}
 
@@ -995,10 +848,7 @@ func (sc *userSubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.C
 
 	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, Execute: execute})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to mirror plans to Stripe: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to mirror plans to Stripe: " + err.Error())
 		return
 	}
 
@@ -1060,10 +910,7 @@ func (sc *userSubscriptionController) ImportPlansFromStripe(ctx *gin.Context) {
 	// Import plans from Stripe
 	result, err := sc.stripeService.ImportPlansFromStripe()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to import plans from Stripe: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import plans from Stripe: " + err.Error())
 		return
 	}
 
@@ -1085,10 +932,7 @@ func (sc *userSubscriptionController) SyncExistingSubscriptions(ctx *gin.Context
 	// Synchroniser tous les abonnements depuis Stripe
 	result, err := sc.stripeService.SyncExistingSubscriptions()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to sync existing subscriptions: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync existing subscriptions: " + err.Error())
 		return
 	}
 
@@ -1111,20 +955,14 @@ func (sc *userSubscriptionController) SyncExistingSubscriptions(ctx *gin.Context
 func (sc *userSubscriptionController) SyncUserSubscriptions(ctx *gin.Context) {
 	userID := ctx.Param("user_id")
 	if userID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "User ID is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "User ID is required")
 		return
 	}
 
 	// Synchroniser les abonnements de l'utilisateur depuis Stripe
 	result, err := sc.stripeService.SyncUserSubscriptions(userID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to sync user subscriptions: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync user subscriptions: " + err.Error())
 		return
 	}
 
@@ -1146,10 +984,7 @@ func (sc *userSubscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *
 	// Synchroniser les abonnements avec métadonnées manquantes
 	result, err := sc.stripeService.SyncSubscriptionsWithMissingMetadata()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to sync subscriptions with missing metadata: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync subscriptions with missing metadata: " + err.Error())
 		return
 	}
 
@@ -1174,10 +1009,7 @@ func (sc *userSubscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *
 func (sc *userSubscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
 	subscriptionID := ctx.Param("subscription_id")
 	if subscriptionID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Subscription ID is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Subscription ID is required")
 		return
 	}
 
@@ -1187,20 +1019,14 @@ func (sc *userSubscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
 	}
 
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Lier l'abonnement à l'utilisateur
 	err := sc.stripeService.LinkSubscriptionToUser(subscriptionID, request.UserID, request.SubscriptionPlanID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to link subscription: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to link subscription: " + err.Error())
 		return
 	}
 
@@ -1235,39 +1061,27 @@ func (sc *userSubscriptionController) SyncUsageLimits(ctx *gin.Context) {
 	// Get active subscription
 	subscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No active subscription found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "No active subscription found")
 		return
 	}
 
 	// Update usage limits to match current plan
 	err = sc.subscriptionService.UpdateUsageMetricLimits(userId, subscription.SubscriptionPlanID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to sync usage limits: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync usage limits: " + err.Error())
 		return
 	}
 
 	// Get updated metrics to return
 	metrics, err := sc.subscriptionService.GetUserUsageMetrics(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve updated metrics",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve updated metrics")
 		return
 	}
 
 	metricsDTO, err := sc.conversionService.UsageMetricsListToDTO(metrics)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert metrics",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert metrics")
 		return
 	}
 
@@ -1297,28 +1111,19 @@ func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
 	quantityStr := ctx.Query("quantity")
 
 	if planIDStr == "" || quantityStr == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "subscription_plan_id and quantity are required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "subscription_plan_id and quantity are required")
 		return
 	}
 
 	planID, err := uuid.Parse(planIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid subscription_plan_id format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid subscription_plan_id format")
 		return
 	}
 
 	var quantity int
 	if _, err := fmt.Sscanf(quantityStr, "%d", &quantity); err != nil || quantity < 1 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid quantity (must be >= 1)",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid quantity (must be >= 1)")
 		return
 	}
 
@@ -1328,15 +1133,9 @@ func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
 	if err != nil {
 		utils.Error("Failed to calculate pricing preview: %v", err)
 		if strings.Contains(err.Error(), "not found") {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Subscription plan not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Subscription plan not found")
 		} else {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to calculate pricing preview",
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to calculate pricing preview")
 		}
 		return
 	}
@@ -1360,19 +1159,13 @@ func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
 func (sc *userSubscriptionController) PreviewProspectivePricing(ctx *gin.Context) {
 	var input dto.ProspectivePricingInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Invalid input: %v", err),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid input: %v", err))
 		return
 	}
 
 	preview, err := services.NewPricingService(sc.db).PreviewProspectiveTiers(input)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -1395,19 +1188,13 @@ func (sc *userSubscriptionController) PreviewProspectivePricing(ctx *gin.Context
 func (sc *userSubscriptionController) CheckSeatPricingCoherence(ctx *gin.Context) {
 	var input dto.SeatPricingCheckInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Invalid input: %v", err),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid input: %v", err))
 		return
 	}
 
 	report, err := services.CheckSeatPricing(input)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -1434,19 +1221,13 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 	userRoles := ctx.GetStringSlice("userRoles")
 	isAdmin := access.IsAdmin(userRoles)
 	if !isAdmin {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied - admin role required",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied - admin role required")
 		return
 	}
 
 	var input dto.AdminAssignSubscriptionInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Invalid input: %v", err),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid input: %v", err))
 		return
 	}
 
@@ -1455,10 +1236,7 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 	subscription, err := sc.subscriptionService.AdminAssignSubscription(input.UserID, input.PlanID, input.DurationDays, adminUserID)
 	if err != nil {
 		utils.Error("Failed to admin-assign subscription: %v", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to assign subscription",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to assign subscription")
 		return
 	}
 
@@ -1476,10 +1254,7 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
 	if err != nil {
 		utils.Error("Failed to convert subscription to DTO: %v", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to format subscription response",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to format subscription response")
 		return
 	}
 
@@ -1549,10 +1324,7 @@ func (sc *userSubscriptionController) GetPlanHealth(ctx *gin.Context) {
 	report, err := services.CheckAllPlanHealth(sc.db, quota)
 	if err != nil {
 		utils.Error("failed to build the plan health report: %v", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to read the subscription plans",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read the subscription plans")
 		return
 	}
 

@@ -55,28 +55,19 @@ func (c *organizationRolePlanController) GetOrganizationRolePlans(ctx *gin.Conte
 
 	parsedID, parseErr := uuid.Parse(orgID)
 	if parseErr != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID format")
 		return
 	}
 
 	rolePlans, err := c.orgSubRepo.GetOrganizationRolePlans(parsedID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	rolePlansDTO, err := c.conversionService.OrganizationRolePlansToDTO(rolePlans)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert organization role plans",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert organization role plans")
 		return
 	}
 

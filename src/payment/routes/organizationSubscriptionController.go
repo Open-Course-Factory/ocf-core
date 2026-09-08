@@ -67,29 +67,20 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	var input dto.CreateOrganizationSubscriptionInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Verify organization exists
 	var org organizationModels.Organization
 	if err := osc.db.Where("id = ?", orgID).First(&org).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Organization not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Organization not found")
 		return
 	}
 
@@ -101,10 +92,7 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 		access.IsAdmin(ctx.GetStringSlice("userRoles")),
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to create subscription: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to create subscription: "+err.Error())
 		return
 	}
 
@@ -145,20 +133,14 @@ func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	// Get subscription
 	subscription, err := osc.orgSubService.GetOrganizationSubscription(orgID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No active subscription found for this organization",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "No active subscription found for this organization")
 		return
 	}
 
@@ -195,10 +177,7 @@ func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *
 func (osc *organizationSubscriptionController) GetAllOrganizationSubscriptions(ctx *gin.Context) {
 	subscriptions, err := osc.orgSubService.GetAllActiveOrganizationSubscriptions()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve subscriptions: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve subscriptions: "+err.Error())
 		return
 	}
 
@@ -244,19 +223,13 @@ func (osc *organizationSubscriptionController) CancelOrganizationSubscription(ct
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	var input dto.UpdateOrganizationSubscriptionInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -268,10 +241,7 @@ func (osc *organizationSubscriptionController) CancelOrganizationSubscription(ct
 
 	err = osc.orgSubService.CancelOrganizationSubscription(orgID, cancelAtPeriodEnd)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to cancel subscription: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel subscription: "+err.Error())
 		return
 	}
 
@@ -302,10 +272,7 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
 		orgID, err := uuid.Parse(orgIDStr)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "Invalid organization_id format",
-			})
+			errors.Respond(ctx, http.StatusBadRequest, "Invalid organization_id format")
 			return
 		}
 
@@ -313,10 +280,7 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		result, err := osc.effectivePlanService.GetUserEffectivePlan(userID, &orgID)
 		if err != nil {
 			utils.Warn("Failed to get effective plan for user %s org %s: %v", userID, orgID.String(), err)
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "No subscription found for this organization context",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "No subscription found for this organization context")
 			return
 		}
 
@@ -342,10 +306,7 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 	// No org context — return aggregated features from all organizations (backward compat)
 	features, err := osc.orgSubService.GetUserEffectiveFeatures(userID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No organization subscriptions found for user: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusNotFound, "No organization subscriptions found for user: "+err.Error())
 		return
 	}
 
@@ -357,10 +318,7 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 	// point at a deleted plan. Converting nil produced a zero-value plan that
 	// looked real to the frontend, whose gray-out logic then hid everything (#451).
 	if features.HighestPlan == nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No plan applies to this user",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "No plan applies to this user")
 		return
 	}
 	effectivePlan := convertSubscriptionPlanToOutput(features.HighestPlan)
@@ -418,10 +376,7 @@ func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
@@ -429,10 +384,7 @@ func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.
 	// done here" is answered by the acting member's entitlement (#451).
 	plan, err := osc.orgSubService.GetOrganizationFeatures(orgID, ctx.GetString("userId"))
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No plan applies for this user in this organization",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "No plan applies for this user in this organization")
 		return
 	}
 
@@ -457,20 +409,14 @@ func (osc *organizationSubscriptionController) GetOrganizationUsageLimits(ctx *g
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	// Get usage limits
 	limits, err := osc.orgSubService.GetOrganizationUsageLimits(orgID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get usage limits: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get usage limits: "+err.Error())
 		return
 	}
 

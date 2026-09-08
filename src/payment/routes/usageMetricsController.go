@@ -48,10 +48,7 @@ func (umc *usageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
 		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Access denied",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Access denied")
 			return
 		}
 		userId = targetUserID
@@ -60,20 +57,14 @@ func (umc *usageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
 	// Récupérer depuis le service (retourne des models)
 	metrics, err := umc.subscriptionService.GetUserUsageMetrics(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Convertir vers DTO
 	metricsDTO, err := umc.conversionService.UsageMetricsListToDTO(metrics)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert usage metrics",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert usage metrics")
 		return
 	}
 
@@ -94,10 +85,7 @@ func (umc *usageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
 	}
 
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -107,10 +95,7 @@ func (umc *usageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
 
 	err := umc.subscriptionService.IncrementUsage(userId, input.MetricType, input.Increment)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -127,10 +112,7 @@ func (umc *usageMetricsController) ResetUserUsage(ctx *gin.Context) {
 
 	err := umc.subscriptionService.ResetMonthlyUsage(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 

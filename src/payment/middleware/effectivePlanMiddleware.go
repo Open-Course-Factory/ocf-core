@@ -62,10 +62,7 @@ func InjectOrgContext(checkers ...access.MembershipChecker) gin.HandlerFunc {
 			allowed, err := checker.CheckOrgRole(orgID, userID, "member")
 			if err != nil || !allowed {
 				utils.Warn("InjectOrgContext: user %s denied org context %s (allowed=%v err=%v)", userID, orgID, allowed, err)
-				ctx.JSON(http.StatusForbidden, &errors.APIError{
-					ErrorCode:    http.StatusForbidden,
-					ErrorMessage: "You are not a member of the requested organization",
-				})
+				errors.Respond(ctx, http.StatusForbidden, "You are not a member of the requested organization")
 				ctx.Abort()
 				return
 			}
@@ -160,20 +157,14 @@ func RequirePlan() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		val, exists := ctx.Get("effective_plan_result")
 		if !exists || val == nil {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: services.ErrActiveSubscriptionRequired.Error(),
-			})
+			errors.Respond(ctx, http.StatusForbidden, services.ErrActiveSubscriptionRequired.Error())
 			ctx.Abort()
 			return
 		}
 
 		result, ok := val.(*services.EffectivePlanResult)
 		if !ok || result == nil {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: services.ErrActiveSubscriptionRequired.Error(),
-			})
+			errors.Respond(ctx, http.StatusForbidden, services.ErrActiveSubscriptionRequired.Error())
 			ctx.Abort()
 			return
 		}

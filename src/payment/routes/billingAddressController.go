@@ -41,20 +41,14 @@ func (bac *billingAddressController) GetUserBillingAddresses(ctx *gin.Context) {
 	// Récupérer depuis le service (retourne des models)
 	addresses, err := bac.subscriptionService.GetUserBillingAddresses(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Convertir vers DTO
 	addressesDTO, err := bac.conversionService.BillingAddressesToDTO(addresses)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert billing addresses",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert billing addresses")
 		return
 	}
 
@@ -67,19 +61,13 @@ func (bac *billingAddressController) SetDefaultBillingAddress(ctx *gin.Context) 
 
 	parsedID, parseErr := uuid.Parse(addressID)
 	if parseErr != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid billing address ID format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid billing address ID format")
 		return
 	}
 
 	err := bac.subscriptionService.SetDefaultBillingAddress(userId, parsedID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
