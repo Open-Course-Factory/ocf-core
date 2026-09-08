@@ -14,23 +14,18 @@ import (
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-type UserSettingsService interface {
-	ChangePassword(userID string, input dto.ChangePasswordInput, token string) error
-	ForceChangePassword(userID string, input dto.ForceChangePasswordInput, token string) error
+type UserSettingsService struct {
+	passwordService *PasswordService
 }
 
-type userSettingsService struct {
-	passwordService PasswordService
-}
-
-func NewUserSettingsService() UserSettingsService {
-	return &userSettingsService{
+func NewUserSettingsService() *UserSettingsService {
+	return &UserSettingsService{
 		passwordService: NewPasswordService(),
 	}
 }
 
 // ChangePassword handles password change requests and invalidates the current session
-func (s *userSettingsService) ChangePassword(userID string, input dto.ChangePasswordInput, token string) error {
+func (s *UserSettingsService) ChangePassword(userID string, input dto.ChangePasswordInput, token string) error {
 	// Validate that new password matches confirmation
 	if input.NewPassword != input.ConfirmPassword {
 		return errors.New("new password and confirmation do not match")
@@ -99,7 +94,7 @@ func (s *userSettingsService) ChangePassword(userID string, input dto.ChangePass
 }
 
 // ForceChangePassword handles forced password reset for imported users (no current password required)
-func (s *userSettingsService) ForceChangePassword(userID string, input dto.ForceChangePasswordInput, token string) error {
+func (s *UserSettingsService) ForceChangePassword(userID string, input dto.ForceChangePasswordInput, token string) error {
 	// Validate that new password matches confirmation
 	if input.NewPassword != input.ConfirmPassword {
 		return errors.New("new password and confirmation do not match")
@@ -157,7 +152,7 @@ func (s *userSettingsService) ForceChangePassword(userID string, input dto.Force
 // invalidateToken adds the JWT token to a blacklist
 // Note: JWT tokens are stateless and cannot be deleted from Casdoor's side.
 // We maintain a local blacklist of invalidated tokens that the auth middleware checks.
-func (s *userSettingsService) invalidateToken(tokenString string) error {
+func (s *UserSettingsService) invalidateToken(tokenString string) error {
 	// Parse the JWT token to extract claims
 	claims, err := casdoorsdk.ParseJwtToken(tokenString)
 	if err != nil {

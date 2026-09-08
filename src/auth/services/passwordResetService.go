@@ -14,19 +14,14 @@ import (
 	"gorm.io/gorm"
 )
 
-type PasswordResetService interface {
-	RequestPasswordReset(email string, resetURL string) error
-	ResetPassword(token string, newPassword string) error
-}
-
-type passwordResetService struct {
+type PasswordResetService struct {
 	db              *gorm.DB
 	emailService    emailServices.EmailService
-	passwordService PasswordService
+	passwordService *PasswordService
 }
 
-func NewPasswordResetService(db *gorm.DB) PasswordResetService {
-	return &passwordResetService{
+func NewPasswordResetService(db *gorm.DB) *PasswordResetService {
+	return &PasswordResetService{
 		db:              db,
 		emailService:    emailServices.NewEmailServiceWithDB(db),
 		passwordService: NewPasswordService(),
@@ -43,7 +38,7 @@ func generateSecureToken() (string, error) {
 }
 
 // RequestPasswordReset creates a password reset token and sends an email to the user
-func (s *passwordResetService) RequestPasswordReset(email string, resetURL string) error {
+func (s *PasswordResetService) RequestPasswordReset(email string, resetURL string) error {
 	// Find user by email in Casdoor
 	user, err := casdoorsdk.GetUserByEmail(email)
 	if err != nil {
@@ -90,7 +85,7 @@ func (s *passwordResetService) RequestPasswordReset(email string, resetURL strin
 }
 
 // ResetPassword validates the token and updates the user's password
-func (s *passwordResetService) ResetPassword(token string, newPassword string) error {
+func (s *PasswordResetService) ResetPassword(token string, newPassword string) error {
 	// Find the reset token
 	var resetToken models.PasswordResetToken
 	if err := s.db.Where("token = ?", token).First(&resetToken).Error; err != nil {

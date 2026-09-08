@@ -8,24 +8,15 @@ import (
 )
 
 // PasswordService handles all password-related operations
-type PasswordService interface {
-	// SetUserPassword updates a user's password in Casdoor
-	// oldPassword can be empty string for password reset scenarios
-	// oldPassword is required for user-initiated password changes
-	SetUserPassword(userID, oldPassword, newPassword string) error
+type PasswordService struct{}
 
-	// ValidatePasswordStrength checks if password meets minimum requirements
-	ValidatePasswordStrength(password string) error
+func NewPasswordService() *PasswordService {
+	return &PasswordService{}
 }
 
-type passwordService struct{}
-
-func NewPasswordService() PasswordService {
-	return &passwordService{}
-}
-
-// SetUserPassword updates a user's password using Casdoor's SetPassword API
-func (s *passwordService) SetUserPassword(userID, oldPassword, newPassword string) error {
+// SetUserPassword updates a user's password using Casdoor's SetPassword API.
+// oldPassword is empty for password resets and required for user-initiated changes.
+func (s *PasswordService) SetUserPassword(userID, oldPassword, newPassword string) error {
 	// Validate new password strength
 	if err := s.ValidatePasswordStrength(newPassword); err != nil {
 		return err
@@ -52,7 +43,7 @@ func (s *passwordService) SetUserPassword(userID, oldPassword, newPassword strin
 }
 
 // ValidatePasswordStrength checks if password meets minimum security requirements
-func (s *passwordService) ValidatePasswordStrength(password string) error {
+func (s *PasswordService) ValidatePasswordStrength(password string) error {
 	if len(password) < 8 {
 		return errors.New("password must be at least 8 characters long")
 	}

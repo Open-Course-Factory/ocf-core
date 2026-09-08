@@ -12,26 +12,17 @@ import (
 
 // PermissionService provides centralized permission management
 // All Casbin permission operations should go through this service
-type PermissionService interface {
-	// Entity permissions
-	GrantEntityPermissions(userID string, entityType string, entityID uuid.UUID, methods []string) error
-	RevokeEntityPermissions(userID string, entityType string, entityID uuid.UUID) error
-
-	// Check permissions
-	HasPermission(userID string, path string, method string) (bool, error)
-}
-
-type permissionService struct{}
+type PermissionService struct{}
 
 // NewPermissionService creates a new permission service
-func NewPermissionService() PermissionService {
-	return &permissionService{}
+func NewPermissionService() *PermissionService {
+	return &PermissionService{}
 }
 
 // GrantEntityPermissions grants permissions for a specific entity
 // entityType: "groups", "organizations", "terminals", etc.
 // methods: ["GET", "POST", "PATCH", "DELETE"]
-func (ps *permissionService) GrantEntityPermissions(
+func (ps *PermissionService) GrantEntityPermissions(
 	userID string,
 	entityType string,
 	entityID uuid.UUID,
@@ -58,7 +49,7 @@ func (ps *permissionService) GrantEntityPermissions(
 }
 
 // RevokeEntityPermissions revokes all permissions for a specific entity
-func (ps *permissionService) RevokeEntityPermissions(
+func (ps *PermissionService) RevokeEntityPermissions(
 	userID string,
 	entityType string,
 	entityID uuid.UUID,
@@ -78,7 +69,7 @@ func (ps *permissionService) RevokeEntityPermissions(
 }
 
 // HasPermission checks if a user has a specific permission
-func (ps *permissionService) HasPermission(
+func (ps *PermissionService) HasPermission(
 	userID string,
 	path string,
 	method string,

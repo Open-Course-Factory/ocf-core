@@ -14,23 +14,19 @@ import (
 )
 
 // UserPermissionsService provides methods to aggregate user permissions
-type UserPermissionsService interface {
-	GetUserPermissions(userID string) (*authDto.UserPermissionsOutput, error)
-}
-
-type userPermissionsService struct {
+type UserPermissionsService struct {
 	db *gorm.DB
 }
 
 // NewUserPermissionsService creates a new user permissions service
-func NewUserPermissionsService(db *gorm.DB) UserPermissionsService {
-	return &userPermissionsService{
+func NewUserPermissionsService(db *gorm.DB) *UserPermissionsService {
+	return &UserPermissionsService{
 		db: db,
 	}
 }
 
 // GetUserPermissions aggregates all permissions for a user
-func (s *userPermissionsService) GetUserPermissions(userID string) (*authDto.UserPermissionsOutput, error) {
+func (s *UserPermissionsService) GetUserPermissions(userID string) (*authDto.UserPermissionsOutput, error) {
 	utils.Debug("Getting permissions for user: %s", userID)
 
 	// 1. Get Casbin implicit permissions (includes inherited permissions from roles)
@@ -130,7 +126,7 @@ func (s *userPermissionsService) GetUserPermissions(userID string) (*authDto.Use
 
 // getEntityMemberships is a generic method to retrieve all memberships for a user in a given entity type
 // This replaces getOrganizationMemberships and getGroupMemberships with a unified approach
-func (s *userPermissionsService) getEntityMemberships(userID string, entityName string, entityTableName string) ([]authDto.EntityMembershipContext, error) {
+func (s *UserPermissionsService) getEntityMemberships(userID string, entityName string, entityTableName string) ([]authDto.EntityMembershipContext, error) {
 	utils.Debug("Getting %s memberships for user: %s", entityName, userID)
 
 	// Get membership config from entity registration
@@ -227,7 +223,7 @@ func (s *userPermissionsService) getEntityMemberships(userID string, entityName 
 }
 
 // getAllEntityMemberships retrieves memberships across all registered entities with membership configs
-func (s *userPermissionsService) getAllEntityMemberships(userID string) (map[string][]authDto.EntityMembershipContext, error) {
+func (s *UserPermissionsService) getAllEntityMemberships(userID string) (map[string][]authDto.EntityMembershipContext, error) {
 	memberships := make(map[string][]authDto.EntityMembershipContext)
 
 	// Define entities with their table names
@@ -261,7 +257,7 @@ func (s *userPermissionsService) getAllEntityMemberships(userID string) (map[str
 }
 
 // aggregateFeaturesGeneric combines features from all entity memberships
-func (s *userPermissionsService) aggregateFeaturesGeneric(entityMemberships map[string][]authDto.EntityMembershipContext) []string {
+func (s *UserPermissionsService) aggregateFeaturesGeneric(entityMemberships map[string][]authDto.EntityMembershipContext) []string {
 	featureSet := make(map[string]bool)
 
 	for _, memberships := range entityMemberships {
@@ -281,7 +277,7 @@ func (s *userPermissionsService) aggregateFeaturesGeneric(entityMemberships map[
 }
 
 // hasAnySubscriptionGeneric checks if user has any subscription across all entities
-func (s *userPermissionsService) hasAnySubscriptionGeneric(entityMemberships map[string][]authDto.EntityMembershipContext) bool {
+func (s *UserPermissionsService) hasAnySubscriptionGeneric(entityMemberships map[string][]authDto.EntityMembershipContext) bool {
 	for _, memberships := range entityMemberships {
 		for _, membership := range memberships {
 			if membership.HasSubscription {
@@ -293,7 +289,7 @@ func (s *userPermissionsService) hasAnySubscriptionGeneric(entityMemberships map
 }
 
 // convertToOrganizationMemberships converts generic contexts to organization-specific (for backward compatibility)
-func (s *userPermissionsService) convertToOrganizationMemberships(contexts []authDto.EntityMembershipContext) []authDto.OrganizationMembershipContext {
+func (s *UserPermissionsService) convertToOrganizationMemberships(contexts []authDto.EntityMembershipContext) []authDto.OrganizationMembershipContext {
 	result := make([]authDto.OrganizationMembershipContext, 0, len(contexts))
 	for _, ctx := range contexts {
 		result = append(result, authDto.OrganizationMembershipContext{
@@ -309,7 +305,7 @@ func (s *userPermissionsService) convertToOrganizationMemberships(contexts []aut
 }
 
 // convertToGroupMemberships converts generic contexts to group-specific (for backward compatibility)
-func (s *userPermissionsService) convertToGroupMemberships(contexts []authDto.EntityMembershipContext) []authDto.GroupMembershipContext {
+func (s *UserPermissionsService) convertToGroupMemberships(contexts []authDto.EntityMembershipContext) []authDto.GroupMembershipContext {
 	result := make([]authDto.GroupMembershipContext, 0, len(contexts))
 	for _, ctx := range contexts {
 		result = append(result, authDto.GroupMembershipContext{

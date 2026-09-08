@@ -57,7 +57,7 @@ var resourcePathRegex = regexp.MustCompile(`/api/v1/([\w-]+)/([\da-f]{8}-[\da-f]
 type SecurityAdminService struct {
 	db                 *gorm.DB
 	enforcer           interfaces.EnforcerInterface
-	permissionsService UserPermissionsService
+	permissionsService *UserPermissionsService
 	resolveNames       func(uuids []string) map[string]string
 }
 

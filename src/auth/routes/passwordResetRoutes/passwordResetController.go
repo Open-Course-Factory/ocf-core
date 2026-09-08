@@ -14,7 +14,7 @@ import (
 )
 
 type PasswordResetController struct {
-	passwordResetService services.PasswordResetService
+	passwordResetService *services.PasswordResetService
 }
 
 func NewPasswordResetController(db *gorm.DB) *PasswordResetController {

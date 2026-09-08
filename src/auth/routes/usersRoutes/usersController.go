@@ -30,7 +30,7 @@ type UserController interface {
 
 type userController struct {
 	service         services.UserService
-	settingsService services.UserSettingsService
+	settingsService *services.UserSettingsService
 	deletionService services.UserDeletionService
 }
 
@@ -52,7 +52,7 @@ func NewUserController() UserController {
 // collaborators so tests can substitute the identity, billing and erasure seams.
 func NewUserControllerWithServices(
 	userService services.UserService,
-	settingsService services.UserSettingsService,
+	settingsService *services.UserSettingsService,
 	deletionService services.UserDeletionService,
 ) UserController {
 	return &userController{

@@ -62,21 +62,13 @@ type VerificationStatus struct {
 	Email      string `json:"email"`
 }
 
-type EmailVerificationService interface {
-	CreateVerificationToken(userID, email string) error
-	VerifyEmail(token string) error
-	ResendVerification(email string) error
-	IsEmailVerified(userID string) (bool, error)
-	GetVerificationStatus(userID string) (*VerificationStatus, error)
-}
-
-type emailVerificationService struct {
+type EmailVerificationService struct {
 	db           *gorm.DB
 	emailService emailServices.EmailService
 }
 
-func NewEmailVerificationService(db *gorm.DB) EmailVerificationService {
-	return &emailVerificationService{
+func NewEmailVerificationService(db *gorm.DB) *EmailVerificationService {
+	return &EmailVerificationService{
 		db:           db,
 		emailService: emailServices.NewEmailServiceWithDB(db),
 	}
@@ -103,7 +95,7 @@ func getExpiryDuration() time.Duration {
 }
 
 // CreateVerificationToken creates a new verification token and sends email
-func (s *emailVerificationService) CreateVerificationToken(userID, email string) error {
+func (s *EmailVerificationService) CreateVerificationToken(userID, email string) error {
 	// Get user from Casdoor to get display name
 	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
@@ -143,7 +135,7 @@ func (s *emailVerificationService) CreateVerificationToken(userID, email string)
 }
 
 // sendVerificationEmail sends the verification email using the email service
-func (s *emailVerificationService) sendVerificationEmail(email, token, userName string) error {
+func (s *EmailVerificationService) sendVerificationEmail(email, token, userName string) error {
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:4000"
@@ -168,7 +160,7 @@ func (s *emailVerificationService) sendVerificationEmail(email, token, userName 
 // only one UPDATE will match a row; the other receives rowsAffected == 0 and
 // returns ErrTokenUsed. The Casdoor call intentionally happens outside the
 // UPDATE to avoid holding a lock during an external HTTP request.
-func (s *emailVerificationService) VerifyEmail(token string) error {
+func (s *EmailVerificationService) VerifyEmail(token string) error {
 	// Find the verification token (read-only, no lock needed here — the
 	// atomic claim below is what serializes concurrent requests).
 	var verificationToken models.EmailVerificationToken
@@ -233,7 +225,7 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 }
 
 // ResendVerification resends the verification email with rate limiting
-func (s *emailVerificationService) ResendVerification(email string) error {
+func (s *EmailVerificationService) ResendVerification(email string) error {
 	// Find user by email in Casdoor
 	user, err := casdoorsdk.GetUserByEmail(email)
 	if err != nil || user == nil {
@@ -294,7 +286,7 @@ func (s *emailVerificationService) ResendVerification(email string) error {
 // while RequireVerifiedEmail — built on this function — returned 403 on every
 // payment route. Both callers now share GetVerificationStatus, so there is one
 // rule left to be wrong.
-func (s *emailVerificationService) IsEmailVerified(userID string) (bool, error) {
+func (s *EmailVerificationService) IsEmailVerified(userID string) (bool, error) {
 	status, err := s.GetVerificationStatus(userID)
 	if err != nil {
 		return false, err
@@ -305,7 +297,7 @@ func (s *emailVerificationService) IsEmailVerified(userID string) (bool, error) 
 // GetVerificationStatus returns the verification status for a user.
 // It checks Casdoor first, then falls back to PostgreSQL if Casdoor
 // is unavailable or reports the email as unverified.
-func (s *emailVerificationService) GetVerificationStatus(userID string) (*VerificationStatus, error) {
+func (s *EmailVerificationService) GetVerificationStatus(userID string) (*VerificationStatus, error) {
 	user, err := readCasdoorUser(userID)
 	if err != nil {
 		// Casdoor unavailable — fall back to PostgreSQL
@@ -337,7 +329,7 @@ func (s *emailVerificationService) GetVerificationStatus(userID string) (*Verifi
 }
 
 // getVerificationStatusFromDB checks PostgreSQL for a used verification token
-func (s *emailVerificationService) getVerificationStatusFromDB(userID string) (*VerificationStatus, error) {
+func (s *EmailVerificationService) getVerificationStatusFromDB(userID string) (*VerificationStatus, error) {
 	var token models.EmailVerificationToken
 	err := s.db.Where("user_id = ? AND used_at IS NOT NULL", userID).Order("used_at DESC").First(&token).Error
 	if err != nil {

@@ -24,7 +24,7 @@ type AuthMiddleware interface {
 }
 
 type authMiddleware struct {
-	permissionService PermissionService
+	permissionService *PermissionService
 	auditService      auditServices.AuditService
 }
 

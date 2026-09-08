@@ -13,7 +13,7 @@ import (
 
 type EmailVerificationController struct {
 	db      *gorm.DB
-	service services.EmailVerificationService
+	service *services.EmailVerificationService
 }
 
 func NewEmailVerificationController(db *gorm.DB) *EmailVerificationController {

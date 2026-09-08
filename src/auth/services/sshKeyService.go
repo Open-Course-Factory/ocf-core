@@ -9,21 +9,17 @@ import (
 	"gorm.io/gorm"
 )
 
-type SshKeyService interface {
-	GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error)
-}
-
-type sshKeyService struct {
+type SshKeyService struct {
 	db *gorm.DB
 }
 
-func NewSshKeyService(db *gorm.DB) SshKeyService {
-	return &sshKeyService{
+func NewSshKeyService(db *gorm.DB) *SshKeyService {
+	return &SshKeyService{
 		db: db,
 	}
 }
 
-func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error) {
+func (sks *SshKeyService) GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error) {
 	var sshKeys []models.SshKey
 
 	result := sks.db.Find(&sshKeys, "owner_ids && ?", pq.StringArray{uuid.MustParse(id).String()})
