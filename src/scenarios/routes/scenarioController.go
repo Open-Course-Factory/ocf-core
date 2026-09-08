@@ -321,26 +321,7 @@ func (sc *scenarioController) ExportScenarios(ctx *gin.Context) {
 // @Router /scenarios/import-json [post]
 // @Security BearerAuth
 func (sc *scenarioController) ImportJSON(ctx *gin.Context) {
-	var input dto.SeedScenarioInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	userID := ctx.GetString("userId")
-
-	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, nil)
-	if err != nil {
-		slog.Error("failed to import scenario from JSON", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
-		return
-	}
-
-	statusCode := http.StatusCreated
-	if isUpdate {
-		statusCode = http.StatusOK
-	}
-	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
+	sc.importScenarioJSON(ctx, nil, nil)
 }
 
 // DuplicateScenario godoc

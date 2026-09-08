@@ -11,6 +11,7 @@ import (
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	groupServices "soli/formations/src/groups/services"
+	"soli/formations/src/scenarios/dto"
 	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
@@ -251,4 +252,34 @@ func (b *scenarioControllerBase) writeScenarioExport(ctx *gin.Context, scenarioI
 	default:
 		errors.Respond(ctx, http.StatusBadRequest, "Invalid format. Use 'json' or 'killerkoda'")
 	}
+}
+
+// importScenarioJSON creates or updates a scenario from the JSON body under
+// the given owner, optionally assigning it to a group, and answers the
+// request. The caller has already run its authorization gate.
+func (b *scenarioControllerBase) importScenarioJSON(ctx *gin.Context, orgID *uuid.UUID, assignToGroup *uuid.UUID) {
+	var input dto.SeedScenarioInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	userID := ctx.GetString("userId")
+
+	scenario, isUpdate, err := b.seedService.SeedScenario(input, userID, orgID)
+	if err != nil {
+		slog.Error("failed to import scenario from JSON", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
+		return
+	}
+
+	if assignToGroup != nil {
+		b.ensureGroupAssignment(scenario.ID, *assignToGroup, userID)
+	}
+
+	statusCode := http.StatusCreated
+	if isUpdate {
+		statusCode = http.StatusOK
+	}
+	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
 }

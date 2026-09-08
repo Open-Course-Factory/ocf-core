@@ -107,51 +107,13 @@ func (sc *scenarioManagementController) GroupImportJSON(ctx *gin.Context) {
 		return
 	}
 
-	var input dto.SeedScenarioInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	userID := ctx.GetString("userId")
-
-	// Get the group's organization ID
 	var group groupModels.ClassGroup
 	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
 		errors.Respond(ctx, http.StatusNotFound, "Group not found")
 		return
 	}
 
-	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, group.OrganizationID)
-	if err != nil {
-		slog.Error("failed to import scenario for group", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
-		return
-	}
-
-	// Auto-create ScenarioAssignment for the group (if not already assigned)
-	var existingAssignment models.ScenarioAssignment
-	if err := sc.db.Where("scenario_id = ? AND group_id = ?",
-		scenario.ID, groupID).First(&existingAssignment).Error; err != nil {
-		// No existing assignment, create one
-		assignment := models.ScenarioAssignment{
-			ScenarioID:  scenario.ID,
-			GroupID:     &groupID,
-			Scope:       "group",
-			CreatedByID: userID,
-			IsActive:    true,
-		}
-		if err := sc.db.Create(&assignment).Error; err != nil {
-			slog.Error("failed to create scenario assignment", "err", err)
-			// Don't fail the whole request, scenario was already created
-		}
-	}
-
-	statusCode := http.StatusCreated
-	if isUpdate {
-		statusCode = http.StatusOK
-	}
-	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
+	sc.importScenarioJSON(ctx, group.OrganizationID, &groupID)
 }
 
 // GroupUploadScenario godoc
@@ -251,28 +213,7 @@ func (sc *scenarioManagementController) OrgImportJSON(ctx *gin.Context) {
 		return
 	}
 
-	var input dto.SeedScenarioInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	userID := ctx.GetString("userId")
-
-	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, &orgID)
-	if err != nil {
-		slog.Error("failed to import scenario for org", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
-		return
-	}
-
-	// Do NOT create ScenarioAssignment (unlike GroupImportJSON)
-
-	statusCode := http.StatusCreated
-	if isUpdate {
-		statusCode = http.StatusOK
-	}
-	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
+	sc.importScenarioJSON(ctx, &orgID, nil)
 }
 
 // OrgCreateScenario creates a blank scenario inside an organization.
