@@ -9,10 +9,10 @@ import (
 	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/models"
+	testTools "soli/formations/tests/testTools"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -49,20 +49,7 @@ func TestMain(m *testing.M) {
 	// per-feature seam (e.g. services.LookupCasdoorUserForOrgUsage).
 	casdoorsdk.InitConfig("http://localhost:0", "dummy-endpoint", "dummy-client", "dummy-secret", "dummy-org", "dummy-app")
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		panic("failed to open shared test DB: " + err.Error())
-	}
-
-	// Migrate all tables needed by any terminalTrainer test
-	err = db.AutoMigrate(terminalTestModels...)
-	if err != nil {
-		panic("failed to migrate shared test DB: " + err.Error())
-	}
-
-	sharedTestDB = db
+	sharedTestDB = testTools.MemoryDB(terminalTestModels...)
 	os.Exit(m.Run())
 }
 
@@ -133,17 +120,19 @@ func truncateAllPGTables(t *testing.T, db *gorm.DB) {
 func freshTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	// Delete in dependency order to respect foreign keys
-	sharedTestDB.Exec("DELETE FROM terminals")
-	sharedTestDB.Exec("DELETE FROM user_terminal_keys")
-	sharedTestDB.Exec("DELETE FROM group_members")
-	sharedTestDB.Exec("DELETE FROM class_groups")
-	sharedTestDB.Exec("DELETE FROM organization_members")
-	sharedTestDB.Exec("DELETE FROM organization_subscriptions")
-	sharedTestDB.Exec("DELETE FROM organization_role_plans")
-	sharedTestDB.Exec("DELETE FROM user_subscriptions")
-	sharedTestDB.Exec("DELETE FROM usage_metrics")
-	sharedTestDB.Exec("DELETE FROM organizations")
-	sharedTestDB.Exec("DELETE FROM subscription_plans")
-	sharedTestDB.Exec("DELETE FROM features")
+	testTools.Truncate(sharedTestDB,
+		"terminals",
+		"user_terminal_keys",
+		"group_members",
+		"class_groups",
+		"organization_members",
+		"organization_subscriptions",
+		"organization_role_plans",
+		"user_subscriptions",
+		"usage_metrics",
+		"organizations",
+		"subscription_plans",
+		"features",
+	)
 	return sharedTestDB
 }

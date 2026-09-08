@@ -7,9 +7,9 @@ import (
 	auditModels "soli/formations/src/audit/models"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+
+	testTools "soli/formations/tests/testTools"
 )
 
 var sharedTestDB *gorm.DB
@@ -17,16 +17,7 @@ var sharedTestDB *gorm.DB
 func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		panic("failed to open test DB: " + err.Error())
-	}
-
-	if err := db.AutoMigrate(&auditModels.AuditLog{}); err != nil {
-		panic("failed to migrate audit_logs: " + err.Error())
-	}
+	db := testTools.MemoryDB(&auditModels.AuditLog{})
 
 	sharedTestDB = db
 	os.Exit(m.Run())
@@ -34,6 +25,6 @@ func TestMain(m *testing.M) {
 
 func freshTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	sharedTestDB.Exec("DELETE FROM audit_logs")
+	testTools.Truncate(sharedTestDB, "audit_logs")
 	return sharedTestDB
 }
