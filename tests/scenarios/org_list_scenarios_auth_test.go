@@ -46,8 +46,8 @@ func setupControllerOnlyRouter(db *gorm.DB, userID string) *gin.Engine {
 	})
 	// NOTE: No Layer2Enforcement middleware — testing the raw controller behaviour
 	managementController := scenarioController.NewScenarioManagementController(db)
-	orgScenarios := api.Group("/organizations/:id/scenarios")
-	orgScenarios.GET("", managementController.OrgListScenarios)
+	api.GET("/organizations/:id/scenarios", managementController.OrgListScenarios)
+	api.GET("/groups/:groupId/scenarios/:scenarioId/export", managementController.GroupExportScenario)
 	return r
 }
 

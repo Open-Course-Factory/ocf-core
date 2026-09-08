@@ -18,29 +18,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"gorm.io/gorm"
 
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
-	scenarioController "soli/formations/src/scenarios/routes"
 )
-
-// setupRawManagementRouter mounts the two handlers with the caller injected
-// and NO Layer 2 middleware.
-func setupRawManagementRouter(db *gorm.DB, userID string, roles []string) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	api := r.Group("/api/v1")
-	api.Use(func(c *gin.Context) {
-		c.Set("userId", userID)
-		c.Set("userRoles", roles)
-		c.Next()
-	})
-	ctrl := scenarioController.NewScenarioManagementController(db)
-	api.GET("/organizations/:id/scenarios", ctrl.OrgListScenarios)
-	api.GET("/groups/:groupId/scenarios/:scenarioId/export", ctrl.GroupExportScenario)
-	return r
-}
 
 func getRaw(router *gin.Engine, path string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
@@ -59,7 +40,7 @@ func TestGroupExportScenario_RawController_PlainGroupMember_Forbidden(t *testing
 	scenario := createTestScenarioForOrg(t, db, orgID, "group-export-295")
 	createScenarioAssignment(t, db, scenario.ID, &groupID, nil, "group")
 
-	router := setupRawManagementRouter(db, "plain-student-295", []string{"member"})
+	router := setupControllerOnlyRouter(db, "plain-student-295")
 	w := getRaw(router, "/api/v1/groups/"+groupID.String()+"/scenarios/"+scenario.ID.String()+"/export")
 
 	assert.Equal(t, http.StatusForbidden, w.Code,
@@ -74,7 +55,7 @@ func TestGroupExportScenario_RawController_GroupManager_Allowed(t *testing.T) {
 	scenario := createTestScenarioForOrg(t, db, orgID, "group-export-ok-295")
 	createScenarioAssignment(t, db, scenario.ID, &groupID, nil, "group")
 
-	router := setupRawManagementRouter(db, "group-manager-295", []string{"member"})
+	router := setupControllerOnlyRouter(db, "group-manager-295")
 	w := getRaw(router, "/api/v1/groups/"+groupID.String()+"/scenarios/"+scenario.ID.String()+"/export")
 
 	assert.Equal(t, http.StatusOK, w.Code, "Body: %s", w.Body.String())
@@ -89,7 +70,7 @@ func TestOrgListScenarios_RawController_PlainActiveMember_Forbidden(t *testing.T
 	addOrgMember(t, db, orgID, "plain-member-295", orgModels.OrgRoleMember)
 	createTestScenarioForOrg(t, db, orgID, "org-list-295")
 
-	router := setupRawManagementRouter(db, "plain-member-295", []string{"member"})
+	router := setupControllerOnlyRouter(db, "plain-member-295")
 	w := getRaw(router, "/api/v1/organizations/"+orgID.String()+"/scenarios")
 
 	assert.Equal(t, http.StatusForbidden, w.Code,
@@ -103,7 +84,7 @@ func TestOrgListScenarios_RawController_Manager_Allowed(t *testing.T) {
 	addOrgMember(t, db, orgID, "org-manager-295", orgModels.OrgRoleManager)
 	createTestScenarioForOrg(t, db, orgID, "org-list-ok-295")
 
-	router := setupRawManagementRouter(db, "org-manager-295", []string{"member"})
+	router := setupControllerOnlyRouter(db, "org-manager-295")
 	w := getRaw(router, "/api/v1/organizations/"+orgID.String()+"/scenarios")
 
 	assert.Equal(t, http.StatusOK, w.Code, "Body: %s", w.Body.String())

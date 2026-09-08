@@ -453,12 +453,16 @@ func TestReinstate_ClearsBothFieldsAndUnforbidsTheAccount(t *testing.T) {
 }
 
 func usersCSV(t *testing.T, rows string) *multipart.FileHeader {
+	return usersCSVWithColumns(t, "email,first_name,last_name,role", rows)
+}
+
+func usersCSVWithColumns(t *testing.T, header, rows string) *multipart.FileHeader {
 	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 	part, err := w.CreateFormFile("users", "users.csv")
 	require.NoError(t, err)
-	_, err = part.Write([]byte("email,first_name,last_name,role\n" + rows))
+	_, err = part.Write([]byte(header + "\n" + rows))
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 	form, err := multipart.NewReader(&body, w.Boundary()).ReadForm(1 << 20)

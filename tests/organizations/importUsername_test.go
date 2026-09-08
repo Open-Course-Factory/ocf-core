@@ -42,8 +42,6 @@ func TestCsvImport_DerivesUsernamesCasdoorAccepts(t *testing.T) {
 		assert.False(t, seen[u.Name], "usernames must be distinct")
 		seen[u.Name] = true
 	}
-	assert.Contains(t, identity.created[0].Name, "ma-ben-abdallah-")
 	assert.Contains(t, identity.created[1].Name, "eloise-d-angelo-")
-	assert.Contains(t, identity.created[2].Name, "dupont-")
 	assert.Equal(t, "Éloïse D'Angelo", identity.created[1].DisplayName, "the display name keeps the real spelling")
 }

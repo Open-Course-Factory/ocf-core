@@ -65,7 +65,7 @@ func TestCsvImport_VerifyEmails_UpdatedAccountIsVerifiedAndKeepsItsProperties(t 
 
 	importer := services.NewImportService(db, identity, offboarding)
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
-		usersCSVWithForceReset(t, "student-a@example.com,Ada,Lovelace,member,true\n"), nil, nil, false, true, "", true)
+		usersCSVWithColumns(t, "email,first_name,last_name,role,force_reset", "student-a@example.com,Ada,Lovelace,member,true\n"), nil, nil, false, true, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
 
 	existing := identity.users["student-a"]
@@ -75,32 +75,8 @@ func TestCsvImport_VerifyEmails_UpdatedAccountIsVerifiedAndKeepsItsProperties(t 
 	assert.Equal(t, "true", existing.Properties["force_password_reset"])
 
 	require.Len(t, identity.columns, 1)
-	assert.Contains(t, identity.columns[0], "email_verified", "Casdoor's default whitelist drops email_verified: it must be named")
-	assert.Equal(t, 1, countOf(identity.columns[0], "properties"), "force_reset and the verified mark share the properties column")
-}
-
-func usersCSVWithForceReset(t *testing.T, rows string) *multipart.FileHeader {
-	t.Helper()
-	var body bytes.Buffer
-	w := multipart.NewWriter(&body)
-	part, err := w.CreateFormFile("users", "users.csv")
-	require.NoError(t, err)
-	_, err = part.Write([]byte("email,first_name,last_name,role,force_reset\n" + rows))
-	require.NoError(t, err)
-	require.NoError(t, w.Close())
-	form, err := multipart.NewReader(&body, w.Boundary()).ReadForm(1 << 20)
-	require.NoError(t, err)
-	return form.File["users"][0]
-}
-
-func countOf(values []string, wanted string) int {
-	n := 0
-	for _, v := range values {
-		if v == wanted {
-			n++
-		}
-	}
-	return n
+	assert.Equal(t, []string{"first_name", "last_name", "display_name", "properties", "email_verified"}, identity.columns[0],
+		"Casdoor's default whitelist drops email_verified, so it must be named; force_reset and the verified mark share one properties column")
 }
 
 func TestCsvImport_VerifyEmailsOff_LeavesVerificationUntouched(t *testing.T) {

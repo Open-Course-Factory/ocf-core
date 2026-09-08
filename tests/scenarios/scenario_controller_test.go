@@ -834,39 +834,13 @@ func setupTestRouterWithRoles(db *gorm.DB, userID string, roles []string) *gin.E
 
 // newLaunchableScenario creates a scenario with one step, the minimum a launch accepts.
 func newLaunchableScenario(t *testing.T, db *gorm.DB, name string) models.Scenario {
-	t.Helper()
-	scenario := models.Scenario{
-		Name:         name,
-		Title:        name,
-		InstanceType: "ubuntu:22.04",
-		CreatedByID:  "creator-1",
-	}
-	require.NoError(t, db.Create(&scenario).Error)
-	require.NoError(t, db.Create(&models.ScenarioStep{
-		ScenarioID:  scenario.ID,
-		Order:       0,
-		Title:       "Step 1",
-		TextContent: "Do something",
-	}).Error)
-	return scenario
+	return seedScenarioWithSteps(t, db, name, "Step 1")
 }
 
 // newGroupWithMember creates a class group and makes userID an active member of it.
 func newGroupWithMember(t *testing.T, db *gorm.DB, name, userID string) groupModels.ClassGroup {
-	t.Helper()
-	group := groupModels.ClassGroup{
-		Name:        name,
-		DisplayName: name,
-		OwnerUserID: "creator-1",
-	}
-	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
-	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
-		GroupID:  group.ID,
-		UserID:   userID,
-		Role:     groupModels.GroupMemberRoleMember,
-		IsActive: true,
-		JoinedAt: time.Now(),
-	}).Error)
+	group := createClassGroup(t, db, name, "creator-1", nil)
+	addGroupMember(t, db, group.ID, userID, groupModels.GroupMemberRoleMember)
 	return group
 }
 
@@ -889,13 +863,7 @@ func TestLaunchScenario_WithGroupAssignment_PassesAccessCheck(t *testing.T) {
 	db := setupTestDB(t)
 	scenario := newLaunchableScenario(t, db, "with-assignment-test")
 	group := newGroupWithMember(t, db, "test-group-assigned", "assigned-user-1")
-	require.NoError(t, db.Create(&models.ScenarioAssignment{
-		ScenarioID:  scenario.ID,
-		GroupID:     &group.ID,
-		Scope:       "group",
-		IsActive:    true,
-		CreatedByID: "creator-1",
-	}).Error)
+	createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
 
 	router := setupTestRouterWithRoles(db, "assigned-user-1", []string{"member"})
 	w := postLaunch(router, scenario.ID.String())
@@ -921,15 +889,8 @@ func TestLaunchScenario_ExpiredDeadline_Returns403(t *testing.T) {
 	db := setupTestDB(t)
 	scenario := newLaunchableScenario(t, db, "expired-deadline-test")
 	group := newGroupWithMember(t, db, "test-group-expired", "expired-user-1")
-	pastDeadline := time.Now().Add(-24 * time.Hour)
-	require.NoError(t, db.Create(&models.ScenarioAssignment{
-		ScenarioID:  scenario.ID,
-		GroupID:     &group.ID,
-		Scope:       "group",
-		IsActive:    true,
-		Deadline:    &pastDeadline,
-		CreatedByID: "creator-1",
-	}).Error)
+	assignment := createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
+	require.NoError(t, db.Model(assignment).Update("deadline", time.Now().Add(-24*time.Hour)).Error)
 
 	router := setupTestRouterWithRoles(db, "expired-user-1", []string{"member"})
 	w := postLaunch(router, scenario.ID.String())
@@ -946,15 +907,8 @@ func TestLaunchScenario_InactiveAssignment_Returns403(t *testing.T) {
 
 	// Create assignment then set is_active=false
 	// (GORM default:true treats false as zero value and overrides it)
-	assignment := models.ScenarioAssignment{
-		ScenarioID:  scenario.ID,
-		GroupID:     &group.ID,
-		Scope:       "group",
-		IsActive:    true,
-		CreatedByID: "creator-1",
-	}
-	require.NoError(t, db.Create(&assignment).Error)
-	require.NoError(t, db.Model(&assignment).Update("is_active", false).Error)
+	assignment := createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
+	require.NoError(t, db.Model(assignment).Update("is_active", false).Error)
 
 	router := setupTestRouterWithRoles(db, "inactive-user-1", []string{"member"})
 	w := postLaunch(router, scenario.ID.String())

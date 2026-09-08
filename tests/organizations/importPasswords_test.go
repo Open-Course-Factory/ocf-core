@@ -8,8 +8,7 @@
 package organizations_tests
 
 import (
-	"bytes"
-	"mime/multipart"
+	"slices"
 	"testing"
 
 	"soli/formations/src/organizations/models"
@@ -21,14 +20,7 @@ import (
 )
 
 func columnsMention(columns [][]string, name string) bool {
-	for _, cols := range columns {
-		for _, c := range cols {
-			if c == name {
-				return true
-			}
-		}
-	}
-	return false
+	return slices.ContainsFunc(columns, func(c []string) bool { return slices.Contains(c, name) })
 }
 
 func TestCsvImport_ReimportLeavesAnExistingPasswordAlone(t *testing.T) {
@@ -62,7 +54,7 @@ func TestCsvImport_ExplicitPasswordOnExistingAccountGoesThroughSetPassword(t *te
 
 	importer := services.NewImportService(db, identity, offboarding)
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
-		usersCSVWithPassword(t, "ada@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"), nil, nil, false, true, "", true)
+		usersCSVWithColumns(t, "email,first_name,last_name,role,password", "ada@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"), nil, nil, false, true, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
 
 	assert.Equal(t, "Str0ng-Pass!", identity.passwordsSet["ada-lovelace-1"], "a stated password is applied through the hashing call")
@@ -88,19 +80,4 @@ func TestCsvImport_CreatedAccountGetsAGeneratedPasswordAndACredential(t *testing
 	require.Len(t, resp.Credentials, 1)
 	assert.Equal(t, identity.created[0].Password, resp.Credentials[0].Password, "the credential reported is the one set on the account")
 	assert.Empty(t, identity.passwordsSet, "creation carries the password itself; no separate set-password call")
-}
-
-// usersCSVWithPassword is usersCSV with a password column.
-func usersCSVWithPassword(t *testing.T, rows string) *multipart.FileHeader {
-	t.Helper()
-	var body bytes.Buffer
-	w := multipart.NewWriter(&body)
-	part, err := w.CreateFormFile("users", "users.csv")
-	require.NoError(t, err)
-	_, err = part.Write([]byte("email,first_name,last_name,role,password\n" + rows))
-	require.NoError(t, err)
-	require.NoError(t, w.Close())
-	form, err := multipart.NewReader(&body, w.Boundary()).ReadForm(1 << 20)
-	require.NoError(t, err)
-	return form.File["users"][0]
 }

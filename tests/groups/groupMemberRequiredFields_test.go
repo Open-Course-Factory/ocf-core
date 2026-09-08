@@ -12,27 +12,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"gorm.io/gorm"
-
 	"soli/formations/src/groups/dto"
 	groupModels "soli/formations/src/groups/models"
 )
-
-// setupGroupMemberCreateEnv is the class-archive HTTP harness with the jsonb
-// Metadata column omitted on insert: the generic create path writes the full
-// model, and the sqlite driver cannot bind a map.
-func setupGroupMemberCreateEnv(t *testing.T) *classArchiveEnv {
-	t.Helper()
-	env := setupClassArchiveEnv(t)
-	omitMetadata := func(tx *gorm.DB) {
-		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Table == "group_members" {
-			tx.Statement.Omits = append(tx.Statement.Omits, "Metadata")
-		}
-	}
-	env.db.Callback().Create().Before("gorm:create").Register("omit_group_member_metadata_on_create", omitMetadata)
-	env.db.Callback().Update().Before("gorm:update").Register("omit_group_member_metadata_on_update", omitMetadata)
-	return env
-}
 
 func countGroupMembersWithUserID(env *classArchiveEnv, groupID uuid.UUID, userID string) int64 {
 	var count int64
@@ -40,44 +22,31 @@ func countGroupMembersWithUserID(env *classArchiveEnv, groupID uuid.UUID, userID
 	return count
 }
 
-func TestGroupMemberCreate_EmptyUserID_IsRefusedWith400(t *testing.T) {
-	env := setupGroupMemberCreateEnv(t)
+func TestGroupMemberCreate_MissingRequiredKey_IsRefusedWith400(t *testing.T) {
+	env := setupClassArchiveEnv(t)
 	group := seedClass(t, env.db, "promo", "teacher", nil)
 	seedClassMember(t, env.db, group.ID, "teacher", groupModels.GroupMemberRoleOwner)
 	env.as("teacher")
 
-	rec := env.do(http.MethodPost, "/api/v1/group-members", dto.CreateGroupMemberInput{
-		GroupID: group.ID, UserID: "", Role: groupModels.GroupMemberRoleMember,
-	})
+	cases := []struct {
+		name    string
+		groupID uuid.UUID
+		userID  string
+	}{
+		{"empty user_id", group.ID, ""},
+		{"blank user_id", group.ID, "   "},
+		{"nil group_id", uuid.Nil, "student"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := env.do(http.MethodPost, "/api/v1/group-members", dto.CreateGroupMemberInput{
+				GroupID: tc.groupID, UserID: tc.userID, Role: groupModels.GroupMemberRoleMember,
+			})
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-	assert.Zero(t, countGroupMembersWithUserID(env, group.ID, ""), "no membership row may carry an empty user_id")
-}
-
-func TestGroupMemberCreate_BlankUserID_IsRefusedWith400(t *testing.T) {
-	env := setupGroupMemberCreateEnv(t)
-	group := seedClass(t, env.db, "promo", "teacher", nil)
-	seedClassMember(t, env.db, group.ID, "teacher", groupModels.GroupMemberRoleOwner)
-	env.as("teacher")
-
-	rec := env.do(http.MethodPost, "/api/v1/group-members", dto.CreateGroupMemberInput{
-		GroupID: group.ID, UserID: "   ", Role: groupModels.GroupMemberRoleMember,
-	})
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-	assert.Zero(t, countGroupMembersWithUserID(env, group.ID, "   "))
-}
-
-func TestGroupMemberCreate_NilGroupID_IsRefusedWith400(t *testing.T) {
-	env := setupGroupMemberCreateEnv(t)
-	env.as("teacher")
-
-	rec := env.do(http.MethodPost, "/api/v1/group-members", dto.CreateGroupMemberInput{
-		GroupID: uuid.Nil, UserID: "student", Role: groupModels.GroupMemberRoleMember,
-	})
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-	assert.Zero(t, countGroupMembersWithUserID(env, uuid.Nil, "student"))
+			assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			assert.Zero(t, countGroupMembersWithUserID(env, tc.groupID, tc.userID), "no membership row may be written")
+		})
+	}
 }
 
 // The guard against over-restriction lives at the hook level:
