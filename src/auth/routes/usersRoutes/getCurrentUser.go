@@ -38,10 +38,7 @@ func GetCurrentUser(ctx *gin.Context) {
 	// Get authenticated user ID from JWT token
 	userID := ctx.GetString("userId")
 	if userID == "" {
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-			ErrorCode:    http.StatusUnauthorized,
-			ErrorMessage: "User not authenticated",
-		})
+		errors.Respond(ctx, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
@@ -55,18 +52,12 @@ func GetCurrentUser(ctx *gin.Context) {
 	// Get user from Casdoor
 	user, err := LookupCasdoorUser(userID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve user information: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve user information: "+err.Error())
 		return
 	}
 
 	if user == nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "User not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "User not found")
 		return
 	}
 

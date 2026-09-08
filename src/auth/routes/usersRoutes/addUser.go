@@ -29,20 +29,14 @@ func (u userController) AddUser(ctx *gin.Context) {
 
 	bindError := ctx.BindJSON(&userCreateDTO)
 	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json: " + bindError.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Impossible de parser le json: "+bindError.Error())
 		return
 	}
 
 	user, userError := u.service.AddUser(userCreateDTO)
 
 	if userError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: userError.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, userError.Error())
 		return
 	}
 

@@ -85,10 +85,7 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		var userRoles []string
 		userRoles, errRoles := casdoor.Enforcer.GetRolesForUser(userId)
 		if errRoles != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: errRoles.Error(),
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, errRoles.Error())
 			ctx.Abort()
 			return
 		}

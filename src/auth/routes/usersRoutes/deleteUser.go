@@ -37,10 +37,7 @@ func (u userController) DeleteUser(ctx *gin.Context) {
 	userRoles := ctx.GetStringSlice("userRoles")
 	isAdmin := access.IsAdmin(userRoles)
 	if !isAdmin {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Admin access required",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Admin access required")
 		ctx.Abort()
 		return
 	}
@@ -50,10 +47,7 @@ func (u userController) DeleteUser(ctx *gin.Context) {
 	id, parseError := uuid.Parse(idParam)
 
 	if parseError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: parseError.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, parseError.Error())
 		ctx.Abort()
 		return
 	}
@@ -65,7 +59,7 @@ func (u userController) DeleteUser(ctx *gin.Context) {
 		if status == http.StatusInternalServerError {
 			utils.Error("Admin erasure failed for user %s: %v", id, err)
 		}
-		ctx.JSON(status, &errors.APIError{ErrorCode: status, ErrorMessage: message})
+		errors.Respond(ctx, status, message)
 		ctx.Abort()
 		return
 	}

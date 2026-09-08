@@ -26,10 +26,7 @@ func GetUserPermissions(ctx *gin.Context) {
 	// Get authenticated user ID from JWT token
 	userID := ctx.GetString("userId")
 	if userID == "" {
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-			ErrorCode:    http.StatusUnauthorized,
-			ErrorMessage: "User not authenticated",
-		})
+		errors.Respond(ctx, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
@@ -39,10 +36,7 @@ func GetUserPermissions(ctx *gin.Context) {
 	// Get user permissions
 	permissions, err := permissionsService.GetUserPermissions(userID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve user permissions: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve user permissions: "+err.Error())
 		return
 	}
 

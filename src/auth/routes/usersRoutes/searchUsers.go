@@ -24,27 +24,18 @@ import (
 func (u userController) SearchUsers(ctx *gin.Context) {
 	query := ctx.Query("q")
 	if query == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Search query is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Search query is required")
 		return
 	}
 
 	if len(query) < 2 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Search query must be at least 2 characters",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Search query must be at least 2 characters")
 		return
 	}
 
 	users, userError := u.service.SearchUsers(query)
 	if userError != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: userError.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, userError.Error())
 		return
 	}
 

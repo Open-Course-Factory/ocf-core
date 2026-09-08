@@ -33,10 +33,7 @@ func (u accessController) DeleteEntityAccesses(ctx *gin.Context) {
 
 	bindError := ctx.BindJSON(&groupAccessesDeleteDTO)
 	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: bindError.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, bindError.Error())
 		return
 	}
 
@@ -47,10 +44,7 @@ func (u accessController) DeleteEntityAccesses(ctx *gin.Context) {
 	// Remove policy
 	errPolicyDeleting := utils.RemovePolicy(casdoor.Enforcer, groupAccessesDeleteDTO.GroupName, groupAccessesDeleteDTO.Route, "", opts)
 	if errPolicyDeleting != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: errPolicyDeleting.Error(),
-		})
+		errors.Respond(ctx, http.StatusNotFound, errPolicyDeleting.Error())
 		ctx.Abort()
 		return
 	}

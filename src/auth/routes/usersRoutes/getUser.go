@@ -32,10 +32,7 @@ import (
 func (u userController) GetUser(ctx *gin.Context) {
 	userID := ctx.Param("id")
 	if userID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "User ID is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "User ID is required")
 		return
 	}
 
@@ -43,20 +40,14 @@ func (u userController) GetUser(ctx *gin.Context) {
 	if userID == "me" {
 		userID = ctx.GetString("userId")
 		if userID == "" {
-			ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-				ErrorCode:    http.StatusUnauthorized,
-				ErrorMessage: "User not authenticated",
-			})
+			errors.Respond(ctx, http.StatusUnauthorized, "User not authenticated")
 			return
 		}
 	}
 
 	user, userError := u.service.GetUserById(userID)
 	if userError != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: userError.Error(),
-		})
+		errors.Respond(ctx, http.StatusNotFound, userError.Error())
 		return
 	}
 

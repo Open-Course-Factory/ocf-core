@@ -96,28 +96,19 @@ func (ac *authController) Login(ctx *gin.Context) {
 
 	resp, errPostToCasdoor := LoginToCasdoor(user, "")
 	if errPostToCasdoor != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: errPostToCasdoor.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, errPostToCasdoor.Error())
 		return
 	}
 	defer resp.Body.Close()
 
 	body, errReadBody := io.ReadAll(resp.Body)
 	if errReadBody != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: errReadBody.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, errReadBody.Error())
 		return
 	}
 
 	if resp.StatusCode >= 400 {
-		ctx.JSON(resp.StatusCode, &errors.APIError{
-			ErrorCode:    resp.StatusCode,
-			ErrorMessage: string(body),
-		})
+		errors.Respond(ctx, resp.StatusCode, string(body))
 		return
 	}
 
@@ -132,10 +123,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 
 	errUnmarshall := json.Unmarshal(body, &response)
 	if errUnmarshall != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: errUnmarshall.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, errUnmarshall.Error())
 		return
 	}
 
@@ -151,10 +139,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 	claims, errParse := casdoorsdk.ParseJwtToken(response.AccessToken)
 	if errParse != nil {
 		utils.Error("[SECURITY] Failed to parse JWT token during validation: %v", errParse)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to validate authentication token",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to validate authentication token")
 		return
 	}
 
@@ -162,10 +147,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 	if claims.Id != user.Id {
 		utils.Error("[SECURITY] Token user ID mismatch! Expected: %s, Got: %s (Expected user: %s, Token user: %s)",
 			user.Id, claims.Id, user.Name, claims.User.Name)
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-			ErrorCode:    http.StatusUnauthorized,
-			ErrorMessage: "Authentication token validation failed - user mismatch",
-		})
+		errors.Respond(ctx, http.StatusUnauthorized, "Authentication token validation failed - user mismatch")
 		return
 	}
 
@@ -247,36 +229,24 @@ func getUserFromContext(ctx *gin.Context) (*casdoorsdk.User, bool) {
 
 	bindError := ctx.BindJSON(&loginInputDto)
 	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Impossible de parser le json")
 		return nil, true
 	}
 
 	user, errUser := casdoorsdk.GetUserByEmail(loginInputDto.Email)
 
 	if errUser != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: errUser.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, errUser.Error())
 		return nil, true
 	}
 
 	if user == nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "User not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "User not found")
 		return nil, true
 	}
 
 	if user.Name == "" {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Invalid user data",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Invalid user data")
 		return nil, true
 	}
 

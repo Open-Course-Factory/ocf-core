@@ -32,10 +32,7 @@ func (u accessController) AddEntityAccesses(ctx *gin.Context) {
 
 	bindError := ctx.BindJSON(&groupAccessesCreateDTO)
 	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: bindError.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, bindError.Error())
 		return
 	}
 
@@ -46,20 +43,14 @@ func (u accessController) AddEntityAccesses(ctx *gin.Context) {
 	// Remove existing policy if present
 	errPolicyDeleting := utils.RemovePolicy(casdoor.Enforcer, groupAccessesCreateDTO.GroupName, groupAccessesCreateDTO.Route, "", opts)
 	if errPolicyDeleting != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: errPolicyDeleting.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, errPolicyDeleting.Error())
 		return
 	}
 
 	// Add new policy
 	errPolicyAdding := utils.AddPolicy(casdoor.Enforcer, groupAccessesCreateDTO.GroupName, groupAccessesCreateDTO.Route, groupAccessesCreateDTO.AuthorizedMethods, opts)
 	if errPolicyAdding != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: errPolicyAdding.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, errPolicyAdding.Error())
 		return
 	}
 

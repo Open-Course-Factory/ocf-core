@@ -22,10 +22,7 @@ import (
 func (u userController) GetUsers(ctx *gin.Context) {
 	users, userError := u.service.GetAllUsers()
 	if userError != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: userError.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, userError.Error())
 		return
 	}
 

@@ -27,36 +27,24 @@ func (u userController) GetUsersBatch(ctx *gin.Context) {
 
 	bindError := ctx.ShouldBindJSON(&batchInput)
 	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid request format",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid request format")
 		return
 	}
 
 	if len(batchInput.UserIds) == 0 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "User IDs are required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "User IDs are required")
 		return
 	}
 
 	// Limit to reasonable number of users
 	if len(batchInput.UserIds) > 50 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Too many user IDs (max 50)",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Too many user IDs (max 50)")
 		return
 	}
 
 	users, userError := u.service.GetUsersByIds(batchInput.UserIds)
 	if userError != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: userError.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, userError.Error())
 		return
 	}
 
