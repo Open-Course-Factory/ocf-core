@@ -1,7 +1,6 @@
 package scenarioController
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -257,31 +256,7 @@ func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 		return
 	}
 
-	format := ctx.DefaultQuery("format", "json")
-
-	switch format {
-	case "json":
-		export, err := sc.exportService.ExportAsJSON(scenarioID)
-		if err != nil {
-			slog.Error("failed to export scenario as JSON", "err", err)
-			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
-			return
-		}
-		ctx.JSON(http.StatusOK, export)
-
-	case "killerkoda":
-		zipBytes, filename, err := sc.exportService.ExportAsArchive(scenarioID)
-		if err != nil {
-			slog.Error("failed to export scenario as archive", "err", err)
-			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
-			return
-		}
-		ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-		ctx.Data(http.StatusOK, "application/zip", zipBytes)
-
-	default:
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid format. Use 'json' or 'killerkoda'")
-	}
+	sc.writeScenarioExport(ctx, scenarioID)
 }
 
 // ExportScenarios godoc

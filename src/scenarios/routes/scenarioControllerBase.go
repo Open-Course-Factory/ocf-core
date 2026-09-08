@@ -224,3 +224,31 @@ func (b *scenarioControllerBase) ensureGroupAssignment(scenarioID, groupID uuid.
 		slog.Error("failed to create scenario assignment", "err", err)
 	}
 }
+
+// writeScenarioExport answers an export request in the format the query
+// asks for. The caller has already run its authorization gate.
+func (b *scenarioControllerBase) writeScenarioExport(ctx *gin.Context, scenarioID uuid.UUID) {
+	switch ctx.DefaultQuery("format", "json") {
+	case "json":
+		export, err := b.exportService.ExportAsJSON(scenarioID)
+		if err != nil {
+			slog.Error("failed to export scenario as JSON", "err", err)
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
+			return
+		}
+		ctx.JSON(http.StatusOK, export)
+
+	case "killerkoda":
+		zipBytes, filename, err := b.exportService.ExportAsArchive(scenarioID)
+		if err != nil {
+			slog.Error("failed to export scenario as archive", "err", err)
+			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
+			return
+		}
+		ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+		ctx.Data(http.StatusOK, "application/zip", zipBytes)
+
+	default:
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid format. Use 'json' or 'killerkoda'")
+	}
+}
