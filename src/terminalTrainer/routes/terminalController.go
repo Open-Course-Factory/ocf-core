@@ -1,6 +1,7 @@
 package terminalController
 
 import (
+	"cmp"
 	"encoding/csv"
 	stderrors "errors"
 	"fmt"
@@ -124,40 +125,18 @@ type terminalController struct {
 }
 
 func NewTerminalController(db *gorm.DB) TerminalController {
-	apiVersion := os.Getenv("TERMINAL_TRAINER_API_VERSION")
-	if apiVersion == "" {
-		apiVersion = "1.0" // default version
-	}
-
-	terminalType := os.Getenv("TERMINAL_TRAINER_TYPE")
-	if terminalType == "" {
-		terminalType = "" // no prefix by default
-	}
-
-	return &terminalController{
-		GenericController:  controller.NewGenericController(db, casdoor.Enforcer),
-		db:                 db,
-		terminalTrainerURL: os.Getenv("TERMINAL_TRAINER_URL"),
-		apiVersion:         apiVersion,
-		terminalType:       terminalType,
-		service:            services.NewTerminalTrainerService(db),
-	}
+	return NewTerminalControllerWithService(db, services.NewTerminalTrainerService(db))
 }
 
 // NewTerminalControllerWithService creates a TerminalController with an injected service.
 // Used in tests to mock the service layer.
 func NewTerminalControllerWithService(db *gorm.DB, svc services.TerminalTrainerService) TerminalController {
-	apiVersion := os.Getenv("TERMINAL_TRAINER_API_VERSION")
-	if apiVersion == "" {
-		apiVersion = "1.0"
-	}
-	terminalType := os.Getenv("TERMINAL_TRAINER_TYPE")
 	return &terminalController{
 		GenericController:  controller.NewGenericController(db, casdoor.Enforcer),
 		db:                 db,
 		terminalTrainerURL: os.Getenv("TERMINAL_TRAINER_URL"),
-		apiVersion:         apiVersion,
-		terminalType:       terminalType,
+		apiVersion:         cmp.Or(os.Getenv("TERMINAL_TRAINER_API_VERSION"), "1.0"),
+		terminalType:       os.Getenv("TERMINAL_TRAINER_TYPE"),
 		service:            svc,
 	}
 }
