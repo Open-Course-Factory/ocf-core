@@ -17,12 +17,8 @@ import (
 type AuditService interface {
 	LogAuthentication(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, email string, status string, errorMsg string)
 	LogBilling(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, targetID *uuid.UUID, targetType string, amount *float64, currency string, metadata map[string]interface{})
-	LogOrganization(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, orgID *uuid.UUID, targetID *uuid.UUID, targetType string, action string, metadata map[string]interface{})
-	LogUserManagement(ctx *gin.Context, eventType models.AuditEventType, actorID *uuid.UUID, targetUserID *uuid.UUID, targetEmail string, action string, metadata map[string]interface{})
 	LogSecurityEvent(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, targetID *uuid.UUID, action string, severity models.AuditSeverity)
-	LogResourceAccess(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, resourceID *uuid.UUID, resourceType string, action string)
 	Log(entry models.AuditLogCreate) error
-	GetAuditLogs(filter AuditLogFilter) ([]models.AuditLog, int64, error)
 }
 
 type auditService struct {
@@ -32,21 +28,6 @@ type auditService struct {
 // NewAuditService creates a new audit logging service
 func NewAuditService(db *gorm.DB) AuditService {
 	return &auditService{db: db}
-}
-
-// AuditLogFilter provides filtering options for querying audit logs
-type AuditLogFilter struct {
-	ActorID        *uuid.UUID
-	TargetID       *uuid.UUID
-	OrganizationID *uuid.UUID
-	GroupID        *uuid.UUID
-	EventType      models.AuditEventType
-	Severity       models.AuditSeverity
-	Status         string
-	StartDate      *time.Time
-	EndDate        *time.Time
-	Limit          int
-	Offset         int
 }
 
 // Log creates a new audit log entry with the provided details
@@ -163,59 +144,6 @@ func (as *auditService) LogBilling(ctx *gin.Context, eventType models.AuditEvent
 	as.Log(entry)
 }
 
-// LogOrganization logs organization-related events
-func (as *auditService) LogOrganization(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, orgID *uuid.UUID, targetID *uuid.UUID, targetType string, action string, metadata map[string]interface{}) {
-	metadataJSON, _ := json.Marshal(metadata)
-
-	entry := models.AuditLogCreate{
-		EventType:      eventType,
-		Severity:       models.AuditSeverityInfo,
-		ActorID:        userID,
-		ActorEmail:     getActorEmail(ctx),
-		ActorIP:        getClientIP(ctx),
-		ActorUserAgent: getUserAgent(ctx),
-		TargetID:       targetID,
-		TargetType:     targetType,
-		OrganizationID: orgID,
-		Action:         action,
-		Status:         "success",
-		Metadata:       string(metadataJSON),
-		RequestID:      getRequestID(ctx),
-		SessionID:      getSessionID(ctx),
-	}
-	applyImpersonationFromContext(ctx, &entry)
-	as.Log(entry)
-}
-
-// LogUserManagement logs user management events
-func (as *auditService) LogUserManagement(ctx *gin.Context, eventType models.AuditEventType, actorID *uuid.UUID, targetUserID *uuid.UUID, targetEmail string, action string, metadata map[string]interface{}) {
-	metadataJSON, _ := json.Marshal(metadata)
-
-	severity := models.AuditSeverityInfo
-	if eventType == models.AuditEventUserDeleted || eventType == models.AuditEventUserSuspended {
-		severity = models.AuditSeverityWarning
-	}
-
-	entry := models.AuditLogCreate{
-		EventType:      eventType,
-		Severity:       severity,
-		ActorID:        actorID,
-		ActorEmail:     getActorEmail(ctx),
-		ActorIP:        getClientIP(ctx),
-		ActorUserAgent: getUserAgent(ctx),
-		TargetID:       targetUserID,
-		TargetType:     "user",
-		TargetName:     targetEmail,
-		Action:         action,
-		Status:         "success",
-		Metadata:       string(metadataJSON),
-		RequestID:      getRequestID(ctx),
-		SessionID:      getSessionID(ctx),
-	}
-	applyImpersonationFromContext(ctx, &entry)
-	as.Log(entry)
-}
-
 // LogSecurityEvent logs security-related events
 func (as *auditService) LogSecurityEvent(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, targetID *uuid.UUID, action string, severity models.AuditSeverity) {
 	entry := models.AuditLogCreate{
@@ -233,82 +161,6 @@ func (as *auditService) LogSecurityEvent(ctx *gin.Context, eventType models.Audi
 	}
 	applyImpersonationFromContext(ctx, &entry)
 	as.Log(entry)
-}
-
-// LogResourceAccess logs access to resources
-func (as *auditService) LogResourceAccess(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, resourceID *uuid.UUID, resourceType string, action string) {
-	entry := models.AuditLogCreate{
-		EventType:      eventType,
-		Severity:       models.AuditSeverityInfo,
-		ActorID:        userID,
-		ActorEmail:     getActorEmail(ctx),
-		ActorIP:        getClientIP(ctx),
-		ActorUserAgent: getUserAgent(ctx),
-		TargetID:       resourceID,
-		TargetType:     resourceType,
-		Action:         action,
-		Status:         "success",
-		RequestID:      getRequestID(ctx),
-		SessionID:      getSessionID(ctx),
-	}
-	applyImpersonationFromContext(ctx, &entry)
-	as.Log(entry)
-}
-
-// GetAuditLogs retrieves audit logs based on the provided filter
-func (as *auditService) GetAuditLogs(filter AuditLogFilter) ([]models.AuditLog, int64, error) {
-	var logs []models.AuditLog
-	var total int64
-
-	query := as.db.Model(&models.AuditLog{})
-
-	// Apply filters
-	if filter.ActorID != nil {
-		query = query.Where("actor_id = ?", filter.ActorID)
-	}
-	if filter.TargetID != nil {
-		query = query.Where("target_id = ?", filter.TargetID)
-	}
-	if filter.OrganizationID != nil {
-		query = query.Where("organization_id = ?", filter.OrganizationID)
-	}
-	if filter.GroupID != nil {
-		query = query.Where("group_id = ?", filter.GroupID)
-	}
-	if filter.EventType != "" {
-		query = query.Where("event_type = ?", filter.EventType)
-	}
-	if filter.Severity != "" {
-		query = query.Where("severity = ?", filter.Severity)
-	}
-	if filter.Status != "" {
-		query = query.Where("status = ?", filter.Status)
-	}
-	if filter.StartDate != nil {
-		query = query.Where("created_at >= ?", filter.StartDate)
-	}
-	if filter.EndDate != nil {
-		query = query.Where("created_at <= ?", filter.EndDate)
-	}
-
-	// Get total count
-	query.Count(&total)
-
-	// Apply pagination
-	if filter.Limit > 0 {
-		query = query.Limit(filter.Limit)
-	}
-	if filter.Offset > 0 {
-		query = query.Offset(filter.Offset)
-	}
-
-	// Order by most recent first
-	result := query.Order("created_at DESC").Find(&logs)
-	if result.Error != nil {
-		return nil, 0, result.Error
-	}
-
-	return logs, total, nil
 }
 
 // Helper functions to extract context information

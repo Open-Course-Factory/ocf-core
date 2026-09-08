@@ -46,7 +46,6 @@ import (
 	"gorm.io/gorm"
 
 	auditModels "soli/formations/src/audit/models"
-	auditServices "soli/formations/src/audit/services"
 	groupModels "soli/formations/src/groups/models"
 	paymentModels "soli/formations/src/payment/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
@@ -72,16 +71,7 @@ func (m *mockSupervisionAudit) LogAuthentication(_ *gin.Context, _ auditModels.A
 }
 func (m *mockSupervisionAudit) LogBilling(_ *gin.Context, _ auditModels.AuditEventType, _ *uuid.UUID, _ *uuid.UUID, _ string, _ *float64, _ string, _ map[string]interface{}) {
 }
-func (m *mockSupervisionAudit) LogOrganization(_ *gin.Context, _ auditModels.AuditEventType, _ *uuid.UUID, _ *uuid.UUID, _ *uuid.UUID, _ string, _ string, _ map[string]interface{}) {
-}
-func (m *mockSupervisionAudit) LogUserManagement(_ *gin.Context, _ auditModels.AuditEventType, _ *uuid.UUID, _ *uuid.UUID, _ string, _ string, _ map[string]interface{}) {
-}
 func (m *mockSupervisionAudit) LogSecurityEvent(_ *gin.Context, _ auditModels.AuditEventType, _ *uuid.UUID, _ *uuid.UUID, _ string, _ auditModels.AuditSeverity) {
-}
-func (m *mockSupervisionAudit) LogResourceAccess(_ *gin.Context, _ auditModels.AuditEventType, _ *uuid.UUID, _ *uuid.UUID, _ string, _ string) {
-}
-func (m *mockSupervisionAudit) GetAuditLogs(_ auditServices.AuditLogFilter) ([]auditModels.AuditLog, int64, error) {
-	return nil, 0, nil
 }
 
 // entryContains reports whether the marshalled audit entry mentions the given
