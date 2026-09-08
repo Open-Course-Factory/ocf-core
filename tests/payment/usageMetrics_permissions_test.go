@@ -18,9 +18,6 @@ import (
 
 	paymentController "soli/formations/src/payment/routes"
 
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // setupUsageMetricsDirectRouter creates a router with the real UsageMetricsController
@@ -31,10 +28,7 @@ func setupUsageMetricsDirectRouter(t *testing.T, role string) *gin.Engine {
 
 	gin.SetMode(gin.TestMode)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	assert.NoError(t, err)
+	db := freshTestDB(t)
 
 	router := gin.New()
 
@@ -65,10 +59,7 @@ func setupUsageMetricsRealRouter(t *testing.T, role string) *gin.Engine {
 
 	gin.SetMode(gin.TestMode)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	assert.NoError(t, err)
+	db := freshTestDB(t)
 
 	router := gin.New()
 	apiGroup := router.Group("/api/v1")

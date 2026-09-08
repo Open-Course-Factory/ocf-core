@@ -32,9 +32,6 @@ import (
 
 	paymentController "soli/formations/src/payment/routes"
 
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // setupAdminRouteTestRouter creates a Gin router with the real UserSubscriptionRoutes
@@ -53,10 +50,7 @@ func setupAdminRouteTestRouter(t *testing.T, role string) *gin.Engine {
 
 	gin.SetMode(gin.TestMode)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	assert.NoError(t, err)
+	db := freshTestDB(t)
 
 	router := gin.New()
 	apiGroup := router.Group("/api/v1")
@@ -86,10 +80,7 @@ func setupDirectControllerRouter(t *testing.T, role string) *gin.Engine {
 
 	gin.SetMode(gin.TestMode)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	assert.NoError(t, err)
+	db := freshTestDB(t)
 
 	router := gin.New()
 

@@ -78,7 +78,7 @@ func seedSharedTeamOrg(t *testing.T, db *gorm.DB, purchaserID, otherUserID strin
 // team org can still read the batch (via GetAccessibleBatchByID).
 // This documents the intended "lenient read" behavior after the fix.
 func TestCanUserReadBatch_TeamOrgMember_Allowed(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "read-purchaser-01"
@@ -95,7 +95,7 @@ func TestCanUserReadBatch_TeamOrgMember_Allowed(t *testing.T) {
 // TestCanUserReadBatch_UnrelatedUser_Denied — a user with no link to the
 // purchaser cannot read the batch.
 func TestCanUserReadBatch_UnrelatedUser_Denied(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "read-purchaser-02"
@@ -113,7 +113,7 @@ func TestCanUserReadBatch_UnrelatedUser_Denied(t *testing.T) {
 // TestCanUserManageBatch_Purchaser_Allowed — the purchaser can manage
 // (destructive ops) their own batch. Exercised through PermanentlyDeleteBatch.
 func TestCanUserManageBatch_Purchaser_Allowed(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "manage-purchaser-01"
@@ -143,7 +143,7 @@ func TestCanUserManageBatch_Purchaser_Allowed(t *testing.T) {
 // TestCanUserManageBatch_TeamOrgOwner_Allowed — org owner (non-purchaser)
 // can manage the batch.
 func TestCanUserManageBatch_TeamOrgOwner_Allowed(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "manage-purchaser-owner-01"
@@ -185,7 +185,7 @@ func TestCanUserManageBatch_TeamOrgOwner_Allowed(t *testing.T) {
 // TestCanUserManageBatch_TeamOrgManager_Allowed — org manager (non-purchaser)
 // can manage the batch.
 func TestCanUserManageBatch_TeamOrgManager_Allowed(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "manage-purchaser-mgr-01"
@@ -205,7 +205,7 @@ func TestCanUserManageBatch_TeamOrgManager_Allowed(t *testing.T) {
 // of a shared team org is granted destructive access today. After the fix,
 // this must return an authorization error.
 func TestCanUserManageBatch_TeamOrgMember_Denied(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "manage-purchaser-member-01"
@@ -224,7 +224,7 @@ func TestCanUserManageBatch_TeamOrgMember_Denied(t *testing.T) {
 // TestCanUserManageBatch_UnrelatedUser_Denied — an unrelated user gets a
 // plain access denied.
 func TestCanUserManageBatch_UnrelatedUser_Denied(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "manage-purchaser-unrelated-01"
@@ -244,7 +244,7 @@ func TestCanUserManageBatch_UnrelatedUser_Denied(t *testing.T) {
 // delete a batch. Today they can — this is the real-world attack this fix
 // closes.
 func TestBulkLicenseService_MemberCannot_PermanentlyDeleteBatch(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "attacked-purchaser-del-01"
@@ -276,7 +276,7 @@ func TestBulkLicenseService_MemberCannot_PermanentlyDeleteBatch(t *testing.T) {
 // "member" must NOT be able to scale the batch quantity (which would
 // inflate the purchaser's Stripe bill).
 func TestBulkLicenseService_MemberCannot_UpdateBatchQuantity(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "attacked-purchaser-qty-01"
@@ -300,7 +300,7 @@ func TestBulkLicenseService_MemberCannot_UpdateBatchQuantity(t *testing.T) {
 // TestBulkLicenseService_MemberCannot_AssignLicense — a team-org "member"
 // must NOT be able to assign licenses from someone else's batch.
 func TestBulkLicenseService_MemberCannot_AssignLicense(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "attacked-purchaser-assign-01"
@@ -322,7 +322,7 @@ func TestBulkLicenseService_MemberCannot_AssignLicense(t *testing.T) {
 // TestBulkLicenseService_MemberCannot_RevokeLicense — a team-org "member"
 // must NOT be able to revoke an assigned license.
 func TestBulkLicenseService_MemberCannot_RevokeLicense(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "attacked-purchaser-revoke-01"
@@ -351,7 +351,7 @@ func TestBulkLicenseService_MemberCannot_RevokeLicense(t *testing.T) {
 // shared team org IS allowed to manage. Demonstrates the fix doesn't
 // over-restrict.
 func TestBulkLicenseService_ManagerCan_UpdateBatchQuantity(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "allowed-purchaser-mgr-02"
@@ -376,7 +376,7 @@ func TestBulkLicenseService_ManagerCan_UpdateBatchQuantity(t *testing.T) {
 // role scanned (e.g. early-return or LIMIT 1) and happens to pick the member
 // row, causing a false denial.
 func TestCanUserManageBatch_TwoSharedOrgs_ManagerRoleWins(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "multi-org-purchaser-01"

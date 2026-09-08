@@ -11,22 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
-
-func setupPricingTestDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	require.NoError(t, err)
-
-	err = db.AutoMigrate(&models.SubscriptionPlan{})
-	require.NoError(t, err)
-
-	return db
-}
 
 func createPricingTestPlan(t *testing.T, db *gorm.DB, plan *models.SubscriptionPlan) *models.SubscriptionPlan {
 	plan.BaseModel = entityManagementModels.BaseModel{ID: uuid.New()}
@@ -38,7 +24,7 @@ func createPricingTestPlan(t *testing.T, db *gorm.DB, plan *models.SubscriptionP
 // --- CalculatePricingPreview tests ---
 
 func TestPricingService_CalculatePricingPreview_FlatPricing(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
@@ -64,7 +50,7 @@ func TestPricingService_CalculatePricingPreview_FlatPricing(t *testing.T) {
 }
 
 func TestPricingService_CalculatePricingPreview_TieredPricing(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	// Tiers: 1-5 @ 1000, 6-15 @ 800, 16+ @ 600
@@ -113,7 +99,7 @@ func TestPricingService_CalculatePricingPreview_TieredPricing(t *testing.T) {
 }
 
 func TestPricingService_CalculatePricingPreview_QuantityExceedingAllTiers(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
@@ -138,7 +124,7 @@ func TestPricingService_CalculatePricingPreview_QuantityExceedingAllTiers(t *tes
 }
 
 func TestPricingService_CalculatePricingPreview_SingleTierOnly(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
@@ -163,7 +149,7 @@ func TestPricingService_CalculatePricingPreview_SingleTierOnly(t *testing.T) {
 }
 
 func TestPricingService_CalculatePricingPreview_BoundaryAtTierTransition(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
@@ -204,7 +190,7 @@ func TestPricingService_CalculatePricingPreview_BoundaryAtTierTransition(t *test
 }
 
 func TestPricingService_CalculatePricingPreview_PlanNotFound(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	_, err := svc.CalculatePricingPreview(uuid.New(), 5)
@@ -213,7 +199,7 @@ func TestPricingService_CalculatePricingPreview_PlanNotFound(t *testing.T) {
 }
 
 func TestPricingService_CalculatePricingPreview_EmptyTiersUsesFlatPricing(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	// UseTieredPricing is true but no tiers defined -> falls back to flat
@@ -271,7 +257,7 @@ func TestPricingPreview_ExposesIndividualUnitPrice(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			db := setupPricingTestDB(t)
+			db := freshTestDB(t)
 			svc := services.NewPricingService(db)
 			plan := createPricingTestPlan(t, db, tc.plan)
 
@@ -298,7 +284,7 @@ func TestPricingPreview_ExposesIndividualUnitPrice(t *testing.T) {
 // --- GetTotalCost tests ---
 
 func TestPricingService_GetTotalCost_FlatPricing(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	plan := &models.SubscriptionPlan{
@@ -311,7 +297,7 @@ func TestPricingService_GetTotalCost_FlatPricing(t *testing.T) {
 }
 
 func TestPricingService_GetTotalCost_TieredPricing(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	plan := &models.SubscriptionPlan{
@@ -330,7 +316,7 @@ func TestPricingService_GetTotalCost_TieredPricing(t *testing.T) {
 }
 
 func TestPricingService_GetTotalCost_ConsistencyWithPreview(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	// Flat pricing consistency
@@ -365,7 +351,7 @@ func TestPricingService_GetTotalCost_ConsistencyWithPreview(t *testing.T) {
 }
 
 func TestPricingService_GetTotalCost_ZeroQuantity(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	plan := &models.SubscriptionPlan{
@@ -378,7 +364,7 @@ func TestPricingService_GetTotalCost_ZeroQuantity(t *testing.T) {
 }
 
 func TestPricingService_GetTotalCost_ZeroQuantityTiered(t *testing.T) {
-	db := setupPricingTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewPricingService(db)
 
 	plan := &models.SubscriptionPlan{

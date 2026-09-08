@@ -8,36 +8,12 @@ import (
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
-	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
-
-func setupBulkLicenseTestDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	require.NoError(t, err)
-
-	err = db.AutoMigrate(
-		&models.SubscriptionPlan{},
-		&models.SubscriptionBatch{},
-		&models.UserSubscription{},
-		&models.UsageMetrics{},
-		&terminalModels.Terminal{},
-		&terminalModels.UserTerminalKey{},
-		&orgModels.Organization{},
-		&orgModels.OrganizationMember{},
-	)
-	require.NoError(t, err)
-
-	return db
-}
 
 // seedBulkLicenseTestData creates a plan, batch, and unassigned licenses for testing
 func seedBulkLicenseTestData(t *testing.T, db *gorm.DB, purchaserID string, totalQty int, assignedQty int) (*models.SubscriptionPlan, *models.SubscriptionBatch, []models.UserSubscription) {
@@ -94,7 +70,7 @@ func seedBulkLicenseTestData(t *testing.T, db *gorm.DB, purchaserID string, tota
 // --- AssignLicense tests ---
 
 func TestBulkLicenseService_AssignLicense_HappyPath(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-001"
 
@@ -115,7 +91,7 @@ func TestBulkLicenseService_AssignLicense_HappyPath(t *testing.T) {
 }
 
 func TestBulkLicenseService_AssignLicense_NoAvailableLicenses(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-002"
 
@@ -128,7 +104,7 @@ func TestBulkLicenseService_AssignLicense_NoAvailableLicenses(t *testing.T) {
 }
 
 func TestBulkLicenseService_AssignLicense_BatchNotFound(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	_, err := svc.AssignLicense(uuid.New(), "some-user", "target-user")
@@ -137,7 +113,7 @@ func TestBulkLicenseService_AssignLicense_BatchNotFound(t *testing.T) {
 }
 
 func TestBulkLicenseService_AssignLicense_AccessDenied(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-003"
 
@@ -154,7 +130,7 @@ func TestBulkLicenseService_AssignLicense_CasdoorUnavailable(t *testing.T) {
 	// logs a warning but still proceeds with the assignment (graceful degradation).
 	// User existence validation only blocks when Casdoor is configured and
 	// returns nil user (meaning user truly doesn't exist).
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-casdoor-down"
 
@@ -170,7 +146,7 @@ func TestBulkLicenseService_AssignLicense_CasdoorUnavailable(t *testing.T) {
 // --- RevokeLicense tests ---
 
 func TestBulkLicenseService_RevokeLicense_HappyPath(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-004"
 
@@ -190,7 +166,7 @@ func TestBulkLicenseService_RevokeLicense_HappyPath(t *testing.T) {
 }
 
 func TestBulkLicenseService_RevokeLicense_LicenseNotFound(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	err := svc.RevokeLicense(uuid.New(), "some-user")
@@ -199,7 +175,7 @@ func TestBulkLicenseService_RevokeLicense_LicenseNotFound(t *testing.T) {
 }
 
 func TestBulkLicenseService_RevokeLicense_NotInBatch(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	// Create a standalone license (not in a batch)
@@ -226,7 +202,7 @@ func TestBulkLicenseService_RevokeLicense_NotInBatch(t *testing.T) {
 }
 
 func TestBulkLicenseService_RevokeLicense_AccessDenied(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-005"
 
@@ -241,7 +217,7 @@ func TestBulkLicenseService_RevokeLicense_AccessDenied(t *testing.T) {
 // --- GetBatchLicenses tests ---
 
 func TestBulkLicenseService_GetBatchLicenses_HappyPath(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-006"
 
@@ -253,7 +229,7 @@ func TestBulkLicenseService_GetBatchLicenses_HappyPath(t *testing.T) {
 }
 
 func TestBulkLicenseService_GetBatchLicenses_AccessDenied(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-007"
 
@@ -267,7 +243,7 @@ func TestBulkLicenseService_GetBatchLicenses_AccessDenied(t *testing.T) {
 // --- GetAvailableLicenses tests ---
 
 func TestBulkLicenseService_GetAvailableLicenses_HappyPath(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-008"
 
@@ -286,7 +262,7 @@ func TestBulkLicenseService_GetAvailableLicenses_HappyPath(t *testing.T) {
 // --- GetBatchesByPurchaser tests ---
 
 func TestBulkLicenseService_GetBatchesByPurchaser(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-009"
 
@@ -305,7 +281,7 @@ func TestBulkLicenseService_GetBatchesByPurchaser(t *testing.T) {
 // --- GetAccessibleBatchByID tests ---
 
 func TestBulkLicenseService_GetAccessibleBatchByID_Purchaser(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-access-01"
 
@@ -317,7 +293,7 @@ func TestBulkLicenseService_GetAccessibleBatchByID_Purchaser(t *testing.T) {
 }
 
 func TestBulkLicenseService_GetAccessibleBatchByID_OrgMember(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	purchaserID := "purchaser-access-02"
@@ -361,7 +337,7 @@ func TestBulkLicenseService_GetAccessibleBatchByID_OrgMember(t *testing.T) {
 }
 
 func TestBulkLicenseService_GetAccessibleBatchByID_AccessDenied(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-access-03"
 
@@ -374,7 +350,7 @@ func TestBulkLicenseService_GetAccessibleBatchByID_AccessDenied(t *testing.T) {
 }
 
 func TestBulkLicenseService_GetAccessibleBatchByID_NotFound(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	_, err := svc.GetAccessibleBatchByID(uuid.New(), "some-user")
@@ -387,7 +363,7 @@ func TestBulkLicenseService_GetAccessibleBatchByID_NotFound(t *testing.T) {
 // requires a real Stripe connection. We test the validation logic only.
 
 func TestBulkLicenseService_UpdateBatchQuantity_BatchNotFound(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	err := svc.UpdateBatchQuantity(uuid.New(), "some-user", 10)
@@ -396,7 +372,7 @@ func TestBulkLicenseService_UpdateBatchQuantity_BatchNotFound(t *testing.T) {
 }
 
 func TestBulkLicenseService_UpdateBatchQuantity_AccessDenied(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-010"
 
@@ -408,7 +384,7 @@ func TestBulkLicenseService_UpdateBatchQuantity_AccessDenied(t *testing.T) {
 }
 
 func TestBulkLicenseService_UpdateBatchQuantity_BelowAssigned(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-011"
 
@@ -424,7 +400,7 @@ func TestBulkLicenseService_UpdateBatchQuantity_BelowAssigned(t *testing.T) {
 // --- PermanentlyDeleteBatch tests ---
 
 func TestBulkLicenseService_PermanentlyDeleteBatch_AccessDenied(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-012"
 
@@ -436,7 +412,7 @@ func TestBulkLicenseService_PermanentlyDeleteBatch_AccessDenied(t *testing.T) {
 }
 
 func TestBulkLicenseService_PermanentlyDeleteBatch_NotFound(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 
 	err := svc.PermanentlyDeleteBatch(uuid.New(), "some-user")
@@ -447,7 +423,7 @@ func TestBulkLicenseService_PermanentlyDeleteBatch_NotFound(t *testing.T) {
 // --- Multiple assignments test ---
 
 func TestBulkLicenseService_AssignLicense_MultipleAssignments(t *testing.T) {
-	db := setupBulkLicenseTestDB(t)
+	db := freshTestDB(t)
 	svc := services.NewBulkLicenseService(db)
 	purchaserID := "purchaser-013"
 

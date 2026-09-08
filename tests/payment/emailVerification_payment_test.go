@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	paymentController "soli/formations/src/payment/routes"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 // setupPaymentTestRouter creates a gin router with payment routes and a mock auth middleware
@@ -21,8 +19,7 @@ func setupPaymentTestRouter(t *testing.T) *gin.Engine {
 
 	gin.SetMode(gin.TestMode)
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	assert.NoError(t, err)
+	db := freshTestDB(t)
 
 	router := gin.New()
 	apiGroup := router.Group("/api/v1")
