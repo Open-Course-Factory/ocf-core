@@ -150,7 +150,7 @@ type terminalTrainerService struct {
 	*terminalProxyClient
 	*terminalCatalogService
 	*terminalSyncService
-	lifecycle              *terminalLifecycleService
+	*terminalLifecycleService
 	composer               *terminalComposer
 	history                *terminalHistoryService
 }
@@ -191,7 +191,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		terminalProxyClient:    proxy,
 		terminalCatalogService: catalog,
 		terminalSyncService:    sync,
-		lifecycle:              newTerminalLifecycleService(proxy, sync, repository, db),
+		terminalLifecycleService: newTerminalLifecycleService(proxy, sync, repository, db),
 		history:                newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
 	}
 
@@ -306,41 +306,6 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	return tts.repository.UpdateUserTerminalKey(key)
 }
 
-// GetSessionInfo récupère les informations d'une session
-// The following methods delegate to terminalLifecycleService, which owns the
-// local-session lifecycle: the per-row state transitions (stop/start/delete),
-// access validation, and the local-row read helpers. They keep
-// terminalTrainerService satisfying the TerminalTrainerService interface
-// without exposing the collaborator to callers.
-
-func (tts *terminalTrainerService) GetSessionInfo(sessionID string) (*models.Terminal, error) {
-	return tts.lifecycle.GetSessionInfo(sessionID)
-}
-
-func (tts *terminalTrainerService) GetTerminalByUUID(terminalUUID string) (*models.Terminal, error) {
-	return tts.lifecycle.GetTerminalByUUID(terminalUUID)
-}
-
-func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]models.Terminal, error) {
-	return tts.lifecycle.GetActiveUserSessions(userID)
-}
-
-func (tts *terminalTrainerService) StopSession(sessionID string) error {
-	return tts.lifecycle.StopSession(sessionID)
-}
-
-func (tts *terminalTrainerService) StartSession(sessionID string) error {
-	return tts.lifecycle.StartSession(sessionID)
-}
-
-func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
-	return tts.lifecycle.DeleteSession(sessionID)
-}
-
-func (tts *terminalTrainerService) BuildComplete(sessionID string) error {
-	return tts.lifecycle.BuildComplete(sessionID)
-}
-
 // GetRepository expose le repository pour les contrôleurs
 func (tts *terminalTrainerService) GetRepository() repositories.TerminalRepository {
 	return tts.repository
@@ -367,10 +332,6 @@ func (tts *terminalTrainerService) GetTerms() (string, error) {
 	}
 
 	return termsResp.Terms, nil
-}
-
-func (tts *terminalTrainerService) HasTerminalAccess(terminalIDOrSessionID, userID string) (bool, error) {
-	return tts.lifecycle.HasTerminalAccess(terminalIDOrSessionID, userID)
 }
 
 // GetBackendsForContext returns backends filtered by org config (if set) or plan config (fallback).
@@ -510,14 +471,6 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 // GetEnumService returns the enum service for external access
 func (tts *terminalTrainerService) GetEnumService() TerminalTrainerEnumService {
 	return tts.enumService
-}
-
-// ValidateSessionAccess delegates to terminalLifecycleService, which owns the
-// session access-validation logic (local lifecycle state, backend online check,
-// expiration, and optional tt-backend /info verification). The detailed
-// contract for the returned reason string lives on the lifecycle copy.
-func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, checkAPI bool) (bool, string, error) {
-	return tts.lifecycle.ValidateSessionAccess(sessionID, checkAPI)
 }
 
 // The following methods delegate to terminalHistoryService, which owns the
