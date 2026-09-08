@@ -16,7 +16,6 @@ import (
 	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/docker/docker/pkg/namesgenerator"
 	"gorm.io/gorm"
 )
 
@@ -93,7 +92,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		return nil, err
 	}
 
-	generatedUsername := namesgenerator.GetRandomName(1)
+	generatedUsername := randomUsername()
 
 	user1, err := createUserIntoCasdoor(generatedUsername, userCreateDTO)
 	if err != nil {
