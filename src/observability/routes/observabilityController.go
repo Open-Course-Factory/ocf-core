@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/observability"
 )
@@ -15,32 +16,13 @@ import (
 // unless the caller is administrator.
 func NewObservabilityHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !isAdmin(c) {
+		if !access.IsAdmin(c.GetStringSlice("userRoles")) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "administrator role required"})
 			return
 		}
 
 		c.JSON(http.StatusOK, snapshot())
 	}
-}
-
-// isAdmin reads the userRoles slice set by upstream auth middleware (or by the
-// test router stub) and returns true iff "administrator" is present.
-func isAdmin(c *gin.Context) bool {
-	rolesAny, exists := c.Get("userRoles")
-	if !exists {
-		return false
-	}
-	roles, ok := rolesAny.([]string)
-	if !ok {
-		return false
-	}
-	for _, r := range roles {
-		if r == "administrator" {
-			return true
-		}
-	}
-	return false
 }
 
 // snapshot builds the JSON-ready response. Pure function — easy to test.
