@@ -1,12 +1,13 @@
 package controller
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"soli/formations/src/auth/errors"
 	config "soli/formations/src/configuration"
 	sqldb "soli/formations/src/db"
 	"soli/formations/src/webSsh/models"
-	"soli/formations/src/webSsh/services"
 
 	authServices "soli/formations/src/auth/services"
 
@@ -18,15 +19,20 @@ type SshClientController interface {
 	ShellWeb(ctx *gin.Context)
 }
 
-type sshClientController struct {
-	//controller.GenericController
-	service services.SshClientService
-}
+type sshClientController struct{}
 
 func NewSshClientController() SshClientController {
-	return &sshClientController{
-		service: services.NewSshClientService(),
+	return &sshClientController{}
+}
+
+// decodeMsgToSSHClient parses the first websocket frame: a base64-encoded JSON SSHClient.
+func decodeMsgToSSHClient(msg string) (models.SSHClient, error) {
+	client := models.NewSSHClient()
+	decoded, err := base64.StdEncoding.DecodeString(msg)
+	if err != nil {
+		return client, err
 	}
+	return client, json.Unmarshal(decoded, &client)
 }
 
 var (
@@ -81,7 +87,7 @@ func (s sshClientController) ShellWeb(ctx *gin.Context) {
 		return
 	}
 
-	sshClient, decodeError := s.service.DecodeMsgToSSHClient(string(readContent))
+	sshClient, decodeError := decodeMsgToSSHClient(string(readContent))
 	if decodeError != nil {
 		ctx.JSON(websocket.CloseUnsupportedData, &errors.APIError{
 			ErrorCode:    websocket.CloseUnsupportedData,
