@@ -99,8 +99,7 @@ func loadStepByID(db *gorm.DB, stepID uuid.UUID) (*models.ScenarioStep, error) {
 type ScenarioStepAuthorizationHook struct {
 	db           *gorm.DB
 	groupService groupServices.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 // NewScenarioStepAuthorizationHook builds a new step authorization hook.
@@ -108,17 +107,14 @@ func NewScenarioStepAuthorizationHook(db *gorm.DB) hooks.Hook {
 	return &ScenarioStepAuthorizationHook{
 		db:           db,
 		groupService: groupServices.NewGroupService(db),
-		enabled:      true,
-		priority:     10,
+		BaseHook: hooks.BaseHook{
+			Name:       "scenario_step_authorization",
+			EntityName: "ScenarioStep",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *ScenarioStepAuthorizationHook) GetName() string         { return "scenario_step_authorization" }
-func (h *ScenarioStepAuthorizationHook) GetEntityName() string   { return "ScenarioStep" }
-func (h *ScenarioStepAuthorizationHook) IsEnabled() bool         { return h.enabled }
-func (h *ScenarioStepAuthorizationHook) GetPriority() int        { return h.priority }
-func (h *ScenarioStepAuthorizationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete}
 }
 
 func (h *ScenarioStepAuthorizationHook) Execute(ctx *hooks.HookContext) error {
@@ -190,8 +186,7 @@ func (h *ScenarioStepAuthorizationHook) checkUpdateOrDelete(ctx *hooks.HookConte
 type ScenarioStepQuestionAuthorizationHook struct {
 	db           *gorm.DB
 	groupService groupServices.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 // NewScenarioStepQuestionAuthorizationHook builds a new question authorization hook.
@@ -199,21 +194,14 @@ func NewScenarioStepQuestionAuthorizationHook(db *gorm.DB) hooks.Hook {
 	return &ScenarioStepQuestionAuthorizationHook{
 		db:           db,
 		groupService: groupServices.NewGroupService(db),
-		enabled:      true,
-		priority:     10,
+		BaseHook: hooks.BaseHook{
+			Name:       "scenario_step_question_authorization",
+			EntityName: "ScenarioStepQuestion",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *ScenarioStepQuestionAuthorizationHook) GetName() string {
-	return "scenario_step_question_authorization"
-}
-func (h *ScenarioStepQuestionAuthorizationHook) GetEntityName() string {
-	return "ScenarioStepQuestion"
-}
-func (h *ScenarioStepQuestionAuthorizationHook) IsEnabled() bool { return h.enabled }
-func (h *ScenarioStepQuestionAuthorizationHook) GetPriority() int { return h.priority }
-func (h *ScenarioStepQuestionAuthorizationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete}
 }
 
 func (h *ScenarioStepQuestionAuthorizationHook) Execute(ctx *hooks.HookContext) error {

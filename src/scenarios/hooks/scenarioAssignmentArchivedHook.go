@@ -18,37 +18,21 @@ import (
 // in place — they still name the run the learners' results belong to — and the
 // launch gates stop them being acted on.
 type ScenarioAssignmentArchivedHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewScenarioAssignmentArchivedHook(db *gorm.DB) hooks.Hook {
 	return &ScenarioAssignmentArchivedHook{
-		db:       db,
-		enabled:  true,
-		priority: 5,
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "scenario_assignment_archived",
+			EntityName: "ScenarioAssignment",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate},
+			Enabled:    true,
+			Priority:   5,
+		},
 	}
-}
-
-func (h *ScenarioAssignmentArchivedHook) GetName() string {
-	return "scenario_assignment_archived"
-}
-
-func (h *ScenarioAssignmentArchivedHook) GetEntityName() string {
-	return "ScenarioAssignment"
-}
-
-func (h *ScenarioAssignmentArchivedHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate}
-}
-
-func (h *ScenarioAssignmentArchivedHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *ScenarioAssignmentArchivedHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *ScenarioAssignmentArchivedHook) Execute(ctx *hooks.HookContext) error {

@@ -25,22 +25,21 @@ import (
 // It also means a translator cannot forget. Saving a translation is what marks
 // it current, because saving is what stamps it.
 type ScenarioStepTranslationStampHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewScenarioStepTranslationStampHook(db *gorm.DB) *ScenarioStepTranslationStampHook {
-	return &ScenarioStepTranslationStampHook{db: db, enabled: true, priority: 10}
-}
-
-func (h *ScenarioStepTranslationStampHook) GetName() string       { return "scenario_step_translation_stamp" }
-func (h *ScenarioStepTranslationStampHook) GetEntityName() string { return "ScenarioStepTranslation" }
-func (h *ScenarioStepTranslationStampHook) IsEnabled() bool       { return h.enabled }
-func (h *ScenarioStepTranslationStampHook) GetPriority() int      { return h.priority }
-
-func (h *ScenarioStepTranslationStampHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.AfterUpdate}
+	return &ScenarioStepTranslationStampHook{
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "scenario_step_translation_stamp",
+			EntityName: "ScenarioStepTranslation",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.AfterUpdate},
+			Enabled:    true,
+			Priority:   10,
+		},
+	}
 }
 
 func (h *ScenarioStepTranslationStampHook) Execute(ctx *hooks.HookContext) error {
@@ -118,31 +117,23 @@ func (h *ScenarioStepTranslationStampHook) stampSavedRow(id uuid.UUID) error {
 type ScenarioStepTranslationAuthorizationHook struct {
 	db           *gorm.DB
 	groupService groupServices.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 func NewScenarioStepTranslationAuthorizationHook(db *gorm.DB) *ScenarioStepTranslationAuthorizationHook {
 	return &ScenarioStepTranslationAuthorizationHook{
 		db:           db,
 		groupService: groupServices.NewGroupService(db),
-		enabled:      true,
 		// Runs before the stamp hook: there is no reason to read a step for
 		// someone who may not touch it.
-		priority: 5,
+		BaseHook: hooks.BaseHook{
+			Name:       "scenario_step_translation_authorization",
+			EntityName: "ScenarioStepTranslation",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   5,
+		},
 	}
-}
-
-func (h *ScenarioStepTranslationAuthorizationHook) GetName() string {
-	return "scenario_step_translation_authorization"
-}
-func (h *ScenarioStepTranslationAuthorizationHook) GetEntityName() string {
-	return "ScenarioStepTranslation"
-}
-func (h *ScenarioStepTranslationAuthorizationHook) IsEnabled() bool  { return h.enabled }
-func (h *ScenarioStepTranslationAuthorizationHook) GetPriority() int { return h.priority }
-func (h *ScenarioStepTranslationAuthorizationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete}
 }
 
 func (h *ScenarioStepTranslationAuthorizationHook) Execute(ctx *hooks.HookContext) error {
@@ -184,27 +175,21 @@ func (h *ScenarioStepTranslationAuthorizationHook) assertCanManage(scenarioID uu
 type ScenarioTranslationAuthorizationHook struct {
 	db           *gorm.DB
 	groupService groupServices.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 func NewScenarioTranslationAuthorizationHook(db *gorm.DB) *ScenarioTranslationAuthorizationHook {
 	return &ScenarioTranslationAuthorizationHook{
 		db:           db,
 		groupService: groupServices.NewGroupService(db),
-		enabled:      true,
-		priority:     5,
+		BaseHook: hooks.BaseHook{
+			Name:       "scenario_translation_authorization",
+			EntityName: "ScenarioTranslation",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   5,
+		},
 	}
-}
-
-func (h *ScenarioTranslationAuthorizationHook) GetName() string {
-	return "scenario_translation_authorization"
-}
-func (h *ScenarioTranslationAuthorizationHook) GetEntityName() string { return "ScenarioTranslation" }
-func (h *ScenarioTranslationAuthorizationHook) IsEnabled() bool       { return h.enabled }
-func (h *ScenarioTranslationAuthorizationHook) GetPriority() int      { return h.priority }
-func (h *ScenarioTranslationAuthorizationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete}
 }
 
 func (h *ScenarioTranslationAuthorizationHook) Execute(ctx *hooks.HookContext) error {

@@ -27,8 +27,7 @@ import (
 type ScenarioAuthorizationHook struct {
 	db           *gorm.DB
 	groupService groupServices.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 // NewScenarioAuthorizationHook builds a new scenario authorization hook.
@@ -36,17 +35,14 @@ func NewScenarioAuthorizationHook(db *gorm.DB) hooks.Hook {
 	return &ScenarioAuthorizationHook{
 		db:           db,
 		groupService: groupServices.NewGroupService(db),
-		enabled:      true,
-		priority:     10,
+		BaseHook: hooks.BaseHook{
+			Name:       "scenario_authorization",
+			EntityName: "Scenario",
+			HookTypes:  []hooks.HookType{hooks.BeforeUpdate, hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *ScenarioAuthorizationHook) GetName() string       { return "scenario_authorization" }
-func (h *ScenarioAuthorizationHook) GetEntityName() string { return "Scenario" }
-func (h *ScenarioAuthorizationHook) IsEnabled() bool       { return h.enabled }
-func (h *ScenarioAuthorizationHook) GetPriority() int      { return h.priority }
-func (h *ScenarioAuthorizationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeUpdate, hooks.BeforeDelete}
 }
 
 func (h *ScenarioAuthorizationHook) Execute(ctx *hooks.HookContext) error {
