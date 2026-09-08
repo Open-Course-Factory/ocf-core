@@ -3,6 +3,7 @@ package userController
 import (
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
@@ -87,7 +88,7 @@ func GetCurrentUser(ctx *gin.Context) {
 			Order("used_at DESC").First(&usedToken).Error; err == nil {
 			emailVerified = true
 			if usedToken.UsedAt != nil {
-				emailVerifiedAt = usedToken.UsedAt.Format("2006-01-02T15:04:05Z07:00")
+				emailVerifiedAt = usedToken.UsedAt.Format(time.RFC3339)
 			}
 		} else if err != gorm.ErrRecordNotFound {
 			utils.Warn("Failed to check email verification fallback for user %s: %v", userID, err)

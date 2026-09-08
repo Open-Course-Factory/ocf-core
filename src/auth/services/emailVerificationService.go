@@ -355,7 +355,7 @@ func (s *emailVerificationService) getVerificationStatusFromDB(userID string) (*
 		Email:    token.Email,
 	}
 	if token.UsedAt != nil {
-		status.VerifiedAt = token.UsedAt.Format("2006-01-02T15:04:05Z07:00")
+		status.VerifiedAt = token.UsedAt.Format(time.RFC3339)
 	}
 
 	return status, nil

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/auth/models"
@@ -185,7 +186,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 			Order("used_at DESC").First(&usedToken).Error; err == nil {
 			emailVerified = true
 			if usedToken.UsedAt != nil {
-				emailVerifiedAt = usedToken.UsedAt.Format("2006-01-02T15:04:05Z07:00")
+				emailVerifiedAt = usedToken.UsedAt.Format(time.RFC3339)
 			}
 		}
 	}
