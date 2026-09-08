@@ -12,87 +12,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stripe/stripe-go/v85"
 	"gorm.io/gorm"
 )
-
-// Mock pour GenericService
-type MockGenericService struct {
-	mock.Mock
-}
-
-func (m *MockGenericService) GetEntity(id uuid.UUID, entityName string, entity any) (any, error) {
-	args := m.Called(id, entityName, entity)
-	return args.Get(0), args.Error(1)
-}
-
-func (m *MockGenericService) CreateEntity(input any, entityName string) (any, error) {
-	args := m.Called(input, entityName)
-	return args.Get(0), args.Error(1)
-}
-
-func (m *MockGenericService) EditEntity(id uuid.UUID, entityName string, entityType any, updates any) error {
-	args := m.Called(id, entityName, entityType, updates)
-	return args.Error(0)
-}
-
-func (m *MockGenericService) DeleteEntity(id uuid.UUID, entityName string, entity any) error {
-	args := m.Called(id, entityName, entity)
-	return args.Error(0)
-}
-
-func (m *MockGenericService) GetEntities(entityName string, entity any, includeInactive bool) (any, error) {
-	args := m.Called(entityName, entity, includeInactive)
-	return args.Get(0), args.Error(1)
-}
-
-// Mock pour SubscriptionService
-type MockSubscriptionService struct {
-	mock.Mock
-}
-
-func (m *MockSubscriptionService) GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error) {
-	args := m.Called(id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.SubscriptionPlan), args.Error(1)
-}
-
-func (m *MockSubscriptionService) GetAllSubscriptionPlans(includeInactive bool) (*[]models.SubscriptionPlan, error) {
-	args := m.Called(includeInactive)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*[]models.SubscriptionPlan), args.Error(1)
-}
-
-func (m *MockSubscriptionService) HasActiveSubscription(userID string) (bool, error) {
-	args := m.Called(userID)
-	return args.Bool(0), args.Error(1)
-}
-
-func (m *MockSubscriptionService) RecordUsage(userID, metricType string, amount int64) error {
-	args := m.Called(userID, metricType, amount)
-	return args.Error(0)
-}
-
-func (m *MockSubscriptionService) GetUserUsageMetrics(userID string) (*[]models.UsageMetrics, error) {
-	args := m.Called(userID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*[]models.UsageMetrics), args.Error(1)
-}
-
-func (m *MockSubscriptionService) GetSubscriptionAnalytics() (*services.SubscriptionAnalytics, error) {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*services.SubscriptionAnalytics), args.Error(1)
-}
 
 // Using shared mock repository instead of extending here
 

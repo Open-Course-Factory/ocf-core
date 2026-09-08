@@ -5,133 +5,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
-	"soli/formations/src/payment/services"
-
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stripe/stripe-go/v85"
 	"gorm.io/gorm"
 )
-
-// Mock StripeService pour les tests de webhook
-type MockStripeService struct {
-	mock.Mock
-}
-
-func (m *MockStripeService) ValidateWebhookSignature(payload []byte, signature string) (*stripe.Event, error) {
-	args := m.Called(payload, signature)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*stripe.Event), args.Error(1)
-}
-
-func (m *MockStripeService) ProcessWebhook(payload []byte, signature string) error {
-	args := m.Called(payload, signature)
-	return args.Error(0)
-}
-
-// Implémentation stub pour les autres méthodes requises par l'interface
-func (m *MockStripeService) CreateOrGetCustomer(userID, email, name string) (string, error) {
-	args := m.Called(userID, email, name)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockStripeService) UpdateCustomer(customerID string, params *stripe.CustomerParams) error {
-	args := m.Called(customerID, params)
-	return args.Error(0)
-}
-
-func (m *MockStripeService) CreateCheckoutSession(userID string, input any) (any, error) {
-	args := m.Called(userID, input)
-	return args.Get(0), args.Error(1)
-}
-
-func (m *MockStripeService) CreatePortalSession(userID string, input any) (any, error) {
-	args := m.Called(userID, input)
-	return args.Get(0), args.Error(1)
-}
-
-func (m *MockStripeService) CreateSubscriptionPlanInStripe(plan any) error {
-	args := m.Called(plan)
-	return args.Error(0)
-}
-
-func (m *MockStripeService) UpdateSubscriptionPlanInStripe(plan any) error {
-	args := m.Called(plan)
-	return args.Error(0)
-}
-
-func (m *MockStripeService) CancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error {
-	args := m.Called(subscriptionID, cancelAtPeriodEnd)
-	return args.Error(0)
-}
-
-func (m *MockStripeService) ReactivateSubscription(subscriptionID string) error {
-	args := m.Called(subscriptionID)
-	return args.Error(0)
-}
-
-func (m *MockStripeService) SyncExistingSubscriptions() (*services.SyncSubscriptionsResult, error) {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*services.SyncSubscriptionsResult), args.Error(1)
-}
-
-func (m *MockStripeService) SyncUserSubscriptions(userID string) (*services.SyncSubscriptionsResult, error) {
-	args := m.Called(userID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*services.SyncSubscriptionsResult), args.Error(1)
-}
-
-func (m *MockStripeService) SyncSubscriptionsWithMissingMetadata() (*services.SyncSubscriptionsResult, error) {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*services.SyncSubscriptionsResult), args.Error(1)
-}
-
-func (m *MockStripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID string, subscriptionPlanID any) error {
-	args := m.Called(stripeSubscriptionID, userID, subscriptionPlanID)
-	return args.Error(0)
-}
-
-func (m *MockStripeService) AttachPaymentMethod(paymentMethodID, customerID string) error {
-	args := m.Called(paymentMethodID, customerID)
-	return args.Error(0)
-}
-
-func (m *MockStripeService) DetachPaymentMethod(paymentMethodID string) error {
-	args := m.Called(paymentMethodID)
-	return args.Error(0)
-}
-
-func (m *MockStripeService) SetDefaultPaymentMethod(customerID, paymentMethodID string) error {
-	args := m.Called(customerID, paymentMethodID)
-	return args.Error(0)
-}
-
-func (m *MockStripeService) GetInvoice(invoiceID string) (*stripe.Invoice, error) {
-	args := m.Called(invoiceID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*stripe.Invoice), args.Error(1)
-}
-
-func (m *MockStripeService) SendInvoice(invoiceID string) error {
-	args := m.Called(invoiceID)
-	return args.Error(0)
-}
 
 func setupWebhookTestDB() *gorm.DB {
 	return sharedTestDB
@@ -314,8 +196,8 @@ func TestWebhookController_SecurityValidation(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				hasValidUserAgent := containsWebhook(tc.userAgent, "Stripe")
-				hasValidContentType := containsWebhook(tc.contentType, "application/json")
+				hasValidUserAgent := strings.Contains(tc.userAgent, "Stripe")
+				hasValidContentType := strings.Contains(tc.contentType, "application/json")
 
 				isValid := hasValidUserAgent && hasValidContentType
 				assert.Equal(t, tc.expectValid, isValid)
@@ -324,11 +206,3 @@ func TestWebhookController_SecurityValidation(t *testing.T) {
 	})
 }
 
-// Fonction utilitaire pour les tests webhookController
-func containsWebhook(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr ||
-		(len(s) > len(substr) &&
-			(s[:len(substr)] == substr ||
-				s[len(s)-len(substr):] == substr ||
-				bytes.Contains([]byte(s), []byte(substr)))))
-}

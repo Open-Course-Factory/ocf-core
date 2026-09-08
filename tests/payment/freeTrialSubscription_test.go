@@ -321,8 +321,8 @@ func TestDatabaseConstraints_DirectQuery(t *testing.T) {
 
 			// Check if it's a conditional index (contains WHERE clause)
 			if len(idx.IndexDef) > 0 &&
-				containsSubstring(idx.IndexDef, "WHERE") &&
-				containsSubstring(idx.IndexDef, "IS NOT NULL") {
+				strings.Contains(idx.IndexDef, "WHERE") &&
+				strings.Contains(idx.IndexDef, "IS NOT NULL") {
 				foundConditionalIndex = true
 				assert.Contains(t, idx.IndexDef, "stripe_subscription_id", "Index should be on stripe_subscription_id")
 			}
@@ -332,17 +332,4 @@ func TestDatabaseConstraints_DirectQuery(t *testing.T) {
 			assert.True(t, foundConditionalIndex, "Should have a conditional unique index with WHERE IS NOT NULL")
 		}
 	})
-}
-
-// Helper function to check if a string contains a substring
-func containsSubstring(s, substr string) bool {
-	if len(substr) > len(s) {
-		return false
-	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

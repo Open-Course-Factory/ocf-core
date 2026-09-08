@@ -203,8 +203,8 @@ func TestBulkPurchase_PlanNotMarkedBulkPurchasable_Rejected(t *testing.T) {
 		"a plan not marked BulkPurchasable must not be sellable in bulk, however visible it is")
 	assert.Nil(t, batch)
 	assert.Nil(t, licenses)
-	// Not assertNoBulkRowsPersisted: that counts every UserSubscription row, and
-	// the purchaser legitimately holds one. Assert on batches, which is what a
+	// Not a count of every UserSubscription row: the purchaser legitimately
+	// holds one. Assert on batches, which is what a
 	// rejected bulk purchase must not create.
 	var batchCount int64
 	require.NoError(t, db.Model(&models.SubscriptionBatch{}).Count(&batchCount).Error)

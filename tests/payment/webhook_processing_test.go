@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,8 +70,8 @@ func TestWebhookValidation_SecurityChecks(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				hasValidUserAgent := contains(tc.userAgent, "Stripe")
-				hasValidContentType := contains(tc.contentType, "application/json")
+				hasValidUserAgent := strings.Contains(tc.userAgent, "Stripe")
+				hasValidContentType := strings.Contains(tc.contentType, "application/json")
 				isValid := hasValidUserAgent && hasValidContentType && tc.hasSignature
 
 				assert.Equal(t, tc.expectValid, isValid)
@@ -282,15 +283,6 @@ func TestWebhookPayload_SizeValidation(t *testing.T) {
 			})
 		}
 	})
-}
-
-// Fonctions utilitaires pour les tests
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr ||
-		(len(s) > len(substr) &&
-			(s[:len(substr)] == substr ||
-				s[len(s)-len(substr):] == substr ||
-				bytes.Contains([]byte(s), []byte(substr)))))
 }
 
 func isEventSupported(eventType string) bool {

@@ -150,17 +150,6 @@ func (s *bulkGatesStripeStub) SyncPlansToStripe(services.SyncToStripeOptions) (*
 	panic("bulkGatesStripeStub.SyncPlansToStripe unexpectedly called")
 }
 
-// assertNoBulkRowsPersisted fails if any batch or license row exists — the
-// user-observable contract when a bulk purchase is rejected: nothing is created.
-func assertNoBulkRowsPersisted(t *testing.T) {
-	t.Helper()
-	var batchCount, licenseCount int64
-	sharedTestDB.Model(&models.SubscriptionBatch{}).Count(&batchCount)
-	sharedTestDB.Model(&models.UserSubscription{}).Count(&licenseCount)
-	assert.Equal(t, int64(0), batchCount, "no subscription batch may be persisted when the purchase is rejected")
-	assert.Equal(t, int64(0), licenseCount, "no licenses may be persisted when the purchase is rejected")
-}
-
 // The two direct-path gate tests that lived here — "non-catalog plan rejected"
 // and "plan without group_management rejected" — were removed by #441 rather
 // than repaired, because their premises stopped being true:
