@@ -74,10 +74,7 @@ func (hc *genericHooksController) EnableHook(ctx *gin.Context) {
 	hookName := ctx.Param("hook_name")
 	err := hooks.GlobalHookRegistry.EnableHook(hookName, true)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -104,10 +101,7 @@ func (hc *genericHooksController) DisableHook(ctx *gin.Context) {
 	hookName := ctx.Param("hook_name")
 	err := hooks.GlobalHookRegistry.EnableHook(hookName, false)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusNotFound, err.Error())
 		return
 	}
 

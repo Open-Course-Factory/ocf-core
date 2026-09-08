@@ -261,10 +261,7 @@ func (genericController genericController) getEntities(ctx *gin.Context, page in
 
 	entitiesDto, total, shouldReturn := genericController.getEntitiesFromName(entityName, page, pageSize, filters, includes)
 	if shouldReturn {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Entities not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Entities not found")
 		return nil, 0, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "Entities not found",
@@ -295,10 +292,7 @@ func (genericController genericController) getEntitiesCursor(ctx *gin.Context, c
 
 	entitiesDto, nextCursor, hasMore, total, shouldReturn := genericController.getEntitiesCursorFromName(entityName, cursor, limit, filters, includes)
 	if shouldReturn {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Entities not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Entities not found")
 		return nil, "", false, 0, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "Entities not found",
