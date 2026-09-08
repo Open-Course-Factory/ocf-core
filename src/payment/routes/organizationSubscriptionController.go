@@ -3,6 +3,7 @@ package paymentController
 
 import (
 	"net/http"
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/dto"
@@ -42,17 +43,6 @@ func NewOrganizationSubscriptionController(db *gorm.DB) OrganizationSubscription
 		orgSubService:        services.NewOrganizationSubscriptionService(db),
 		effectivePlanService: services.NewEffectivePlanService(db),
 	}
-}
-
-// isAdmin checks if the current user has the administrator role
-func isAdmin(ctx *gin.Context) bool {
-	userRoles := ctx.GetStringSlice("userRoles")
-	for _, role := range userRoles {
-		if role == "administrator" {
-			return true
-		}
-	}
-	return false
 }
 
 // CreateOrganizationSubscription godoc
@@ -108,7 +98,7 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 		orgID,
 		input.SubscriptionPlanID,
 		userID,
-		isAdmin(ctx),
+		access.IsAdmin(ctx.GetStringSlice("userRoles")),
 	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{

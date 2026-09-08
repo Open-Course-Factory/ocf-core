@@ -3,6 +3,7 @@ package paymentController
 import (
 	"fmt"
 	"net/http"
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
@@ -167,13 +168,7 @@ func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
 	// Vérifier l'accès
 	if invoice.UserID != userId {
 		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
+		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{

@@ -2,6 +2,7 @@ package paymentController
 
 import (
 	"net/http"
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
@@ -44,13 +45,7 @@ func (umc *usageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
 	targetUserID := ctx.Query("user_id")
 	if targetUserID != "" {
 		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
+		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{

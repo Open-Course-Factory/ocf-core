@@ -4,6 +4,7 @@ package paymentController
 import (
 	"fmt"
 	"net/http"
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/utils"
 	"strings"
@@ -452,13 +453,7 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 
 	if subscription.UserID != userId {
 		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
+		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
@@ -579,13 +574,7 @@ func (sc *userSubscriptionController) ReactivateSubscription(ctx *gin.Context) {
 
 	if subscription.UserID != userId {
 		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
+		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
@@ -771,13 +760,7 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 //	@Router			/user-subscriptions/analytics [get]
 func (sc *userSubscriptionController) GetSubscriptionAnalytics(ctx *gin.Context) {
 	userRoles := ctx.GetStringSlice("userRoles")
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(userRoles)
 
 	if !isAdmin {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
@@ -1449,13 +1432,7 @@ func (sc *userSubscriptionController) CheckSeatPricingCoherence(ctx *gin.Context
 func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) {
 	// Check admin role
 	userRoles := ctx.GetStringSlice("userRoles")
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(userRoles)
 	if !isAdmin {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,

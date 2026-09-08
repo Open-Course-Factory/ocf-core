@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"soli/formations/src/auth/access"
 	auth "soli/formations/src/auth"
 	"soli/formations/src/payment/services"
 )
@@ -23,7 +24,7 @@ const adminStripePendingSyncsLimit = 200
 // attempts, last_error, last_attempt_at, created_at}, ...]}
 func NewAdminStripePendingSyncsHandler(queue services.StripeSyncQueue) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !isAdminFromContext(c) {
+		if !access.IsAdmin(c.GetStringSlice("userRoles")) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "administrator role required"})
 			return
 		}
@@ -53,27 +54,6 @@ func NewAdminStripePendingSyncsHandler(queue services.StripeSyncQueue) gin.Handl
 			"items": items,
 		})
 	}
-}
-
-// isAdminFromContext reads the userRoles slice set by upstream auth middleware
-// (or by the test router stub) and returns true iff "administrator" is present.
-// Local helper to avoid cross-package imports; identical in shape to the
-// observability package's isAdmin.
-func isAdminFromContext(c *gin.Context) bool {
-	rolesAny, exists := c.Get("userRoles")
-	if !exists {
-		return false
-	}
-	roles, ok := rolesAny.([]string)
-	if !ok {
-		return false
-	}
-	for _, r := range roles {
-		if r == "administrator" {
-			return true
-		}
-	}
-	return false
 }
 
 // RegisterAdminStripeRoutes wires the admin Stripe queue endpoint into the
