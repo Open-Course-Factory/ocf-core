@@ -66,10 +66,3 @@ func InitPaymentHooks(db *gorm.DB) paymentServices.StripeSyncQueue {
 func EnableStripeSync(enabled bool) error {
 	return hooks.GlobalHookRegistry.EnableHook("stripe_subscription_plan_sync", enabled)
 }
-
-// GetHookStatus retourne le statut d'un hook
-func GetHookStatus(hookName string) bool {
-	// Cette fonction nécessiterait d'ajouter une méthode GetHookStatus au registre
-	// Pour l'instant, on peut consulter les logs
-	return true
-}
