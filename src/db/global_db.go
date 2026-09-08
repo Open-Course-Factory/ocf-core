@@ -13,9 +13,6 @@ import (
 
 // DB is a global variable to hold db connection
 var DB *gorm.DB
-var DBType string
-
-var DBFile string
 
 //const ENV_FILE = TESTS_ROOT + ".env.test"
 
@@ -24,13 +21,11 @@ func InitDBConnection(envFile string) {
 
 	err := godotenv.Load(envFile)
 
-	DBType = os.Getenv("DATABASE")
-
 	if err != nil {
 		log.Default().Printf("err loading: %v", err)
 	}
 
-	if DBType == "postgres" {
+	if os.Getenv("DATABASE") == "postgres" {
 		db := os.Getenv("POSTGRES_DB")
 
 		host := os.Getenv("POSTGRES_HOST")
