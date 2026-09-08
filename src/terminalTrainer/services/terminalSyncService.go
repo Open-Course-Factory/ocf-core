@@ -25,8 +25,8 @@ import (
 // terminalTrainerService embeds a *terminalSyncService and delegates the
 // relevant interface methods (SyncUserSessions, SyncAllActiveSessions) to it.
 // markSessionStopped lives here too because it is the shared SSOT for the
-// stopped-state transition — the facade's StopSession routes through
-// tts.sync.markSessionStopped so there is exactly one definition.
+// stopped-state transition — terminalLifecycleService.StopSession routes through
+// l.sync.markSessionStopped so there is exactly one definition.
 //
 // API session fetches go through the shared terminalProxyClient. Local-row
 // reads/writes go through the repository; db is used for the plan lookup in
