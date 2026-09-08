@@ -242,57 +242,6 @@ func TestHTTPResponse_DecodeLastJSON(t *testing.T) {
 }
 
 // ==========================================
-// Retry Logic Tests
-// ==========================================
-
-func TestMakeHTTPRequestWithRetry(t *testing.T) {
-	t.Run("Success on first attempt", func(t *testing.T) {
-		attemptCount := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			attemptCount++
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
-
-		opts := utils.DefaultHTTPClientOptions()
-		opts.RetryCount = 3
-		opts.RetryDelayMS = 10
-
-		resp, err := utils.MakeHTTPRequestWithRetry("GET", server.URL, nil, opts)
-		assert.NoError(t, err)
-		assert.Equal(t, 200, resp.StatusCode)
-		assert.Equal(t, 1, attemptCount, "Should succeed on first attempt, no retries")
-	})
-
-	t.Run("Success after retries", func(t *testing.T) {
-		attemptCount := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			attemptCount++
-			if attemptCount < 3 {
-				// Fail first 2 attempts by closing connection
-				panic(http.ErrAbortHandler)
-			}
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
-
-		opts := utils.DefaultHTTPClientOptions()
-		opts.RetryCount = 3
-		opts.RetryDelayMS = 10
-
-		// Note: This test may not work as expected because httptest server
-		// panic doesn't simulate network errors properly
-		// This is more of a structure test
-		resp, err := utils.MakeHTTPRequestWithRetry("GET", server.URL, nil, opts)
-
-		// We expect either success or error depending on httptest behavior
-		if err == nil {
-			assert.Equal(t, 200, resp.StatusCode)
-		}
-	})
-}
-
-// ==========================================
 // High-Level Convenience Function Tests
 // ==========================================
 
@@ -407,33 +356,6 @@ func TestOptionBuilders(t *testing.T) {
 		assert.Equal(t, 5*time.Second, opts.Timeout)
 	})
 
-	t.Run("WithHeader", func(t *testing.T) {
-		opts := utils.DefaultHTTPClientOptions()
-		utils.ApplyOptions(&opts, utils.WithHeader("X-Custom", "value"))
-
-		assert.Equal(t, "value", opts.Headers["X-Custom"])
-	})
-
-	t.Run("WithHeaders", func(t *testing.T) {
-		opts := utils.DefaultHTTPClientOptions()
-		headers := map[string]string{
-			"X-Header-1": "value1",
-			"X-Header-2": "value2",
-		}
-		utils.ApplyOptions(&opts, utils.WithHeaders(headers))
-
-		assert.Equal(t, "value1", opts.Headers["X-Header-1"])
-		assert.Equal(t, "value2", opts.Headers["X-Header-2"])
-	})
-
-	t.Run("WithRetry", func(t *testing.T) {
-		opts := utils.DefaultHTTPClientOptions()
-		utils.ApplyOptions(&opts, utils.WithRetry(3, 500))
-
-		assert.Equal(t, 3, opts.RetryCount)
-		assert.Equal(t, 500, opts.RetryDelayMS)
-	})
-
 	t.Run("WithAPIKey", func(t *testing.T) {
 		opts := utils.DefaultHTTPClientOptions()
 		utils.ApplyOptions(&opts, utils.WithAPIKey("secret-key-123"))
@@ -441,25 +363,15 @@ func TestOptionBuilders(t *testing.T) {
 		assert.Equal(t, "secret-key-123", opts.Headers["X-API-Key"])
 	})
 
-	t.Run("WithBearerToken", func(t *testing.T) {
-		opts := utils.DefaultHTTPClientOptions()
-		utils.ApplyOptions(&opts, utils.WithBearerToken("token123"))
-
-		assert.Equal(t, "Bearer token123", opts.Headers["Authorization"])
-	})
-
 	t.Run("Multiple options", func(t *testing.T) {
 		opts := utils.DefaultHTTPClientOptions()
 		utils.ApplyOptions(&opts,
 			utils.WithTimeout(10*time.Second),
 			utils.WithAPIKey("secret"),
-			utils.WithRetry(5, 1000),
 		)
 
 		assert.Equal(t, 10*time.Second, opts.Timeout)
 		assert.Equal(t, "secret", opts.Headers["X-API-Key"])
-		assert.Equal(t, 5, opts.RetryCount)
-		assert.Equal(t, 1000, opts.RetryDelayMS)
 	})
 }
 
@@ -515,7 +427,6 @@ func TestDefaultHTTPClientOptions(t *testing.T) {
 	opts := utils.DefaultHTTPClientOptions()
 
 	assert.Equal(t, 30*time.Second, opts.Timeout, "Default timeout should be 30 seconds")
-	assert.Equal(t, 0, opts.RetryCount, "Default retry count should be 0")
 	assert.NotNil(t, opts.Headers, "Headers map should be initialized")
 	assert.Empty(t, opts.Headers, "Headers should be empty by default")
 }

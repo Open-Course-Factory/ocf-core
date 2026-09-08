@@ -11,19 +11,15 @@ import (
 
 // HTTPClientOptions configures HTTP client behavior
 type HTTPClientOptions struct {
-	Timeout      time.Duration
-	Headers      map[string]string
-	RetryCount   int
-	RetryDelayMS int
+	Timeout time.Duration
+	Headers map[string]string
 }
 
 // DefaultHTTPClientOptions returns sensible defaults
 func DefaultHTTPClientOptions() HTTPClientOptions {
 	return HTTPClientOptions{
-		Timeout:      30 * time.Second,
-		Headers:      make(map[string]string),
-		RetryCount:   0, // No retries by default
-		RetryDelayMS: 1000,
+		Timeout: 30 * time.Second,
+		Headers: make(map[string]string),
 	}
 }
 
@@ -136,40 +132,6 @@ func MakeHTTPRequest(method, url string, body any, opts HTTPClientOptions) (*HTT
 	}, nil
 }
 
-// MakeHTTPRequestWithRetry makes an HTTP request with automatic retries
-//
-// Example:
-//
-//	resp, err := MakeHTTPRequestWithRetry("POST", url, payload, opts)
-func MakeHTTPRequestWithRetry(method, url string, body any, opts HTTPClientOptions) (*HTTPResponse, error) {
-	var lastErr error
-
-	for attempt := 0; attempt <= opts.RetryCount; attempt++ {
-		if attempt > 0 {
-			// Delay before retry
-			time.Sleep(time.Duration(opts.RetryDelayMS) * time.Millisecond)
-			Debug("Retrying HTTP request (attempt %d/%d): %s %s", attempt+1, opts.RetryCount+1, method, url)
-		}
-
-		resp, err := MakeHTTPRequest(method, url, body, opts)
-		if err == nil {
-			// Success
-			return resp, nil
-		}
-
-		lastErr = err
-
-		// Check if error is retryable (network errors, timeouts)
-		// HTTP errors with responses are not retried
-		if resp != nil {
-			// Got a response (even if error status), don't retry
-			return resp, err
-		}
-	}
-
-	return nil, fmt.Errorf("HTTP request failed after %d attempts: %w", opts.RetryCount+1, lastErr)
-}
-
 // ==========================================
 // High-Level Convenience Functions
 // ==========================================
@@ -182,33 +144,6 @@ func MakeHTTPRequestWithRetry(method, url string, body any, opts HTTPClientOptio
 //	err := MakeJSONRequest("POST", url, payload, &result, opts)
 func MakeJSONRequest(method, url string, body any, result any, opts HTTPClientOptions) error {
 	resp, err := MakeHTTPRequest(method, url, body, opts)
-	if err != nil {
-		return err
-	}
-
-	// Check for error status codes
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	// Decode response if result pointer provided
-	if result != nil {
-		if err := resp.DecodeJSON(result); err != nil {
-			return fmt.Errorf("failed to decode response: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// MakeJSONRequestWithRetry makes a JSON request with automatic retries
-//
-// Example:
-//
-//	var result UserResponse
-//	err := MakeJSONRequestWithRetry("POST", url, payload, &result, opts)
-func MakeJSONRequestWithRetry(method, url string, body any, result any, opts HTTPClientOptions) error {
-	resp, err := MakeHTTPRequestWithRetry(method, url, body, opts)
 	if err != nil {
 		return err
 	}
@@ -284,36 +219,6 @@ func WithTimeout(timeout time.Duration) func(*HTTPClientOptions) {
 	}
 }
 
-// WithHeader adds a header to the HTTP request
-func WithHeader(key, value string) func(*HTTPClientOptions) {
-	return func(opts *HTTPClientOptions) {
-		if opts.Headers == nil {
-			opts.Headers = make(map[string]string)
-		}
-		opts.Headers[key] = value
-	}
-}
-
-// WithHeaders sets multiple headers
-func WithHeaders(headers map[string]string) func(*HTTPClientOptions) {
-	return func(opts *HTTPClientOptions) {
-		if opts.Headers == nil {
-			opts.Headers = make(map[string]string)
-		}
-		for k, v := range headers {
-			opts.Headers[k] = v
-		}
-	}
-}
-
-// WithRetry sets retry behavior
-func WithRetry(count, delayMS int) func(*HTTPClientOptions) {
-	return func(opts *HTTPClientOptions) {
-		opts.RetryCount = count
-		opts.RetryDelayMS = delayMS
-	}
-}
-
 // WithAPIKey adds an API key header
 func WithAPIKey(apiKey string) func(*HTTPClientOptions) {
 	return func(opts *HTTPClientOptions) {
@@ -321,16 +226,6 @@ func WithAPIKey(apiKey string) func(*HTTPClientOptions) {
 			opts.Headers = make(map[string]string)
 		}
 		opts.Headers["X-API-Key"] = apiKey
-	}
-}
-
-// WithBearerToken adds a Bearer token header
-func WithBearerToken(token string) func(*HTTPClientOptions) {
-	return func(opts *HTTPClientOptions) {
-		if opts.Headers == nil {
-			opts.Headers = make(map[string]string)
-		}
-		opts.Headers["Authorization"] = fmt.Sprintf("Bearer %s", token)
 	}
 }
 

@@ -72,9 +72,8 @@ func getTerminalTrainerVersion() string {
 
 	// Configure HTTP client with short timeout (we don't want to delay the response)
 	opts := utils.HTTPClientOptions{
-		Timeout:    2 * time.Second, // Short timeout to avoid blocking
-		Headers:    make(map[string]string),
-		RetryCount: 0, // No retries for version check
+		Timeout: 2 * time.Second, // Short timeout to avoid blocking
+		Headers: make(map[string]string),
 	}
 
 	// Make the HTTP GET request
