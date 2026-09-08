@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"io"
+	"slices"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/utils"
 	"strings"
@@ -141,7 +142,7 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 					utils.Error("%s", err.Error())
 				}
 
-				if contains(currentSection.HiddenPages, (pageOrder)) {
+				if slices.Contains(currentSection.HiddenPages, pageOrder) {
 					hide = true
 				}
 				page := createPage(pageOrder, strings.Split(string(sPageContent), "\n"), currentSection, hide, pageFrontMatter.Class)
