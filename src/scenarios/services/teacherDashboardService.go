@@ -1025,6 +1025,13 @@ func (s *TeacherDashboardService) loadScenarioGraph(scenarioIDs []uuid.UUID) (*s
 	for _, sc := range scenarios {
 		byID[sc.ID] = sc
 	}
+	// A soft-deleted scenario keeps its assignment row, so the access check
+	// passes; fail here rather than render a zero-valued scenario.
+	for _, id := range scenarioIDs {
+		if _, ok := byID[id]; !ok {
+			return nil, fmt.Errorf("scenario not found: %s", id)
+		}
+	}
 
 	// Load all steps for all referenced scenarios in one query.
 	// Two views of this data are needed downstream:

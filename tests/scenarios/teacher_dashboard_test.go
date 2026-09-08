@@ -889,6 +889,38 @@ func TestGetSessionDetail_UnassignedScenario_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "scenario is not assigned to this group")
 }
 
+func TestGetSessionDetail_SoftDeletedScenario_ReturnsScenarioNotFound(t *testing.T) {
+	db := freshTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "gone-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	scenario := models.Scenario{
+		Name: "gone-test", Title: "Gone Test", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group", CreatedByID: "c1", IsActive: true,
+	}).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "gone-s1", Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	// Soft-delete the scenario; its assignment row survives, so the access
+	// check passes and only the scenario load can notice it is gone.
+	require.NoError(t, db.Delete(&scenario).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	detail, err := svc.GetSessionDetail(groupID, session.ID)
+	require.Error(t, err)
+	assert.Nil(t, detail)
+	assert.Contains(t, err.Error(), "scenario not found")
+}
+
 // --- ResetGroupScenarioSessions controller tests ---
 
 func TestTeacherController_ResetSessions_ReturnsCount(t *testing.T) {
