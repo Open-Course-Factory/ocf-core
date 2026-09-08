@@ -9,20 +9,16 @@ import (
 	"gorm.io/gorm"
 )
 
-type EmailVerificationMiddleware interface {
-	RequireVerifiedEmail() gin.HandlerFunc
-}
-
-type emailVerificationMiddleware struct {
+type EmailVerificationMiddleware struct {
 	db *gorm.DB
 }
 
-func NewEmailVerificationMiddleware(db *gorm.DB) EmailVerificationMiddleware {
-	return &emailVerificationMiddleware{db: db}
+func NewEmailVerificationMiddleware(db *gorm.DB) *EmailVerificationMiddleware {
+	return &EmailVerificationMiddleware{db: db}
 }
 
 // RequireVerifiedEmail checks if the user has verified their email address
-func (m *emailVerificationMiddleware) RequireVerifiedEmail() gin.HandlerFunc {
+func (m *EmailVerificationMiddleware) RequireVerifiedEmail() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userId := ctx.GetString("userId")
 		if userId == "" {

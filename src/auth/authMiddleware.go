@@ -16,20 +16,13 @@ import (
 	"gorm.io/gorm"
 )
 
-type AuthMiddleware interface {
-	AuthManagement() gin.HandlerFunc
-	// IdentifyIfPresent attaches an identity when one is supplied, and never
-	// rejects. For public routes whose response depends on who is asking.
-	IdentifyIfPresent() gin.HandlerFunc
-}
-
-type authMiddleware struct {
+type AuthMiddleware struct {
 	permissionService *PermissionService
 	auditService      auditServices.AuditService
 }
 
-func NewAuthMiddleware(db *gorm.DB) AuthMiddleware {
-	return &authMiddleware{
+func NewAuthMiddleware(db *gorm.DB) *AuthMiddleware {
+	return &AuthMiddleware{
 		permissionService: NewPermissionService(),
 		auditService:      auditServices.NewAuditService(db),
 	}
@@ -55,7 +48,7 @@ func SetImpersonationHandler(h gin.HandlerFunc) {
 	impersonationHandler = h
 }
 
-func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
+func (am *AuthMiddleware) AuthManagement() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userId, tokenJTI, err := casdoor.ParseUserIDFromRequest(ctx)
 
@@ -157,7 +150,7 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 // Fails open by design — a malformed, expired or revoked token yields an
 // anonymous request rather than an error, because the route is public. The
 // consequence is only that the caller sees the public projection.
-func (am *authMiddleware) IdentifyIfPresent() gin.HandlerFunc {
+func (am *AuthMiddleware) IdentifyIfPresent() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userId, tokenJTI, err := casdoor.ParseUserIDFromRequest(ctx)
 		if err != nil || userId == "" {
