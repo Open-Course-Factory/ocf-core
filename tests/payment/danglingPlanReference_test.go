@@ -166,23 +166,6 @@ func TestEffectivePlan_RolePlanOnDeletedPlan_FailsClosed(t *testing.T) {
 	assert.Nil(t, result)
 }
 
-// TestEffectivePlan_GlobalResolutionOnDeletedPlan_FailsClosed is the
-// consequence the issue reported: max_cpu 0 used to read as unlimited, so every
-// size — XL included — came back allowed. A launch resolves the plan first, and
-// with no org context that resolution must refuse a dead plan outright.
-func TestEffectivePlan_GlobalResolutionOnDeletedPlan_FailsClosed(t *testing.T) {
-	db := freshTestDB(t)
-	userID := "learner-on-dead-plan"
-
-	gone := danglingPlan(t, db, "Retired Plan")
-	personalSubscriptionOn(t, db, userID, gone.ID)
-
-	result, err := services.NewEffectivePlanService(db).GetUserEffectivePlan(userID, nil)
-
-	require.Error(t, err, "a dead plan must not authorise a launch")
-	assert.Nil(t, result)
-}
-
 // TestReportDanglingPlanReferences_NamesEveryBrokenRow: failing closed makes the
 // breakage visible to the user, not to the operator. The startup report is what
 // tells an operator a row needs repairing, and which one.

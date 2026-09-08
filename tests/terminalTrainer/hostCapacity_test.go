@@ -74,9 +74,7 @@ func TestBulkCreateTerminals_ReservesFromTheReportedTotal(t *testing.T) {
 		})
 	}))
 	defer ttServer.Close()
-	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
-	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
-	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+	configureTTServer(t, ttServer.URL)
 	casdoorsdk.InitConfig("http://localhost:0", "dummy-endpoint", "dummy-client", "dummy-secret", "dummy-org", "dummy-app")
 
 	db := freshTestDB(t)

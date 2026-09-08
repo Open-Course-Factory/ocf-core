@@ -175,16 +175,22 @@ func (r *recordingKeyRevoker) DisableUserKey(userID string) error {
 	return r.err
 }
 
-func seedRunningTerminal(t *testing.T, db *gorm.DB, userID string) *terminalModels.Terminal {
+func seedUserTerminalKey(t *testing.T, db *gorm.DB, userID string) uuid.UUID {
 	t.Helper()
 	keyID := uuid.New()
 	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
-		BaseModel:   entityManagementModels.BaseModel{ID: keyID},
-		UserID:      userID,
-		APIKey:      "key-" + uuid.NewString()[:8],
-		KeyName:     "test-key",
-		IsActive:    true,
+		BaseModel: entityManagementModels.BaseModel{ID: keyID},
+		UserID:    userID,
+		APIKey:    "key-" + uuid.NewString()[:8],
+		KeyName:   "test-key",
+		IsActive:  true,
 	}).Error)
+	return keyID
+}
+
+func seedRunningTerminal(t *testing.T, db *gorm.DB, userID string) *terminalModels.Terminal {
+	t.Helper()
+	keyID := seedUserTerminalKey(t, db, userID)
 
 	term := &terminalModels.Terminal{
 		BaseModel:         entityManagementModels.BaseModel{ID: uuid.New()},
@@ -661,14 +667,7 @@ func TestDeleteMyAccount_RemovesMembershipsTokensSettingsSSHKeys(t *testing.T) {
 // silently skips it today.
 func seedStoppedTerminal(t *testing.T, db *gorm.DB, userID string) *terminalModels.Terminal {
 	t.Helper()
-	keyID := uuid.New()
-	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
-		BaseModel:   entityManagementModels.BaseModel{ID: keyID},
-		UserID:      userID,
-		APIKey:      "key-" + uuid.NewString()[:8],
-		KeyName:     "stopped-key",
-		IsActive:    true,
-	}).Error)
+	keyID := seedUserTerminalKey(t, db, userID)
 
 	term := &terminalModels.Terminal{
 		BaseModel:         entityManagementModels.BaseModel{ID: uuid.New()},
@@ -745,13 +744,7 @@ func TestDeleteMyAccount_DuringImpersonation_Forbidden(t *testing.T) {
 func TestDeleteMyAccount_DeletesUserTerminalKey(t *testing.T) {
 	db := setupDeleteMyAccountDB(t)
 	userID := newUserID()
-	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
-		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
-		UserID:      userID,
-		APIKey:      "live-key",
-		KeyName:     "primary",
-		IsActive:    true,
-	}).Error)
+	seedUserTerminalKey(t, db, userID)
 
 	casdoorMock, helperMock, _ := happyMocks(userID)
 	svc := composedUserDeletionService(db, casdoorMock, helperMock)
@@ -771,13 +764,7 @@ func TestDeleteMyAccount_DeletesUserTerminalKey(t *testing.T) {
 func TestDeleteMyAccount_RevokesTerminalKeyOnTtBackend(t *testing.T) {
 	db := setupDeleteMyAccountDB(t)
 	userID := newUserID()
-	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-		UserID:    userID,
-		APIKey:    "live-key",
-		KeyName:   "primary",
-		IsActive:  true,
-	}).Error)
+	seedUserTerminalKey(t, db, userID)
 
 	casdoorMock, helperMock, _ := happyMocks(userID)
 	revoker := &recordingKeyRevoker{}
@@ -795,13 +782,7 @@ func TestDeleteMyAccount_RevokesTerminalKeyOnTtBackend(t *testing.T) {
 func TestDeleteMyAccount_ProceedsWhenTtBackendRevocationFails(t *testing.T) {
 	db := setupDeleteMyAccountDB(t)
 	userID := newUserID()
-	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-		UserID:    userID,
-		APIKey:    "live-key",
-		KeyName:   "primary",
-		IsActive:  true,
-	}).Error)
+	seedUserTerminalKey(t, db, userID)
 
 	casdoorMock, helperMock, _ := happyMocks(userID)
 	revoker := &recordingKeyRevoker{err: errors.New("tt-backend unreachable")}

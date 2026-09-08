@@ -101,17 +101,15 @@ type fakeStripeCatalog struct {
 	archiveFails map[string]bool
 }
 
-// failArchiveOf makes archiving this price fail until allowArchiveOf.
-func (c *fakeStripeCatalog) failArchiveOf(priceID string) {
+// setArchiveFails makes archiving this price fail (or succeed again).
+func (c *fakeStripeCatalog) setArchiveFails(priceID string, fails bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.archiveFails[priceID] = true
-}
-
-func (c *fakeStripeCatalog) allowArchiveOf(priceID string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.archiveFails, priceID)
+	if fails {
+		c.archiveFails[priceID] = true
+	} else {
+		delete(c.archiveFails, priceID)
+	}
 }
 
 func (c *fakeStripeCatalog) recordWrite(path string) {
@@ -547,7 +545,7 @@ func TestSyncToStripe_ArchiveFailureKeepsPlanOnNewPriceAndRetriesLater(t *testin
 	svc := services.NewStripeService(db)
 
 	plan, _, oldPrice := syncedPlan(t, db, cat, "Sticky Plan", 2999, 1999)
-	cat.failArchiveOf(oldPrice.ID)
+	cat.setArchiveFails(oldPrice.ID, true)
 
 	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	require.NoError(t, err)
@@ -561,7 +559,7 @@ func TestSyncToStripe_ArchiveFailureKeepsPlanOnNewPriceAndRetriesLater(t *testin
 		"the price left active must be reported by id; got %+v", result.Failed)
 	assert.True(t, cat.getPrice(oldPrice.ID).Active, "precondition: the archive did fail")
 
-	cat.allowArchiveOf(oldPrice.ID)
+	cat.setArchiveFails(oldPrice.ID, false)
 	result, err = svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	require.NoError(t, err)
 

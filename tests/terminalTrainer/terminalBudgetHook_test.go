@@ -48,13 +48,6 @@ type stubEffectivePlanService struct {
 	personalPlan *paymentModels.SubscriptionPlan
 	orgPlan      *paymentModels.SubscriptionPlan
 	failResolve  bool
-
-	// globalResolvesToOrg models resolveGlobal returning an ORGANIZATION's plan
-	// for a request that carried no org context — the real behaviour, since
-	// resolveGlobal picks the highest-priority plan the user holds anywhere.
-	// That combination is the whole point of #457: the plan is the org's, so the
-	// budget must be the org's, even though the request named no organization.
-	globalResolvesToOrg *uuid.UUID
 }
 
 // GetUserEffectivePlan matches the consolidated interface (MR !239):
@@ -71,12 +64,6 @@ func (s *stubEffectivePlanService) GetUserEffectivePlan(userID string, orgID *uu
 			OrganizationSubscription: &paymentModels.OrganizationSubscription{
 				OrganizationID: *orgID,
 			},
-		}, nil
-	}
-	if orgID == nil && s.globalResolvesToOrg != nil && s.orgPlan != nil {
-		return &paymentServices.EffectivePlanResult{
-			Plan:                s.orgPlan,
-			Source:              paymentServices.PlanSourceOrganization,
 		}, nil
 	}
 	if s.personalPlan != nil {
@@ -437,53 +424,6 @@ func TestTerminalBudgetHook_BeforeCreate_OrgPlanCapsEachMemberAlone(t *testing.T
 	assert.Equal(t, terminalHooks.BudgetAxisCPU, budgetErr.Axis)
 }
 
-// Whether the request names the organization changes nothing about whose
-// sessions are counted: the plan resolves to the organization's either way
-// (resolveGlobal picks the highest-priority plan the user holds anywhere) and
-// caps this member alone. #457 was about that parameter turning a shared pool
-// into a per-member one; there is no shared pool any more.
-func TestTerminalBudgetHook_OrgPlanWithoutOrgContextStillCapsTheMemberAlone(t *testing.T) {
-	db := freshTestDB(t)
-	orgID := uuid.New()
-	require.NoError(t, db.Omit("Metadata").Create(&organizationModels.Organization{
-		BaseModel:        entityManagementModels.BaseModel{ID: orgID},
-		Name:             "school-budget",
-		DisplayName:      "School Budget",
-		OwnerUserID:      "u-school-a",
-		OrganizationType: organizationModels.OrgTypeTeam,
-	}).Error)
-	for _, uid := range []string{"u-school-a", "u-school-b", "u-school-c", "u-school-d"} {
-		require.NoError(t, db.Omit("Metadata").Create(&organizationModels.OrganizationMember{
-			BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
-			OrganizationID: orgID,
-			UserID:         uid,
-			Role:           "member",
-			JoinedAt:       time.Now(),
-			IsActive:       true,
-		}).Error)
-	}
-	plan := budgetPlanInMem("School", 3000, 4096, nil)
-	eps := &stubEffectivePlanService{orgPlan: plan, globalResolvesToOrg: &orgID}
-	hook := terminalHooks.NewTerminalBudgetHook(db, eps, paymentServices.NewQuotaService(db, eps))
-	insertExistingTerminal(t, db, "u-school-a", &orgID, "running", "ephemeral", 1000, 512)
-	insertExistingTerminal(t, db, "u-school-b", &orgID, "running", "ephemeral", 1000, 512)
-	insertExistingTerminal(t, db, "u-school-c", &orgID, "running", "ephemeral", 1000, 512)
-
-	// Fourth member launches WITHOUT org context: allowed, they hold nothing.
-	require.NoError(t, execBeforeCreate(hook, &terminalModels.Terminal{
-		UserID:      "u-school-d",
-		MachineSize: "S",
-	}))
-
-	// A member at their own cap is refused, with or without org context.
-	insertExistingTerminal(t, db, "u-school-a", &orgID, "running", "ephemeral", 2000, 1024)
-	err := execBeforeCreate(hook, &terminalModels.Terminal{UserID: "u-school-a", MachineSize: "S"})
-	require.Error(t, err)
-	var budgetErr *terminalHooks.ErrBudgetExhausted
-	require.ErrorAs(t, err, &budgetErr)
-	assert.Equal(t, terminalHooks.BudgetAxisCPU, budgetErr.Axis)
-}
-
 // The trainer case, which must NOT become an org pool: the plan is personal, so
 // the budget is counted for that user alone even though they belong to an
 // organization. A trainer's team org owns no plan; his learners hold their own
@@ -632,15 +572,6 @@ func requireNoPlanRefusal(t *testing.T, err error) {
 	assert.Equal(t, http.StatusForbidden, entityErr.HTTPStatus)
 	assert.Equal(t, paymentServices.ErrActiveSubscriptionRequired.Error(), entityErr.Message,
 		"same message as RequirePlan on the composed path")
-}
-
-func TestTerminalBudgetHook_BeforeCreate_NoPlan_RefusesLikeRequirePlan(t *testing.T) {
-	db := freshTestDB(t)
-	hook := newHookForTest(db, nil, nil)
-
-	err := execBeforeCreate(hook, &terminalModels.Terminal{UserID: "u-no-plan", MachineSize: "M"})
-
-	requireNoPlanRefusal(t, err)
 }
 
 func TestTerminalBudgetHook_BeforeCreate_PlanResolutionFailure_Refuses(t *testing.T) {

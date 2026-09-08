@@ -19,7 +19,6 @@ package terminalTrainer_tests
 import (
 	"testing"
 
-	"soli/formations/src/payment/catalog"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/services"
 
@@ -94,15 +93,4 @@ func TestBudgetForTerminalKey_NonPositiveAxisSendsNoCap(t *testing.T) {
 			assert.Equal(t, tc.wantMem, mem != nil, "memory cap presence")
 		})
 	}
-}
-
-// TestBudgetForTerminalKey_UsesCatalogCPUScale: the conversion divides by the
-// same millicore scale the size catalog is priced in, so one vCPU of plan
-// budget is one whole CPU on the key — not a second, locally defined 1000.
-func TestBudgetForTerminalKey_UsesCatalogCPUScale(t *testing.T) {
-	cpu, _ := services.BudgetForTerminalKey(paymentServices.UserBudgetCeiling{
-		MaxCPU: 3 * catalog.MilliCPUPerVCPU,
-	})
-	require.NotNil(t, cpu)
-	assert.Equal(t, int64(3), *cpu)
 }

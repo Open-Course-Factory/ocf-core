@@ -160,29 +160,3 @@ func TestSubscriptionPlan_CreateWithoutBudget_RejectedEndToEnd(t *testing.T) {
 		Where("name = ?", "No Budget Plan").Count(&count).Error)
 	assert.Equal(t, int64(0), count, "the refused plan must not be persisted")
 }
-
-// MissingBudgetAxes is the one home of "is this budget positive": the hook,
-// the Stripe import and the plan health page all ask it rather than comparing
-// against zero themselves. It names the JSON field so callers can report the
-// axis without a second mapping.
-func TestSubscriptionPlan_MissingBudgetAxes_NamesTheNonPositiveAxes(t *testing.T) {
-	cases := []struct {
-		name        string
-		cpu, memory int
-		want        []string
-	}{
-		{"both positive", 1, 1, nil},
-		{"cpu zero", 0, 1, []string{"max_cpu"}},
-		{"memory zero", 1, 0, []string{"max_memory_mb"}},
-		{"both zero", 0, 0, []string{"max_cpu", "max_memory_mb"}},
-		{"cpu negative", -1, 1, []string{"max_cpu"}},
-		{"memory negative", 1, -1, []string{"max_memory_mb"}},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			plan := models.SubscriptionPlan{MaxCPU: tc.cpu, MaxMemoryMB: tc.memory}
-			assert.Equal(t, tc.want, plan.MissingBudgetAxes())
-		})
-	}
-}

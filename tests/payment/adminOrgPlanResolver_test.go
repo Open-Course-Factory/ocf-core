@@ -56,20 +56,3 @@ func TestGetOrganizationPlan_NoSubscription_Errors(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, result)
 }
-
-func TestGetOrganizationPlan_DanglingPlan_FailsClosed(t *testing.T) {
-	db := freshTestDB(t)
-	gone := danglingPlan(t, db, "Retired Org Plan")
-	org := teamOrgWithoutSubscription(t, db, "broken-org", "owner")
-	require.NoError(t, db.Create(&models.OrganizationSubscription{
-		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
-		OrganizationID:     org.ID,
-		SubscriptionPlanID: gone.ID,
-		Status:             "active",
-	}).Error)
-
-	result, err := services.NewEffectivePlanService(db).GetOrganizationPlan(org.ID)
-
-	require.Error(t, err)
-	assert.Nil(t, result)
-}

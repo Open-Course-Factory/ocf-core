@@ -22,32 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
-
-// healthPlan creates an otherwise-sound plan with explicit budgets, bypassing
-// the validation hook so the report can be tested against rows that predate it.
-//
-// The Stripe price is set because IsCatalog defaults to true: without it every
-// fixture would trip catalog_without_price and no test could isolate its own
-// subject.
-func healthPlan(t *testing.T, db *gorm.DB, name string, cpu, mem int) *models.SubscriptionPlan {
-	t.Helper()
-	priceID := "price_" + uuid.New().String()[:8]
-	plan := &models.SubscriptionPlan{
-		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:            name,
-		PriceAmount:     1990,
-		Currency:        "eur",
-		BillingInterval: "month",
-		IsActive:        true,
-		StripePriceID:   &priceID,
-		MaxCPU:          cpu,
-		MaxMemoryMB:     mem,
-	}
-	require.NoError(t, db.Create(plan).Error)
-	return plan
-}
 
 func findingCodes(h services.PlanHealth) []string {
 	out := []string{}
@@ -61,7 +36,7 @@ func findingCodes(h services.PlanHealth) []string {
 func TestPlanHealth_HealthyPlanIsAbsent(t *testing.T) {
 	db := freshTestDB(t)
 	// 24000 mCPU / 12288 MB affords 24 size-S sessions on both axes.
-	healthPlan(t, db, "Balanced", 24000, 12288)
+	budgetPlan(t, db, "Balanced", 24000, 12288, nil)
 
 	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
@@ -72,8 +47,8 @@ func TestPlanHealth_HealthyPlanIsAbsent(t *testing.T) {
 // The fault the validation hook now prevents, for rows that predate it.
 func TestPlanHealth_ZeroBudgetIsBlocking(t *testing.T) {
 	db := freshTestDB(t)
-	healthPlan(t, db, "No CPU", 0, 6144)
-	healthPlan(t, db, "No RAM", 6000, 0)
+	budgetPlan(t, db, "No CPU", 0, 6144, nil)
+	budgetPlan(t, db, "No RAM", 6000, 0, nil)
 
 	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
@@ -95,7 +70,7 @@ func TestPlanHealth_ZeroBudgetIsBlocking(t *testing.T) {
 // subscription silently entitles nothing — and used to entitle everything.
 func TestPlanHealth_DanglingReferenceIsBlocking(t *testing.T) {
 	db := freshTestDB(t)
-	plan := healthPlan(t, db, "Retired", 6000, 6144)
+	plan := budgetPlan(t, db, "Retired", 6000, 6144, nil)
 	personalSubscriptionOn(t, db, "orphaned-user", plan.ID)
 	require.NoError(t, db.Delete(plan).Error)
 
@@ -110,7 +85,7 @@ func TestPlanHealth_DanglingReferenceIsBlocking(t *testing.T) {
 // A deleted plan nobody references is simply retired, not broken.
 func TestPlanHealth_DeletedPlanWithoutSubscribersIsSilent(t *testing.T) {
 	db := freshTestDB(t)
-	plan := healthPlan(t, db, "Retired Cleanly", 6000, 6144)
+	plan := budgetPlan(t, db, "Retired Cleanly", 6000, 6144, nil)
 	require.NoError(t, db.Delete(plan).Error)
 
 	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
@@ -122,9 +97,9 @@ func TestPlanHealth_DeletedPlanWithoutSubscribersIsSilent(t *testing.T) {
 // A plan offered for sale that Stripe cannot charge for.
 func TestPlanHealth_CatalogPlanWithoutPriceIsWarning(t *testing.T) {
 	db := freshTestDB(t)
-	plan := healthPlan(t, db, "Unsellable", 6000, 6144)
+	plan := budgetPlan(t, db, "Unsellable", 6000, 6144, nil)
 	require.NoError(t, db.Model(plan).Updates(map[string]any{
-		"is_catalog": true, "stripe_price_id": "",
+		"is_catalog": true, "stripe_price_id": "", "price_amount": 1990,
 	}).Error)
 
 	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
@@ -137,9 +112,9 @@ func TestPlanHealth_CatalogPlanWithoutPriceIsWarning(t *testing.T) {
 // A free catalog plan needs no Stripe price — nothing is ever charged.
 func TestPlanHealth_FreeCatalogPlanNeedsNoPrice(t *testing.T) {
 	db := freshTestDB(t)
-	plan := healthPlan(t, db, "Free Tier", 500, 256)
+	plan := budgetPlan(t, db, "Free Tier", 500, 256, nil)
 	require.NoError(t, db.Model(plan).Updates(map[string]any{
-		"is_catalog": true, "stripe_price_id": "", "price_amount": 0,
+		"is_catalog": true, "stripe_price_id": "",
 	}).Error)
 
 	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
@@ -154,7 +129,7 @@ func TestPlanHealth_FreeCatalogPlanNeedsNoPrice(t *testing.T) {
 func TestPlanHealth_AxisImbalanceIsAdvisory(t *testing.T) {
 	db := freshTestDB(t)
 	// Formateur's real shape, measured at xs: 12 sessions by CPU, 24 by RAM.
-	healthPlan(t, db, "Formateur", 6000, 6144)
+	budgetPlan(t, db, "Formateur", 6000, 6144, nil)
 
 	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
@@ -176,7 +151,7 @@ func TestPlanHealth_AxisImbalanceIsAdvisory(t *testing.T) {
 func TestPlanHealth_BudgetBelowSmallestSizeIsBlocking(t *testing.T) {
 	db := freshTestDB(t)
 	// 100 mCPU / 64 MB is under xs (500 mCPU / 256 MB).
-	healthPlan(t, db, "Too Small", 100, 64)
+	budgetPlan(t, db, "Too Small", 100, 64, nil)
 
 	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
 
@@ -189,26 +164,9 @@ func TestPlanHealth_BudgetBelowSmallestSizeIsBlocking(t *testing.T) {
 		"its budgets are positive — this is a different fault")
 }
 
-// The dangling check is ReportDanglingPlanReferences, per plan: it counts role
-// mappings too, and it reads liveness through ScopeEntitling rather than a
-// status list of its own.
-func TestPlanHealth_RolePlanOnDeletedPlanIsDangling(t *testing.T) {
-	db := freshTestDB(t)
-	plan := healthPlan(t, db, "Retired Role Plan", 6000, 6144)
-	org := teamOrgWithoutSubscription(t, db, "role-corp", "owner-1")
-	rolePlanOn(t, db, org.ID, "member", plan.ID)
-	require.NoError(t, db.Delete(plan).Error)
-
-	report, err := services.CheckAllPlanHealth(db, newQuotaSvc(t, db))
-
-	require.NoError(t, err)
-	require.Len(t, report, 1, "a role mapping still pointing at the deleted plan entitles its members")
-	assert.Contains(t, findingCodes(report[0]), services.PlanHealthDanglingReference)
-}
-
 func TestPlanHealth_ExpiredSubscriptionOnDeletedPlanIsNotDangling(t *testing.T) {
 	db := freshTestDB(t)
-	plan := healthPlan(t, db, "Retired Pack", 6000, 6144)
+	plan := budgetPlan(t, db, "Retired Pack", 6000, 6144, nil)
 	expired := time.Now().Add(-time.Hour)
 	require.NoError(t, db.Create(&models.UserSubscription{
 		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},

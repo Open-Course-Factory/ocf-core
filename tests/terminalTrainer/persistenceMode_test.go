@@ -474,17 +474,7 @@ func TestStartComposedSession_PersistentGatedByDataPersistenceEnabled(t *testing
 
 	// Plan has DataPersistenceEnabled=true — the SSOT field. Persistent mode
 	// must be permitted purely on the basis of this single field.
-	plan := &paymentModels.SubscriptionPlan{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:      "ssot-plan",
-		// Budgets are stated so these cases reach the persistence logic:
-		// a zero budget now means no capacity and refuses the session outright.
-		MaxCPU:                    24000,
-		MaxMemoryMB:               24576,
-		IsActive:                  true,
-		MaxSessionDurationMinutes: 60,
-		DataPersistenceEnabled:    true,
-	}
+	plan := makePlan(true)
 	svc := services.NewTerminalTrainerService(db)
 
 	resp, err := svc.StartComposedSession(userID, dto.CreateComposedSessionInput{
@@ -513,17 +503,7 @@ func TestStartComposedSession_PersistentRejectedWhenDataPersistenceDisabled(t *t
 	_, err := createTestUserKey(db, userID)
 	require.NoError(t, err)
 
-	plan := &paymentModels.SubscriptionPlan{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:      "ssot-plan-no-pers",
-		// Budgets are stated so these cases reach the persistence logic:
-		// a zero budget now means no capacity and refuses the session outright.
-		MaxCPU:                    24000,
-		MaxMemoryMB:               24576,
-		IsActive:                  true,
-		MaxSessionDurationMinutes: 60,
-		DataPersistenceEnabled:    false,
-	}
+	plan := makePlan(false)
 	svc := services.NewTerminalTrainerService(db)
 
 	resp, err := svc.StartComposedSession(userID, dto.CreateComposedSessionInput{

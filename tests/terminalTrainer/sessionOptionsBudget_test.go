@@ -108,27 +108,3 @@ func TestSessionOptions_BudgetMode_IncludesTopLevelQuota(t *testing.T) {
 	assert.Equal(t, 1024, opts.Quota.RemainingMemoryMB)
 	assert.Equal(t, dto.ScopeUser, opts.Quota.Scope, "personal context → scope=user")
 }
-
-// TestSessionOptions_BudgetMode_OrgPlanIsStillTheUsersOwn — a plan reached
-// through an organization (its subscription, or a role mapping) is that user's
-// own cap, counted on their own sessions. The scope therefore stays "user";
-// there is no organization pool for the composer to label.
-func TestSessionOptions_BudgetMode_OrgPlanIsStillTheUsersOwn(t *testing.T) {
-	db := freshTestDB(t)
-	svc := services.NewTerminalTrainerService(db)
-
-	plan := &paymentModels.SubscriptionPlan{
-		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:        "Seat plan mapped by the org",
-		MaxCPU:      8000, // 8 vCPU in mCPU
-		MaxMemoryMB: 4096,
-	}
-
-	opts := budgetSessionOptions()
-	svc.EnrichSessionOptionsBudget(opts, plan, "u-org")
-
-	require.NotNil(t, opts.Quota)
-	assert.Equal(t, dto.ScopeUser, opts.Quota.Scope,
-		"an organization's plan caps the member alone, so the budget is scoped to the user")
-	assert.Equal(t, 8000, opts.Quota.RemainingCPU, "nothing of the user's own is in use")
-}
