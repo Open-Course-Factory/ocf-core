@@ -43,10 +43,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	entityManagementController "soli/formations/src/entityManagement/routes"
-	ems "soli/formations/src/entityManagement/entityManagementService"
 	orgModels "soli/formations/src/organizations/models"
-	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	"soli/formations/src/scenarios/models"
 
 	"gorm.io/gorm"
@@ -63,55 +60,10 @@ const (
 	leakForegroundScript = "SECRET-FG-script-do-not-leak"
 )
 
-// =============================================================================
-// Test setup — extends the existing setupScenarioReadAuthzTest with the
-// sibling routes (/scenario-steps, /scenario-step-questions). Reuses the same
-// global registration swap pattern + same fake auth context middleware.
-// =============================================================================
-
-// setupExtendedReadAuthzTest registers all three entities (Scenario,
-// ScenarioStep, ScenarioStepQuestion) on a fresh GlobalEntityRegistrationService
-// and mounts the matching GET routes so GetEntityNameFromPath resolves
-// correctly:
-//
-//   /api/v1/scenarios               -> "Scenario"
-//   /api/v1/scenarios/:id           -> "Scenario"
-//   /api/v1/scenario-steps          -> "ScenarioStep"
-//   /api/v1/scenario-steps/:id      -> "ScenarioStep"
-//   /api/v1/scenario-step-questions -> "ScenarioStepQuestion"
-//   /api/v1/scenario-step-questions/:id -> "ScenarioStepQuestion"
+// setupExtendedReadAuthzTest mounts the scenario route plus its two sibling
+// routes (/scenario-steps, /scenario-step-questions).
 func setupExtendedReadAuthzTest(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
-	t.Helper()
-
-	originalSvc := ems.GlobalEntityRegistrationService
-	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
-	scenarioRegistration.RegisterScenario(ems.GlobalEntityRegistrationService)
-	scenarioRegistration.RegisterScenarioStep(ems.GlobalEntityRegistrationService)
-	scenarioRegistration.RegisterScenarioStepQuestion(ems.GlobalEntityRegistrationService)
-	t.Cleanup(func() {
-		ems.GlobalEntityRegistrationService = originalSvc
-	})
-
-	gen := entityManagementController.NewGenericController(db, nil)
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-
-	api := r.Group("/api/v1")
-	api.Use(func(c *gin.Context) {
-		c.Set("userId", userID)
-		c.Set("userRoles", roles)
-		c.Next()
-	})
-
-	api.GET("/scenarios", gen.GetEntities)
-	api.GET("/scenarios/:id", gen.GetEntity)
-	api.GET("/scenario-steps", gen.GetEntities)
-	api.GET("/scenario-steps/:id", gen.GetEntity)
-	api.GET("/scenario-step-questions", gen.GetEntities)
-	api.GET("/scenario-step-questions/:id", gen.GetEntity)
-
-	return r
+	return setupScenarioReadAuthzTest(t, db, userID, roles, "/scenarios", "/scenario-steps", "/scenario-step-questions")
 }
 
 // buildLeakyScenarioWithSetupScript creates a scenario seeded with a

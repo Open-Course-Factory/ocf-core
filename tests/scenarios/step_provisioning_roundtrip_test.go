@@ -23,7 +23,7 @@ import (
 // re-seed turns a working challenge into a timing-out one.
 
 func TestSeedScenario_PersistsStepProvisioningFields(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	seedSvc := services.NewScenarioSeedService(db)
 	scenario, _, err := seedSvc.SeedScenario(dto.SeedScenarioInput{
@@ -52,7 +52,7 @@ func TestSeedScenario_PersistsStepProvisioningFields(t *testing.T) {
 }
 
 func TestExportAsJSON_CarriesStepProvisioningFields(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "export-provisioning",
@@ -92,7 +92,7 @@ func TestExportAsJSON_CarriesStepProvisioningFields(t *testing.T) {
 }
 
 func TestExportAsArchive_WritesProvisioningFieldsIntoIndexJSON(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "archive-provisioning",
@@ -146,7 +146,7 @@ func TestExportAsArchive_WritesProvisioningFieldsIntoIndexJSON(t *testing.T) {
 }
 
 func TestScenarioImporter_ReadsStepProvisioningFieldsFromIndexJSON(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	index, err := importer.ParseIndexJSON([]byte(`{
@@ -184,7 +184,7 @@ func TestScenarioImporter_ReadsStepProvisioningFieldsFromIndexJSON(t *testing.T)
 // its neighbour's extensions.json, so quiz steps came back as terminal steps
 // and the last step's sidecar was ignored entirely.
 func TestScenarioImporter_ZeroIndexedStepDirs_ReadTheirOwnSidecar(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 	dir := t.TempDir()
 
@@ -227,7 +227,7 @@ func TestScenarioImporter_ZeroIndexedStepDirs_ReadTheirOwnSidecar(t *testing.T) 
 }
 
 func TestDuplicateScenario_CopiesStepProvisioningFields(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	source := models.Scenario{
 		Name:         "duplicate-provisioning",

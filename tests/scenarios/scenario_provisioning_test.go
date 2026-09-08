@@ -11,7 +11,7 @@ import (
 )
 
 func TestStartScenario_WithSetupScript_SetsProvisioningPhase(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a scenario with a setup script
 	scenario := models.Scenario{
@@ -51,7 +51,7 @@ func TestStartScenario_WithSetupScript_SetsProvisioningPhase(t *testing.T) {
 }
 
 func TestStartScenario_WithoutSetupScript_NoProvisioningPhase(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a scenario without any setup scripts
 	scenario := models.Scenario{
@@ -84,7 +84,7 @@ func TestStartScenario_WithoutSetupScript_NoProvisioningPhase(t *testing.T) {
 }
 
 func TestProvisioningPhase_ClearedOnActive(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a scenario
 	scenario := models.Scenario{

@@ -60,7 +60,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 // tt-backend stand-in is needed.
 
 func TestLaunchScenario_InvalidID(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	w := postLaunch(router, "not-a-uuid")
@@ -69,7 +69,7 @@ func TestLaunchScenario_InvalidID(t *testing.T) {
 }
 
 func TestLaunchScenario_NotFound(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	w := postLaunch(router, uuid.New().String())
@@ -91,7 +91,7 @@ func postLaunch(router *gin.Engine, scenarioID string) *httptest.ResponseRecorde
 // --- GetCurrentStep tests ---
 
 func TestGetCurrentStep_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	scenario := models.Scenario{
@@ -144,7 +144,7 @@ func TestGetCurrentStep_Success(t *testing.T) {
 }
 
 func TestGetCurrentStep_InvalidID(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	w := httptest.NewRecorder()
@@ -157,7 +157,7 @@ func TestGetCurrentStep_InvalidID(t *testing.T) {
 // --- VerifyStep tests ---
 
 func TestVerifyStep_NoTerminal(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	scenario := models.Scenario{
@@ -199,7 +199,7 @@ func TestVerifyStep_NoTerminal(t *testing.T) {
 // --- SubmitFlag tests ---
 
 func TestSubmitFlag_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	scenario := models.Scenario{
@@ -251,7 +251,7 @@ func TestSubmitFlag_Success(t *testing.T) {
 }
 
 func TestSubmitFlag_MissingBody(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	session := models.ScenarioSession{
@@ -273,7 +273,7 @@ func TestSubmitFlag_MissingBody(t *testing.T) {
 }
 
 func TestSubmitFlag_ExceedsMaxLength_ReturnsValidationError(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	session := models.ScenarioSession{
@@ -302,7 +302,7 @@ func TestSubmitFlag_ExceedsMaxLength_ReturnsValidationError(t *testing.T) {
 // --- AbandonSession tests ---
 
 func TestAbandonSession_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	scenario := models.Scenario{
@@ -335,7 +335,7 @@ func TestAbandonSession_Success(t *testing.T) {
 }
 
 func TestAbandonSession_NotFound(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	fakeID := uuid.New()
@@ -349,7 +349,7 @@ func TestAbandonSession_NotFound(t *testing.T) {
 // --- ImportScenario tests ---
 
 func TestImportScenario_NotImplemented(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	body, _ := json.Marshal(map[string]string{
@@ -366,7 +366,7 @@ func TestImportScenario_NotImplemented(t *testing.T) {
 // --- GetSessionByTerminal tests ---
 
 func TestGetSessionByTerminal_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	scenario := models.Scenario{
@@ -403,7 +403,7 @@ func TestGetSessionByTerminal_Success(t *testing.T) {
 }
 
 func TestGetSessionByTerminal_NotFound(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	w := httptest.NewRecorder()
@@ -416,7 +416,7 @@ func TestGetSessionByTerminal_NotFound(t *testing.T) {
 // --- SeedScenario tests ---
 
 func TestSeedScenario_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	payload := map[string]any{
@@ -496,7 +496,7 @@ func TestSeedScenario_Success(t *testing.T) {
 }
 
 func TestSeedScenario_MissingTitle(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	payload := map[string]any{
@@ -536,7 +536,7 @@ func setupTestRouterWithUser(db *gorm.DB, userID string) *gin.Engine {
 // --- IDOR tests ---
 
 func TestGetSessionByTerminal_IDOR_Returns403(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "idor-test",
@@ -578,7 +578,7 @@ func TestGetSessionByTerminal_IDOR_Returns403(t *testing.T) {
 // session's identity — a status-only assertion would still pass if the handler
 // started leaking the row before denying.
 func TestGetSessionByTerminal_OtherUsersSession_Denied(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "by-terminal-selfscope",
@@ -643,7 +643,7 @@ func setupMySessionsRouter(db *gorm.DB, userID string) *gin.Engine {
 // refactor cannot silently return other users' sessions. Assertion is on the
 // observable response body (the returned session ids), not a mock call.
 func TestGetMySessions_ReturnsOnlyCallersSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Two distinct scenarios so both sessions can be active without tripping the
 	// (user_id, scenario_id) active-session uniqueness assumptions.
@@ -691,7 +691,7 @@ func TestGetMySessions_ReturnsOnlyCallersSessions(t *testing.T) {
 }
 
 func TestSeedScenario_WithOsType(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	payload := map[string]any{
@@ -723,7 +723,7 @@ func TestSeedScenario_WithOsType(t *testing.T) {
 }
 
 func TestSeedScenario_NoSteps(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	payload := map[string]any{
@@ -743,7 +743,7 @@ func TestSeedScenario_NoSteps(t *testing.T) {
 // --- GetSessionInfo tests ---
 
 func TestGetSessionInfo_OwnerCanAccess(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupTestRouter(db)
 
 	scenario := models.Scenario{
@@ -780,7 +780,7 @@ func TestGetSessionInfo_OwnerCanAccess(t *testing.T) {
 }
 
 func TestGetSessionInfo_NonOwnerGetsForbidden(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "info-idor", Title: "Info IDOR", InstanceType: "ubuntu:22.04", CreatedByID: "creator-1",
@@ -847,7 +847,7 @@ func newGroupWithMember(t *testing.T, db *gorm.DB, name, userID string) groupMod
 // TestLaunchScenario_NoAssignment_Returns403 verifies that a regular (non-admin) user
 // cannot launch a scenario that is NOT assigned to any of their groups.
 func TestLaunchScenario_NoAssignment_Returns403(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	scenario := newLaunchableScenario(t, db, "no-assignment-test")
 
 	// No group, no group member, no assignment — user is just a regular member
@@ -860,7 +860,7 @@ func TestLaunchScenario_NoAssignment_Returns403(t *testing.T) {
 // TestLaunchScenario_WithGroupAssignment_PassesAccessCheck verifies that a regular
 // user whose group HAS an active assignment for the scenario gets past the gate.
 func TestLaunchScenario_WithGroupAssignment_PassesAccessCheck(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	scenario := newLaunchableScenario(t, db, "with-assignment-test")
 	group := newGroupWithMember(t, db, "test-group-assigned", "assigned-user-1")
 	createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
@@ -874,7 +874,7 @@ func TestLaunchScenario_WithGroupAssignment_PassesAccessCheck(t *testing.T) {
 // TestLaunchScenario_AdminBypassesAssignmentCheck verifies that a platform admin
 // gets past the gate without any group assignment.
 func TestLaunchScenario_AdminBypassesAssignmentCheck(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	scenario := newLaunchableScenario(t, db, "admin-bypass-test")
 
 	router := setupTestRouterWithRoles(db, "admin-user-1", []string{"admin"})
@@ -886,7 +886,7 @@ func TestLaunchScenario_AdminBypassesAssignmentCheck(t *testing.T) {
 // TestLaunchScenario_ExpiredDeadline_Returns403 verifies that a user whose group
 // assignment has a past deadline cannot launch the scenario.
 func TestLaunchScenario_ExpiredDeadline_Returns403(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	scenario := newLaunchableScenario(t, db, "expired-deadline-test")
 	group := newGroupWithMember(t, db, "test-group-expired", "expired-user-1")
 	assignment := createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
@@ -901,7 +901,7 @@ func TestLaunchScenario_ExpiredDeadline_Returns403(t *testing.T) {
 // TestLaunchScenario_InactiveAssignment_Returns403 verifies that a user whose group
 // assignment has is_active=false cannot launch the scenario.
 func TestLaunchScenario_InactiveAssignment_Returns403(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	scenario := newLaunchableScenario(t, db, "inactive-assignment-test")
 	group := newGroupWithMember(t, db, "test-group-inactive", "inactive-user-1")
 
@@ -944,7 +944,7 @@ func setupAvailableRouter(db *gorm.DB, userID string, roles []string) *gin.Engin
 // TestGetAvailableScenarios_ReturnsOnlyAssigned verifies that a regular user
 // only sees scenarios assigned to their group.
 func TestGetAvailableScenarios_ReturnsOnlyAssigned(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create 3 scenarios
 	scenario1 := models.Scenario{Name: "avail-assigned", Title: "Assigned Scenario", InstanceType: "debian", CreatedByID: "creator-1"}
@@ -995,7 +995,7 @@ func TestGetAvailableScenarios_ReturnsOnlyAssigned(t *testing.T) {
 // TestGetAvailableScenarios_AdminSeesAll verifies that an admin user
 // sees all scenarios regardless of assignments.
 func TestGetAvailableScenarios_AdminSeesAll(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create 3 scenarios with no assignments
 	scenario1 := models.Scenario{Name: "admin-all-1", Title: "Admin All 1", InstanceType: "debian", CreatedByID: "creator-1"}
@@ -1022,7 +1022,7 @@ func TestGetAvailableScenarios_AdminSeesAll(t *testing.T) {
 // TestGetAvailableScenarios_EmptyWhenNoAssignments verifies that a user
 // in a group with no scenario assignments gets an empty array.
 func TestGetAvailableScenarios_EmptyWhenNoAssignments(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a scenario (but don't assign it)
 	scenario := models.Scenario{Name: "empty-test", Title: "Empty Test", InstanceType: "debian", CreatedByID: "creator-1"}
@@ -1058,7 +1058,7 @@ func TestGetAvailableScenarios_EmptyWhenNoAssignments(t *testing.T) {
 // TestGetAvailableScenarios_ExcludesExpiredAndInactive verifies that only active
 // assignments with no past deadline are returned.
 func TestGetAvailableScenarios_ExcludesExpiredAndInactive(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create 3 scenarios
 	activeScenario := models.Scenario{Name: "filter-active", Title: "Active Scenario", InstanceType: "debian", CreatedByID: "creator-1"}
@@ -1132,7 +1132,7 @@ func TestGetAvailableScenarios_ExcludesExpiredAndInactive(t *testing.T) {
 // TestGetAvailableScenarios_IncludesOrgAssignment verifies that a user
 // sees scenarios assigned to their organization even if not assigned to their group.
 func TestGetAvailableScenarios_IncludesOrgAssignment(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a scenario
 	scenario := models.Scenario{Name: "org-avail", Title: "Org Available", InstanceType: "debian", CreatedByID: "creator-1"}

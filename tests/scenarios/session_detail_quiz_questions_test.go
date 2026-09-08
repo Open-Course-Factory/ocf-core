@@ -14,23 +14,8 @@ import (
 	"soli/formations/src/scenarios/services"
 )
 
-// findQuestion returns the question detail with the given Order, or nil.
-// Imported via the dto package by reflection-of-tests once the wip tag is dropped.
-// We keep the helper signature flexible to avoid pinning to the exact dto type
-// import path before the implementation lands.
-func findQuestionByOrder(t *testing.T, step services.SessionStepDetail, order int) any {
-	t.Helper()
-	for _, q := range step.Questions {
-		if q.Order == order {
-			return q
-		}
-	}
-	t.Fatalf("question with order=%d not found in step questions array (got %d entries)", order, len(step.Questions))
-	return nil
-}
-
 func TestGetSessionDetail_QuizStep_IncludesQuestionsArray_AfterSubmission(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -138,13 +123,10 @@ func TestGetSessionDetail_QuizStep_IncludesQuestionsArray_AfterSubmission(t *tes
 	assert.Equal(t, "pwd", byOrder[3]["student_answer"])
 	assert.Equal(t, "pwd", byOrder[3]["correct_answer"])
 	assert.Equal(t, true, byOrder[3]["is_correct"])
-
-	// Touch helper to keep it referenced even if unused above.
-	_ = findQuestionByOrder
 }
 
 func TestGetSessionDetail_QuizStep_IncludesQuestionsArray_BeforeSubmission(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -220,7 +202,7 @@ func TestGetSessionDetail_QuizStep_IncludesQuestionsArray_BeforeSubmission(t *te
 }
 
 func TestGetSessionDetail_NonQuizStep_QuestionsArrayOmitted(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -266,7 +248,7 @@ func TestGetSessionDetail_NonQuizStep_QuestionsArrayOmitted(t *testing.T) {
 }
 
 func TestGetSessionDetail_QuizStep_AnswersJSONMalformed_DegradesGracefully(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{

@@ -24,7 +24,7 @@ import (
 // members" and then assert on who was actually started.
 func bulkStartFixture(t *testing.T, name string, membersByRole map[string][]string) (*services.TeacherDashboardService, *capturingTTService, models.Scenario, uuid.UUID) {
 	t.Helper()
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	orgID := uuid.New()
 	ownerID := name + "-owner"
@@ -198,7 +198,7 @@ func TestBulkStartScenario_StartsLearnersOnly(t *testing.T) {
 // learner but not reset by the trainer who had created them. The list now has
 // one owner, models.OpenSessionStatuses.
 func TestResetGroupScenarioSessions_ClearsFailedRuns(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	groupID, scenarioID := uuid.New(), uuid.New()
 
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -228,7 +228,7 @@ func TestResetGroupScenarioSessions_ClearsFailedRuns(t *testing.T) {
 // staff's alone. A manager previewing the scenario in their own session must
 // not lose it because a colleague reset the class.
 func TestResetGroupScenarioSessions_LearnersOnly(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	groupID, scenarioID := uuid.New(), uuid.New()
 
 	for uid, role := range map[string]string{"reset-only-learner": "member", "reset-only-manager": "manager"} {

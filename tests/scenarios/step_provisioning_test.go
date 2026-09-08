@@ -75,7 +75,7 @@ func twoStepSession(t *testing.T, db *gorm.DB, name string, nextStep models.Scen
 // throughout. This is the no-op guarantee the whole MR rests on — without it,
 // every existing scenario changes behaviour on deploy.
 func TestProvisionNextStep_StepDeclaringNothing_KeepsTodaysBehaviour(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "timeout-default", models.ScenarioStep{
 		BackgroundScript: "echo provisioning",
 	})
@@ -98,7 +98,7 @@ func TestProvisionNextStep_StepDeclaringNothing_KeepsTodaysBehaviour(t *testing.
 // is not an expected duration, so an unset timeout says nothing about how long a
 // step takes and must not opt it into async.
 func TestProvisionNextStep_ThresholdIgnoresTheDefaultTimeout(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// 30 (the default) is above the 15s threshold, so deciding from the
 	// effective timeout would make this async. Declaring 30 explicitly does.
@@ -125,7 +125,7 @@ func TestProvisionNextStep_ThresholdIgnoresTheDefaultTimeout(t *testing.T) {
 }
 
 func TestBackgroundScript_PerStepTimeout_OverridesDefault(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "timeout-override", models.ScenarioStep{
 		BackgroundScript:         "echo slow provisioning",
 		BackgroundTimeoutSeconds: 120,
@@ -149,7 +149,7 @@ func TestBackgroundScript_PerStepTimeout_OverridesDefault(t *testing.T) {
 // would outlive the stuck-provisioning reaper, which writes off the session and
 // then silently discards the script's eventual success.
 func TestBackgroundScript_PerStepTimeout_IsClampedToTheCeiling(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "timeout-absurd", models.ScenarioStep{
 		BackgroundScript:         "echo forever",
 		BackgroundTimeoutSeconds: 99999,
@@ -171,7 +171,7 @@ func TestBackgroundScript_PerStepTimeout_IsClampedToTheCeiling(t *testing.T) {
 }
 
 func TestBackgroundScript_Step0_PerStepTimeoutOverridesInitialSetupBudget(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "timeout-step0-override",
@@ -205,7 +205,7 @@ func TestBackgroundScript_Step0_PerStepTimeoutOverridesInitialSetupBudget(t *tes
 // -----------------------------------------------------------------------------
 
 func TestProvisionNextStep_ShortTimeout_RunsInlineAndReportsNothing(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "sync-short", models.ScenarioStep{
 		BackgroundScript:         "echo quick",
 		BackgroundTimeoutSeconds: 5, // under the 15s async threshold
@@ -231,7 +231,7 @@ func TestProvisionNextStep_ShortTimeout_RunsInlineAndReportsNothing(t *testing.T
 }
 
 func TestProvisionNextStep_SyncFailure_ReportsFailureAndKeepsTheAdvance(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "sync-failure", models.ScenarioStep{
 		BackgroundScript:         "echo will fail",
 		BackgroundTimeoutSeconds: 5,
@@ -253,7 +253,7 @@ func TestProvisionNextStep_SyncFailure_ReportsFailureAndKeepsTheAdvance(t *testi
 }
 
 func TestProvisionNextStep_SyncFailure_LeaksNoScriptOutput(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "sync-failure-quiet", models.ScenarioStep{
 		BackgroundScript:         "echo will fail",
 		BackgroundTimeoutSeconds: 5,
@@ -275,7 +275,7 @@ func TestProvisionNextStep_SyncFailure_LeaksNoScriptOutput(t *testing.T) {
 }
 
 func TestProvisionNextStep_FlagDeployFailure_ReportsFailure(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "flag-push-failure", models.ScenarioStep{
 		HasFlag:  true,
 		FlagPath: "/tmp/the_flag",
@@ -294,7 +294,7 @@ func TestProvisionNextStep_FlagDeployFailure_ReportsFailure(t *testing.T) {
 }
 
 func TestProvisionNextStep_BackgroundAsyncFlag_RunsInBackgroundDespiteShortTimeout(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "async-flag", models.ScenarioStep{
 		BackgroundScript:         "echo quick but async",
 		BackgroundTimeoutSeconds: 5,
@@ -315,7 +315,7 @@ func TestProvisionNextStep_BackgroundAsyncFlag_RunsInBackgroundDespiteShortTimeo
 }
 
 func TestProvisionNextStep_AsyncFlagWithNoTimeout_ReportsTheDefaultBudget(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "async-default-budget", models.ScenarioStep{
 		BackgroundScript: "echo opted in, no budget declared",
 		BackgroundAsync:  true,
@@ -336,7 +336,7 @@ func TestProvisionNextStep_AsyncFlagWithNoTimeout_ReportsTheDefaultBudget(t *tes
 }
 
 func TestProvisionNextStep_AsyncFailure_MarksSetupFailedAndKeepsTheTerminal(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "async-failure", models.ScenarioStep{
 		BackgroundScript: "echo will fail",
 		BackgroundAsync:  true,
@@ -366,7 +366,7 @@ func TestProvisionNextStep_AsyncFailure_MarksSetupFailedAndKeepsTheTerminal(t *t
 }
 
 func TestProvisionNextStep_AbandonedSession_NeverTouchesTheContainer(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "async-abandoned", models.ScenarioStep{
 		BackgroundScript: "echo provisioning",
 		BackgroundAsync:  true,
@@ -385,7 +385,7 @@ func TestProvisionNextStep_AbandonedSession_NeverTouchesTheContainer(t *testing.
 }
 
 func TestCurrentStepProvisioningTimeout_OnlyWhileProvisioning(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "info-timeout", models.ScenarioStep{
 		BackgroundScript:         "echo long setup",
 		BackgroundTimeoutSeconds: 120,
@@ -421,7 +421,7 @@ func TestCurrentStepProvisioningTimeout_OnlyWhileProvisioning(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestAdvanceEndpoints_RejectSubmissionsWhileProvisioning(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// One provisioning session reused across the endpoints — none of them may
 	// get as far as touching the container.
@@ -471,7 +471,7 @@ func TestAdvanceEndpoints_RejectSubmissionsWhileProvisioning(t *testing.T) {
 }
 
 func TestAdvanceEndpoints_AcceptSubmissionsOnceProvisioningClears(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "guard-cleared", models.ScenarioStep{
 		TextContent: "nothing to provision",
 	})
@@ -500,7 +500,7 @@ func TestAdvanceEndpoints_AcceptSubmissionsOnceProvisioningClears(t *testing.T) 
 // -----------------------------------------------------------------------------
 
 func TestVerifyStep_NextStepProvisioning_FalseWhenNextStepNeedsNothing(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "no-provisioning", models.ScenarioStep{
 		TextContent: "just read this",
 	})
@@ -516,7 +516,7 @@ func TestVerifyStep_NextStepProvisioning_FalseWhenNextStepNeedsNothing(t *testin
 }
 
 func TestVerifyStep_FlagOnlyStep_DeploysInlineAndReportsNothing(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "flag-only", models.ScenarioStep{
 		HasFlag:  true,
 		FlagPath: "/tmp/the_flag",
@@ -543,7 +543,7 @@ func TestVerifyStep_FlagOnlyStep_DeploysInlineAndReportsNothing(t *testing.T) {
 }
 
 func TestSubmitQuiz_NextStepProvisioning_ReportsTheNextStepsScript(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "quiz-provisioning",
@@ -598,7 +598,7 @@ func TestSubmitQuiz_NextStepProvisioning_ReportsTheNextStepsScript(t *testing.T)
 }
 
 func TestGetCurrentStep_WhileProvisioning_ReportsTheRealStepOrder(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "current-step-provisioning", models.ScenarioStep{
 		BackgroundScript: "echo long setup",
 		BackgroundAsync:  true,

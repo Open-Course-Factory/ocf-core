@@ -17,7 +17,7 @@ import (
 // playable run.
 
 func TestReprovisionCurrentStep_RerunsTheCurrentStepsScript(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "reprovision-basic", models.ScenarioStep{
 		BackgroundScript:         "echo setup level",
 		BackgroundTimeoutSeconds: 5,
@@ -38,7 +38,7 @@ func TestReprovisionCurrentStep_RerunsTheCurrentStepsScript(t *testing.T) {
 }
 
 func TestReprovisionCurrentStep_Force_ExportsForceFlagIntoTheScript(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "reprovision-force", models.ScenarioStep{
 		BackgroundScript:         "#!/bin/bash\necho setup level",
 		BackgroundTimeoutSeconds: 5,
@@ -59,7 +59,7 @@ func TestReprovisionCurrentStep_Force_ExportsForceFlagIntoTheScript(t *testing.T
 }
 
 func TestReprovisionCurrentStep_RecoversASetupFailedSession(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "reprovision-recover", models.ScenarioStep{
 		BackgroundScript:         "echo retry",
 		BackgroundTimeoutSeconds: 5,
@@ -79,7 +79,7 @@ func TestReprovisionCurrentStep_RecoversASetupFailedSession(t *testing.T) {
 }
 
 func TestReprovisionCurrentStep_FailedRetry_LeavesTheSessionMarkedBroken(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "reprovision-fails-again", models.ScenarioStep{
 		BackgroundScript:         "echo retry",
 		BackgroundTimeoutSeconds: 5,
@@ -98,7 +98,7 @@ func TestReprovisionCurrentStep_FailedRetry_LeavesTheSessionMarkedBroken(t *test
 }
 
 func TestReprovisionCurrentStep_AsyncStep_ParksTheSessionInProvisioning(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "reprovision-async", models.ScenarioStep{
 		BackgroundScript: "echo long setup",
 		BackgroundAsync:  true,
@@ -117,7 +117,7 @@ func TestReprovisionCurrentStep_AsyncStep_ParksTheSessionInProvisioning(t *testi
 }
 
 func TestReprovisionCurrentStep_RejectsSessionsWithNothingToRepair(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	t.Run("abandoned session", func(t *testing.T) {
 		session := twoStepSession(t, db, "reprovision-abandoned", models.ScenarioStep{

@@ -34,7 +34,7 @@ func init() {
 // --- Grade calculation tests ---
 
 func TestCalculateGrade_AllStepsCompleted(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "grade-test", Title: "Grade Test", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -67,7 +67,7 @@ func TestCalculateGrade_AllStepsCompleted(t *testing.T) {
 }
 
 func TestCalculateGrade_PartialCompletion(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "grade-partial", Title: "Partial", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -101,7 +101,7 @@ func TestCalculateGrade_PartialCompletion(t *testing.T) {
 }
 
 func TestCalculateGrade_NoSteps(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "grade-empty", Title: "Empty", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -122,7 +122,7 @@ func TestCalculateGrade_NoSteps(t *testing.T) {
 // --- Service-level dashboard tests ---
 
 func TestGetScenarioResults_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -164,7 +164,7 @@ func TestGetScenarioResults_Success(t *testing.T) {
 // --- Pagination tests ---
 
 func TestGetScenarioResults_Paginated(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	// Create 5 students with sessions
@@ -226,7 +226,7 @@ func TestGetScenarioResults_Paginated(t *testing.T) {
 }
 
 func TestGetScenarioResults_Paginated_HTTPController(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	group := groupModels.ClassGroup{
 		Name: "pag-http-group", DisplayName: "Pag HTTP", OwnerUserID: "teacher-pag",
@@ -290,7 +290,7 @@ func TestGetScenarioResults_Paginated_HTTPController(t *testing.T) {
 }
 
 func TestGetScenarioAnalytics_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -333,7 +333,7 @@ func TestGetScenarioAnalytics_Success(t *testing.T) {
 // excluded from every number, and the average completion time is the mean
 // duration of completed sessions only.
 func TestGetScenarioAnalytics_ExclusionsAndAvgTime(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -445,7 +445,7 @@ func setupRealTeacherRouter(t *testing.T, db *gorm.DB, userID string, roles []st
 }
 
 func TestTeacherController_AccessDenied_NonTeacher(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	group := groupModels.ClassGroup{
 		Name: "deny-group", DisplayName: "Deny Group", OwnerUserID: "teacher-owner",
@@ -463,7 +463,7 @@ func TestTeacherController_AccessDenied_NonTeacher(t *testing.T) {
 }
 
 func TestTeacherController_PlatformAdminAccess(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	group := groupModels.ClassGroup{
 		Name: "admin-group", DisplayName: "Admin Group", OwnerUserID: "owner-1",
@@ -481,7 +481,7 @@ func TestTeacherController_PlatformAdminAccess(t *testing.T) {
 }
 
 func TestTeacherController_GroupOwnerAccess(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	group := groupModels.ClassGroup{
 		Name: "owner-group", DisplayName: "Owner Group", OwnerUserID: "teacher-own",
@@ -511,7 +511,7 @@ func TestTeacherController_BulkStart_ViaController(t *testing.T) {
 // --- Grade via VerifyCurrentStep integration test ---
 
 func TestGradeCalculation_ViaVerifyCurrentStep(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "grade-verify", Title: "Grade Verify", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -549,7 +549,7 @@ func TestGradeCalculation_ViaVerifyCurrentStep(t *testing.T) {
 // --- ResetGroupScenarioSessions service tests ---
 
 func TestResetGroupScenarioSessions_ResetsActiveSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	for _, uid := range []string{"reset-s1", "reset-s2"} {
@@ -585,7 +585,7 @@ func TestResetGroupScenarioSessions_ResetsActiveSessions(t *testing.T) {
 }
 
 func TestResetGroupScenarioSessions_SkipsCompletedAndAbandoned(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -621,7 +621,7 @@ func TestResetGroupScenarioSessions_SkipsCompletedAndAbandoned(t *testing.T) {
 }
 
 func TestResetGroupScenarioSessions_NoActiveSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -640,7 +640,7 @@ func TestResetGroupScenarioSessions_NoActiveSessions(t *testing.T) {
 }
 
 func TestResetGroupScenarioSessions_OnlyAffectsGroupMembers(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupA := uuid.New()
 	groupB := uuid.New()
@@ -684,7 +684,7 @@ func TestResetGroupScenarioSessions_OnlyAffectsGroupMembers(t *testing.T) {
 // --- Soft-delete (deleted_at IS NULL) tests ---
 
 func TestGetScenarioResults_ExcludesSoftDeletedSteps(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -719,7 +719,7 @@ func TestGetScenarioResults_ExcludesSoftDeletedSteps(t *testing.T) {
 }
 
 func TestGetSessionDetail_ExcludesSoftDeletedSteps(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -777,7 +777,7 @@ func TestGetSessionDetail_ExcludesSoftDeletedSteps(t *testing.T) {
 // merge in Go, a 2-step / 2-progress session with duplicate orders would
 // surface as 4 rows.
 func TestGetSessionDetail_DuplicateStepOrders_NoCartesianExplosion(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -825,7 +825,7 @@ func TestGetSessionDetail_DuplicateStepOrders_NoCartesianExplosion(t *testing.T)
 // --- Scenario assignment validation in GetSessionDetail ---
 
 func TestGetSessionDetail_AssignedScenario_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -863,7 +863,7 @@ func TestGetSessionDetail_AssignedScenario_Success(t *testing.T) {
 }
 
 func TestGetSessionDetail_UnassignedScenario_Error(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -892,7 +892,7 @@ func TestGetSessionDetail_UnassignedScenario_Error(t *testing.T) {
 // --- ResetGroupScenarioSessions controller tests ---
 
 func TestTeacherController_ResetSessions_ReturnsCount(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	group := groupModels.ClassGroup{
 		Name: "reset-ctrl-group", DisplayName: "Reset Controller", OwnerUserID: "teacher-reset",
@@ -938,7 +938,7 @@ func TestTeacherController_ResetSessions_ReturnsCount(t *testing.T) {
 }
 
 func TestTeacherController_ResetSessions_AccessDenied(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	group := groupModels.ClassGroup{
 		Name: "reset-deny-group", DisplayName: "Reset Deny", OwnerUserID: "teacher-deny",
@@ -1088,7 +1088,7 @@ func TestComputeCorrectCountsFromLoaded_FloatRoundingSafety(t *testing.T) {
 }
 
 func TestGetScenarioResults_PopulatesCorrectCounts(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -1158,7 +1158,7 @@ func TestGetScenarioResults_PopulatesCorrectCounts(t *testing.T) {
 }
 
 func TestGetScenarioResults_TotalCorrectPossibleStaticForInProgress(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -1200,7 +1200,7 @@ func TestGetScenarioResults_TotalCorrectPossibleStaticForInProgress(t *testing.T
 }
 
 func TestGetScenarioResults_ExcludesSoftDeletedStepsFromCounts(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -1249,7 +1249,7 @@ func TestGetScenarioResults_ExcludesSoftDeletedStepsFromCounts(t *testing.T) {
 }
 
 func TestGetSessionDetail_PopulatesCorrectCounts(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{

@@ -68,7 +68,7 @@ func (m *commandsCapturingTTService) GetSessionCommandHistoryAdmin(sessionUUID s
 // --- Service-level test: success path ---
 
 func TestGetSessionCommands_AsGroupManager_Allowed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	studentID := "student-cmd-1"
@@ -118,7 +118,7 @@ func TestGetSessionCommands_AsGroupManager_Allowed(t *testing.T) {
 // --- Service-level tests: error paths ---
 
 func TestGetSessionCommands_SessionWithoutTerminal_404(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	studentID := "student-no-term"
@@ -149,7 +149,7 @@ func TestGetSessionCommands_SessionWithoutTerminal_404(t *testing.T) {
 }
 
 func TestGetSessionCommands_SessionNotInGroup_404(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	otherGroupID := uuid.New()
@@ -183,7 +183,7 @@ func TestGetSessionCommands_SessionNotInGroup_404(t *testing.T) {
 }
 
 func TestGetSessionCommands_SessionUnknown_404(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	tt := newCommandsCapturingTTService(nil)
 	dashSvc := services.NewTeacherDashboardService(db, tt, nil)
@@ -263,7 +263,7 @@ func setupCommandsTeacherRouter(t *testing.T, db *gorm.DB, dashSvc *services.Tea
 }
 
 func TestGetSessionCommands_AsNonManager_Forbidden(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Group exists with an owner, but the requester is NOT a member at all.
 	group := groupModels.ClassGroup{

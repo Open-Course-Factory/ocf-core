@@ -15,7 +15,7 @@ import (
 // TestScenarioSession_TrainerID_SetOnBulkStart verifies that when a trainer
 // bulk-starts scenarios for students, the TrainerID is set to the trainer's user ID.
 func TestScenarioSession_TrainerID_SetOnBulkStart(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	trainerUserID := "trainer-bulk-001"
 
@@ -66,7 +66,7 @@ func TestScenarioSession_TrainerID_SetOnBulkStart(t *testing.T) {
 // TestScenarioSession_TrainerID_NilOnSelfStart verifies that when a student
 // starts their own scenario (self-start), the TrainerID is nil.
 func TestScenarioSession_TrainerID_NilOnSelfStart(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	studentUserID := "student-selfstart-001"
 

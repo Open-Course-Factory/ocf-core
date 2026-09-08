@@ -73,7 +73,7 @@ func flaggedTwoStepSession(t *testing.T, db *gorm.DB, name string, nextStep mode
 }
 
 func TestBackgroundScript_FlagsEnabled_ReceivesOnlyItsOwnFlag(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := flaggedTwoStepSession(t, db, "flag-env-own", models.ScenarioStep{
 		BackgroundScript:         "echo setting up level one",
 		BackgroundTimeoutSeconds: 5, // inline, so the exec has happened on return
@@ -91,7 +91,7 @@ func TestBackgroundScript_FlagsEnabled_ReceivesOnlyItsOwnFlag(t *testing.T) {
 }
 
 func TestBackgroundScript_NeverCarriesAnotherStepsFlag(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := flaggedTwoStepSession(t, db, "flag-env-isolation", models.ScenarioStep{
 		BackgroundScript:         "echo setting up level one",
 		BackgroundTimeoutSeconds: 5,
@@ -115,7 +115,7 @@ func TestBackgroundScript_NeverCarriesAnotherStepsFlag(t *testing.T) {
 }
 
 func TestBackgroundScript_FlagsDisabled_SendsNoEnvAtAll(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	// twoStepSession builds a scenario with FlagsEnabled false.
 	session := twoStepSession(t, db, "flag-env-absent", models.ScenarioStep{
 		BackgroundScript:         "echo no flags here",
@@ -134,7 +134,7 @@ func TestBackgroundScript_FlagsDisabled_SendsNoEnvAtAll(t *testing.T) {
 }
 
 func TestBackgroundScript_FlagsEnabledButStepHasNoFlag_SendsNoEnv(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "flag-env-stepless",
@@ -184,7 +184,7 @@ func TestBackgroundScript_FlagsEnabledButStepHasNoFlag_SendsNoEnv(t *testing.T) 
 }
 
 func TestBackgroundScript_LargeScript_CarriesFlagOnRunButNotOnCleanup(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Over 4000 bytes, so the script is pushed to a temp file and executed from
 	// disk — a second code path, plus a cleanup exec that must stay bare.
@@ -237,7 +237,7 @@ func findPushTo(t *testing.T, svc *bgTrackingVerificationService, targetPath str
 // for crash_traps so the flag is "available to the learner" puts every flag back
 // on disk with nothing failing.
 func TestBackgroundScript_CrashTraps_PassesFlagInEnvAndWritesNoFlagFile(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := flaggedTwoStepSession(t, db, "flag-env-crash-traps", models.ScenarioStep{
 		BackgroundScript:         "echo level one uses the env",
 		BackgroundTimeoutSeconds: 5,
@@ -261,7 +261,7 @@ func TestBackgroundScript_CrashTraps_PassesFlagInEnvAndWritesNoFlagFile(t *testi
 }
 
 func TestBackgroundScript_FlagNeverAppearsInArgv(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := flaggedTwoStepSession(t, db, "flag-env-not-argv", models.ScenarioStep{
 		BackgroundScript:         "echo level one uses $OCF_FLAG_CURRENT",
 		BackgroundTimeoutSeconds: 5,
@@ -282,7 +282,7 @@ func TestBackgroundScript_FlagNeverAppearsInArgv(t *testing.T) {
 }
 
 func TestReprovisionStep_CarriesTheCurrentStepsFlag(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := flaggedTwoStepSession(t, db, "flag-env-reprovision", models.ScenarioStep{
 		BackgroundScript:         "echo rebuilding level one",
 		BackgroundTimeoutSeconds: 5,

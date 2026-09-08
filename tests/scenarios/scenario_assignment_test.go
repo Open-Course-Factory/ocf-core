@@ -12,7 +12,7 @@ import (
 )
 
 func TestScenarioAssignment_Create_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "assign-test",
@@ -50,7 +50,7 @@ func TestScenarioAssignment_Create_Success(t *testing.T) {
 }
 
 func TestScenarioAssignment_Create_OrgScope(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "assign-org-test",
@@ -81,7 +81,7 @@ func TestScenarioAssignment_Create_OrgScope(t *testing.T) {
 }
 
 func TestScenarioAssignment_ListByGroup(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "assign-filter-test",
@@ -119,7 +119,7 @@ func TestScenarioAssignment_ListByGroup(t *testing.T) {
 }
 
 func TestScenarioAssignment_Delete(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "assign-delete-test",

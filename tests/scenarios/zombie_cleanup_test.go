@@ -15,7 +15,7 @@ import (
 // --- Fix 2: Cron cleanup job ---
 
 func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "cleanup-test",
@@ -117,7 +117,7 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 }
 
 func TestCleanupZombieScenarioSessions_HandlesInProgressStatus(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "cleanup-inprogress",
@@ -164,7 +164,7 @@ func TestCleanupZombieScenarioSessions_HandlesInProgressStatus(t *testing.T) {
 }
 
 func TestCleanupZombieScenarioSessions_IgnoresCompletedSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "cleanup-completed",
@@ -218,7 +218,7 @@ func TestCleanupZombieScenarioSessions_IgnoresCompletedSessions(t *testing.T) {
 }
 
 func TestCleanupStuckProvisioningSessions_ReleasesStalledSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "reaper-scenario",
@@ -275,7 +275,7 @@ func TestCleanupStuckProvisioningSessions_ReleasesStalledSessions(t *testing.T) 
 // This pins the ordering rather than the numbers, so raising either constant
 // alone fails here instead of in a learner's session.
 func TestCleanupStuckProvisioningSessions_SparesAStepInsideItsDeclaredBudget(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "budget-scenario",
@@ -315,7 +315,7 @@ func TestCleanupStuckProvisioningSessions_SparesAStepInsideItsDeclaredBudget(t *
 // session stayed "active" for 21 hours and left the learner staring at a Resume
 // button into nothing, with no way to start the scenario again.
 func TestCleanupZombieScenarioSessions_AbandonsRunOnExpiredButRunningTerminal(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "cleanup-expired-running",

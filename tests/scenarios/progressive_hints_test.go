@@ -16,7 +16,7 @@ import (
 // --- RevealHint tests ---
 
 func TestRevealHint_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "hint-success", Title: "Hint Success", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -63,7 +63,7 @@ func TestRevealHint_Success(t *testing.T) {
 }
 
 func TestRevealHint_SequentialEnforcement(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "hint-seq", Title: "Hint Sequential", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -101,7 +101,7 @@ func TestRevealHint_SequentialEnforcement(t *testing.T) {
 }
 
 func TestRevealHint_IdempotentReRead(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "hint-idem", Title: "Hint Idempotent", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -147,7 +147,7 @@ func TestRevealHint_IdempotentReRead(t *testing.T) {
 }
 
 func TestRevealHint_LockedStep(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "hint-locked", Title: "Hint Locked", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -182,7 +182,7 @@ func TestRevealHint_LockedStep(t *testing.T) {
 }
 
 func TestRevealHint_NoHints(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "hint-none", Title: "No Hints", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -212,7 +212,7 @@ func TestRevealHint_NoHints(t *testing.T) {
 }
 
 func TestRevealHint_OutOfBounds(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "hint-oob", Title: "Hint Out of Bounds", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -258,7 +258,7 @@ func TestRevealHint_OutOfBounds(t *testing.T) {
 // --- GetCurrentStep hint metadata tests ---
 
 func TestGetCurrentStep_WithHintMetadata(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "hint-meta", Title: "Hint Metadata", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -299,7 +299,7 @@ func TestGetCurrentStep_WithHintMetadata(t *testing.T) {
 }
 
 func TestGetCurrentStep_WithHints_AfterReveal(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "hint-after", Title: "Hint After Reveal", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
@@ -376,7 +376,7 @@ func TestSplitHintContent_TrailingText(t *testing.T) {
 // --- SessionStepDetail includes HintsRevealed ---
 
 func TestSessionStepDetail_IncludesHintsRevealed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{

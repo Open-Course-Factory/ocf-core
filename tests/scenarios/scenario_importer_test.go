@@ -14,13 +14,8 @@ import (
 	"soli/formations/src/scenarios/services"
 )
 
-func setupTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	return freshTestDB(t)
-}
-
 func TestScenarioImporter_ParseIndexJSON_Valid(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	jsonData := []byte(`{
@@ -90,7 +85,7 @@ func TestScenarioImporter_ParseIndexJSON_Valid(t *testing.T) {
 }
 
 func TestScenarioImporter_ParseIndexJSON_Minimal(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	jsonData := []byte(`{
@@ -120,7 +115,7 @@ func TestScenarioImporter_ParseIndexJSON_Minimal(t *testing.T) {
 }
 
 func TestScenarioImporter_ParseIndexJSON_InvalidJSON(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	jsonData := []byte(`{invalid json`)
@@ -133,7 +128,7 @@ func TestScenarioImporter_ParseIndexJSON_InvalidJSON(t *testing.T) {
 }
 
 func TestScenarioImporter_BuildScenarioFromIndex(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	// Create a temp directory with test files
@@ -235,7 +230,7 @@ func TestScenarioImporter_BuildScenarioFromIndex(t *testing.T) {
 }
 
 func TestScenarioImporter_BuildScenarioFromIndex_NoFlags(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -260,7 +255,7 @@ func TestScenarioImporter_BuildScenarioFromIndex_NoFlags(t *testing.T) {
 }
 
 func TestScenarioImporter_ImportFromDirectory(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -307,7 +302,7 @@ func TestScenarioImporter_ImportFromDirectory(t *testing.T) {
 }
 
 func TestScenarioImporter_ParseIndexJSON_TopLevelIntro(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	// KillerCoda format with intro at top level (outside details)
@@ -335,7 +330,7 @@ func TestScenarioImporter_ParseIndexJSON_TopLevelIntro(t *testing.T) {
 }
 
 func TestScenarioImporter_BuildScenarioFromIndex_TopLevelIntro(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -361,7 +356,7 @@ func TestScenarioImporter_BuildScenarioFromIndex_TopLevelIntro(t *testing.T) {
 }
 
 func TestScenarioImporter_BuildScenarioFromIndex_DetailsIntroTakesPrecedence(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -393,7 +388,7 @@ func TestScenarioImporter_BuildScenarioFromIndex_DetailsIntroTakesPrecedence(t *
 }
 
 func TestScenarioImporter_BuildScenarioFromIndex_KillerCodaQuizFormat(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -513,7 +508,7 @@ echo "Preparing step 3"`)
 }
 
 func TestScenarioImporter_ImportFromDirectory_KillerCodaQuizFormat(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -667,7 +662,7 @@ Some text.
 }
 
 func TestScenarioImporter_ImportFromDirectory_WithImages(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -730,7 +725,7 @@ func TestScenarioImporter_ImportFromDirectory_WithImages(t *testing.T) {
 }
 
 func TestScenarioImporter_ImportFromDirectory_UpsertCleansOldImages(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()

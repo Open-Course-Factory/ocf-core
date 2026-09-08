@@ -22,40 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
-	configModels "soli/formations/src/configuration/models"
-	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
-	terminalModels "soli/formations/src/terminalTrainer/models"
 
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
-
-// scenarioBudgetTestDB returns a fresh SQLite DB with the tables needed for
-// these tests. Lives here (rather than the package-level main_test.go) so
-// the suite stays self-contained.
-func scenarioBudgetTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	require.NoError(t, err)
-	err = db.AutoMigrate(
-		&terminalModels.Terminal{},
-		&terminalModels.UserTerminalKey{},
-		&orgModels.Organization{},
-		&orgModels.OrganizationMember{},
-		&paymentModels.SubscriptionPlan{},
-		&paymentModels.OrganizationSubscription{},
-		&paymentModels.UserSubscription{},
-		&paymentModels.UsageMetrics{},
-		&configModels.Feature{},
-	)
-	require.NoError(t, err)
-	return db
-}
 
 // insertExistingTerminalBudget seeds a Terminal row directly via SQL so
 // the budget sum query picks it up.
@@ -89,7 +60,7 @@ func budgetTestPlanInMem(maxCPU, maxMem int) *paymentModels.SubscriptionPlan {
 // (4 CPU) but the user's budget can't fit it → RemainingBudgetFits returns
 // false, which the controller maps to BlockReason="budget_exhausted".
 func TestGetAvailableScenarios_BudgetMode_BlockReasonBudget(t *testing.T) {
-	db := scenarioBudgetTestDB(t)
+	db := freshTestDB(t)
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
 
@@ -106,7 +77,7 @@ func TestGetAvailableScenarios_BudgetMode_BlockReasonBudget(t *testing.T) {
 // TestGetAvailableScenarios_BudgetMode_AllowsWhenFits — budget has room
 // for the scenario's L → fits=true.
 func TestGetAvailableScenarios_BudgetMode_AllowsWhenFits(t *testing.T) {
-	db := scenarioBudgetTestDB(t)
+	db := freshTestDB(t)
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
 
@@ -122,7 +93,7 @@ func TestGetAvailableScenarios_BudgetMode_AllowsWhenFits(t *testing.T) {
 // exactly one XS machine, and a learner with nothing running was told their
 // "budget is fully used by your current sessions" for a scenario needing S.
 func TestPlanAllowsSize_SeparatesPlanCeilingFromCurrentUsage(t *testing.T) {
-	db := scenarioBudgetTestDB(t)
+	db := freshTestDB(t)
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
 
@@ -144,7 +115,7 @@ func TestPlanAllowsSize_SeparatesPlanCeilingFromCurrentUsage(t *testing.T) {
 
 // The distinction only means something if a busy budget still reports as busy.
 func TestPlanAllowsSize_TrueWhenOnlyCurrentUsageBlocks(t *testing.T) {
-	db := scenarioBudgetTestDB(t)
+	db := freshTestDB(t)
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
 

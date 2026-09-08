@@ -41,7 +41,7 @@ func (c *capturingVerificationService) ExecInContainer(sessionID string, command
 }
 
 func TestDeployFlags_WorldPathPreserved(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "world-path-test",
@@ -75,7 +75,7 @@ func TestDeployFlags_WorldPathPreserved(t *testing.T) {
 }
 
 func TestDeployFlags_TmpPathPreserved(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "tmp-path-test",
@@ -107,7 +107,7 @@ func TestDeployFlags_TmpPathPreserved(t *testing.T) {
 }
 
 func TestDeployFlags_HomePathPreserved(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "home-path-test",
@@ -139,7 +139,7 @@ func TestDeployFlags_HomePathPreserved(t *testing.T) {
 }
 
 func TestDeployFlags_PathTraversalRejected(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "traversal-test",
@@ -171,7 +171,7 @@ func TestDeployFlags_PathTraversalRejected(t *testing.T) {
 }
 
 func TestDeployFlags_DisallowedPathRewrittenToDefault(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "disallowed-path-test",
@@ -203,7 +203,7 @@ func TestDeployFlags_DisallowedPathRewrittenToDefault(t *testing.T) {
 }
 
 func TestDeployFlags_EmptyPathDeploysNothing(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "empty-path-test",
@@ -241,7 +241,7 @@ func TestDeployFlags_EmptyPathDeploysNothing(t *testing.T) {
 }
 
 func TestDeployFlags_CrashTraps_EmptyPathSkipped(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "crash-traps-empty-path",
@@ -284,7 +284,7 @@ func TestDeployFlags_CrashTraps_EmptyPathSkipped(t *testing.T) {
 }
 
 func TestDeployFlags_CustomAllowedPaths_Accepted(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Scenario with custom allowed paths that include /etc/ (normally disallowed)
 	scenario := models.Scenario{
@@ -319,7 +319,7 @@ func TestDeployFlags_CustomAllowedPaths_Accepted(t *testing.T) {
 }
 
 func TestDeployFlags_CustomAllowedPaths_Rejected(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Scenario with custom allowed paths that does NOT include /tmp/
 	scenario := models.Scenario{
@@ -353,7 +353,7 @@ func TestDeployFlags_CustomAllowedPaths_Rejected(t *testing.T) {
 }
 
 func TestDeployFlags_EmptyAllowedPaths_FallsBackToDefaults(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Scenario with empty AllowedFlagPaths — should use hardcoded defaults
 	scenario := models.Scenario{
@@ -388,7 +388,7 @@ func TestDeployFlags_EmptyAllowedPaths_FallsBackToDefaults(t *testing.T) {
 }
 
 func TestDeployFlags_CrashTraps_CustomPathStillDeployed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "crash-traps-custom-path",

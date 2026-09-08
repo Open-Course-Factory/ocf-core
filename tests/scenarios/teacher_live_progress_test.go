@@ -72,7 +72,7 @@ func liveProgressByUserID(rows []services.LearnerLiveProgress) map[string]servic
 // hints must carry all three facts on a SINGLE row, so the class view never has
 // to fan out to three endpoints and join on the client.
 func TestGetGroupLiveProgress_JoinsPresenceStepAndHintsOnOneRow(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "exam-class", "teacher-lp", &orgID)
 	addGroupMember(t, db, group.ID, "student-live", groupModels.GroupMemberRoleMember)
@@ -121,7 +121,7 @@ func TestGetGroupLiveProgress_JoinsPresenceStepAndHintsOnOneRow(t *testing.T) {
 // critical case. In an exam view a silently missing row hides a student who has
 // not started — precisely the student the invigilator must notice.
 func TestGetGroupLiveProgress_MemberWithNoSessionAndNoTerminal_StillGetsRow(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "silent-class", "teacher-lp", &orgID)
 	addGroupMember(t, db, group.ID, "student-idle", groupModels.GroupMemberRoleMember)
@@ -154,7 +154,7 @@ func TestGetGroupLiveProgress_MemberWithNoSessionAndNoTerminal_StillGetsRow(t *t
 // in this class. The predicate is models.SupervisableByGroupOrgScope, shared with
 // the supervision wall.
 func TestGetGroupLiveProgress_PersonalSession_ReportsNotConnected(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	otherOrgID := uuid.New()
 	group := createClassGroup(t, db, "scoped-class", "teacher-lp", &orgID)
@@ -181,7 +181,7 @@ func TestGetGroupLiveProgress_PersonalSession_ReportsNotConnected(t *testing.T) 
 // — so a zombie row (state still 'running', tt-backend session long gone) does
 // not show a learner as present.
 func TestGetGroupLiveProgress_ExpiredTerminal_ReportsNotConnected(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "zombie-class", "teacher-lp", &orgID)
 	addGroupMember(t, db, group.ID, "student-zombie", groupModels.GroupMemberRoleMember)
@@ -203,7 +203,7 @@ func TestGetGroupLiveProgress_ExpiredTerminal_ReportsNotConnected(t *testing.T) 
 // end state of the exam view: a finished learner reports completed, their grade,
 // and the hints they consumed getting there.
 func TestGetGroupLiveProgress_CompletedLearner_CarriesGradeAndHints(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "graded-class", "teacher-lp", &orgID)
 	addGroupMember(t, db, group.ID, "student-done", groupModels.GroupMemberRoleMember)
@@ -241,7 +241,7 @@ func TestGetGroupLiveProgress_CompletedLearner_CarriesGradeAndHints(t *testing.T
 // with every other teacher aggregate: a trainer's own preview run is not a
 // learner attempt.
 func TestGetGroupLiveProgress_PreviewSession_Ignored(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "preview-class", "teacher-lp", &orgID)
 	addGroupMember(t, db, group.ID, "student-preview", groupModels.GroupMemberRoleMember)
@@ -265,7 +265,7 @@ func TestGetGroupLiveProgress_PreviewSession_Ignored(t *testing.T) {
 // TestGetGroupLiveProgress_InactiveMember_Excluded pins the population: ACTIVE
 // memberships only, the same one every other teacher aggregate counts over.
 func TestGetGroupLiveProgress_InactiveMember_Excluded(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "churn-class", "teacher-lp", &orgID)
 	addGroupMember(t, db, group.ID, "student-active", groupModels.GroupMemberRoleMember)
@@ -289,7 +289,7 @@ func TestGetGroupLiveProgress_InactiveMember_Excluded(t *testing.T) {
 // memberships, but the invigilator is not among the invigilated. Exactly the
 // apprenants get a row.
 func TestGetGroupLiveProgress_StaffMemberships_AreNotInvigilated(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "invigilated-class", "teacher-lp", &orgID)
 	addGroupMember(t, db, group.ID, "teacher-lp", groupModels.GroupMemberRoleOwner)
@@ -316,7 +316,7 @@ func TestGetGroupLiveProgress_StaffMemberships_AreNotInvigilated(t *testing.T) {
 // class (#480): a class carrying only its teaching staff has nobody to
 // invigilate, and that answer marshals to [] rather than null.
 func TestGetGroupLiveProgress_StaffOnlyClass_ReturnsEmptySlice(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "no-apprenant-class", "teacher-lp", &orgID)
 	addGroupMember(t, db, group.ID, "teacher-lp", groupModels.GroupMemberRoleOwner)
@@ -336,7 +336,7 @@ func TestGetGroupLiveProgress_StaffOnlyClass_ReturnsEmptySlice(t *testing.T) {
 // a class with no member marshals to [], never null, so the frontend can render
 // it without a nil guard.
 func TestGetGroupLiveProgress_EmptyGroup_ReturnsEmptySlice(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "empty-class", "teacher-lp", &orgID)
 
@@ -351,7 +351,7 @@ func TestGetGroupLiveProgress_EmptyGroup_ReturnsEmptySlice(t *testing.T) {
 // zero-input edge: a well-formed id for a group that does not exist yields an
 // empty listing rather than an error or a panic.
 func TestGetGroupLiveProgress_UnknownGroup_ReturnsEmptySlice(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
 	rows, err := svc.GetGroupLiveProgress(uuid.New())
@@ -365,7 +365,7 @@ func TestGetGroupLiveProgress_UnknownGroup_ReturnsEmptySlice(t *testing.T) {
 // TestGetGroupLiveProgressAPI_Manager_Returns200 verifies the route is reachable
 // by a group manager and serialises as a JSON array.
 func TestGetGroupLiveProgressAPI_Manager_Returns200(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "api-class", "other-teacher", &orgID)
 	addGroupMember(t, db, group.ID, "teacher-manager", groupModels.GroupMemberRoleManager)
@@ -392,7 +392,7 @@ func TestGetGroupLiveProgressAPI_Manager_Returns200(t *testing.T) {
 // TestGetGroupLiveProgressAPI_PlainMember_Returns403 — a learner must not read
 // their classmates' positions. Layer 2 GroupRole(manager) is the gate.
 func TestGetGroupLiveProgressAPI_PlainMember_Returns403(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	group := createClassGroup(t, db, "denied-class", "other-teacher", nil)
 	addGroupMember(t, db, group.ID, "student-nosy", groupModels.GroupMemberRoleMember)
 
@@ -407,7 +407,7 @@ func TestGetGroupLiveProgressAPI_PlainMember_Returns403(t *testing.T) {
 
 // TestGetGroupLiveProgressAPI_NonMember_Returns403 — no tie to the class at all.
 func TestGetGroupLiveProgressAPI_NonMember_Returns403(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	group := createClassGroup(t, db, "stranger-class", "other-teacher", nil)
 
 	router := setupRealTeacherRouter(t, db, "random-stranger", []string{"member"})
@@ -422,7 +422,7 @@ func TestGetGroupLiveProgressAPI_NonMember_Returns403(t *testing.T) {
 // TestGetGroupLiveProgressAPI_GarbageGroupID_Returns4xx — an unparseable id is a
 // client error, never a 500.
 func TestGetGroupLiveProgressAPI_GarbageGroupID_Returns4xx(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	router := setupRealTeacherRouter(t, db, "platform-admin", []string{"admin"})
 
 	w := httptest.NewRecorder()
@@ -441,7 +441,7 @@ func TestGetGroupLiveProgressAPI_GarbageGroupID_Returns4xx(t *testing.T) {
 // signal the teacher needs. The threshold travels in the response so the label
 // and the predicate can never drift apart.
 func TestGetManagedGroupsOverview_ConnectedButStaleLearner_CountsAsIdle(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "idle-class", "teacher-idle", &orgID)
 	addGroupMember(t, db, group.ID, "student-stale", groupModels.GroupMemberRoleMember)
@@ -501,7 +501,7 @@ func TestGetManagedGroupsOverview_ConnectedButStaleLearner_CountsAsIdle(t *testi
 // view already shows as connected=false. Counting them as idle too would double
 // report the same student under a label that means something else.
 func TestGetManagedGroupsOverview_DisconnectedLearner_NotCountedAsIdle(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "absent-class", "teacher-absent", &orgID)
 	addGroupMember(t, db, group.ID, "student-away", groupModels.GroupMemberRoleMember)
@@ -532,7 +532,7 @@ func TestGetManagedGroupsOverview_DisconnectedLearner_NotCountedAsIdle(t *testin
 // everyone is working must therefore serialise an explicit 0 — dropping the key
 // would render as "unknown" and lose a real answer.
 func TestGetMyGroupsAPI_NobodyIdle_SendsExplicitZeroIdleMemberCount(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "busy-class", "teacher-wire", &orgID)
 	addGroupMember(t, db, group.ID, "student-working", groupModels.GroupMemberRoleMember)

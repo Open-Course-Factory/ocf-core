@@ -152,7 +152,7 @@ func TestGetCurrentStep_PartialTranslation_KeepsDefaultForEmptyFields(t *testing
 // directory names are built from it. It travels the same channel the current
 // step's flag already uses.
 func TestBackgroundScript_SessionLocale_ReachesTheContainer(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "locale-env", models.ScenarioStep{
 		BackgroundScript:         "echo building in $OCF_LANG",
 		BackgroundTimeoutSeconds: 5,
@@ -175,7 +175,7 @@ func TestBackgroundScript_SessionLocale_ReachesTheContainer(t *testing.T) {
 // exactly what it sent before, which for a scenario without flags is nothing at
 // all.
 func TestBackgroundScript_NoLocale_SendsNoEnvAtAll(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "locale-env-absent", models.ScenarioStep{
 		BackgroundScript:         "echo no locale here",
 		BackgroundTimeoutSeconds: 5,

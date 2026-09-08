@@ -40,7 +40,7 @@ func loadInstanceTypes(t *testing.T, scenarioID any) []models.ScenarioInstanceTy
 }
 
 func TestImportScenario_CarriesCompatibleInstanceTypes(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	dir := t.TempDir()
@@ -77,7 +77,7 @@ func TestImportScenario_CarriesCompatibleInstanceTypes(t *testing.T) {
 }
 
 func TestImportScenario_WithoutDeclarationLeavesTheListEmpty(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	dir := t.TempDir()
@@ -111,7 +111,7 @@ func TestImportScenario_WithoutDeclarationLeavesTheListEmpty(t *testing.T) {
 // images no matter how often it was re-imported, and kept resolving by os_type
 // onto whichever image the backend offered first.
 func TestImportScenario_ReplacesCompatibleInstanceTypesOnReimport(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	writeScenarioDir := func(declared string) string {
@@ -152,7 +152,7 @@ func TestImportScenario_ReplacesCompatibleInstanceTypesOnReimport(t *testing.T) 
 // direction: withdrawing every declared image must actually withdraw them and
 // hand the scenario back to os_type matching.
 func TestImportScenario_ReimportDropsRemovedDeclaration(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	writeScenarioDir := func(extensions string) string {
@@ -187,7 +187,7 @@ func TestImportScenario_ReimportDropsRemovedDeclaration(t *testing.T) {
 }
 
 func TestSeedScenario_CarriesCompatibleInstanceTypes(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	seeder := services.NewScenarioSeedService(db)
 
 	scenario, _, err := seeder.SeedScenario(dto.SeedScenarioInput{
@@ -207,7 +207,7 @@ func TestSeedScenario_CarriesCompatibleInstanceTypes(t *testing.T) {
 // seeding is an upsert and is how a fix reaches an already-deployed scenario:
 // re-seeding must converge on the declaration, not accumulate old ones.
 func TestSeedScenario_ReplacesCompatibleInstanceTypesOnReseed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	seeder := services.NewScenarioSeedService(db)
 
 	input := dto.SeedScenarioInput{

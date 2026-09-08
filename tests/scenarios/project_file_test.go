@@ -26,7 +26,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestProjectFile_Create_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	file := models.ProjectFile{
 		Name:        "verify.sh",
@@ -51,7 +51,7 @@ func TestProjectFile_Create_Success(t *testing.T) {
 }
 
 func TestProjectFile_Update_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	file := models.ProjectFile{
 		Name:        "original.sh",
@@ -77,7 +77,7 @@ func TestProjectFile_Update_Success(t *testing.T) {
 }
 
 func TestProjectFile_Delete_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	file := models.ProjectFile{
 		Name:        "to-delete.sh",
@@ -101,7 +101,7 @@ func TestProjectFile_Delete_Success(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProjectFile_Create_AllContentTypes(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	types := []struct {
 		name        string
@@ -142,7 +142,7 @@ func TestProjectFile_Create_AllContentTypes(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestScenarioStep_WithProjectFileFK(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a ProjectFile for the verify script
 	verifyFile := models.ProjectFile{
@@ -183,7 +183,7 @@ func TestScenarioStep_WithProjectFileFK(t *testing.T) {
 }
 
 func TestScenario_WithProjectFileFKs(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create 3 ProjectFiles
 	setupFile := models.ProjectFile{
@@ -237,7 +237,7 @@ func TestScenario_WithProjectFileFKs(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResolveScriptContent_WithFileID_ReturnsFileContent(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	file := models.ProjectFile{
 		Name:        "resolve-test.sh",
@@ -251,14 +251,14 @@ func TestResolveScriptContent_WithFileID_ReturnsFileContent(t *testing.T) {
 }
 
 func TestResolveScriptContent_WithNilFileID_ReturnsFallback(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	result := services.ResolveScriptContent(db, nil, "fallback content")
 	assert.Equal(t, "fallback content", result)
 }
 
 func TestResolveScriptContent_WithInvalidFileID_ReturnsFallback(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	randomID := uuid.New()
 	result := services.ResolveScriptContent(db, &randomID, "fallback content")
@@ -270,7 +270,7 @@ func TestResolveScriptContent_WithInvalidFileID_ReturnsFallback(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestImport_CreatesProjectFiles(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -389,7 +389,7 @@ func TestImport_CreatesProjectFiles(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestImport_ReimportCleansUpOldProjectFiles(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -502,7 +502,7 @@ func TestImport_ReimportCleansUpOldProjectFiles(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExport_ResolvesFromProjectFile(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create ProjectFiles with content DIFFERENT from inline fields
 	introFile := models.ProjectFile{
@@ -601,7 +601,7 @@ func TestExport_ResolvesFromProjectFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExportArchive_ResolvesFromProjectFile(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create ProjectFiles with content DIFFERENT from inline fields
 	introFile := models.ProjectFile{
@@ -692,7 +692,7 @@ func TestExportArchive_ResolvesFromProjectFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProjectFileController_GetContent_Script(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	file := models.ProjectFile{
 		Name:        "verify.sh",
@@ -723,7 +723,7 @@ func TestProjectFileController_GetContent_Script(t *testing.T) {
 }
 
 func TestProjectFileController_GetContent_Markdown(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	file := models.ProjectFile{
 		Name:        "intro.md",
@@ -749,7 +749,7 @@ func TestProjectFileController_GetContent_Markdown(t *testing.T) {
 }
 
 func TestProjectFileController_GetContent_NotFound(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -764,7 +764,7 @@ func TestProjectFileController_GetContent_NotFound(t *testing.T) {
 }
 
 func TestProjectFileController_GetContent_InvalidID(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -783,7 +783,7 @@ func TestProjectFileController_GetContent_InvalidID(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProjectFileController_GetByScenario_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create ProjectFiles
 	introFile := models.ProjectFile{Name: "intro.md", ContentType: "markdown", Content: "# Intro", StorageType: "database", SizeBytes: 7}
@@ -856,7 +856,7 @@ func adminMiddleware() gin.HandlerFunc {
 }
 
 func TestProjectFileController_GetByScenario_Empty(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Scenario with no ProjectFile FKs
 	scenario := models.Scenario{
@@ -887,7 +887,7 @@ func TestProjectFileController_GetByScenario_Empty(t *testing.T) {
 }
 
 func TestProjectFileController_GetByScenario_NotFound(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -906,7 +906,7 @@ func TestProjectFileController_GetByScenario_NotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProjectFileController_GetUsage_Success(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a ProjectFile
 	file := models.ProjectFile{Name: "shared.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", StorageType: "database"}
@@ -955,7 +955,7 @@ func TestProjectFileController_GetUsage_Success(t *testing.T) {
 }
 
 func TestProjectFileController_GetUsage_Unused(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	file := models.ProjectFile{Name: "unused.sh", ContentType: "script", Content: "echo unused", StorageType: "database"}
 	require.NoError(t, db.Create(&file).Error)
@@ -977,7 +977,7 @@ func TestProjectFileController_GetUsage_Unused(t *testing.T) {
 }
 
 func TestProjectFileController_GetUsage_NotFound(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -996,7 +996,7 @@ func TestProjectFileController_GetUsage_NotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProjectFile_FilterByScenarioId(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create two scenarios
 	scenario1 := models.Scenario{

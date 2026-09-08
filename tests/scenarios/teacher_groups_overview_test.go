@@ -58,7 +58,7 @@ func summaryByGroupID(items []services.TeacherGroupSummary) map[uuid.UUID]servic
 // where the caller is a plain member, and a group they have no tie to at all,
 // must never appear.
 func TestGetManagedGroupsOverview_OwnedAndManagedGroups_ReturnsOnlyThose(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	ownedA := createClassGroup(t, db, "owned-a", teacher, nil)
@@ -109,7 +109,7 @@ func TestGetManagedGroupsOverview_OwnedAndManagedGroups_ReturnsOnlyThose(t *test
 // `member` only, while member_count keeps counting the whole roster because the
 // capacity surfaces are built on it.
 func TestGetManagedGroupsOverview_StaffMemberships_ExcludedFromLearnerCount(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	group := createClassGroup(t, db, "mixed-roster", teacher, nil)
@@ -132,7 +132,7 @@ func TestGetManagedGroupsOverview_StaffMemberships_ExcludedFromLearnerCount(t *t
 // enrolled has no apprenant, so every learner-facing figure reads 0 and the
 // completion rate divides by a learner count of zero without blowing up.
 func TestGetManagedGroupsOverview_StaffOnlyClass_ReportsZeroLearners(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	orgID := uuid.New()
@@ -180,7 +180,7 @@ func TestGetManagedGroupsOverview_StaffOnlyClass_ReportsZeroLearners(t *testing.
 // progression table read not_started — the same question answered two ways,
 // which is exactly the drift the raw-SQL comment warns about.
 func TestGetManagedGroupsOverview_DeletedSessions_AreNotStarted(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "deleted-sessions-teacher"
 
 	orgID := uuid.New()
@@ -222,7 +222,7 @@ func TestGetManagedGroupsOverview_DeletedSessions_AreNotStarted(t *testing.T) {
 // who is a member of real classes gets an EMPTY list — not an error, and above
 // all not the classes they merely attend.
 func TestGetManagedGroupsOverview_PlainStudent_ReturnsEmptyList(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	group := createClassGroup(t, db, "someone-elses-class", "teacher-1", nil)
 	addGroupMember(t, db, group.ID, "student-1", groupModels.GroupMemberRoleMember)
@@ -238,7 +238,7 @@ func TestGetManagedGroupsOverview_PlainStudent_ReturnsEmptyList(t *testing.T) {
 // zero-input case: a caller tied to no group at all gets a valid empty slice
 // (which marshals to []), never nil and never a panic.
 func TestGetManagedGroupsOverview_CallerWithNoGroups_ReturnsEmptySlice(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	createClassGroup(t, db, "unrelated", "teacher-1", nil)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
@@ -260,7 +260,7 @@ func TestGetManagedGroupsOverview_CallerWithNoGroups_ReturnsEmptySlice(t *testin
 // FLAGGED, rather than silently vanishing — a teacher must be able to see (and
 // reopen) a class they closed. Active classes sort first.
 func TestGetManagedGroupsOverview_InactiveAndExpiredGroups_AreListedAndFlagged(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	live := createClassGroup(t, db, "a-live", teacher, nil)
@@ -300,7 +300,7 @@ func TestGetManagedGroupsOverview_InactiveAndExpiredGroups_AreListedAndFlagged(t
 // all-zero row: a brand-new class with no members, no sessions and no
 // assignments yields zeros and an empty (non-nil) assignment list.
 func TestGetManagedGroupsOverview_GroupWithNoActivity_ReturnsZeroedRow(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	group := createClassGroup(t, db, "brand-new", teacher, nil)
@@ -327,7 +327,7 @@ func TestGetManagedGroupsOverview_GroupWithNoActivity_ReturnsZeroedRow(t *testin
 // #480: the count reads "X/N connectés" next to the learner count, so a teacher
 // or assistant who opens a terminal must not push the numerator past N.
 func TestGetManagedGroupsOverview_LiveSessionCount_CountsOnlyInOrgRunningSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	orgID := uuid.New()
@@ -367,7 +367,7 @@ func TestGetManagedGroupsOverview_LiveSessionCount_CountsOnlyInOrgRunningSession
 // organization supervises nothing, so its live count stays 0 even when its
 // members are running sessions.
 func TestGetManagedGroupsOverview_OrglessGroup_CountsNoLiveSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	group := createClassGroup(t, db, "personal-class", teacher, nil)
@@ -386,7 +386,7 @@ func TestGetManagedGroupsOverview_OrglessGroup_CountsNoLiveSessions(t *testing.T
 // started it, how many completed, the completion rate over the class size, and
 // the average grade of completed sessions.
 func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	group := createClassGroup(t, db, "progress-class", teacher, nil)
@@ -464,7 +464,7 @@ func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing
 // carries a manager on top of its single learner precisely so a denominator that
 // slipped back to member_count would read 50 instead of 100.
 func TestGetManagedGroupsOverview_ClassCompletionRate_IsAPercentageNotAFraction(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	group := createClassGroup(t, db, "everyone-finished", teacher, nil)
@@ -494,7 +494,7 @@ func TestGetManagedGroupsOverview_ClassCompletionRate_IsAPercentageNotAFraction(
 // batching: all rows come from grouped IN queries, so a member, a live session
 // or an assignment belonging to one class must never be counted in another.
 func TestGetManagedGroupsOverview_MultipleGroups_AggregatesStayPerGroup(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
 	orgID := uuid.New()
@@ -546,7 +546,7 @@ func TestGetManagedGroupsOverview_MultipleGroups_AggregatesStayPerGroup(t *testi
 // covers the two sides of is_active on group_members: a deactivated manager no
 // longer sees the class, and a deactivated learner is out of the member count.
 func TestGetManagedGroupsOverview_InactiveMembership_GrantsNothingAndCountsNothing(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	group := createClassGroup(t, db, "class", "other-teacher", nil)
 	addGroupMember(t, db, group.ID, "ex-manager", groupModels.GroupMemberRoleManager)
@@ -575,7 +575,7 @@ func TestGetManagedGroupsOverview_InactiveMembership_GrantsNothingAndCountsNothi
 // the handler must derive the groups from the JWT caller id and answer 200 with
 // a JSON array.
 func TestTeacherGroupsEndpoint_ReturnsCallerGroupsAsJSON(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	const teacher = "teacher-http"
 
 	group := createClassGroup(t, db, "http-class", teacher, nil)
@@ -607,7 +607,7 @@ func TestTeacherGroupsEndpoint_ReturnsCallerGroupsAsJSON(t *testing.T) {
 // TestTeacherGroupsEndpoint_StudentGetsEmptyJSONArray checks the learner path
 // end-to-end: 200 with `[]`, never null and never someone else's class.
 func TestTeacherGroupsEndpoint_StudentGetsEmptyJSONArray(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	group := createClassGroup(t, db, "not-mine", "teacher-http", nil)
 	addGroupMember(t, db, group.ID, "student-http", groupModels.GroupMemberRoleMember)
@@ -627,7 +627,7 @@ func TestTeacherGroupsEndpoint_StudentGetsEmptyJSONArray(t *testing.T) {
 // the groups THEY manage — not every group on the platform. Admins who need a
 // global view use the admin surfaces.
 func TestTeacherGroupsEndpoint_PlatformAdminSeesOnlyOwnGroups(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	createClassGroup(t, db, "someone-elses", "teacher-http", nil)
 	ownedByAdmin := createClassGroup(t, db, "admin-own-class", "platform-admin", nil)

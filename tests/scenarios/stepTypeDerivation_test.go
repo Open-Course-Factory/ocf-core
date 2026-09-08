@@ -118,7 +118,7 @@ func writeFlagScenarioDir(t *testing.T, hasFlag bool) string {
 }
 
 func TestImportScenario_StoresFlagStepsAsFlagType(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	scenario, err := importer.ImportFromDirectory(
@@ -135,7 +135,7 @@ func TestImportScenario_StoresFlagStepsAsFlagType(t *testing.T) {
 }
 
 func TestImportScenario_LeavesOrdinaryStepsAsTerminal(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	scenario, err := importer.ImportFromDirectory(
@@ -149,7 +149,7 @@ func TestImportScenario_LeavesOrdinaryStepsAsTerminal(t *testing.T) {
 }
 
 func TestSeedScenario_StoresFlagStepsAsFlagType(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	seeder := services.NewScenarioSeedService(db)
 
 	scenario, _, err := seeder.SeedScenario(dto.SeedScenarioInput{

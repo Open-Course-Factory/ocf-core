@@ -190,7 +190,7 @@ func (m *mockTTService) StartComposedSession(userID string, _ ttDto.CreateCompos
 // already have "active" sessions for the same scenario, BulkStartScenario should
 // abandon those old sessions and create new ones (reporting via result.Replaced).
 func TestBulkStartScenario_ReplacesExistingActiveSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create scenario with steps
 	scenario := models.Scenario{
@@ -273,7 +273,7 @@ func TestBulkStartScenario_ReplacesExistingActiveSessions(t *testing.T) {
 // TestBulkStartScenario_ReplacesInProgressSessions verifies that "in_progress"
 // sessions are also replaced (not just "active" ones).
 func TestBulkStartScenario_ReplacesInProgressSessions(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create scenario with steps
 	scenario := models.Scenario{

@@ -52,7 +52,7 @@ func expectAssignmentSentinel(t *testing.T, err error) {
 }
 
 func TestGetSessionCommands_ScenarioAssignedToGroup_Allowed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	studentID := "student-assigned-1"
@@ -93,7 +93,7 @@ func TestGetSessionCommands_ScenarioAssignedToGroup_Allowed(t *testing.T) {
 }
 
 func TestGetSessionCommands_ScenarioNotAssignedToGroup_404(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	studentID := "student-no-assignment"
@@ -129,7 +129,7 @@ func TestGetSessionCommands_ScenarioNotAssignedToGroup_404(t *testing.T) {
 }
 
 func TestGetSessionCommands_ScenarioAssignedToOtherGroup_404(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	managedGroupID := uuid.New() // The trainer manages this group.
 	otherGroupID := uuid.New()   // The scenario is assigned to a different group.

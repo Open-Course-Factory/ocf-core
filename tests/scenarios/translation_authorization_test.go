@@ -34,7 +34,7 @@ func translatableStep(t *testing.T, db *gorm.DB, ownerID string) models.Scenario
 }
 
 func TestScenarioStepTranslation_CreateByStranger_IsRefused(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepTranslationAuthorizationHook(db)
 	step := translatableStep(t, db, "owner-001")
 
@@ -50,7 +50,7 @@ func TestScenarioStepTranslation_CreateByStranger_IsRefused(t *testing.T) {
 }
 
 func TestScenarioStepTranslation_CreateByCreator_IsAllowed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepTranslationAuthorizationHook(db)
 	step := translatableStep(t, db, "owner-002")
 
@@ -69,7 +69,7 @@ func TestScenarioStepTranslation_CreateByCreator_IsAllowed(t *testing.T) {
 // able to rewrite or remove someone else's translation, which is the same hole
 // wearing a different verb.
 func TestScenarioStepTranslation_UpdateByStranger_IsRefused(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepTranslationAuthorizationHook(db)
 	step := translatableStep(t, db, "owner-003")
 
@@ -89,7 +89,7 @@ func TestScenarioStepTranslation_UpdateByStranger_IsRefused(t *testing.T) {
 }
 
 func TestScenarioStepTranslation_DeleteByStranger_IsRefused(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepTranslationAuthorizationHook(db)
 	step := translatableStep(t, db, "owner-004")
 
@@ -108,7 +108,7 @@ func TestScenarioStepTranslation_DeleteByStranger_IsRefused(t *testing.T) {
 }
 
 func TestScenarioStepTranslation_Admin_Bypasses(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepTranslationAuthorizationHook(db)
 	step := translatableStep(t, db, "owner-005")
 
@@ -125,7 +125,7 @@ func TestScenarioStepTranslation_Admin_Bypasses(t *testing.T) {
 
 // The same rule guards a scenario's own translated fields.
 func TestScenarioTranslation_CreateByStranger_IsRefused(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioTranslationAuthorizationHook(db)
 	step := translatableStep(t, db, "owner-006")
 
@@ -141,7 +141,7 @@ func TestScenarioTranslation_CreateByStranger_IsRefused(t *testing.T) {
 }
 
 func TestScenarioTranslation_CreateByCreator_IsAllowed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioTranslationAuthorizationHook(db)
 	step := translatableStep(t, db, "owner-007")
 

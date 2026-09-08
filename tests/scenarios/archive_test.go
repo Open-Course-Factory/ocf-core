@@ -242,7 +242,7 @@ func TestFindIndexJSON_NotFound(t *testing.T) {
 }
 
 func TestScenarioImporter_ImportFromDirectory_SourceType(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()
@@ -271,7 +271,7 @@ func TestScenarioImporter_ImportFromDirectory_SourceType(t *testing.T) {
 }
 
 func TestScenarioImporter_ImportFromDirectory_DefaultSourceType(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	tmpDir := t.TempDir()

@@ -25,7 +25,7 @@ import (
 )
 
 func TestGetSessionDetail_StartedAt_FirstStepEqualsSessionStart(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -68,7 +68,7 @@ func TestGetSessionDetail_StartedAt_FirstStepEqualsSessionStart(t *testing.T) {
 }
 
 func TestGetSessionDetail_StartedAt_NthStepEqualsPreviousCompletion(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -133,7 +133,7 @@ func TestGetSessionDetail_StartedAt_NthStepEqualsPreviousCompletion(t *testing.T
 }
 
 func TestGetSessionDetail_StartedAt_NilWhenPreviousIncomplete(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{

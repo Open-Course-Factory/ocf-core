@@ -80,7 +80,7 @@ func (m *mockVerificationService) ExecInContainer(sessionID string, command []st
 }
 
 func TestScenarioSessionService_StartScenario(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a test scenario
 	scenario := models.Scenario{
@@ -137,7 +137,7 @@ func TestScenarioSessionService_StartScenario(t *testing.T) {
 }
 
 func TestScenarioSessionService_StartScenario_NoSteps(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "empty-scenario",
@@ -157,7 +157,7 @@ func TestScenarioSessionService_StartScenario_NoSteps(t *testing.T) {
 }
 
 func TestScenarioSessionService_GetCurrentStep(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create scenario and steps
 	scenario := models.Scenario{
@@ -218,7 +218,7 @@ func TestScenarioSessionService_GetCurrentStep(t *testing.T) {
 }
 
 func TestScenarioSessionService_VerifyAndAdvance(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "verify-test",
@@ -291,7 +291,7 @@ func TestScenarioSessionService_VerifyAndAdvance(t *testing.T) {
 }
 
 func TestScenarioSessionService_VerifyLastStep_CompletesSession(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "verify-last",
@@ -340,7 +340,7 @@ func TestScenarioSessionService_VerifyLastStep_CompletesSession(t *testing.T) {
 }
 
 func TestScenarioSessionService_VerifyNoTerminal(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "no-terminal",
@@ -373,7 +373,7 @@ func TestScenarioSessionService_VerifyNoTerminal(t *testing.T) {
 }
 
 func TestScenarioSessionService_SubmitCorrectFlag(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "flag-test",
@@ -423,7 +423,7 @@ func TestScenarioSessionService_SubmitCorrectFlag(t *testing.T) {
 }
 
 func TestScenarioSessionService_SubmitIncorrectFlag(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "flag-wrong",
@@ -472,7 +472,7 @@ func TestScenarioSessionService_SubmitIncorrectFlag(t *testing.T) {
 }
 
 func TestScenarioSessionService_AbandonSession(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "abandon-test",
@@ -503,7 +503,7 @@ func TestScenarioSessionService_AbandonSession(t *testing.T) {
 }
 
 func TestScenarioSessionService_AbandonSession_NotFound(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
 
@@ -514,7 +514,7 @@ func TestScenarioSessionService_AbandonSession_NotFound(t *testing.T) {
 }
 
 func TestScenarioSessionService_ConcurrentStartNoDuplicates(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "concurrent-test",
@@ -602,7 +602,7 @@ func TestScenarioSessionService_ResponseTypes(t *testing.T) {
 }
 
 func TestScenarioSessionService_StartScenario_ExecutesBackgroundScript(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "bg-script-start",
@@ -647,7 +647,7 @@ func TestScenarioSessionService_StartScenario_ExecutesBackgroundScript(t *testin
 }
 
 func TestScenarioSessionService_StartScenario_SkipsEmptyBackgroundScript(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "bg-script-empty",
@@ -677,7 +677,7 @@ func TestScenarioSessionService_StartScenario_SkipsEmptyBackgroundScript(t *test
 }
 
 func TestScenarioSessionService_VerifyAndAdvance_ExecutesNextBackgroundScript(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "bg-script-advance",
@@ -733,7 +733,7 @@ func TestScenarioSessionService_VerifyAndAdvance_ExecutesNextBackgroundScript(t 
 }
 
 func TestScenarioSessionService_VerifyLastStep_NoBackgroundExec(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "bg-script-last",
@@ -777,7 +777,7 @@ func TestScenarioSessionService_VerifyLastStep_NoBackgroundExec(t *testing.T) {
 }
 
 func TestScenarioSessionService_SubmitFlag_AdvanceExecutesBackgroundScript(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "bg-script-flag",
@@ -842,7 +842,7 @@ func TestScenarioSessionService_SubmitFlag_AdvanceExecutesBackgroundScript(t *te
 }
 
 func TestScenarioSessionService_SubmitFlag_LockedAfterMaxAttempts(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "flag-lockout",
@@ -885,7 +885,7 @@ func TestScenarioSessionService_SubmitFlag_LockedAfterMaxAttempts(t *testing.T) 
 }
 
 func TestScenarioSessionService_SubmitFlag_StillWorksAt19Attempts(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "flag-under-limit",
@@ -931,7 +931,7 @@ func TestScenarioSessionService_SubmitFlag_StillWorksAt19Attempts(t *testing.T) 
 }
 
 func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "bg-script-error",

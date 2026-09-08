@@ -27,7 +27,7 @@ func effectStepInput() dto.SeedStepInput {
 }
 
 func TestSeedScenario_PersistsStepBannerFields(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario, _, err := services.NewScenarioSeedService(db).SeedScenario(dto.SeedScenarioInput{
 		Title:        "Seeded banners",
@@ -49,7 +49,7 @@ func TestSeedScenario_PersistsStepBannerFields(t *testing.T) {
 }
 
 func TestExportAsJSON_CarriesStepBannerFieldsAndRebindsAsSeedInput(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "export-banners",
@@ -86,7 +86,7 @@ func TestExportAsJSON_CarriesStepBannerFieldsAndRebindsAsSeedInput(t *testing.T)
 }
 
 func TestScenarioImporter_ReadsStepBannerFieldsFromIndexJSON(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	index, err := importer.ParseIndexJSON([]byte(`{
@@ -122,7 +122,7 @@ func TestScenarioImporter_ReadsStepBannerFieldsFromIndexJSON(t *testing.T) {
 }
 
 func TestDuplicateScenario_CopiesStepBannerFields(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	source := models.Scenario{
 		Name:         "duplicate-banners",

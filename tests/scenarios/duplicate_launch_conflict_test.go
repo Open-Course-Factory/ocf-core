@@ -22,7 +22,7 @@ import (
 // still offered Launch.
 func startScenarioWithLiveTerminal(t *testing.T, name string) (db *gorm.DB, svc *services.ScenarioSessionService, scenario models.Scenario, userID string) {
 	t.Helper()
-	db = setupTestDB(t)
+	db = freshTestDB(t)
 
 	scenario = models.Scenario{
 		Name:         name,

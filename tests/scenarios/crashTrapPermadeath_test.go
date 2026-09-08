@@ -60,7 +60,7 @@ func sessionStatus(t *testing.T, db *gorm.DB, sessionID any) string {
 }
 
 func TestEndCrashTrapRun_AbandonsTheRunAndStopsTheTerminal(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := seedRunOnTerminal(t, db, "permadeath-armed", true, "terminal-permadeath-armed")
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
@@ -77,7 +77,7 @@ func TestEndCrashTrapRun_AbandonsTheRunAndStopsTheTerminal(t *testing.T) {
 }
 
 func TestEndCrashTrapRun_LeavesOrdinaryScenarioUntouched(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := seedRunOnTerminal(t, db, "permadeath-disarmed", false, "terminal-permadeath-disarmed")
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
@@ -94,7 +94,7 @@ func TestEndCrashTrapRun_LeavesOrdinaryScenarioUntouched(t *testing.T) {
 }
 
 func TestEndCrashTrapRun_LeavesPlainTerminalUntouched(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	// A terminal with no scenario session at all — the ordinary "open a
 	// terminal from the dashboard" case.
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
@@ -113,7 +113,7 @@ func TestEndCrashTrapRun_LeavesPlainTerminalUntouched(t *testing.T) {
 }
 
 func TestEndCrashTrapRun_LeavesFinishedRunUntouched(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := seedRunOnTerminal(t, db, "permadeath-finished", true, "terminal-permadeath-finished")
 	require.NoError(t, db.Model(&models.ScenarioSession{}).
 		Where("id = ?", session.ID).Update("status", "completed").Error)
@@ -135,7 +135,7 @@ func TestEndCrashTrapRun_LeavesFinishedRunUntouched(t *testing.T) {
 // really over rather than merely relabelled: the launcher's Resume affordance
 // and every learner action key on status == "active".
 func TestEndCrashTrapRun_RefusesLearnerActionsAfterPermadeath(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := seedRunOnTerminal(t, db, "permadeath-resume", true, "terminal-permadeath-resume")
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
@@ -157,7 +157,7 @@ func TestEndCrashTrapRun_RefusesLearnerActionsAfterPermadeath(t *testing.T) {
 // second row is seeded directly — the ordering is a defensive guarantee for
 // rows other paths (preview, import) may leave behind.
 func TestFindSessionByTerminal_ReturnsTheMostRecentRun(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	older := seedRunOnTerminal(t, db, "by-terminal-older", true, "terminal-reused")
 	reusedTerminal := "terminal-reused"
 	newer := models.ScenarioSession{

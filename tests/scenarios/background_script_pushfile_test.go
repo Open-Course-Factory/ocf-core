@@ -69,7 +69,7 @@ func (m *bgTrackingVerificationService) WriteToConsole(sessionID string, text st
 }
 
 func TestExecuteBackgroundScript_SmallScript_UsesInline(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a small script (well under 4000 bytes)
 	smallScript := "echo 'hello world'"
@@ -112,7 +112,7 @@ func TestExecuteBackgroundScript_SmallScript_UsesInline(t *testing.T) {
 }
 
 func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a large script (over 4000 bytes)
 	largeScript := "#!/bin/bash\n" + strings.Repeat("echo 'line of script padding to make it large enough'\n", 100)
@@ -173,7 +173,7 @@ func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
 }
 
 func TestExecuteBackgroundScript_EmptyScript_NoOp(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "bg-empty-noop",
@@ -206,7 +206,7 @@ func TestExecuteBackgroundScript_EmptyScript_NoOp(t *testing.T) {
 }
 
 func TestExecuteBackgroundScript_PushFileFails_LogsAndReturns(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a large script that will trigger PushFile path
 	largeScript := "#!/bin/bash\n" + strings.Repeat("echo 'padding line for push file error test'\n", 100)

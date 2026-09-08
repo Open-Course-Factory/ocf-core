@@ -177,7 +177,7 @@ func (m *capturingTTService) StartComposedSession(userID string, input ttDto.Cre
 // OrganizationID set, the BulkStartScenario method passes it through to the
 // CreateComposedSessionInput when calling StartComposedSession on the terminal trainer.
 func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create the team organization the scenario will be scoped to. Bulk start
 	// now resolves the member's plan with scenario.OrganizationID as context

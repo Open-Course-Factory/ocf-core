@@ -85,7 +85,7 @@ var stepSensitiveFields = []string{
 // for Member is granted at Layer 1 (Roles map), and the leak we're proving
 // happens at the converter level for any Member who reaches the route. We
 // just need to inject userId + userRoles and let the response speak.
-func setupScenarioReadAuthzTest(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
+func setupScenarioReadAuthzTest(t *testing.T, db *gorm.DB, userID string, roles []string, routes ...string) *gin.Engine {
 	t.Helper()
 
 	// Reset and re-register the global registration service for test isolation.
@@ -110,9 +110,11 @@ func setupScenarioReadAuthzTest(t *testing.T, db *gorm.DB, userID string, roles 
 		c.Next()
 	})
 
-	// Match the production paths so GetEntityNameFromPath resolves to "Scenario".
-	api.GET("/scenarios", gen.GetEntities)
-	api.GET("/scenarios/:id", gen.GetEntity)
+	// Match the production paths so GetEntityNameFromPath resolves the entity.
+	for _, route := range routes {
+		api.GET(route, gen.GetEntities)
+		api.GET(route+"/:id", gen.GetEntity)
+	}
 
 	return r
 }
@@ -320,7 +322,7 @@ func TestGetScenario_AsAdmin_ReturnsFullContent(t *testing.T) {
 	db := freshTestDB(t)
 	scenario := buildLeakyScenario(t, db, "leak-admin", "creator-admin-001", nil)
 
-	router := setupScenarioReadAuthzTest(t, db, "platform-admin", []string{"administrator"})
+	router := setupScenarioReadAuthzTest(t, db, "platform-admin", []string{"administrator"}, "/scenarios")
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/scenarios/"+scenario.ID.String()+"?include=Steps.Questions", nil)
@@ -342,7 +344,7 @@ func TestGetScenario_AsCreator_ReturnsFullContent(t *testing.T) {
 	creatorID := "creator-self-001"
 	scenario := buildLeakyScenario(t, db, "leak-creator", creatorID, nil)
 
-	router := setupScenarioReadAuthzTest(t, db, creatorID, []string{"member"})
+	router := setupScenarioReadAuthzTest(t, db, creatorID, []string{"member"}, "/scenarios")
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/scenarios/"+scenario.ID.String()+"?include=Steps.Questions", nil)
@@ -367,7 +369,7 @@ func TestGetScenario_AsOrgManager_ReturnsFullContent(t *testing.T) {
 
 	scenario := buildLeakyScenario(t, db, "leak-org-manager", ownerID, &orgID)
 
-	router := setupScenarioReadAuthzTest(t, db, managerID, []string{"member"})
+	router := setupScenarioReadAuthzTest(t, db, managerID, []string{"member"}, "/scenarios")
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/scenarios/"+scenario.ID.String()+"?include=Steps.Questions", nil)
@@ -402,7 +404,7 @@ func TestGetScenario_AsGroupManager_ReturnsFullContent(t *testing.T) {
 		IsActive:    true,
 	}).Error)
 
-	router := setupScenarioReadAuthzTest(t, db, groupOwnerID, []string{"member"})
+	router := setupScenarioReadAuthzTest(t, db, groupOwnerID, []string{"member"}, "/scenarios")
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/scenarios/"+scenario.ID.String()+"?include=Steps.Questions", nil)
@@ -429,7 +431,7 @@ func TestGetScenario_AsRegularMember_StripsStepsAndQuestions(t *testing.T) {
 	scenario := buildLeakyScenario(t, db, "leak-regular-member", creatorID, nil)
 
 	// Outsider has no relation to this scenario.
-	router := setupScenarioReadAuthzTest(t, db, "outsider-leak-001", []string{"member"})
+	router := setupScenarioReadAuthzTest(t, db, "outsider-leak-001", []string{"member"}, "/scenarios")
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/scenarios/"+scenario.ID.String(), nil)
@@ -455,7 +457,7 @@ func TestGetScenario_AsRegularMember_WithIncludeQuery_StillStripped(t *testing.T
 
 	// Same outsider, but explicitly asks for Steps.Questions in the URL —
 	// the strip must still happen post-fetch.
-	router := setupScenarioReadAuthzTest(t, db, "outsider-leak-include-001", []string{"member"})
+	router := setupScenarioReadAuthzTest(t, db, "outsider-leak-include-001", []string{"member"}, "/scenarios")
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET",
@@ -481,7 +483,7 @@ func TestListScenarios_AsRegularMember_StripsStepsAndQuestions(t *testing.T) {
 	_ = buildLeakyScenario(t, db, "leak-list-1", creatorID, nil)
 	_ = buildLeakyScenario(t, db, "leak-list-2", creatorID, nil)
 
-	router := setupScenarioReadAuthzTest(t, db, "outsider-list-001", []string{"member"})
+	router := setupScenarioReadAuthzTest(t, db, "outsider-list-001", []string{"member"}, "/scenarios")
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/scenarios?include=Steps.Questions", nil)
@@ -511,7 +513,7 @@ func TestListScenarios_AsRegularMember_CursorPagination_StripsStepsAndQuestions(
 	_ = buildLeakyScenario(t, db, "leak-list-cursor-1", creatorID, nil)
 	_ = buildLeakyScenario(t, db, "leak-list-cursor-2", creatorID, nil)
 
-	router := setupScenarioReadAuthzTest(t, db, "outsider-list-cursor-001", []string{"member"})
+	router := setupScenarioReadAuthzTest(t, db, "outsider-list-cursor-001", []string{"member"}, "/scenarios")
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/scenarios?cursor=&limit=10&include=Steps.Questions", nil)
@@ -540,7 +542,7 @@ func TestListScenarios_AsAdmin_ReturnsFullContent(t *testing.T) {
 	creatorID := "creator-list-admin-001"
 	_ = buildLeakyScenario(t, db, "leak-list-admin-1", creatorID, nil)
 
-	router := setupScenarioReadAuthzTest(t, db, "platform-admin-list", []string{"administrator"})
+	router := setupScenarioReadAuthzTest(t, db, "platform-admin-list", []string{"administrator"}, "/scenarios")
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/scenarios?include=Steps.Questions", nil)

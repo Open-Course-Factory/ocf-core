@@ -161,7 +161,7 @@ func TestWeightedGrade_QuizScoreFullCredit_AndTerminalIncomplete(t *testing.T) {
 // --- ComputeWeightedGrade (DB-backed wrapper) integration tests ---
 
 func TestCalculateGrade_QuizSession_UsesWeightedFormula(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "wgrade-quiz", Title: "Weighted Grade Quiz",
@@ -200,7 +200,7 @@ func TestCalculateGrade_QuizSession_UsesWeightedFormula(t *testing.T) {
 }
 
 func TestGetScenarioResults_PartialGrade_UsesWeightedFormula(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Exec(`INSERT INTO group_members (id, group_id, user_id, role, joined_at, is_active)

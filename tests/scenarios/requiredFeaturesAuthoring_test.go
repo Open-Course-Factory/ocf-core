@@ -55,7 +55,7 @@ func writeFeatureScenarioDir(t *testing.T, title, extensions string) string {
 }
 
 func TestImportScenario_CarriesRequiredFeatures(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	dir := writeFeatureScenarioDir(t, "Needs The Network",
@@ -73,7 +73,7 @@ func TestImportScenario_CarriesRequiredFeatures(t *testing.T) {
 }
 
 func TestImportScenario_WithoutRequiredFeaturesAsksForNothing(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	scenario, err := importer.ImportFromDirectory(
@@ -89,7 +89,7 @@ func TestImportScenario_WithoutRequiredFeaturesAsksForNothing(t *testing.T) {
 }
 
 func TestImportScenario_ReimportWithdrawsRequiredFeatures(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	_, err := importer.ImportFromDirectory(
@@ -113,7 +113,7 @@ func TestImportScenario_ReimportWithdrawsRequiredFeatures(t *testing.T) {
 // image requirement and no network, resolves onto an arbitrary distribution,
 // and fails provisioning exactly the way the RogueLite challenge did.
 func TestExportScenario_KeepsImageAndFeatureRequirements(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:             "export-keeps-requirements",
@@ -165,7 +165,7 @@ func TestExportScenario_KeepsImageAndFeatureRequirements(t *testing.T) {
 // running on a plan with no internet access.
 
 func TestImportScenario_CarriesBuildFeatures(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	dir := writeFeatureScenarioDir(t, "Builds With The Network",
@@ -186,7 +186,7 @@ func TestImportScenario_CarriesBuildFeatures(t *testing.T) {
 }
 
 func TestImportScenario_BuildAndRequiredFeaturesAreIndependent(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	dir := writeFeatureScenarioDir(t, "Both Kinds",
@@ -205,7 +205,7 @@ func TestImportScenario_BuildAndRequiredFeaturesAreIndependent(t *testing.T) {
 }
 
 func TestScenario_BuildFeaturesMapIsNilWhenNothingIsDeclared(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
 
 	scenario, err := importer.ImportFromDirectory(

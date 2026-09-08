@@ -17,7 +17,7 @@ import (
 // surfaces both step_type="quiz" and the aggregate quiz_score in the trainer view,
 // without leaking per-question quiz_answers.
 func TestGetSessionDetail_QuizStep_IncludesScore(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -69,7 +69,7 @@ func TestGetSessionDetail_QuizStep_IncludesScore(t *testing.T) {
 // step rows persisted with an empty step_type column are reported as "terminal"
 // via the COALESCE/NULLIF projection in the GetSessionDetail query.
 func TestGetSessionDetail_TerminalStep_DefaultsStepTypeWhenLegacy(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{

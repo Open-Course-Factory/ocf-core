@@ -19,7 +19,7 @@ import (
 // is still true for them afterwards. Running it in a separate process would
 // satisfy neither.
 func TestForegroundScript_IsTypedIntoTheLearnersShell(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "foreground-basic", models.ScenarioStep{
 		ForegroundScript: "cd /opt && ls -la",
 	})
@@ -41,7 +41,7 @@ func TestForegroundScript_IsTypedIntoTheLearnersShell(t *testing.T) {
 // an empty line would still submit a newline into the learner's shell, which
 // they would see as a stray blank prompt on every advance.
 func TestForegroundScript_AbsentScriptWritesNothing(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "foreground-absent", models.ScenarioStep{
 		BackgroundScript: "echo setup",
 	})
@@ -59,7 +59,7 @@ func TestForegroundScript_AbsentScriptWritesNothing(t *testing.T) {
 // the environment the background script builds. A demonstration of a file that
 // does not exist yet is not a demonstration.
 func TestForegroundScript_RunsAfterTheEnvironmentExists(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "foreground-ordering", models.ScenarioStep{
 		BackgroundScript: "mkdir -p /opt/lab",
 		ForegroundScript: "ls /opt/lab",
@@ -80,7 +80,7 @@ func TestForegroundScript_RunsAfterTheEnvironmentExists(t *testing.T) {
 // provisioned, and losing a legitimately earned step over a missed demonstration
 // would be a far worse trade.
 func TestForegroundScript_NoConsoleDoesNotFailTheAdvance(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "foreground-no-console", models.ScenarioStep{
 		ForegroundScript: "echo hello",
 	})
@@ -99,7 +99,7 @@ func TestForegroundScript_NoConsoleDoesNotFailTheAdvance(t *testing.T) {
 
 // Any other console error is equally non-fatal, for the same reason.
 func TestForegroundScript_WriteErrorDoesNotFailTheAdvance(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "foreground-write-error", models.ScenarioStep{
 		ForegroundScript: "echo hello",
 	})
@@ -119,7 +119,7 @@ func TestForegroundScript_WriteErrorDoesNotFailTheAdvance(t *testing.T) {
 // foreground script must not run: its environment was never built, and typing a
 // command that will error into the learner's shell tells them nothing useful.
 func TestForegroundScript_SkippedWhenTheBackgroundScriptFailed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	session := twoStepSession(t, db, "foreground-after-failure", models.ScenarioStep{
 		BackgroundScript: "false",
 		ForegroundScript: "ls /opt/lab",

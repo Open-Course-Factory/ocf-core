@@ -22,7 +22,7 @@ import (
 // Semantics mirror getScenarioResults (SSOT): join group_members ON user_id with
 // group_id=? AND is_active=true, filter ss.is_preview=false, group by scenario_id.
 func TestGetGroupAssignmentsProgress_AggregatesPerScenario(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 
@@ -134,7 +134,7 @@ func TestGetGroupAssignmentsProgress_AggregatesPerScenario(t *testing.T) {
 // TestGetGroupAssignmentsProgress_EmptyGroup pins the empty case: a group with no
 // qualifying sessions returns an empty slice, not a nil panic.
 func TestGetGroupAssignmentsProgress_EmptyGroup(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
@@ -152,7 +152,7 @@ func TestGetGroupAssignmentsProgress_EmptyGroup(t *testing.T) {
 // DISTINCT members, not sessions: a member with two non-preview sessions on the
 // same scenario counts once.
 func TestGetGroupAssignmentsProgress_DistinctMembers(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{

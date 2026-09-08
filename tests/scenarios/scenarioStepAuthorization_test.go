@@ -21,7 +21,7 @@ import (
 // =============================================================================
 
 func TestScenarioStep_CreateAsOrgManager_Allowed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepAuthorizationHook(db)
 
 	orgOwnerID := "step-org-owner-001"
@@ -73,7 +73,7 @@ func TestScenarioStep_CreateAsOrgManager_Allowed(t *testing.T) {
 }
 
 func TestScenarioStep_CreateAsUnrelatedMember_Forbidden(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepAuthorizationHook(db)
 
 	orgOwnerID := "step-org-owner-002"
@@ -126,7 +126,7 @@ func TestScenarioStep_CreateAsUnrelatedMember_Forbidden(t *testing.T) {
 }
 
 func TestScenarioStep_CreateAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepAuthorizationHook(db)
 
 	scenarioCreatorID := "step-scenario-creator-003"
@@ -188,7 +188,7 @@ func TestScenarioStep_CreateAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) 
 }
 
 func TestScenarioStep_CreateAsAdmin_AllowedWithoutScenarioRelationship(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepAuthorizationHook(db)
 
 	scenario := &models.Scenario{
@@ -219,7 +219,7 @@ func TestScenarioStep_CreateAsAdmin_AllowedWithoutScenarioRelationship(t *testin
 }
 
 func TestScenarioStep_DeleteAsCreator_Allowed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepAuthorizationHook(db)
 
 	creatorID := "step-creator-delete-005"
@@ -255,7 +255,7 @@ func TestScenarioStep_DeleteAsCreator_Allowed(t *testing.T) {
 }
 
 func TestScenarioStep_UpdateAsUnrelatedMember_Forbidden(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepAuthorizationHook(db)
 
 	creatorID := "step-creator-update-006"
@@ -298,7 +298,7 @@ func TestScenarioStep_UpdateAsUnrelatedMember_Forbidden(t *testing.T) {
 // =============================================================================
 
 func TestScenarioStepQuestion_CreateAsOrgManager_Allowed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepQuestionAuthorizationHook(db)
 
 	orgOwnerID := "stepq-org-owner-001"
@@ -361,7 +361,7 @@ func TestScenarioStepQuestion_CreateAsOrgManager_Allowed(t *testing.T) {
 }
 
 func TestScenarioStepQuestion_CreateAsUnrelatedMember_Forbidden(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepQuestionAuthorizationHook(db)
 
 	creatorID := "stepq-creator-forbidden-002"
@@ -407,7 +407,7 @@ func TestScenarioStepQuestion_CreateAsUnrelatedMember_Forbidden(t *testing.T) {
 }
 
 func TestScenarioStepQuestion_DeleteAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepQuestionAuthorizationHook(db)
 
 	scenarioCreatorID := "stepq-creator-003"

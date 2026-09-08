@@ -215,7 +215,7 @@ func TestLexiconValidate_MissingNames_AreReported(t *testing.T) {
 // The vocabulary reaches the container before anything that builds the world,
 // in the language the session was started in.
 func TestLexicon_ProvisioningInstallsTheSessionsLanguage(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name: "lexicon-provision", Title: "Lexicon", InstanceType: "debian", CreatedByID: "creator-1",

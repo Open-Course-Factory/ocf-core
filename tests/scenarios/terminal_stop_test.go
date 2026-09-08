@@ -47,17 +47,8 @@ func (t *terminalStopTracker) CalledWith() []string {
 	return result
 }
 
-// waitForSessionStatus polls the DB until the session reaches a target status or times out
-func waitForSessionStatus(t *testing.T, db interface {
-	First(dest interface{}, conds ...interface{}) interface{ Error() error }
-}, sessionID interface{}, targetStatuses []string, timeout time.Duration) string {
-	t.Helper()
-	// This is a simplified helper — we use raw GORM since it's what the tests use
-	return "" // placeholder
-}
-
 func TestRunStep0Setup_StopsTerminalOnFailure(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a scenario with a setup script
 	scenario := models.Scenario{
@@ -125,7 +116,7 @@ func TestRunStep0Setup_StopsTerminalOnFailure(t *testing.T) {
 // machine for me" — so stopping on abandon drains the learner's allowance one
 // abandoned run at a time until nothing will launch.
 func TestAbandonSession_DestroysTerminal(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "abandon-destroy-test",
@@ -212,7 +203,7 @@ func (p *panickingVerificationService) ExecInContainer(sessionID string, command
 // spawned by StartScenario will crash the entire test binary when
 // executeBackgroundScript panics — that is the RED state.
 func TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Scenario with a non-empty setup script so runStep0Setup enters the
 	// executeBackgroundScript branch and the panicking verification service

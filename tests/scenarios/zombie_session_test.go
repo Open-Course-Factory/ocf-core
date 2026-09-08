@@ -15,7 +15,7 @@ import (
 // --- Fix 1: Defensive check in StartScenario ---
 
 func TestStartScenario_ZombieSession_ExpiredTerminal_AutoAbandons(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	// Create a scenario with one step
 	scenario := models.Scenario{
@@ -97,7 +97,7 @@ func TestStartScenario_ZombieSession_ExpiredTerminal_AutoAbandons(t *testing.T) 
 }
 
 func TestStartScenario_ZombieSession_StoppedTerminal_AutoAbandons(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "zombie-stopped",
@@ -173,7 +173,7 @@ func TestStartScenario_ZombieSession_StoppedTerminal_AutoAbandons(t *testing.T) 
 }
 
 func TestStartScenario_ZombieSession_DeletedTerminal_AutoAbandons(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "zombie-deleted",
@@ -245,7 +245,7 @@ func TestStartScenario_ZombieSession_DeletedTerminal_AutoAbandons(t *testing.T) 
 }
 
 func TestStartScenario_ActiveTerminal_StillBlocks(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "active-blocks",
@@ -322,7 +322,7 @@ func TestStartScenario_ActiveTerminal_StillBlocks(t *testing.T) {
 }
 
 func TestStartScenario_ZombieSession_NilTerminalID_AutoAbandons(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 
 	scenario := models.Scenario{
 		Name:         "zombie-nil-terminal",
