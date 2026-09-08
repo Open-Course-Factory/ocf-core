@@ -108,75 +108,9 @@ func TestCapacityWillExceedError(t *testing.T) {
 	assert.Equal(t, "adding 10 members would exceed group capacity (45+10 > 50)", err.Error())
 }
 
-func TestAlreadyExistsError(t *testing.T) {
-	tests := []struct {
-		name        string
-		entityType  string
-		identifier  string
-		expectedMsg string
-	}{
-		{
-			"Group exists",
-			"group",
-			"my-group",
-			"you already have a group named my-group",
-		},
-		{
-			"Organization exists",
-			"organization",
-			"acme-corp",
-			"you already have an organization named acme-corp",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := utils.AlreadyExistsError(tt.entityType, tt.identifier)
-			assert.Error(t, err)
-			assert.Equal(t, tt.expectedMsg, err.Error())
-		})
-	}
-}
-
-func TestAlreadyMemberError(t *testing.T) {
-	err := utils.AlreadyMemberError("user123", "group")
-	assert.Error(t, err)
-	assert.Equal(t, "user user123 is already a member of this group", err.Error())
-}
-
 // ==========================================
 // Error Wrapper Tests
 // ==========================================
-
-func TestWrapRepositoryError(t *testing.T) {
-	t.Run("Wraps error with context", func(t *testing.T) {
-		originalErr := errors.New("connection timeout")
-		err := utils.WrapRepositoryError("create", "group", originalErr)
-
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to create group")
-		assert.Contains(t, err.Error(), "connection timeout")
-		assert.True(t, errors.Is(err, originalErr), "Should wrap the original error")
-	})
-
-	t.Run("Returns nil for nil error", func(t *testing.T) {
-		err := utils.WrapRepositoryError("create", "group", nil)
-		assert.NoError(t, err)
-	})
-
-	t.Run("Different operations", func(t *testing.T) {
-		originalErr := errors.New("validation failed")
-
-		createErr := utils.WrapRepositoryError("create", "group", originalErr)
-		assert.Contains(t, createErr.Error(), "failed to create group")
-
-		updateErr := utils.WrapRepositoryError("update", "organization", originalErr)
-		assert.Contains(t, updateErr.Error(), "failed to update organization")
-
-		deleteErr := utils.WrapRepositoryError("delete", "terminal", originalErr)
-		assert.Contains(t, deleteErr.Error(), "failed to delete terminal")
-	})
-}
 
 func TestWrapDatabaseError(t *testing.T) {
 	t.Run("Wraps error with context", func(t *testing.T) {
@@ -193,22 +127,6 @@ func TestWrapDatabaseError(t *testing.T) {
 		err := utils.WrapDatabaseError("saving group", nil)
 		assert.NoError(t, err)
 	})
-}
-
-// ==========================================
-// Subscription/Payment Error Tests
-// ==========================================
-
-func TestSubscriptionRequiredError(t *testing.T) {
-	err := utils.SubscriptionRequiredError("create terminals")
-	assert.Error(t, err)
-	assert.Equal(t, "active subscription required to create terminals", err.Error())
-}
-
-func TestUsageLimitExceededError(t *testing.T) {
-	err := utils.UsageLimitExceededError("terminals", 10, 10)
-	assert.Error(t, err)
-	assert.Equal(t, "usage limit exceeded for terminals (10/10)", err.Error())
 }
 
 // ==========================================
@@ -253,7 +171,6 @@ func TestErrorMessageFormats(t *testing.T) {
 		}{
 			{"EntityNotFoundError", utils.EntityNotFoundError("group")},
 			{"PermissionDeniedError", utils.PermissionDeniedError("manage", "group")},
-			{"AlreadyExistsError", utils.AlreadyExistsError("group", "test")},
 		}
 
 		for _, tt := range tests {
@@ -267,56 +184,10 @@ func TestErrorMessageFormats(t *testing.T) {
 }
 
 // ==========================================
-// Error Composition Tests
-// ==========================================
-
-func TestErrorComposition(t *testing.T) {
-	t.Run("Repository error wrapping preserves original error", func(t *testing.T) {
-		// Simulate a service layer error
-		dbErr := errors.New("unique constraint violation")
-		repoErr := utils.WrapDatabaseError("inserting group", dbErr)
-		serviceErr := utils.WrapRepositoryError("create", "group", repoErr)
-
-		// Should be able to unwrap to original error
-		assert.True(t, errors.Is(serviceErr, dbErr),
-			"Should be able to unwrap to original database error")
-
-		// Error message should include all context
-		errMsg := serviceErr.Error()
-		assert.Contains(t, errMsg, "failed to create group")
-		assert.Contains(t, errMsg, "database error while inserting group")
-		assert.Contains(t, errMsg, "unique constraint violation")
-	})
-}
-
-// ==========================================
 // Integration Tests
 // ==========================================
 
 func TestErrorHelpers_Integration(t *testing.T) {
-	t.Run("Complete error handling workflow", func(t *testing.T) {
-		// Scenario: User tries to create a group, but database fails
-
-		// 1. Database error
-		dbErr := errors.New("connection lost")
-
-		// 2. Repository wraps it
-		repoErr := utils.WrapDatabaseError("saving new group", dbErr)
-		assert.Error(t, repoErr)
-		assert.True(t, errors.Is(repoErr, dbErr))
-
-		// 3. Service wraps it further
-		serviceErr := utils.WrapRepositoryError("create", "group", repoErr)
-		assert.Error(t, serviceErr)
-		assert.True(t, errors.Is(serviceErr, dbErr))
-
-		// 4. Error chain is preserved
-		errMsg := serviceErr.Error()
-		assert.Contains(t, errMsg, "failed to create group")
-		assert.Contains(t, errMsg, "database error")
-		assert.Contains(t, errMsg, "connection lost")
-	})
-
 	t.Run("Permission and capacity error combination", func(t *testing.T) {
 		// User tries to add members but lacks permission
 		permErr := utils.PermissionDeniedError("add members to", "group")
@@ -340,7 +211,6 @@ func TestErrorHelpers_NilSafety(t *testing.T) {
 		name  string
 		error error
 	}{
-		{"WrapRepositoryError with nil", utils.WrapRepositoryError("create", "group", nil)},
 		{"WrapDatabaseError with nil", utils.WrapDatabaseError("saving", nil)},
 		{"ExternalAPIError with nil", utils.ExternalAPIError("API", "operation", nil)},
 	}

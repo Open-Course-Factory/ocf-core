@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"strings"
 
 	entityErrors "soli/formations/src/entityManagement/errors"
 
@@ -37,12 +36,6 @@ func NewEntityError(entityType, operation, reason string) EntityError {
 // WithEntityID adds entity ID to the error
 func (e EntityError) WithEntityID(id uuid.UUID) EntityError {
 	e.EntityID = id.String()
-	return e
-}
-
-// WithUserID adds user ID to the error
-func (e EntityError) WithUserID(userID string) EntityError {
-	e.UserID = userID
 	return e
 }
 
@@ -229,45 +222,6 @@ func CapacityWillExceedError(entityType string, current, adding, max int) error 
 		adding, entityType, current, adding, max)
 }
 
-// AlreadyExistsError creates an "already exists" error
-//
-// Example:
-//
-//	AlreadyExistsError("group", "my-group") -> "you already have a group named my-group"
-//	AlreadyExistsError("organization", "acme") -> "you already have an organization named acme"
-func AlreadyExistsError(entityType, identifier string) error {
-	article := "a"
-	// Use "an" for words starting with vowels
-	if len(entityType) > 0 {
-		firstChar := strings.ToLower(string(entityType[0]))
-		if firstChar == "a" || firstChar == "e" || firstChar == "i" || firstChar == "o" || firstChar == "u" {
-			article = "an"
-		}
-	}
-	return fmt.Errorf("you already have %s %s named %s", article, entityType, identifier)
-}
-
-// AlreadyMemberError creates an "already a member" error
-//
-// Example:
-//
-//	AlreadyMemberError("user123", "group") -> "user user123 is already a member of this group"
-func AlreadyMemberError(userID, entityType string) error {
-	return fmt.Errorf("user %s is already a member of this %s", userID, entityType)
-}
-
-// WrapRepositoryError wraps a repository error with context
-//
-// Example:
-//
-//	WrapRepositoryError("create", "group", err) -> "failed to create group: <original error>"
-func WrapRepositoryError(operation, entityType string, err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("failed to %s %s: %w", operation, entityType, err)
-}
-
 // WrapDatabaseError wraps a database error with context
 //
 // Example:
@@ -288,46 +242,6 @@ func WrapDatabaseError(context string, err error) error {
 //	OwnerOnlyError("organization", "transfer ownership") -> "only the organization owner can transfer ownership the organization"
 func OwnerOnlyError(entityType, action string) error {
 	return fmt.Errorf("only the %s owner can %s the %s", entityType, action, entityType)
-}
-
-// InvalidUUIDError creates an error for invalid UUID format
-//
-// Example:
-//
-//	InvalidUUIDError("group_id", "invalid-uuid") -> "validation error on field 'group_id': invalid UUID format: invalid-uuid"
-func InvalidUUIDError(field string, value string) error {
-	return NewValidationError(field, fmt.Sprintf("invalid UUID format: %s", value))
-}
-
-// MetadataFieldMissingError creates an error for missing metadata fields (primarily for Stripe objects)
-//
-// Example:
-//
-//	MetadataFieldMissingError("subscription", "user_id") -> "validation error on field 'subscription.metadata.user_id': required field missing"
-func MetadataFieldMissingError(entityType, field string) error {
-	return NewValidationError(fmt.Sprintf("%s.metadata.%s", entityType, field), "required field missing")
-}
-
-// ==========================================
-// Subscription/Payment Error Helpers
-// ==========================================
-
-// SubscriptionRequiredError creates a subscription requirement error
-//
-// Example:
-//
-//	SubscriptionRequiredError("create terminals") -> "active subscription required to create terminals"
-func SubscriptionRequiredError(action string) error {
-	return fmt.Errorf("active subscription required to %s", action)
-}
-
-// UsageLimitExceededError creates a usage limit error
-//
-// Example:
-//
-//	UsageLimitExceededError("terminals", 10, 10) -> "usage limit exceeded for terminals (10/10)"
-func UsageLimitExceededError(resourceType string, current, limit int) error {
-	return fmt.Errorf("usage limit exceeded for %s (%d/%d)", resourceType, current, limit)
 }
 
 // ==========================================
