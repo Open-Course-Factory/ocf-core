@@ -1,9 +1,10 @@
 package services
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"soli/formations/src/scenarios/models"
@@ -18,11 +19,8 @@ import (
 // the exporter read the order, and they must agree — an export that renumbers
 // preferences would re-import as a different scenario.
 func SortInstanceTypesByPriority(types []models.ScenarioInstanceType) []models.ScenarioInstanceType {
-	sorted := make([]models.ScenarioInstanceType, len(types))
-	copy(sorted, types)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].Priority < sorted[j].Priority
-	})
+	sorted := slices.Clone(types)
+	slices.SortStableFunc(sorted, func(a, b models.ScenarioInstanceType) int { return cmp.Compare(a.Priority, b.Priority) })
 	return sorted
 }
 
@@ -109,7 +107,3 @@ func BuildCompatibleInstanceTypes(names []string) []models.ScenarioInstanceType 
 	}
 	return types
 }
-
-// ParseStepAnswerForTest exposes parseStepAnswer to the tests package, which
-// lives outside this package by convention.
-func ParseStepAnswerForTest(stdout string) string { return parseStepAnswer(stdout) }
