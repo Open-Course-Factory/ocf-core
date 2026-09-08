@@ -9,41 +9,21 @@ import (
 )
 
 type UserSettingsHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewUserSettingsHook(db *gorm.DB) hooks.Hook {
 	return &UserSettingsHook{
-		db:       db,
-		enabled:  true,
-		priority: 10, // Normal priority
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "user_settings_auto_create",
+			EntityName: "User",
+			HookTypes:  []hooks.HookType{hooks.AfterCreate},
+			Enabled:    true,
+			Priority:   10, // Normal priority
+		},
 	}
-}
-
-func (h *UserSettingsHook) GetName() string {
-	return "user_settings_auto_create"
-}
-
-func (h *UserSettingsHook) GetEntityName() string {
-	// This hook doesn't target a specific entity in the entity management system
-	// Instead, it's triggered by external user creation events
-	return "User"
-}
-
-func (h *UserSettingsHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{
-		hooks.AfterCreate,
-	}
-}
-
-func (h *UserSettingsHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *UserSettingsHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *UserSettingsHook) Execute(ctx *hooks.HookContext) error {
