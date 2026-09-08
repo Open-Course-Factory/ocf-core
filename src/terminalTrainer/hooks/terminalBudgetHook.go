@@ -77,8 +77,7 @@ type TerminalBudgetHook struct {
 	db                   *gorm.DB
 	effectivePlanService paymentServices.EffectivePlanService
 	quotaService         paymentServices.QuotaService
-	enabled              bool
-	priority             int
+	hooks.BaseHook
 }
 
 // NewTerminalBudgetHook constructs the hook. The EffectivePlanService
@@ -90,22 +89,19 @@ func NewTerminalBudgetHook(db *gorm.DB, eps paymentServices.EffectivePlanService
 		db:                   db,
 		effectivePlanService: eps,
 		quotaService:         quota,
-		enabled:              true,
 		// Run after the ownership hook (priority 10) which forces UserID
 		// to the authenticated user. We must resolve the user's plan
 		// *after* UserID has been set, otherwise the hook can't know
 		// which plan applies.
-		priority: 50,
+		BaseHook: hooks.BaseHook{
+			Name:       "terminal_budget_enforcement",
+			EntityName: "Terminal",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate},
+			Enabled:    true,
+			Priority:   50,
+		},
 	}
 }
-
-func (h *TerminalBudgetHook) GetName() string       { return "terminal_budget_enforcement" }
-func (h *TerminalBudgetHook) GetEntityName() string { return "Terminal" }
-func (h *TerminalBudgetHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate}
-}
-func (h *TerminalBudgetHook) IsEnabled() bool { return h.enabled }
-func (h *TerminalBudgetHook) GetPriority() int { return h.priority }
 
 // Execute refuses the create when no plan resolves for the terminal's user,
 // snapshots the size's CPU/RAM footprint onto the row, then enforces the

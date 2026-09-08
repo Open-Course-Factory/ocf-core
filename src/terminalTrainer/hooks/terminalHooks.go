@@ -18,37 +18,21 @@ import (
 // ========================
 
 type TerminalOwnerPermissionHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewTerminalOwnerPermissionHook(db *gorm.DB) hooks.Hook {
 	return &TerminalOwnerPermissionHook{
-		db:       db,
-		enabled:  true,
-		priority: 100,
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "terminal_owner_patch_permission",
+			EntityName: "Terminal",
+			HookTypes:  []hooks.HookType{hooks.AfterCreate},
+			Enabled:    true,
+			Priority:   100,
+		},
 	}
-}
-
-func (h *TerminalOwnerPermissionHook) GetName() string {
-	return "terminal_owner_patch_permission"
-}
-
-func (h *TerminalOwnerPermissionHook) GetEntityName() string {
-	return "Terminal"
-}
-
-func (h *TerminalOwnerPermissionHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.AfterCreate}
-}
-
-func (h *TerminalOwnerPermissionHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *TerminalOwnerPermissionHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *TerminalOwnerPermissionHook) Execute(ctx *hooks.HookContext) error {
@@ -79,37 +63,21 @@ func (h *TerminalOwnerPermissionHook) Execute(ctx *hooks.HookContext) error {
 // ========================
 
 type TerminalCleanupHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewTerminalCleanupHook(db *gorm.DB) hooks.Hook {
 	return &TerminalCleanupHook{
-		db:       db,
-		enabled:  true,
-		priority: 100,
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "terminal_permission_cleanup",
+			EntityName: "Terminal",
+			HookTypes:  []hooks.HookType{hooks.AfterDelete},
+			Enabled:    true,
+			Priority:   100,
+		},
 	}
-}
-
-func (h *TerminalCleanupHook) GetName() string {
-	return "terminal_permission_cleanup"
-}
-
-func (h *TerminalCleanupHook) GetEntityName() string {
-	return "Terminal"
-}
-
-func (h *TerminalCleanupHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.AfterDelete}
-}
-
-func (h *TerminalCleanupHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *TerminalCleanupHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *TerminalCleanupHook) Execute(ctx *hooks.HookContext) error {
