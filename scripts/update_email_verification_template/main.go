@@ -5,8 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/joho/godotenv"
-
+	config "soli/formations/src/configuration"
 	sqldb "soli/formations/src/db"
 	emailModels "soli/formations/src/email/models"
 	emailServices "soli/formations/src/email/services"
@@ -15,7 +14,7 @@ import (
 func main() {
 	// Load environment variables
 	envFile := ".env"
-	err := godotenv.Load(envFile)
+	err := config.LoadDotEnv(envFile)
 	if err != nil {
 		log.Printf("Warning: Could not load .env file: %v\n", err)
 	}

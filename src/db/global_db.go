@@ -5,10 +5,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
+
+	config "soli/formations/src/configuration"
 )
 
 // DB is a global variable to hold db connection
@@ -19,7 +20,7 @@ var DB *gorm.DB
 // InitDBConnection opens a connection to the database
 func InitDBConnection(envFile string) {
 
-	err := godotenv.Load(envFile)
+	err := config.LoadDotEnv(envFile)
 
 	if err != nil {
 		log.Default().Printf("err loading: %v", err)

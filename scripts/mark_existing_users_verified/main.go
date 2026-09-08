@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/joho/godotenv"
 
 	"soli/formations/src/auth/casdoor"
+	config "soli/formations/src/configuration"
 )
 
 // MarkExistingUsersVerified marks all existing users as email verified
@@ -17,7 +17,7 @@ import (
 func main() {
 	// Load environment variables
 	envFile := ".env"
-	err := godotenv.Load(envFile)
+	err := config.LoadDotEnv(envFile)
 	if err != nil {
 		log.Printf("Warning: Could not load .env file: %v\n", err)
 	}

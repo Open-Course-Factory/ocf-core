@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	cors "github.com/rs/cors/wrapper/gin"
 
 	config "soli/formations/src/configuration"
@@ -78,7 +77,7 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 func main() {
 	envFile := ".env"
 
-	err := godotenv.Load(envFile)
+	err := config.LoadDotEnv(envFile)
 	if err != nil {
 		log.Default().Println(err)
 	}

@@ -9,8 +9,9 @@ import (
 	"github.com/casbin/casbin/v2"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/joho/godotenv"
 	"gorm.io/gorm"
+
+	config "soli/formations/src/configuration"
 )
 
 var JwtPublicKey string
@@ -18,7 +19,7 @@ var JwtPublicKey string
 var Enforcer interfaces.EnforcerInterface
 
 func InitCasdoorConnection(basePath string, fileName string) {
-	err := godotenv.Load(basePath + fileName)
+	err := config.LoadDotEnv(basePath + fileName)
 	casdoorEndPoint := os.Getenv("CASDOOR_ENDPOINT")
 	casdoorClientId := os.Getenv("CASDOOR_CLIENT_ID")
 	casdoorClientsecret := os.Getenv("CASDOOR_CLIENT_SECRET")
