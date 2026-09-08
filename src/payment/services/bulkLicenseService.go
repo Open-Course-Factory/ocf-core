@@ -11,6 +11,7 @@ import (
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 	"soli/formations/src/utils"
+	"slices"
 	"strings"
 	"time"
 
@@ -508,7 +509,8 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 	if err != nil {
 		// Check if Stripe reports the subscription is already cancelled
 		errMsg := err.Error()
-		if containsAny(errMsg, []string{"invalid-canceled-subscription", "canceled subscription", "cancelled subscription"}) {
+		cancelledMarkers := []string{"invalid-canceled-subscription", "canceled subscription", "cancelled subscription"}
+		if slices.ContainsFunc(cancelledMarkers, func(m string) bool { return strings.Contains(errMsg, m) }) {
 			utils.Warn("⚠️ Stripe reports subscription %s is cancelled - auto-cancelling batch %s", batch.StripeSubscriptionID, batchID)
 
 			// Auto-cancel the batch and all licenses
@@ -738,16 +740,6 @@ func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) e
 
 	utils.Info("✅ Auto-cancelled batch %s and %d licenses", batchID, len(licenses))
 	return nil
-}
-
-// containsAny checks if a string contains any of the substrings
-func containsAny(s string, substrings []string) bool {
-	for _, substr := range substrings {
-		if strings.Contains(s, substr) {
-			return true
-		}
-	}
-	return false
 }
 
 // PermanentlyDeleteBatch permanently deletes a batch and all its licenses

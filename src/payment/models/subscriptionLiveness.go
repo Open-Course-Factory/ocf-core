@@ -1,6 +1,7 @@
 package models
 
 import (
+	"slices"
 	"time"
 
 	"gorm.io/gorm"
@@ -65,7 +66,7 @@ var knownStatuses = []string{
 // IsKnownStatus reports whether OCF models this subscription status at all.
 // A false result means the status should be surfaced, not swallowed.
 func IsKnownStatus(status string) bool {
-	return containsStatus(knownStatuses, status)
+	return slices.Contains(knownStatuses, status)
 }
 
 // EntitlingStatuses returns the statuses under which a subscription grants access.
@@ -85,12 +86,12 @@ func BillableStatuses() []string {
 
 // IsEntitling reports whether a subscription in this status grants its holder access.
 func IsEntitling(status string) bool {
-	return containsStatus(entitlingStatuses, status)
+	return slices.Contains(entitlingStatuses, status)
 }
 
 // IsBillable reports whether a subscription in this status is cleanly paid.
 func IsBillable(status string) bool {
-	return containsStatus(billableStatuses, status)
+	return slices.Contains(billableStatuses, status)
 }
 
 // ScopeEntitling is a GORM scope filtering any subscription table down to rows
@@ -115,13 +116,4 @@ func ScopeEntitling(tx *gorm.DB) *gorm.DB {
 // ScopeBillable is the billing-side counterpart of ScopeEntitling.
 func ScopeBillable(tx *gorm.DB) *gorm.DB {
 	return tx.Where("status IN ?", billableStatuses)
-}
-
-func containsStatus(set []string, status string) bool {
-	for _, s := range set {
-		if s == status {
-			return true
-		}
-	}
-	return false
 }

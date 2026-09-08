@@ -18,7 +18,7 @@ import (
 type StripeSyncQueue interface {
 	Enqueue(operation string, plan *models.SubscriptionPlan) error
 	ListPending(limit int) ([]*models.StripeSync, error)
-	ListByID(id uuid.UUID) ([]*models.StripeSync, error)
+	GetByID(id uuid.UUID) (*models.StripeSync, error)
 	MarkSuccess(id uuid.UUID) error
 	MarkFailure(id uuid.UUID, err error) error
 }
@@ -68,15 +68,15 @@ func (q *stripeSyncQueue) ListPending(limit int) ([]*models.StripeSync, error) {
 	return rows, nil
 }
 
-// ListByID returns the row with the given id (in a slice for consistency with
-// ListPending). The worker calls this after MarkFailure to detect terminal
-// state transitions for the StripeQueueExhausted counter.
-func (q *stripeSyncQueue) ListByID(id uuid.UUID) ([]*models.StripeSync, error) {
-	var rows []*models.StripeSync
-	if err := q.db.Where("id = ?", id).Find(&rows).Error; err != nil {
+// GetByID returns the row with the given id. The worker calls this after
+// MarkFailure to detect terminal state transitions for the StripeQueueExhausted
+// counter.
+func (q *stripeSyncQueue) GetByID(id uuid.UUID) (*models.StripeSync, error) {
+	var row models.StripeSync
+	if err := q.db.Where("id = ?", id).First(&row).Error; err != nil {
 		return nil, fmt.Errorf("query stripe_sync by id: %w", err)
 	}
-	return rows, nil
+	return &row, nil
 }
 
 // MarkSuccess transitions the row to state=succeeded. Terminal.

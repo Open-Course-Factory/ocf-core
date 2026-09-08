@@ -3,6 +3,7 @@ package services
 
 import (
 	"fmt"
+	"slices"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/utils"
 
@@ -58,7 +59,7 @@ func (ss *subscriptionService) UpdateUserRoleBasedOnSubscription(userID string) 
 	}
 
 	// Ajouter l'utilisateur au rôle s'il n'y est pas déjà
-	if !contains(role.Users, user.GetId()) {
+	if !slices.Contains(role.Users, user.GetId()) {
 		role.Users = append(role.Users, user.GetId())
 		_, err = casdoorsdk.UpdateRole(role)
 		if err != nil {
@@ -73,13 +74,4 @@ func (ss *subscriptionService) assignDefaultRole(userID string) error {
 	// Assigner le rôle "member" par défaut
 	opts := utils.DefaultPermissionOptions()
 	return utils.AddGroupingPolicy(casdoor.Enforcer, userID, "member", opts)
-}
-
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }

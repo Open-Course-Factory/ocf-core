@@ -182,7 +182,7 @@ func (w *StripeSyncWorker) markFailure(id uuid.UUID, err error) {
 
 	// If the row just transitioned to terminal failed state, bump the
 	// exhausted counter for operator visibility. Single-row re-read; cheap.
-	if rows, lookupErr := w.queue.ListByID(id); lookupErr == nil && len(rows) > 0 && rows[0].State == models.StripeSyncStateFailed {
+	if row, lookupErr := w.queue.GetByID(id); lookupErr == nil && row.State == models.StripeSyncStateFailed {
 		observability.Metrics.StripeQueueExhausted.Add(1)
 	}
 }
