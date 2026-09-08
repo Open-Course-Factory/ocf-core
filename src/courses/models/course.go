@@ -1,9 +1,6 @@
 package models
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
 
@@ -140,21 +137,4 @@ func (course *Course) InitTocs() {
 		}
 		course.Chapters[indexChapter] = chapter
 	}
-}
-
-func ReadJsonCourseFile(jsonCourseFilePath string) (*Course, error) {
-	jsonFile, err := os.ReadFile(jsonCourseFilePath)
-
-	// should try to download it -> how to standardize the course format ?
-	// should we pass it as a param ? (if just a name, look for it locally, either dl ?)
-	if err != nil {
-		return nil, fmt.Errorf("error reading course file %s: %w", jsonCourseFilePath, err)
-	}
-
-	var course Course
-	err = json.Unmarshal(jsonFile, &course)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling course file %s: %w", jsonCourseFilePath, err)
-	}
-	return &course, nil
 }

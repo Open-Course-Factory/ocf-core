@@ -39,17 +39,3 @@ func InitCourseHooks(db *gorm.DB) {
 	log.Println("🔗 Course hooks initialization complete")
 }
 
-// EnableCourseCascadeDelete enables or disables course cascade deletion
-func EnableCourseCascadeDelete(enabled bool) error {
-	return hooks.GlobalHookRegistry.EnableHook("course_cascade_delete", enabled)
-}
-
-// EnableChapterCascadeDelete enables or disables chapter cascade deletion
-func EnableChapterCascadeDelete(enabled bool) error {
-	return hooks.GlobalHookRegistry.EnableHook("chapter_cascade_delete", enabled)
-}
-
-// EnableSectionCascadeDelete enables or disables section cascade deletion
-func EnableSectionCascadeDelete(enabled bool) error {
-	return hooks.GlobalHookRegistry.EnableHook("section_cascade_delete", enabled)
-}

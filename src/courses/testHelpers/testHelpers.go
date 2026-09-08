@@ -31,12 +31,6 @@ func (h *TestEnforcerHelper) RestoreOriginalEnforcer() {
 	casdoor.SetEnforcer(h.originalEnforcer)
 }
 
-// WithMockEnforcer exécute une fonction avec un enforcer mocké et restaure l'original après
-func (h *TestEnforcerHelper) WithMockEnforcer(testFunc func(*mocks.MockEnforcer)) {
-	mock := h.SetupMockEnforcer()
-	defer h.RestoreOriginalEnforcer()
-	testFunc(mock)
-}
 
 // Example d'utilisation dans un test:
 //

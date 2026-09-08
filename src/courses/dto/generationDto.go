@@ -72,17 +72,6 @@ func GenerationModelToGenerationOutput(generationModel models.Generation) *Gener
 	}
 }
 
-func GenerationModelToGenerationInput(generationModel models.Generation) *GenerationInput {
-	return &GenerationInput{
-		OwnerID:    generationModel.OwnerIDs[0],
-		Name:       generationModel.Name,
-		ThemeId:    generationModel.ThemeID.String(),
-		ScheduleId: generationModel.ScheduleID.String(),
-		CourseId:   generationModel.CourseID.String(),
-		Format:     generationModel.Format,
-	}
-}
-
 func GenerationModelToStatusOutput(generationModel models.Generation) *GenerationStatusOutput {
 	return &GenerationStatusOutput{
 		ID:           generationModel.ID.String(),
