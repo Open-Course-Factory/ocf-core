@@ -20,9 +20,8 @@ import (
 // observability endpoint / pending-syncs admin endpoint. They never propagate
 // back through Execute — historical best-effort semantics preserved.
 type StripeSubscriptionPlanHook struct {
-	queue    services.StripeSyncQueue
-	enabled  bool
-	priority int
+	queue services.StripeSyncQueue
+	hooks.BaseHook
 }
 
 // NewStripeSubscriptionPlanHookWithQueue is the only constructor. Production
@@ -31,40 +30,21 @@ type StripeSubscriptionPlanHook struct {
 // Stripe work flows through the persistent queue.
 func NewStripeSubscriptionPlanHookWithQueue(queue services.StripeSyncQueue) hooks.Hook {
 	return &StripeSubscriptionPlanHook{
-		queue:    queue,
-		enabled:  true,
-		priority: 10, // Priorité normale
+		queue: queue,
+		BaseHook: hooks.BaseHook{
+			Name:       "stripe_subscription_plan_sync",
+			EntityName: "SubscriptionPlan",
+			HookTypes:  []hooks.HookType{hooks.AfterCreate, hooks.AfterUpdate, hooks.AfterDelete},
+			Enabled:    true,
+			Priority:   10, // Priorité normale
+		},
 	}
-}
-
-func (h *StripeSubscriptionPlanHook) GetName() string {
-	return "stripe_subscription_plan_sync"
-}
-
-func (h *StripeSubscriptionPlanHook) GetEntityName() string {
-	return "SubscriptionPlan"
-}
-
-func (h *StripeSubscriptionPlanHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{
-		hooks.AfterCreate,
-		hooks.AfterUpdate,
-		hooks.AfterDelete,
-	}
-}
-
-func (h *StripeSubscriptionPlanHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *StripeSubscriptionPlanHook) GetPriority() int {
-	return h.priority
 }
 
 // ShouldExecute implements ConditionalHook. The hook is enabled/disabled via
 // the `enabled` flag set at construction time.
 func (h *StripeSubscriptionPlanHook) ShouldExecute(ctx *hooks.HookContext) bool {
-	return h.enabled
+	return h.Enabled
 }
 
 // Execute validates the hook context, applies the synchronous short-circuits

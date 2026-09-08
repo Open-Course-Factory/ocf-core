@@ -25,26 +25,22 @@ import (
 // come from the patch when stated and from the stored row otherwise, so
 // promoting a member mapping to manager re-checks the seat plan it holds.
 type OrganizationRolePlanValidationHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewOrganizationRolePlanValidationHook(db *gorm.DB) hooks.Hook {
-	return &OrganizationRolePlanValidationHook{db: db, enabled: true, priority: 10}
+	return &OrganizationRolePlanValidationHook{
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_role_plan_validation",
+			EntityName: "OrganizationRolePlan",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate},
+			Enabled:    true,
+			Priority:   10,
+		},
+	}
 }
-
-func (h *OrganizationRolePlanValidationHook) GetName() string {
-	return "organization_role_plan_validation"
-}
-func (h *OrganizationRolePlanValidationHook) GetEntityName() string {
-	return "OrganizationRolePlan"
-}
-func (h *OrganizationRolePlanValidationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate}
-}
-func (h *OrganizationRolePlanValidationHook) IsEnabled() bool  { return h.enabled }
-func (h *OrganizationRolePlanValidationHook) GetPriority() int { return h.priority }
 
 func (h *OrganizationRolePlanValidationHook) Execute(ctx *hooks.HookContext) error {
 	planID, planStated, err := h.targetPlanID(ctx)

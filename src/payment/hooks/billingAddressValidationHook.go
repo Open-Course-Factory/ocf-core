@@ -18,40 +18,21 @@ import (
 //   - vat_number: free-form, max 20 chars (NO forced FR prefix)
 //   - company_name: max 255 chars
 type BillingAddressValidationHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewBillingAddressValidationHook(db *gorm.DB) hooks.Hook {
 	return &BillingAddressValidationHook{
-		db:       db,
-		enabled:  true,
-		priority: 5, // Runs before the ownership hook (default priority)
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "billing_address_validation",
+			EntityName: "BillingAddress",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate},
+			Enabled:    true,
+			Priority:   5, // Runs before the ownership hook (default priority)
+		},
 	}
-}
-
-func (h *BillingAddressValidationHook) GetName() string {
-	return "billing_address_validation"
-}
-
-func (h *BillingAddressValidationHook) GetEntityName() string {
-	return "BillingAddress"
-}
-
-func (h *BillingAddressValidationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{
-		hooks.BeforeCreate,
-		hooks.BeforeUpdate,
-	}
-}
-
-func (h *BillingAddressValidationHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *BillingAddressValidationHook) GetPriority() int {
-	return h.priority
 }
 
 // Execute reads the B2B fields from whichever shape the generic service supplies:
@@ -96,7 +77,7 @@ func (h *BillingAddressValidationHook) Execute(ctx *hooks.HookContext) error {
 }
 
 func (h *BillingAddressValidationHook) ShouldExecute(ctx *hooks.HookContext) bool {
-	return h.enabled
+	return h.Enabled
 }
 
 // stringField extracts a string value from an update patch map, reporting whether

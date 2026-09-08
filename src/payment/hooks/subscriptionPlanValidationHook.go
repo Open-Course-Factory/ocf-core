@@ -22,40 +22,21 @@ const MaxDataPersistenceGB = 500
 //   - data_persistence_gb: 0..500 (MaxDataPersistenceGB). > 500 is rejected.
 //     Absent from an update patch = not validated (partial update).
 type SubscriptionPlanValidationHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewSubscriptionPlanValidationHook(db *gorm.DB) hooks.Hook {
 	return &SubscriptionPlanValidationHook{
-		db:       db,
-		enabled:  true,
-		priority: 5, // Runs before the ownership/stripe hooks (mirrors billing validation)
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "subscription_plan_validation",
+			EntityName: "SubscriptionPlan",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate},
+			Enabled:    true,
+			Priority:   5, // Runs before the ownership/stripe hooks (mirrors billing validation)
+		},
 	}
-}
-
-func (h *SubscriptionPlanValidationHook) GetName() string {
-	return "subscription_plan_validation"
-}
-
-func (h *SubscriptionPlanValidationHook) GetEntityName() string {
-	return "SubscriptionPlan"
-}
-
-func (h *SubscriptionPlanValidationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{
-		hooks.BeforeCreate,
-		hooks.BeforeUpdate,
-	}
-}
-
-func (h *SubscriptionPlanValidationHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *SubscriptionPlanValidationHook) GetPriority() int {
-	return h.priority
 }
 
 // Execute reads the requested DataPersistenceGB from whichever shape the generic
@@ -129,7 +110,7 @@ func taxBehaviorField(entity any) (string, bool) {
 }
 
 func (h *SubscriptionPlanValidationHook) ShouldExecute(ctx *hooks.HookContext) bool {
-	return h.enabled
+	return h.Enabled
 }
 
 // intField extracts an int value from an update patch map, reporting whether the
