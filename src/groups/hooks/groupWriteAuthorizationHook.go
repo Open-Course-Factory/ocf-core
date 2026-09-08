@@ -37,8 +37,7 @@ import (
 type GroupWriteAuthorizationHook struct {
 	db           *gorm.DB
 	groupService services.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 func NewGroupWriteAuthorizationHook(db *gorm.DB) hooks.Hook {
@@ -48,20 +47,15 @@ func NewGroupWriteAuthorizationHook(db *gorm.DB) hooks.Hook {
 		// Before GroupCleanupHook (10), which revokes member permissions on
 		// delete: nothing should be torn down for a caller who was never allowed
 		// to delete the group.
-		priority: 5,
-		enabled:  true,
+		BaseHook: hooks.BaseHook{
+			Name:       "group_write_authorization",
+			EntityName: "ClassGroup",
+			HookTypes:  []hooks.HookType{hooks.BeforeUpdate, hooks.BeforeDelete, hooks.BeforeArchive, hooks.BeforeUnarchive},
+			Enabled:    true,
+			Priority:   5,
+		},
 	}
 }
-
-func (h *GroupWriteAuthorizationHook) GetName() string       { return "group_write_authorization" }
-func (h *GroupWriteAuthorizationHook) GetEntityName() string { return "ClassGroup" }
-func (h *GroupWriteAuthorizationHook) GetHookTypes() []hooks.HookType {
-	// Archive and unarchive derive their Layer 2 rule from PATCH (SelfScoped),
-	// so this hook IS their authority — the same one as for an edit.
-	return []hooks.HookType{hooks.BeforeUpdate, hooks.BeforeDelete, hooks.BeforeArchive, hooks.BeforeUnarchive}
-}
-func (h *GroupWriteAuthorizationHook) IsEnabled() bool  { return h.enabled }
-func (h *GroupWriteAuthorizationHook) GetPriority() int { return h.priority }
 
 func (h *GroupWriteAuthorizationHook) Execute(ctx *hooks.HookContext) error {
 	// No authenticated caller means this is not a user-facing write (seeding,

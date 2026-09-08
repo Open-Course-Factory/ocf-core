@@ -20,37 +20,21 @@ import (
 type GroupOwnerSetupHook struct {
 	db           *gorm.DB
 	groupService services.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 func NewGroupOwnerSetupHook(db *gorm.DB) hooks.Hook {
 	return &GroupOwnerSetupHook{
 		db:           db,
 		groupService: services.NewGroupService(db),
-		enabled:      true,
-		priority:     10,
+		BaseHook: hooks.BaseHook{
+			Name:       "group_owner_setup",
+			EntityName: "ClassGroup",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.AfterCreate},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *GroupOwnerSetupHook) GetName() string {
-	return "group_owner_setup"
-}
-
-func (h *GroupOwnerSetupHook) GetEntityName() string {
-	return "ClassGroup"
-}
-
-func (h *GroupOwnerSetupHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.AfterCreate}
-}
-
-func (h *GroupOwnerSetupHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *GroupOwnerSetupHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *GroupOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
@@ -95,37 +79,21 @@ func (h *GroupOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
 type GroupCleanupHook struct {
 	db           *gorm.DB
 	groupService services.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 func NewGroupCleanupHook(db *gorm.DB) hooks.Hook {
 	return &GroupCleanupHook{
 		db:           db,
 		groupService: services.NewGroupService(db),
-		enabled:      true,
-		priority:     10,
+		BaseHook: hooks.BaseHook{
+			Name:       "group_cleanup",
+			EntityName: "ClassGroup",
+			HookTypes:  []hooks.HookType{hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *GroupCleanupHook) GetName() string {
-	return "group_cleanup"
-}
-
-func (h *GroupCleanupHook) GetEntityName() string {
-	return "ClassGroup"
-}
-
-func (h *GroupCleanupHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeDelete}
-}
-
-func (h *GroupCleanupHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *GroupCleanupHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *GroupCleanupHook) Execute(ctx *hooks.HookContext) error {
@@ -154,37 +122,21 @@ func (h *GroupCleanupHook) Execute(ctx *hooks.HookContext) error {
 type GroupMemberValidationHook struct {
 	db           *gorm.DB
 	groupService services.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 func NewGroupMemberValidationHook(db *gorm.DB) hooks.Hook {
 	return &GroupMemberValidationHook{
 		db:           db,
 		groupService: services.NewGroupService(db),
-		enabled:      true,
-		priority:     10, // Run before creation
+		BaseHook: hooks.BaseHook{
+			Name:       "group_member_validation",
+			EntityName: "GroupMember",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate},
+			Enabled:    true,
+			Priority:   10, // Run before creation
+		},
 	}
-}
-
-func (h *GroupMemberValidationHook) GetName() string {
-	return "group_member_validation"
-}
-
-func (h *GroupMemberValidationHook) GetEntityName() string {
-	return "GroupMember"
-}
-
-func (h *GroupMemberValidationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate}
-}
-
-func (h *GroupMemberValidationHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *GroupMemberValidationHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
@@ -273,37 +225,21 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 type GroupMemberPermissionHook struct {
 	db           *gorm.DB
 	groupService services.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 func NewGroupMemberPermissionHook(db *gorm.DB) hooks.Hook {
 	return &GroupMemberPermissionHook{
 		db:           db,
 		groupService: services.NewGroupService(db),
-		enabled:      true,
-		priority:     20, // Run after creation
+		BaseHook: hooks.BaseHook{
+			Name:       "group_member_permission",
+			EntityName: "GroupMember",
+			HookTypes:  []hooks.HookType{hooks.AfterCreate},
+			Enabled:    true,
+			Priority:   20, // Run after creation
+		},
 	}
-}
-
-func (h *GroupMemberPermissionHook) GetName() string {
-	return "group_member_permission"
-}
-
-func (h *GroupMemberPermissionHook) GetEntityName() string {
-	return "GroupMember"
-}
-
-func (h *GroupMemberPermissionHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.AfterCreate}
-}
-
-func (h *GroupMemberPermissionHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *GroupMemberPermissionHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *GroupMemberPermissionHook) Execute(ctx *hooks.HookContext) error {
@@ -328,37 +264,21 @@ func (h *GroupMemberPermissionHook) Execute(ctx *hooks.HookContext) error {
 type GroupMemberCleanupHook struct {
 	db           *gorm.DB
 	groupService services.GroupService
-	enabled      bool
-	priority     int
+	hooks.BaseHook
 }
 
 func NewGroupMemberCleanupHook(db *gorm.DB) hooks.Hook {
 	return &GroupMemberCleanupHook{
 		db:           db,
 		groupService: services.NewGroupService(db),
-		enabled:      true,
-		priority:     10,
+		BaseHook: hooks.BaseHook{
+			Name:       "group_member_cleanup",
+			EntityName: "GroupMember",
+			HookTypes:  []hooks.HookType{hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *GroupMemberCleanupHook) GetName() string {
-	return "group_member_cleanup"
-}
-
-func (h *GroupMemberCleanupHook) GetEntityName() string {
-	return "GroupMember"
-}
-
-func (h *GroupMemberCleanupHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeDelete}
-}
-
-func (h *GroupMemberCleanupHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *GroupMemberCleanupHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *GroupMemberCleanupHook) Execute(ctx *hooks.HookContext) error {

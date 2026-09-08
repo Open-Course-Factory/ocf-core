@@ -15,37 +15,21 @@ import (
 // role (owners/managers don't consume licenses). Non-blocking: silently returns
 // nil if no batch or no available license exists.
 type GroupMemberAutoLicenseHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewGroupMemberAutoLicenseHook(db *gorm.DB) hooks.Hook {
 	return &GroupMemberAutoLicenseHook{
-		db:       db,
-		enabled:  true,
-		priority: 30, // After permission hook (20)
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "group_member_auto_license",
+			EntityName: "GroupMember",
+			HookTypes:  []hooks.HookType{hooks.AfterCreate},
+			Enabled:    true,
+			Priority:   30, // After permission hook (20)
+		},
 	}
-}
-
-func (h *GroupMemberAutoLicenseHook) GetName() string {
-	return "group_member_auto_license"
-}
-
-func (h *GroupMemberAutoLicenseHook) GetEntityName() string {
-	return "GroupMember"
-}
-
-func (h *GroupMemberAutoLicenseHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.AfterCreate}
-}
-
-func (h *GroupMemberAutoLicenseHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *GroupMemberAutoLicenseHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *GroupMemberAutoLicenseHook) Execute(ctx *hooks.HookContext) error {

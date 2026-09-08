@@ -33,10 +33,9 @@ import (
 // be personal, must have room). Those are invariants of the data model rather than
 // privileges — an administrator who needs more groups raises MaxGroups.
 type GroupPlacementValidationHook struct {
-	db       *gorm.DB
-	plans    paymentServices.EffectivePlanService
-	enabled  bool
-	priority int
+	db    *gorm.DB
+	plans paymentServices.EffectivePlanService
+	hooks.BaseHook
 }
 
 func NewGroupPlacementValidationHook(db *gorm.DB) hooks.Hook {
@@ -46,18 +45,15 @@ func NewGroupPlacementValidationHook(db *gorm.DB) hooks.Hook {
 		// Ahead of GroupOwnerSetupHook (10): refusing a placement must not depend
 		// on another hook having run first, and there is no point setting up an
 		// owner for a group that is about to be rejected.
-		priority: 5,
-		enabled:  true,
+		BaseHook: hooks.BaseHook{
+			Name:       "group_placement_validation",
+			EntityName: "ClassGroup",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate},
+			Enabled:    true,
+			Priority:   5,
+		},
 	}
 }
-
-func (h *GroupPlacementValidationHook) GetName() string       { return "group_placement_validation" }
-func (h *GroupPlacementValidationHook) GetEntityName() string { return "ClassGroup" }
-func (h *GroupPlacementValidationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate}
-}
-func (h *GroupPlacementValidationHook) IsEnabled() bool  { return h.enabled }
-func (h *GroupPlacementValidationHook) GetPriority() int { return h.priority }
 
 func (h *GroupPlacementValidationHook) Execute(ctx *hooks.HookContext) error {
 	// An unauthenticated context means this is not a user-facing write (startup
