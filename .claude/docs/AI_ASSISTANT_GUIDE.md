@@ -145,7 +145,7 @@ This applies to all GORM relationships:
 
 ## Project Overview
 
-OCF Core is the core API for Open Course Factory, a platform for building and generating courses with integrated labs and environments. The system supports both Marp and Slidev presentation engines, with a focus on reusable course content and templating systems.
+OCF Core is the core API for Open Course Factory, a platform for building and generating courses with integrated labs and environments. The system uses the Slidev presentation engine, with a focus on reusable course content and templating systems.
 
 ### Test Credentials and API Authentication
 
@@ -309,7 +309,7 @@ See `.claude/agents/README.md` and `.claude/commands/README.md` for complete doc
 
 **Authentication**: Casdoor-based JWT authentication with role-based permissions (Casbin). Certificate stored in `src/auth/casdoor/token_jwt_key.pem`.
 
-**Course Generation**: Dual engine support for Marp and Slidev with Git repository integration for courses and themes.
+**Course Generation**: Slidev engine with Git repository integration for courses and themes.
 
 **Payment System**: Stripe integration with subscription plans, feature-based usage limits, and role management. Usage metrics are conditionally created based on database feature flags AND the plan's `Features` array (see `MODULAR_FEATURES.md`).
 

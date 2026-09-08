@@ -23,7 +23,6 @@
   - `src/auth/authController.go:49,54`
   - `src/auth/casdoor/casdoorConnector.go:34,46,52,58`
   - `src/generationEngine/slidev_integration/slidev.go:62,112,119,147,156`
-  - `src/generationEngine/marp_integration/marp.go:66,71,124,133,141,150`
   - `src/db/global_db.go:53,58`
   - `src/configuration/configuration.go:31,37`
   - `src/courses/models/course.go:149,155`

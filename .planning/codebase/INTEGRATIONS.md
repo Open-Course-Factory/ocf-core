@@ -123,9 +123,6 @@
 ## Content Generation
 
 **Presentation Tools:**
-- Marp - Markdown to presentation conversion
-  - Docker image: marpteam/marp-cli
-  - Integration: `src/generationEngine/marp_integration/marp.go`
 
 - Slidev - Modern presentation framework
   - Docker image: registry.gitlab.com/open-course-factory/ocf-core/ocf_slidev:latest

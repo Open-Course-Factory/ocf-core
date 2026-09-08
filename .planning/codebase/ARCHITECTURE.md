@@ -146,7 +146,7 @@
 **CLI Entry Point:**
 - Location: `src/cli/course_generator.go`
 - Purpose: Bulk course generation from Git repositories
-- Flags: -c (course name), -t (theme), -e (engine), -course-repo (Git URL), -slide-engine (slidev/marp), -user-id
+- Flags: -c (course name), -t (theme), -e (engine), -course-repo (Git URL), -user-id
 
 **Database Initialization:**
 - Location: `src/initialization/database.go`

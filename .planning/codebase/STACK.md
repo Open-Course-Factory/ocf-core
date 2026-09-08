@@ -8,7 +8,7 @@
 - Go 1.24.1 - All backend application code (`go.mod`)
 
 **Secondary:**
-- JavaScript/TypeScript - Build scripts, Marp/Slidev CLI tools (`package.json`)
+- JavaScript/TypeScript - Build scripts, Slidev CLI tools (`package.json`)
 - Markdown - Course generation content format
 
 ## Runtime
@@ -20,7 +20,7 @@
 
 **Package Manager:**
 - Go Modules - `go.mod`, `go.sum`
-- npm - `package.json` for Marp/Slidev presentation tools
+- npm - `package.json` for Slidev presentation tools
 - Multi-module monorepo pattern
 
 ## Frameworks
@@ -51,7 +51,6 @@
 - Go-Git v5.16.2 - Git repository operations for course imports (`github.com/go-git/go-git/v5`)
 
 **Frontend/Generation:**
-- Marp Core ^3.7.0 - Markdown presentation rendering (`@marp-team/marp-core`)
 - Slidev CLI ^51.6.0 - Modern presentation framework (`@slidev/cli`)
 - Markdown-it ^13.0.1 - Markdown parsing (`markdown-it`)
 

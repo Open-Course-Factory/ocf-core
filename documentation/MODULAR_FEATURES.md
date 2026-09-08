@@ -103,7 +103,7 @@ On next startup:
 **File**: `src/courses/moduleConfig.go`
 
 **Features**:
-- `course_conception` - Course generation with Marp/Slidev
+- `course_conception` - Course generation with Slidev
 
 **Usage in metrics**: Controls `courses_created` metric
 

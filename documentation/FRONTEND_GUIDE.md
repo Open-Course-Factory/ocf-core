@@ -1284,7 +1284,7 @@ GET /api/v1/features
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "key": "course_conception",
     "name": "Course Generation",
-    "description": "Enable/disable course generation and management features including Marp and Slidev engines",
+    "description": "Enable/disable course generation and management features including the Slidev engine",
     "enabled": true,
     "category": "modules",
     "module": "courses",

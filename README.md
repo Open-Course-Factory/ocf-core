@@ -234,26 +234,6 @@ For generation purpose, we had to create a specific slidev image that embeds ocf
 docker build -f Dockerfile.slidev -t ocf_slidev .
 ```
 
-## (DEPRECATED - MARP) I want to generate the slides manually
-
-### Settings
-
-The underlying technology used to generate courses is [Marp](https://github.com/marp-team/marp). It is not expected to use it directly, OCF will do it for you.
-
-To modify Marp behaviour, an additionnal `engine.js` file has been added. It allows in particular to include other .md files in slides and to hide some slides in courses.
-
-### Themes
-
-Then the most important file is probably the theme. For now, we choosed to make our themes inherit from the 'uncover' Marp theme.
-
-It is possible to inherit from them by specifying an `extends.json` file in the theme folder that contains reference to the parent theme such as:
-
-```json
-{
-    "theme": "parent_theme"
-}
-```
-
 ## Pre-requisites
 
 The golang program needs external libraries to work, they can be installed with:
@@ -285,24 +265,7 @@ and then:
 swag init --parseDependency --parseInternal
 ```
 
-To be able to use the custom Marp engine located in this repository, you have to install the following npm packages with the following lines:
-
-```shell
-npm install @marp-team/marp-core
-npm install markdown-it-include --save
-npm install markdown-it-container --save
-npm install markdown-it-attrs --save
-```
-
-You can install it from inside the container if you use Docker.
-
-To enter in the container:
-
-```shell
-docker run -it --rm --entrypoint sh -v $PWD:/home/marp/app/ marpteam/marp-cli
-```
-
-## (DEPRECATED - MARP) How to build the slides?
+## (DEPRECATED) How to build the slides?
 
 ### Main.go
 
