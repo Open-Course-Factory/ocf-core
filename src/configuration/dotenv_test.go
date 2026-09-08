@@ -8,12 +8,12 @@ import (
 
 func TestLoadDotEnv(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
-	content := "# comment\n\nPLAIN=value\nQUOTED=\"http://host:8000\"\nSINGLE='x=y'\nPRESET=from_file\nNOEQUALS\n  SPACED = padded \n"
+	content := "# comment\n\nPLAIN=value\nQUOTED=\"http://host:8000\"\nSINGLE='x=y'\nPRESET=from_file\nNOEQUALS\n  SPACED = padded \nCOMMENTED=value # inline comment\nHASHQUOTED=\"a #b\"\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PRESET", "from_env")
-	for _, k := range []string{"PLAIN", "QUOTED", "SINGLE", "SPACED", "NOEQUALS"} {
+	for _, k := range []string{"PLAIN", "QUOTED", "SINGLE", "SPACED", "NOEQUALS", "COMMENTED", "HASHQUOTED"} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
 	}
@@ -27,6 +27,8 @@ func TestLoadDotEnv(t *testing.T) {
 		"SINGLE": "x=y",
 		"SPACED": "padded",
 		"PRESET": "from_env",
+		"COMMENTED":  "value",
+		"HASHQUOTED": "a #b",
 	}
 	for k, v := range want {
 		if got := os.Getenv(k); got != v {

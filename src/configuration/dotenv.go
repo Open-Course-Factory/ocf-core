@@ -33,10 +33,22 @@ func LoadDotEnv(path string) error {
 		value = strings.TrimSpace(value)
 		if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') && value[len(value)-1] == value[0] {
 			value = value[1 : len(value)-1]
+		} else {
+			value = stripInlineComment(value)
 		}
 		if _, exists := os.LookupEnv(key); !exists {
 			os.Setenv(key, value)
 		}
 	}
 	return scanner.Err()
+}
+
+// An unquoted value ends at the first "#" preceded by whitespace; "#" inside a word is data.
+func stripInlineComment(value string) string {
+	for _, marker := range []string{" #", "\t#"} {
+		if i := strings.Index(value, marker); i >= 0 {
+			value = value[:i]
+		}
+	}
+	return strings.TrimSpace(value)
 }
