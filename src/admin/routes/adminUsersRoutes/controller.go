@@ -2,12 +2,12 @@ package adminUsersRoutes
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 )
 
@@ -46,12 +46,7 @@ func NewListUsersHandler(db *gorm.DB) gin.HandlerFunc {
 			if err != nil {
 				return false
 			}
-			for _, r := range roles {
-				if strings.EqualFold(r, "administrator") || strings.EqualFold(r, "admin") {
-					return true
-				}
-			}
-			return false
+			return access.IsAdmin(roles)
 		}
 
 		listings, err := BuildUserListings(users, db, isAdmin)
