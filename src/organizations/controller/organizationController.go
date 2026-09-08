@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	authServices "soli/formations/src/auth/services"
 	groupDto "soli/formations/src/groups/dto"
@@ -546,14 +547,7 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 		})
 		return
 	}
-	isAdmin := false
-	for _, role := range roles {
-		if role == "administrator" || role == "admin" {
-			isAdmin = true
-			break
-		}
-	}
-	if !isAdmin {
+	if !access.IsAdmin(roles) {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
 			ErrorMessage: "Admin access required",
