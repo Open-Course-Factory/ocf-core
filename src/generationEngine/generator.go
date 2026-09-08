@@ -17,5 +17,3 @@ type CourseGenerationEngine interface {
 }
 
 var SLIDE_ENGINE CourseGenerationEngine
-
-type SlideEngine int

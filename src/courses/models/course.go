@@ -11,22 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type OCFMdWriter interface {
-	SetFrontMatter() string
-	SetTitle() string
-	SetToc() string
-	SetContent() string
-}
-
-type CourseMdWriter interface {
-	OCFMdWriter
-	SetTitlePage() string
-	SetIntro() string
-	SetLearningObjectives() string
-	SetConclusionPage() string
-	GetCourse() string
-}
-
 type Course struct {
 	entityManagementModels.BaseModel
 	Category            string

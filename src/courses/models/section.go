@@ -14,11 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type SectionWriter interface {
-	OCFMdWriter
-	GetSection() string
-}
-
 // Part of a chapter
 type Section struct {
 	entityManagementModels.BaseModel

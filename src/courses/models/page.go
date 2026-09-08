@@ -6,11 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type PageWriter interface {
-	OCFMdWriter
-	GetPage() string
-}
-
 // Part of a Section
 type Page struct {
 	entityManagementModels.BaseModel

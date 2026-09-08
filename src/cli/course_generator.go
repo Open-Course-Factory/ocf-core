@@ -20,7 +20,6 @@ import (
 	courseService "soli/formations/src/courses/services"
 	genericService "soli/formations/src/entityManagement/services"
 	generator "soli/formations/src/generationEngine"
-	marp "soli/formations/src/generationEngine/marp_integration"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
 	"soli/formations/src/utils"
 )
@@ -40,7 +39,6 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	const GIT_THEME_REPO_BRANCH_FLAG = "theme-repo-branch"
 	const TYPE_FLAG = "e"
 	const DRY_RUN_FLAG = "dry-run"
-	const SLIDE_ENGINE_FLAG = "slide-engine"
 	const USER_ID_FLAG = "user-id"
 	const AUTHOR_FLAG = "author"
 	const COURSE_JSON_FILENAME_FLAG = "course-json"
@@ -58,7 +56,6 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	courseThemeBranchGitRepository := flag.String(GIT_THEME_REPO_BRANCH_FLAG, "main", "git repository branch for theme (only for git source type)")
 	courseType := flag.String(TYPE_FLAG, "html", "type generated : html (default) or pdf")
 	config.DRY_RUN = flag.Bool(DRY_RUN_FLAG, false, "if set true, the cli stops before calling slide generator")
-	slideEngine := flag.String(SLIDE_ENGINE_FLAG, "slidev", "slide generator used, marp or slidev (default)")
 	userID := flag.String(USER_ID_FLAG, "00000000-0000-0000-0000-000000000000", "user ID (UUID) for authentication and git operations")
 	author := flag.String(AUTHOR_FLAG, "cli", "author trigramme for loading author_XXX.md file")
 	courseJsonFilename := flag.String(COURSE_JSON_FILENAME_FLAG, "course.json", "filename of the course JSON file in the repository")
@@ -72,14 +69,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 		return false
 	}
 
-	switch *slideEngine {
-	case "marp":
-		generator.SLIDE_ENGINE = marp.MarpCourseGenerator{}
-	case "slidev":
-		generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
-	default:
-		generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
-	}
+	generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
 
 	var course courseModels.Course
 
@@ -171,15 +161,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 
 	// Create the course writer and generate markdown content
 	utils.Info("Creating course markdown file...")
-	var courseWriter courseModels.CourseMdWriter
-	switch generator.SLIDE_ENGINE.(type) {
-	case slidev.SlidevCourseGenerator:
-		courseWriter = &courseModels.SlidevCourseWriter{Course: course}
-	case marp.MarpCourseGenerator:
-		courseWriter = &courseModels.MarpCourseWriter{Course: course}
-	default:
-		courseWriter = &courseModels.SlidevCourseWriter{Course: course}
-	}
+	courseWriter := &courseModels.SlidevCourseWriter{Course: course}
 
 	// Generate the course content
 	courseContent := courseWriter.GetCourse()

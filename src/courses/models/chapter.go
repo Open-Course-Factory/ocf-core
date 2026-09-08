@@ -9,13 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type ChapterWriter interface {
-	OCFMdWriter
-	SetTitlePage() string
-	SetConclusionPage() string
-	GetChapter() string
-}
-
 // Part of a course
 type Chapter struct {
 	entityManagementModels.BaseModel

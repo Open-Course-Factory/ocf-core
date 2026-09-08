@@ -22,7 +22,7 @@ func (c *CoursesModuleConfig) GetFeatures() []models.FeatureDefinition {
 		{
 			Key:         "course_conception",
 			Name:        "Course Generation",
-			Description: "Enable/disable course generation and management features including Marp and Slidev engines",
+			Description: "Enable/disable course generation and management features including the Slidev engine",
 			Enabled:     true,
 			Category:    "modules",
 			Module:      "courses",
