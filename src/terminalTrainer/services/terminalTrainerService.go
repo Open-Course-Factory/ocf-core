@@ -147,11 +147,15 @@ type terminalTrainerService struct {
 	effectivePlanService   paymentServices.EffectivePlanService
 	enumService            TerminalTrainerEnumService
 	db                     *gorm.DB
+	// Embedded so their exported methods satisfy TerminalTrainerService
+	// directly: each collaborator owns one concern (tt-backend HTTP, catalog
+	// caches, session reconciliation, local lifecycle, composed sessions,
+	// command history) and the facade adds nothing on those paths.
 	*terminalProxyClient
 	*terminalCatalogService
 	*terminalSyncService
 	*terminalLifecycleService
-	composer               *terminalComposer
+	*terminalComposer
 	*terminalHistoryService
 }
 
@@ -178,27 +182,27 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 	enumService := NewTerminalTrainerEnumService(baseURL, apiVersion)
 
 	tts := &terminalTrainerService{
-		adminKey:               adminKey,
-		baseURL:                baseURL,
-		apiVersion:             apiVersion,
-		terminalType:           terminalType,
-		repository:             repository,
-		orgSubscriptionService: paymentServices.NewOrganizationSubscriptionService(db),
-		quotaService:           quotaService,
-		effectivePlanService:   eps,
-		enumService:            enumService,
-		db:                     db,
-		terminalProxyClient:    proxy,
-		terminalCatalogService: catalog,
-		terminalSyncService:    sync,
+		adminKey:                 adminKey,
+		baseURL:                  baseURL,
+		apiVersion:               apiVersion,
+		terminalType:             terminalType,
+		repository:               repository,
+		orgSubscriptionService:   paymentServices.NewOrganizationSubscriptionService(db),
+		quotaService:             quotaService,
+		effectivePlanService:     eps,
+		enumService:              enumService,
+		db:                       db,
+		terminalProxyClient:      proxy,
+		terminalCatalogService:   catalog,
+		terminalSyncService:      sync,
 		terminalLifecycleService: newTerminalLifecycleService(proxy, sync, repository, db),
-		terminalHistoryService: newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
+		terminalHistoryService:   newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
 	}
 
 	// Constructed last: the composer takes the facade's CreateUserKey as a
 	// callback so the bulk flow can auto-provision keys without owning the
 	// key-management concern.
-	tts.composer = newTerminalComposer(proxy, catalog, repository, quotaService, enumService, db, baseURL, apiVersion, tts.CreateUserKey)
+	tts.terminalComposer = newTerminalComposer(proxy, catalog, repository, quotaService, enumService, db, baseURL, apiVersion, tts.CreateUserKey)
 
 	return tts
 }
@@ -456,18 +460,6 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 	return filtered, nil
 }
 
-// BulkCreateTerminalsForGroup delegates to terminalComposer, which owns the
-// group bulk-creation flow (member resolution, key auto-provisioning, and a
-// fan-out of StartComposedSession across active members).
-func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
-	groupID string,
-	requestingUserID string,
-	userRoles []string,
-	request dto.BulkCreateTerminalsRequest,
-	planInterface any,
-) (*dto.BulkCreateTerminalsResponse, error) {
-	return tts.composer.BulkCreateTerminalsForGroup(groupID, requestingUserID, userRoles, request, planInterface)
-}
 // GetEnumService returns the enum service for external access
 func (tts *terminalTrainerService) GetEnumService() TerminalTrainerEnumService {
 	return tts.enumService
@@ -990,12 +982,6 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 	opts.Quota = tts.quotaService.BudgetSnapshot(plan, usedCPU, usedMem, dto.ScopeUser)
 }
 
-// StartComposedSession delegates to terminalComposer, which owns the
-// composed-session orchestration (plan validation, budget gate, backend
-// resolution, and the tt-backend POST that persists the Terminal row).
-func (tts *terminalTrainerService) StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
-	return tts.composer.StartComposedSession(userID, input, planInterface)
-}
 // BudgetRejection is the structured error surfaced by StartComposedSession
 // when CheckBudget rejects a request in budget-mode. Carries enough context
 // for the controller to translate into a 403 with body
