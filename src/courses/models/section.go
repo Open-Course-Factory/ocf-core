@@ -9,7 +9,6 @@ import (
 	"soli/formations/src/utils"
 	"strings"
 
-	"github.com/adrg/frontmatter"
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -122,7 +121,7 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 		pageFrontMatter.Layout = ""
 
 		if index == 1 {
-			_, errSectionFrontMatter := frontmatter.Parse(strings.NewReader(sPage), &sectionFrontMatter)
+			_, errSectionFrontMatter := parseFrontMatter([]byte(sPage), &sectionFrontMatter)
 			if errSectionFrontMatter != nil {
 				utils.Error("%s", errSectionFrontMatter.Error())
 			}
@@ -136,7 +135,7 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 		} else {
 			if index > beginningIndex {
 				pageOrder++
-				sPageContent, err := frontmatter.Parse(strings.NewReader(sPage), &pageFrontMatter)
+				sPageContent, err := parseFrontMatter([]byte(sPage), &pageFrontMatter)
 
 				if err != nil {
 					utils.Error("%s", err.Error())
