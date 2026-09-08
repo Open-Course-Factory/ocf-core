@@ -152,7 +152,7 @@ type terminalTrainerService struct {
 	*terminalSyncService
 	*terminalLifecycleService
 	composer               *terminalComposer
-	history                *terminalHistoryService
+	*terminalHistoryService
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -192,7 +192,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		terminalCatalogService: catalog,
 		terminalSyncService:    sync,
 		terminalLifecycleService: newTerminalLifecycleService(proxy, sync, repository, db),
-		history:                newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
+		terminalHistoryService: newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
 	}
 
 	// Constructed last: the composer takes the facade's CreateUserKey as a
@@ -471,27 +471,6 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 // GetEnumService returns the enum service for external access
 func (tts *terminalTrainerService) GetEnumService() TerminalTrainerEnumService {
 	return tts.enumService
-}
-
-// The following methods delegate to terminalHistoryService, which owns the
-// command-history concern: per-session and per-group history reads, group
-// history statistics, and the RGPD erasure paths. ClampHistoryLimit and the
-// history row-count caps live on that collaborator too.
-
-func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error) {
-	return tts.history.GetSessionCommandHistory(sessionID, since, format, limit, offset)
-}
-
-func (tts *terminalTrainerService) GetSessionCommandHistoryAdmin(sessionUUID string, limit, offset int) ([]byte, string, error) {
-	return tts.history.GetSessionCommandHistoryAdmin(sessionUUID, limit, offset)
-}
-
-func (tts *terminalTrainerService) DeleteSessionCommandHistory(sessionID string) error {
-	return tts.history.DeleteSessionCommandHistory(sessionID)
-}
-
-func (tts *terminalTrainerService) DeleteAllUserCommandHistory(apiKey string) (int64, error) {
-	return tts.history.DeleteAllUserCommandHistory(apiKey)
 }
 
 func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error) {
@@ -886,14 +865,6 @@ func (tts *terminalTrainerService) IsUserAuthorizedForSession(userID string, ter
 		}
 	}
 	return false
-}
-
-func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error) {
-	return tts.history.GetGroupCommandHistory(groupID, userID, since, format, limit, offset, includeStopped, search)
-}
-
-func (tts *terminalTrainerService) GetGroupCommandHistoryStats(groupID string, userID string, includeStopped bool) ([]byte, string, error) {
-	return tts.history.GetGroupCommandHistoryStats(groupID, userID, includeStopped)
 }
 
 // IsUserOrgManagerOrAdmin checks if a user is an org owner/manager or a system admin

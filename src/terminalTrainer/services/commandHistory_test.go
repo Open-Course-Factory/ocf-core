@@ -61,7 +61,7 @@ func createTestTerminalForService(t *testing.T, db *gorm.DB, userID, sessionID, 
 // newCommandHistoryTestService builds a fully-wired terminalTrainerService for
 // the command-history tests. These tests control baseURL/apiVersion/repository
 // to assert URL construction and history logic, but the public history methods
-// now delegate to the tts.history collaborator (which itself reaches tt-backend
+// now delegate to the embedded terminalHistoryService (which itself reaches tt-backend
 // through the proxy's buildAPIPath). A bare struct literal leaves history (and
 // proxy) nil → SIGSEGV, so this helper constructs both collaborators with the
 // SAME baseURL/apiVersion the test passes in.
@@ -84,7 +84,7 @@ func newCommandHistoryTestService(baseURL, apiVersion string, db *gorm.DB) *term
 		db:         db,
 		terminalProxyClient: proxy,
 	}
-	tts.history = newTerminalHistoryService(proxy, repo, db, baseURL, apiVersion, tts.adminKey)
+	tts.terminalHistoryService = newTerminalHistoryService(proxy, repo, db, baseURL, apiVersion, tts.adminKey)
 	return tts
 }
 
