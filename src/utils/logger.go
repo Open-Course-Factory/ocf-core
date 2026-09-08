@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -54,17 +53,4 @@ func Warn(format string, args ...any) {
 // Error logs error messages (always)
 func Error(format string, args ...any) {
 	log.Printf("[ERROR] "+format, args...)
-}
-
-// Printf provides backward compatibility with fmt.Printf
-// Deprecated: Use Debug, Info, Warn, or Error instead
-func Printf(format string, args ...any) {
-	if defaultLogger.debugEnabled {
-		fmt.Printf(format, args...)
-	}
-}
-
-// IsDebugEnabled returns whether debug logging is enabled
-func IsDebugEnabled() bool {
-	return getLogger().debugEnabled
 }
