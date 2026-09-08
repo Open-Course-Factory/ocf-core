@@ -1402,7 +1402,7 @@ func (sc *userSubscriptionController) CheckSeatPricingCoherence(ctx *gin.Context
 		return
 	}
 
-	report, err := services.NewSeatPricingChecker().Check(input)
+	report, err := services.CheckSeatPricing(input)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,

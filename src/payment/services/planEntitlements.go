@@ -4,7 +4,7 @@ import (
 	"soli/formations/src/payment/models"
 )
 
-// derivePlanEntitlements projects a plan's TYPED capability fields into the
+// DerivePlanEntitlements projects a plan's TYPED capability fields into the
 // canonical entitlement-string set consumed by the feature endpoints. It is the
 // single source of truth replacing the legacy free-form plan.Features array on
 // the entitlement-resolution paths.
@@ -18,7 +18,7 @@ import (
 //
 // Deliberately NOT emitted: api_access, advanced_terminals. A nil plan or a
 // zero-valued plan yields an empty slice.
-func derivePlanEntitlements(plan *models.SubscriptionPlan) []string {
+func DerivePlanEntitlements(plan *models.SubscriptionPlan) []string {
 	entitlements := []string{}
 	if plan == nil {
 		return entitlements
@@ -39,12 +39,4 @@ func derivePlanEntitlements(plan *models.SubscriptionPlan) []string {
 		entitlements = append(entitlements, "session_supervision")
 	}
 	return entitlements
-}
-
-// DerivePlanEntitlements is the exported accessor for derivePlanEntitlements. It
-// lets cross-package feature-resolution paths (e.g. the organizations module's
-// OrganizationFeatureProvider) project a plan's typed capability fields through
-// the same single source of truth, keeping the projection logic single-homed.
-func DerivePlanEntitlements(plan *models.SubscriptionPlan) []string {
-	return derivePlanEntitlements(plan)
 }

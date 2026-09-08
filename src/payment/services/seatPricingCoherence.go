@@ -26,7 +26,7 @@ const (
 	defaultMaxDaysToProbe  = 31
 )
 
-// SeatPricingChecker validates the seat offer's cross-plan invariants.
+// CheckSeatPricing validates the seat offer's cross-plan invariants.
 //
 // These cannot be checked by either plan alone. The crossover in particular is
 // a relationship: monthly per-seat price falls with volume, so a flat pack rate
@@ -34,14 +34,6 @@ const (
 // intervals are disjoint. Holding it steady means the pack needs its own
 // degression tracking the monthly one, which is invisible to an admin editing
 // one ladder in isolation.
-type SeatPricingChecker interface {
-	Check(in dto.SeatPricingCheckInput) (*dto.SeatPricingCheckOutput, error)
-}
-
-type seatPricingChecker struct{}
-
-func NewSeatPricingChecker() SeatPricingChecker { return &seatPricingChecker{} }
-
 // ladderCost prices a quantity under a ladder, falling back to the flat rate
 // when no brackets are defined.
 func ladderCost(tiers []models.PricingTier, flat int64, qty int) (int64, []dto.TierCost) {
@@ -54,7 +46,7 @@ func ladderCost(tiers []models.PricingTier, flat int64, qty int) (int64, []dto.T
 	return GraduatedCost(tiers, qty)
 }
 
-func (c *seatPricingChecker) Check(in dto.SeatPricingCheckInput) (*dto.SeatPricingCheckOutput, error) {
+func CheckSeatPricing(in dto.SeatPricingCheckInput) (*dto.SeatPricingCheckOutput, error) {
 	if len(in.SeatCounts) == 0 {
 		return nil, fmt.Errorf("at least one seat count is required to check the seat pricing")
 	}

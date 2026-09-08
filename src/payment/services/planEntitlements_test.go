@@ -1,6 +1,6 @@
 package services
 
-// Internal (package services) unit tests for derivePlanEntitlements — the pure
+// Internal (package services) unit tests for DerivePlanEntitlements — the pure
 // projection from a plan's TYPED capability fields to the canonical entitlement
 // strings. Internal because the helper is unexported by design (SSOT lives next
 // to its consumers).
@@ -90,9 +90,9 @@ func TestDerivePlanEntitlements_TableOverFieldCombos(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := derivePlanEntitlements(tc.plan)
+			got := DerivePlanEntitlements(tc.plan)
 			assert.ElementsMatch(t, tc.want, got,
-				"derivePlanEntitlements must emit exactly the canonical entitlement set for the typed fields")
+				"DerivePlanEntitlements must emit exactly the canonical entitlement set for the typed fields")
 			// Dropped capabilities must never be projected, regardless of fields.
 			assert.NotContains(t, got, "api_access", "api_access is dropped and must never be projected")
 			assert.NotContains(t, got, "advanced_terminals", "advanced_terminals must not be projected")
@@ -101,6 +101,6 @@ func TestDerivePlanEntitlements_TableOverFieldCombos(t *testing.T) {
 }
 
 func TestDerivePlanEntitlements_NilPlanYieldsEmpty(t *testing.T) {
-	got := derivePlanEntitlements(nil)
+	got := DerivePlanEntitlements(nil)
 	assert.Empty(t, got, "a nil plan must yield an empty entitlement slice, not a panic")
 }

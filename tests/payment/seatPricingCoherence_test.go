@@ -52,7 +52,7 @@ func agreedInput() dto.SeatPricingCheckInput {
 // offer itself: the ladders signed off in #442 satisfy every invariant, and the
 // crossover lands on day 6 at every seat count.
 func TestSeatPricingCoherence_AgreedLaddersPass(t *testing.T) {
-	out, err := services.NewSeatPricingChecker().Check(agreedInput())
+	out, err := services.CheckSeatPricing(agreedInput())
 	require.NoError(t, err)
 
 	assert.True(t, out.OK, "the agreed ladders must pass: %+v", out.Violations)
@@ -81,7 +81,7 @@ func TestSeatPricingCoherence_DetectsBrokenCrossover(t *testing.T) {
 	// Halve the monthly price without touching the pack.
 	in.MonthlyTiers = []dto.PricingTier{{MinQuantity: 1, MaxQuantity: 0, UnitAmount: 450}}
 
-	out, err := services.NewSeatPricingChecker().Check(in)
+	out, err := services.CheckSeatPricing(in)
 	require.NoError(t, err)
 
 	assert.False(t, out.OK, "a month cheaper than a week must not pass")
@@ -97,7 +97,7 @@ func TestSeatPricingCoherence_DetectsSeatAboveIndividualPlan(t *testing.T) {
 	in := agreedInput()
 	in.MonthlyTiers = []dto.PricingTier{{MinQuantity: 1, MaxQuantity: 0, UnitAmount: 1500}}
 
-	out, err := services.NewSeatPricingChecker().Check(in)
+	out, err := services.CheckSeatPricing(in)
 	require.NoError(t, err)
 
 	assert.False(t, out.OK)
@@ -117,7 +117,7 @@ func TestSeatPricingCoherence_DetectsDeadFirstBracket(t *testing.T) {
 		{MinQuantity: 51, MaxQuantity: 0, UnitAmount: 550},
 	}
 
-	out, err := services.NewSeatPricingChecker().Check(in)
+	out, err := services.CheckSeatPricing(in)
 	require.NoError(t, err)
 
 	assert.Contains(t, violationCodes(out.Violations), services.ViolationDeadFirstBracket,
@@ -130,7 +130,7 @@ func TestSeatPricingCoherence_SingleTierIsNotADeadBracket(t *testing.T) {
 	in := agreedInput()
 	in.MonthlyTiers = []dto.PricingTier{{MinQuantity: 1, MaxQuantity: 0, UnitAmount: 900}}
 
-	out, err := services.NewSeatPricingChecker().Check(in)
+	out, err := services.CheckSeatPricing(in)
 	require.NoError(t, err)
 
 	assert.NotContains(t, violationCodes(out.Violations), services.ViolationDeadFirstBracket,
@@ -143,7 +143,7 @@ func TestSeatPricingCoherence_RejectsEmptySeatCounts(t *testing.T) {
 	in := agreedInput()
 	in.SeatCounts = nil
 
-	_, err := services.NewSeatPricingChecker().Check(in)
+	_, err := services.CheckSeatPricing(in)
 	assert.Error(t, err, "nothing to check must be an explicit error, not a silent pass")
 }
 

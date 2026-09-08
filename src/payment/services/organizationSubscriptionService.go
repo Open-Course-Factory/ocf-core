@@ -314,7 +314,7 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 		features.HasPersonalSubscription = true
 		features.HighestPlan = personal.Plan
 		highestPriority = personal.Plan.Priority
-		for _, feature := range derivePlanEntitlements(personal.Plan) {
+		for _, feature := range DerivePlanEntitlements(personal.Plan) {
 			featureSet[feature] = true
 		}
 	}
@@ -375,9 +375,9 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 		}
 
 		// Aggregate entitlements (union across plans — capabilities compose).
-		// Project each plan's TYPED fields via derivePlanEntitlements (SSOT)
+		// Project each plan's TYPED fields via DerivePlanEntitlements (SSOT)
 		// rather than unioning the legacy free-form plan.Features strings.
-		for _, feature := range derivePlanEntitlements(&plan) {
+		for _, feature := range DerivePlanEntitlements(&plan) {
 			featureSet[feature] = true
 		}
 
