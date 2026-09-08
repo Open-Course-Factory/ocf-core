@@ -765,7 +765,7 @@ type SessionStepDetail struct {
 	// GroupRole(manager), so only group managers / platform admins ever reach
 	// this code path. Learners never see this field.
 	// gorm:"-" — never scanned from a SQL row; populated post-query by
-	// populateQuizQuestions().
+	// populateQuizQuestionsFromLoaded().
 	Questions []dto.SessionStepQuestionDetail `gorm:"-" json:"questions,omitempty"`
 }
 
@@ -793,81 +793,18 @@ type SessionDetailResponse struct {
 }
 
 // GetSessionDetail returns full session details with step-by-step progress for a specific session.
-// It verifies the session's user belongs to the specified group to prevent IDOR.
+// It is the single-session view of GetSessionDetails, so the IDOR checks (group
+// membership + scenario assignment) and the response shape live in one place.
 func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID) (*SessionDetailResponse, error) {
-	var session models.ScenarioSession
-	if err := s.db.First(&session, "id = ?", sessionID).Error; err != nil {
-		return nil, fmt.Errorf("session not found: %w", err)
+	details, err := s.GetSessionDetails(groupID, []uuid.UUID{sessionID})
+	if err != nil {
+		return nil, err
 	}
-
-	// Verify the session's user is a member of this group
-	var memberCount int64
-	s.db.Model(&groupModels.GroupMember{}).Where("group_id = ? AND user_id = ? AND is_active = true", groupID, session.UserID).Count(&memberCount)
-	if memberCount == 0 {
-		return nil, fmt.Errorf("session does not belong to this group")
-	}
-
-	// Verify the session's scenario is assigned to this group
-	var assignmentCount int64
-	s.db.Table("scenario_assignments").
-		Where("group_id = ? AND scenario_id = ? AND deleted_at IS NULL", groupID, session.ScenarioID).
-		Count(&assignmentCount)
-	if assignmentCount == 0 {
-		return nil, fmt.Errorf("scenario is not assigned to this group")
-	}
-
-	var scenario models.Scenario
-	if err := s.db.First(&scenario, "id = ?", session.ScenarioID).Error; err != nil {
-		return nil, fmt.Errorf("scenario not found: %w", err)
-	}
-
-	// Load progress and step metadata separately, then merge in Go. We deliberately
-	// avoid `JOIN scenario_steps ON (scenario_id, order)` because nothing in the
-	// schema enforces (scenario_id, order) as unique on scenario_steps — an editor
-	// bug can leave two steps with the same order, which under a SQL JOIN turns
-	// into a Cartesian explosion (N progress × M duplicate steps = N*M rows).
-	// Driving from progress and picking the first matching step per order keeps
-	// the result row count == progress row count regardless of editor data.
-	var progress []models.ScenarioStepProgress
-	if err := s.db.Where("session_id = ?", sessionID).Order("step_order ASC, created_at ASC").Find(&progress).Error; err != nil {
-		return nil, fmt.Errorf("failed to load step progress: %w", err)
-	}
-
-	var stepRows []models.ScenarioStep
-	if err := s.db.Where("scenario_id = ?", session.ScenarioID).Order("\"order\" ASC, id ASC").Find(&stepRows).Error; err != nil {
-		return nil, fmt.Errorf("failed to load steps: %w", err)
-	}
-	stepByOrder := make(map[int]models.ScenarioStep, len(stepRows))
-	for _, st := range stepRows {
-		// Keep the first occurrence per order (driven by ORDER BY id ASC above).
-		if _, ok := stepByOrder[st.Order]; !ok {
-			stepByOrder[st.Order] = st
-		}
-	}
-
-	steps := buildSessionStepDetails(session, progress, stepByOrder)
-
-	// Populate Questions for quiz steps. Single batch query for all questions
-	// across all quiz steps in the session, plus a lookup of QuizAnswers JSON.
-	if err := populateQuizQuestions(s.db, session.ScenarioID, sessionID, steps); err != nil {
-		return nil, fmt.Errorf("failed to populate quiz questions: %w", err)
-	}
-
-	// Compute absolute correct counts so the modal header can render
-	// "Correct answers: X/Y" next to the percentage.
-	correctCount, totalCorrectPossible := computeSessionCorrectCounts(s.db, session.ScenarioID, session.ID)
-
-	// Enrich with user info
-	userMap := fetchUserMap([]string{session.UserID})
-	info := userMap[session.UserID]
-
-	return buildSessionDetailResponse(session, scenario, steps, correctCount, totalCorrectPossible, info), nil
+	return details[0], nil
 }
 
 // buildSessionStepDetails merges progress rows with their scenario_step metadata
-// and derives per-step StartedAt. Extracted so both the single-session
-// (GetSessionDetail) and batched (GetSessionDetails) paths produce byte-identical
-// step slices.
+// and derives per-step StartedAt.
 func buildSessionStepDetails(session models.ScenarioSession, progress []models.ScenarioStepProgress, stepByOrder map[int]models.ScenarioStep) []SessionStepDetail {
 	steps := make([]SessionStepDetail, 0, len(progress))
 	for _, p := range progress {
@@ -912,8 +849,7 @@ func buildSessionStepDetails(session models.ScenarioSession, progress []models.S
 }
 
 // buildSessionDetailResponse assembles the final response object from
-// already-populated parts. Used by both GetSessionDetail and GetSessionDetails
-// so byte-equivalence is guaranteed by construction.
+// already-populated parts.
 func buildSessionDetailResponse(
 	session models.ScenarioSession,
 	scenario models.Scenario,
@@ -946,16 +882,14 @@ func buildSessionDetailResponse(
 const maxSessionDetailsBulkSize = 200
 
 // GetSessionDetails returns session details for a batch of session IDs, in the
-// same order as the input. Mirrors GetSessionDetail's authorization semantics
-// per session (verifies the session's user is a group member AND the scenario
-// is assigned to the group). Returns an error if any single lookup fails — for
-// CSV export, a partial result is worse than no result.
+// same order as the input. Per session it verifies the session's user is a
+// group member AND the scenario is assigned to the group. Returns an error if
+// any single lookup fails — for CSV export, a partial result is worse than no
+// result.
 //
-// Performance: this batched implementation issues a constant number of queries
-// (5-7) regardless of the input size, versus ~6N queries for the previous
-// per-session loop. At class scale (N=50) this is the difference between ~300
-// round-trips and 7. Output is guaranteed byte-equivalent to a loop of
-// GetSessionDetail calls (see TestGetSessionDetails_Batch_MatchesIndividualCalls).
+// Performance: a constant number of queries (5-7) regardless of the input
+// size. GetSessionDetail is this function applied to one ID
+// (see TestGetSessionDetails_Batch_MatchesIndividualCalls).
 func (s *TeacherDashboardService) GetSessionDetails(groupID uuid.UUID, sessionIDs []uuid.UUID) ([]*SessionDetailResponse, error) {
 	if len(sessionIDs) > maxSessionDetailsBulkSize {
 		return nil, fmt.Errorf("too many session IDs: %d (max %d)", len(sessionIDs), maxSessionDetailsBulkSize)
@@ -1009,9 +943,8 @@ func distinctIDsFromSessions(sessions []models.ScenarioSession) (userIDs []strin
 }
 
 // loadSessionsForBulkDetails loads every session referenced by sessionIDs in a
-// single query. If any ID is missing, it returns the same "session not found"
-// error a looped GetSessionDetail would have hit at the first miss (walks the
-// input order so the error is deterministic).
+// single query. If any ID is missing, it returns a "session not found" error
+// for the first miss in input order, so the error is deterministic.
 func (s *TeacherDashboardService) loadSessionsForBulkDetails(sessionIDs []uuid.UUID) ([]models.ScenarioSession, error) {
 	var sessions []models.ScenarioSession
 	if err := s.db.Where("id IN ?", sessionIDs).Find(&sessions).Error; err != nil {
@@ -1233,11 +1166,11 @@ func assembleBulkSessionDetails(
 	return details
 }
 
-// populateQuizQuestionsFromLoaded is the pre-loaded-data variant of
-// populateQuizQuestions. It fills the Questions slice on each quiz step using
-// already-loaded scenario steps, questions, and progress rows — no DB calls.
-// Behavior must match populateQuizQuestions exactly so the batched path stays
-// byte-equivalent to the single-session path.
+// populateQuizQuestionsFromLoaded fills the Questions slice on each quiz step
+// using already-loaded scenario steps, questions, and progress rows — no DB
+// calls. Malformed QuizAnswers JSON is logged at warn level but never
+// propagated — the questions metadata is still surfaced so the trainer view
+// doesn't break.
 func populateQuizQuestionsFromLoaded(
 	sessionID uuid.UUID,
 	steps []SessionStepDetail,
@@ -1245,9 +1178,8 @@ func populateQuizQuestionsFromLoaded(
 	questionsByStepID map[uuid.UUID][]models.ScenarioStepQuestion,
 	progress []models.ScenarioStepProgress,
 ) {
-	// Index quiz answers by step_order for O(1) lookup. We mirror
-	// populateQuizQuestions's "step_order IN quizStepOrders" filter implicitly
-	// since we only consult this map for quiz steps below.
+	// Index quiz answers by step_order for O(1) lookup; only consulted for
+	// quiz steps below.
 	answersByStepOrder := make(map[int]string, len(progress))
 	for _, p := range progress {
 		answersByStepOrder[p.StepOrder] = p.QuizAnswers
@@ -1405,122 +1337,3 @@ func computeSessionCorrectCounts(db *gorm.DB, scenarioID, sessionID uuid.UUID) (
 	return ComputeCorrectCountsFromLoaded(steps, progress, flags, questionCountByStepID)
 }
 
-// populateQuizQuestions fills the Questions slice on every quiz step in `steps`.
-// It batches the question lookup (one query for all quiz steps in the session)
-// and the QuizAnswers lookup (one query for the relevant progress rows).
-// Malformed QuizAnswers JSON is logged at warn level but never propagated —
-// the questions metadata is still surfaced so the trainer view doesn't break.
-func populateQuizQuestions(db *gorm.DB, scenarioID, sessionID uuid.UUID, steps []SessionStepDetail) error {
-	// Collect step orders for quiz steps.
-	quizStepOrders := make([]int, 0)
-	for i := range steps {
-		if steps[i].StepType == "quiz" {
-			quizStepOrders = append(quizStepOrders, steps[i].StepOrder)
-		}
-	}
-	if len(quizStepOrders) == 0 {
-		return nil
-	}
-
-	// Load the matching ScenarioStep rows so we can resolve their IDs to
-	// fetch questions. Order is required to map back to step.Order.
-	type stepRow struct {
-		ID    uuid.UUID
-		Order int
-	}
-	var stepRows []stepRow
-	if err := db.Table("scenario_steps").
-		Select("id, \"order\"").
-		Where("scenario_id = ? AND \"order\" IN ? AND deleted_at IS NULL", scenarioID, quizStepOrders).
-		Scan(&stepRows).Error; err != nil {
-		return fmt.Errorf("failed to load quiz step IDs: %w", err)
-	}
-	if len(stepRows) == 0 {
-		return nil
-	}
-
-	stepIDByOrder := make(map[int]uuid.UUID, len(stepRows))
-	stepIDs := make([]uuid.UUID, 0, len(stepRows))
-	for _, sr := range stepRows {
-		stepIDByOrder[sr.Order] = sr.ID
-		stepIDs = append(stepIDs, sr.ID)
-	}
-
-	// Load all questions for the involved quiz steps in one query.
-	var allQuestions []models.ScenarioStepQuestion
-	if err := db.Where("step_id IN ?", stepIDs).
-		Order("\"order\" ASC").
-		Find(&allQuestions).Error; err != nil {
-		return fmt.Errorf("failed to load quiz questions: %w", err)
-	}
-	questionsByStepID := make(map[uuid.UUID][]models.ScenarioStepQuestion, len(stepIDs))
-	for _, q := range allQuestions {
-		questionsByStepID[q.StepID] = append(questionsByStepID[q.StepID], q)
-	}
-
-	// Load QuizAnswers JSON per quiz step in one query.
-	type answersRow struct {
-		StepOrder   int
-		QuizAnswers string
-	}
-	var answersRows []answersRow
-	if err := db.Table("scenario_step_progress").
-		Select("step_order, quiz_answers").
-		Where("session_id = ? AND step_order IN ?", sessionID, quizStepOrders).
-		Scan(&answersRows).Error; err != nil {
-		return fmt.Errorf("failed to load quiz answers: %w", err)
-	}
-	answersByStepOrder := make(map[int]string, len(answersRows))
-	for _, ar := range answersRows {
-		answersByStepOrder[ar.StepOrder] = ar.QuizAnswers
-	}
-
-	// Build per-step Questions slice.
-	for i := range steps {
-		if steps[i].StepType != "quiz" {
-			continue
-		}
-		stepID, ok := stepIDByOrder[steps[i].StepOrder]
-		if !ok {
-			continue
-		}
-		questions := questionsByStepID[stepID]
-		if len(questions) == 0 {
-			continue
-		}
-
-		// Parse the student's submitted answers. Malformed JSON degrades to
-		// an empty map (every student_answer ends up empty).
-		studentAnswers := map[string]string{}
-		if rawAnswers, ok := answersByStepOrder[steps[i].StepOrder]; ok && rawAnswers != "" {
-			if err := json.Unmarshal([]byte(rawAnswers), &studentAnswers); err != nil {
-				slog.Warn("malformed quiz answers JSON, degrading to empty map",
-					"session_id", sessionID, "step_order", steps[i].StepOrder, "err", err)
-				studentAnswers = map[string]string{}
-			}
-		}
-
-		details := make([]dto.SessionStepQuestionDetail, 0, len(questions))
-		for _, q := range questions {
-			submitted := studentAnswers[q.ID.String()]
-			isCorrect := false
-			if submitted != "" {
-				isCorrect = subtle.ConstantTimeCompare([]byte(submitted), []byte(q.CorrectAnswer)) == 1
-			}
-			details = append(details, dto.SessionStepQuestionDetail{
-				ID:            q.ID,
-				Order:         q.Order,
-				QuestionText:  q.QuestionText,
-				QuestionType:  q.QuestionType,
-				Options:       q.Options,
-				CorrectAnswer: q.CorrectAnswer,
-				StudentAnswer: submitted,
-				IsCorrect:     isCorrect,
-				Points:        q.Points,
-				Explanation:   q.Explanation,
-			})
-		}
-		steps[i].Questions = details
-	}
-	return nil
-}
