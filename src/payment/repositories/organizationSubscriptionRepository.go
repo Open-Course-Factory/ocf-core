@@ -72,7 +72,7 @@ func (r *organizationSubscriptionRepository) CreateOrganizationSubscriptionAtomi
 		// is being activated. Inserting an "incomplete" subscription (paid
 		// plan awaiting Stripe webhook) must not cancel a currently-active
 		// plan — that would leave the org without coverage.
-		if subscription.Status == "active" || subscription.Status == "trialing" {
+		if subscription.Status == "active" {
 			if err := deactivatePreviousOrgSubscription(tx, subscription.OrganizationID); err != nil {
 				return err
 			}
