@@ -195,10 +195,7 @@ func (tc *terminalController) DeleteEntity(ctx *gin.Context) {
 func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 	if sessionID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Session ID is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Session ID is required")
 		return
 	}
 
@@ -206,61 +203,37 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return
 	}
 
 	// Vérifier les droits d'accès (propriétaire ou propriétaire du groupe)
 	hasAccess, accessErr := tc.hasTerminalAccess(ctx, sessionID, userId)
 	if accessErr != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to check access",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check access")
 		return
 	}
 	if !hasAccess {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied to this session",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied to this session")
 		return
 	}
 
 	// NEW: Validate session state with API verification (critical operation)
 	isValid, reason, err := tc.service.ValidateSessionAccess(sessionID, true) // Force API check
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to validate session status: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to validate session status: "+err.Error())
 		return
 	}
 
 	if !isValid {
 		if reason == "backend_offline" {
-			ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-				ErrorCode:    http.StatusServiceUnavailable,
-				ErrorMessage: fmt.Sprintf("Session's backend '%s' is currently unavailable", terminal.Backend),
-			})
+			errors.Respond(ctx, http.StatusServiceUnavailable, fmt.Sprintf("Session's backend '%s' is currently unavailable", terminal.Backend))
 		} else if reason == "expired" {
-			ctx.JSON(http.StatusGone, &errors.APIError{
-				ErrorCode:    http.StatusGone,
-				ErrorMessage: "Terminal session has expired and is no longer accessible",
-			})
+			errors.Respond(ctx, http.StatusGone, "Terminal session has expired and is no longer accessible")
 		} else if reason == string(models.StateStopped) {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Terminal session has been stopped and is no longer accessible",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Terminal session has been stopped and is no longer accessible")
 		} else {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: fmt.Sprintf("Terminal session is not in an active state: %s", reason),
-			})
+			errors.Respond(ctx, http.StatusForbidden, fmt.Sprintf("Terminal session is not in an active state: %s", reason))
 		}
 		return
 	}
@@ -278,10 +251,7 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 
 	if keyErr != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Terminal owner's API key not found",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Terminal owner's API key not found")
 		return
 	}
 
@@ -295,18 +265,12 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 	baseURL, buildErr := BuildConsoleWSURL(tc.terminalTrainerURL, tc.apiVersion, instanceType, terminal.SessionID, supervisable)
 	if buildErr != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Invalid terminal trainer URL",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Invalid terminal trainer URL")
 		return
 	}
 	terminalTrainerWSURL, err := url.Parse(baseURL)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Invalid terminal trainer URL",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Invalid terminal trainer URL")
 		return
 	}
 
@@ -451,36 +415,24 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 
 	terminal, err := tc.service.GetSessionInfo(terminalID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return
 	}
 
 	// Vérifier les droits d'accès (propriétaire ou propriétaire du groupe)
 	hasAccess, err := tc.hasTerminalAccess(ctx, terminalID, userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to check access",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check access")
 		return
 	}
 	if !hasAccess {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied to this session",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied to this session")
 		return
 	}
 
 	// Arrêter la session (maintenant ça appelle aussi l'API externe)
 	if err := tc.service.StopSession(terminal.SessionID); err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -513,26 +465,17 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 
 	terminal, err := tc.service.GetSessionInfo(terminalID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return
 	}
 
 	hasAccess, err := tc.hasTerminalAccess(ctx, terminalID, userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to check access",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check access")
 		return
 	}
 	if !hasAccess {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied to this session",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied to this session")
 		return
 	}
 
@@ -552,10 +495,7 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 	}
 
 	if err := tc.service.StartSession(terminal.SessionID); err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -582,34 +522,22 @@ func (tc *terminalController) DeleteSession(ctx *gin.Context) {
 
 	terminal, err := tc.service.GetSessionInfo(terminalID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return
 	}
 
 	hasAccess, err := tc.hasTerminalAccess(ctx, terminalID, userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to check access",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check access")
 		return
 	}
 	if !hasAccess {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied to this session",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied to this session")
 		return
 	}
 
 	if err := tc.service.DeleteSession(terminal.SessionID); err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -653,10 +581,7 @@ func (tc *terminalController) listGroupMemberSessions(ctx *gin.Context, groupID 
 	terminals, allowed := ListGroupMemberSessions(
 		tc.db, groupID, ctx.GetString("userId"), access.IsAdmin(ctx.GetStringSlice("userRoles")))
 	if !allowed {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "You are not a manager of this group",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "You are not a manager of this group")
 		return
 	}
 	ctx.JSON(http.StatusOK, toTerminalOutputs(terminals))
@@ -676,10 +601,7 @@ func (tc *terminalController) listOwnSessions(ctx *gin.Context) {
 	targetUserID := ctx.Query("user_id")
 	if targetUserID != "" {
 		if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only administrators can view other users' sessions",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Only administrators can view other users' sessions")
 			return
 		}
 		userId = targetUserID
@@ -697,10 +619,7 @@ func (tc *terminalController) listOwnSessions(ctx *gin.Context) {
 	if organizationID != "" {
 		orgUUID, parseErr := uuid.Parse(organizationID)
 		if parseErr != nil {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: fmt.Sprintf("Invalid organization_id: %v", parseErr),
-			})
+			errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid organization_id: %v", parseErr))
 			return
 		}
 		terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDAndOrg(userId, &orgUUID, false)
@@ -709,10 +628,7 @@ func (tc *terminalController) listOwnSessions(ctx *gin.Context) {
 		terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserID(userId, false)
 	}
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -766,37 +682,25 @@ func (tc *terminalController) SyncSession(ctx *gin.Context) {
 	// Vérifier que la session appartient à l'utilisateur
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return
 	}
 
 	// Vérifier les droits d'accès (propriétaire ou propriétaire du groupe)
 	hasAccess, err := tc.hasTerminalAccess(ctx, sessionID, userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to check access",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check access")
 		return
 	}
 	if !hasAccess {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied to this session",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied to this session")
 		return
 	}
 
 	// Synchroniser via la méthode complète de synchronisation utilisateur
 	syncResponse, err := tc.service.SyncUserSessions(terminal.UserID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Sync failed: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Sync failed: %v", err))
 		return
 	}
 
@@ -849,10 +753,7 @@ func (tc *terminalController) SyncAllSessions(ctx *gin.Context) {
 		// Admin peut synchroniser toutes les sessions de tous les utilisateurs
 		err = tc.service.SyncAllActiveSessions()
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: fmt.Sprintf("Global sync failed: %v", err),
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Global sync failed: %v", err))
 			return
 		}
 
@@ -870,10 +771,7 @@ func (tc *terminalController) SyncAllSessions(ctx *gin.Context) {
 		// Utilisateur normal synchronise seulement ses sessions
 		response, err = tc.service.SyncUserSessions(userId)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: fmt.Sprintf("User sync failed: %v", err),
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("User sync failed: %v", err))
 			return
 		}
 	}
@@ -909,10 +807,7 @@ func (tc *terminalController) SyncUserSessions(ctx *gin.Context) {
 		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only administrators can sync other users' sessions",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Only administrators can sync other users' sessions")
 			return
 		}
 	}
@@ -920,10 +815,7 @@ func (tc *terminalController) SyncUserSessions(ctx *gin.Context) {
 	// Effectuer la synchronisation complète
 	response, err := tc.service.SyncUserSessions(targetUserId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("User sync failed: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("User sync failed: %v", err))
 		return
 	}
 
@@ -951,10 +843,7 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 	// Récupérer la session locale
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return
 	}
 
@@ -964,10 +853,7 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 		isAdmin := access.IsAdmin(userRoles)
 
 		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Access denied to this session",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Access denied to this session")
 			return
 		}
 	}
@@ -975,10 +861,7 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 	// Récupérer TOUTES les sessions depuis l'API pour ce user
 	userKey, err := tc.service.GetUserKey(terminal.UserID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get user API key",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get user API key")
 		return
 	}
 
@@ -1056,10 +939,7 @@ func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
 
 	// Si pas admin et demande stats d'un autre user, refuser
 	if targetUserId != "" && targetUserId != currentUserId && !isAdmin {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Access denied")
 		return
 	}
 
@@ -1071,10 +951,7 @@ func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
 	// Récupérer les statistiques
 	stats, err := tc.service.GetRepository().GetSyncStatistics(targetUserId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get statistics: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to get statistics: %v", err))
 		return
 	}
 
@@ -1106,10 +983,7 @@ func (tc *terminalController) GetServerMetrics(ctx *gin.Context) {
 	metrics, err := tc.service.GetServerMetrics(nocache, backend)
 	if err != nil {
 		utils.Debug("GetServerMetrics failed: %v", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get server metrics",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get server metrics")
 		return
 	}
 
@@ -1144,20 +1018,14 @@ func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
 
 	var request dto.BulkCreateTerminalsRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: fmt.Sprintf("Invalid request: %v", err),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Invalid request: %v", err))
 		return
 	}
 
 	// Get subscription plan from middleware context
 	planInterface, exists := ctx.Get("subscription_plan")
 	if !exists {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Active subscription required to bulk create terminals",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Active subscription required to bulk create terminals")
 		return
 	}
 
@@ -1179,10 +1047,7 @@ func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
 			statusCode = http.StatusBadRequest
 		}
 
-		ctx.JSON(statusCode, &errors.APIError{
-			ErrorCode:    statusCode,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, statusCode, err.Error())
 		return
 	}
 
@@ -1203,10 +1068,7 @@ func (tc *terminalController) RefreshEnums(ctx *gin.Context) {
 
 	err := enumService.RefreshEnums()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to refresh enums: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to refresh enums: %v", err))
 		return
 	}
 
@@ -1237,10 +1099,7 @@ func (tc *terminalController) GetBackends(ctx *gin.Context) {
 	if organizationID != "" {
 		orgUUID, parseErr := uuid.Parse(organizationID)
 		if parseErr != nil {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "Invalid organization_id",
-			})
+			errors.Respond(ctx, http.StatusBadRequest, "Invalid organization_id")
 			return
 		}
 		// Use plan-aware backend filtering (org config > plan config > system default)
@@ -1251,10 +1110,7 @@ func (tc *terminalController) GetBackends(ctx *gin.Context) {
 		userRoles := ctx.GetStringSlice("userRoles")
 		isAdmin := access.IsAdmin(userRoles)
 		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Admin access required to list all backends. Use ?organization_id= to filter.",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Admin access required to list all backends. Use ?organization_id= to filter.")
 			return
 		}
 		backends, err = tc.service.GetBackends()
@@ -1262,10 +1118,7 @@ func (tc *terminalController) GetBackends(ctx *gin.Context) {
 
 	if err != nil {
 		utils.Debug("GetBackends failed: %v", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get backends",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get backends")
 		return
 	}
 
@@ -1291,10 +1144,7 @@ func (tc *terminalController) SetDefaultBackend(ctx *gin.Context) {
 	userRoles := ctx.GetStringSlice("userRoles")
 	isAdmin := access.IsAdmin(userRoles)
 	if !isAdmin {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Admin access required",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Admin access required")
 		return
 	}
 
@@ -1302,23 +1152,14 @@ func (tc *terminalController) SetDefaultBackend(ctx *gin.Context) {
 	backend, err := tc.service.SetSystemDefaultBackend(backendID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: err.Error(),
-			})
+			errors.Respond(ctx, http.StatusNotFound, err.Error())
 			return
 		}
 		if strings.Contains(err.Error(), "offline") {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: err.Error(),
-			})
+			errors.Respond(ctx, http.StatusBadRequest, err.Error())
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -1347,16 +1188,10 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 	hasAccess, err := tc.service.HasTerminalAccess(sessionID, userId)
 	if err != nil {
 		if err.Error() == "terminal not found" {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Terminal not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Terminal not found")
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to check access: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to check access: %v", err))
 		return
 	}
 
@@ -1427,10 +1262,7 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 	// Command history is accessible to session owner, admin, or group owner.
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return
 	}
 	if !tc.isSessionOwnerOrAdmin(ctx, terminal) {
@@ -1438,10 +1270,7 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 		userId := ctx.GetString("userId")
 		hasAccess, accessErr := tc.service.HasTerminalAccess(sessionID, userId)
 		if accessErr != nil || !hasAccess {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only session owner, admin, or group owner can access command history",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Only session owner, admin, or group owner can access command history")
 			return
 		}
 	}
@@ -1473,31 +1302,19 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 	body, contentType, err := tc.service.GetSessionCommandHistory(sessionID, since, format, limit, offset)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Session not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Session not found")
 			return
 		}
 		if strings.Contains(err.Error(), "returned 403") || strings.Contains(err.Error(), "Recording not enabled") {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Recording not enabled for this session",
-			})
+			errors.Respond(ctx, http.StatusForbidden, "Recording not enabled for this session")
 			return
 		}
 		if strings.Contains(err.Error(), "returned 429") || strings.Contains(err.Error(), "Rate limit") {
-			ctx.JSON(http.StatusTooManyRequests, &errors.APIError{
-				ErrorCode:    http.StatusTooManyRequests,
-				ErrorMessage: "Too many requests, please try again later",
-			})
+			errors.Respond(ctx, http.StatusTooManyRequests, "Too many requests, please try again later")
 			return
 		}
 		utils.Debug("GetSessionHistory failed for session %s: %v", sessionID, err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get command history",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get command history")
 		return
 	}
 
@@ -1523,27 +1340,18 @@ func (tc *terminalController) DeleteSessionHistory(ctx *gin.Context) {
 
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return
 	}
 
 	if !tc.isSessionOwnerOrAdmin(ctx, terminal) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Only session owner or admin can delete command history",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Only session owner or admin can delete command history")
 		return
 	}
 
 	if err := tc.service.DeleteSessionCommandHistory(sessionID); err != nil {
 		utils.Debug("DeleteSessionHistory failed for session %s: %v", sessionID, err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to delete command history",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to delete command history")
 		return
 	}
 
@@ -1566,20 +1374,14 @@ func (tc *terminalController) DeleteAllUserHistory(ctx *gin.Context) {
 
 	userKey, err := tc.service.GetUserKey(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get user API key",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get user API key")
 		return
 	}
 
 	sessionsCleared, err := tc.service.DeleteAllUserCommandHistory(userKey.APIKey)
 	if err != nil {
 		utils.Debug("DeleteAllUserHistory failed for user %s: %v", userId, err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to delete command history",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to delete command history")
 		return
 	}
 
@@ -1606,10 +1408,7 @@ func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) 
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
@@ -1618,19 +1417,13 @@ func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) 
 	userRoles := ctx.GetStringSlice("userRoles")
 	isAdmin := access.IsAdmin(userRoles)
 	if !tc.service.IsUserOrgManagerOrAdmin(userId, orgID, isAdmin) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Only organization owners, managers, or admins can access this resource",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Only organization owners, managers, or admins can access this resource")
 		return
 	}
 
 	sessions, err := tc.service.GetOrganizationTerminalSessions(orgID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get organization sessions",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get organization sessions")
 		return
 	}
 
@@ -1663,10 +1456,7 @@ func (tc *terminalController) GetOrgTerminalUsage(ctx *gin.Context) {
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
@@ -1674,19 +1464,13 @@ func (tc *terminalController) GetOrgTerminalUsage(ctx *gin.Context) {
 	userRoles := ctx.GetStringSlice("userRoles")
 	isAdmin := access.IsAdmin(userRoles)
 	if !tc.service.IsUserOrgManagerOrAdmin(userID, orgID, isAdmin) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Only organization owners, managers, or admins can access this resource",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Only organization owners, managers, or admins can access this resource")
 		return
 	}
 
 	usage, err := tc.service.GetOrgTerminalUsage(orgID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get organization terminal usage",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get organization terminal usage")
 		return
 	}
 
@@ -1720,20 +1504,14 @@ func (tc *terminalController) GetOrgTerminalUsage(ctx *gin.Context) {
 func (tc *terminalController) GetOrgUsageExport(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid organization ID",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	userID := ctx.GetString("userId")
 	isAdmin := access.IsAdmin(ctx.GetStringSlice("userRoles"))
 	if !tc.service.IsUserOrgManagerOrAdmin(userID, orgID, isAdmin) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Only organization owners, managers, or admins can access this resource",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "Only organization owners, managers, or admins can access this resource")
 		return
 	}
 
@@ -1746,18 +1524,12 @@ func (tc *terminalController) GetOrgUsageExport(ctx *gin.Context) {
 	toStr := ctx.Query("to")
 	from, err := time.Parse(dayLayout, fromStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid or missing 'from' date (expected YYYY-MM-DD)",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid or missing 'from' date (expected YYYY-MM-DD)")
 		return
 	}
 	to, err := time.Parse(dayLayout, toStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid or missing 'to' date (expected YYYY-MM-DD)",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid or missing 'to' date (expected YYYY-MM-DD)")
 		return
 	}
 	toExclusive := to.AddDate(0, 0, 1)
@@ -1768,10 +1540,7 @@ func (tc *terminalController) GetOrgUsageExport(ctx *gin.Context) {
 	// left the org still consumed its budget during the period.
 	terminals, err := tc.service.GetRepository().GetTerminalSessionsForOrgUsageExport(orgID, from, toExclusive)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to export organization usage",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to export organization usage")
 		return
 	}
 
@@ -1837,10 +1606,7 @@ func (tc *terminalController) GetOrgUsageExport(ctx *gin.Context) {
 func (tc *terminalController) MyTerminalUsage(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	if userID == "" {
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
-			ErrorCode:    http.StatusUnauthorized,
-			ErrorMessage: "Unauthorized",
-		})
+		errors.Respond(ctx, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
@@ -1858,10 +1624,7 @@ func (tc *terminalController) MyTerminalUsage(ctx *gin.Context) {
 
 	usage, err := tc.service.GetUserTerminalUsage(userID, orgID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get terminal usage",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get terminal usage")
 		return
 	}
 
@@ -1906,31 +1669,19 @@ func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
 	body, contentType, err := tc.service.GetGroupCommandHistory(groupID, userID, since, format, limit, offset, includeStopped, search)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Group not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Group not found")
 			return
 		}
 		if strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "returned 403") || strings.Contains(err.Error(), "Recording not enabled") {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: err.Error(),
-			})
+			errors.Respond(ctx, http.StatusForbidden, err.Error())
 			return
 		}
 		if strings.Contains(err.Error(), "returned 429") || strings.Contains(err.Error(), "Rate limit") {
-			ctx.JSON(http.StatusTooManyRequests, &errors.APIError{
-				ErrorCode:    http.StatusTooManyRequests,
-				ErrorMessage: "Too many requests, please try again later",
-			})
+			errors.Respond(ctx, http.StatusTooManyRequests, "Too many requests, please try again later")
 			return
 		}
 		utils.Debug("GetGroupCommandHistory failed: %v", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get group command history",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get group command history")
 		return
 	}
 
@@ -1951,31 +1702,19 @@ func (tc *terminalController) GetGroupCommandHistoryStats(ctx *gin.Context) {
 	body, contentType, err := tc.service.GetGroupCommandHistoryStats(groupID, userID, includeStopped)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Group not found",
-			})
+			errors.Respond(ctx, http.StatusNotFound, "Group not found")
 			return
 		}
 		if strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "returned 403") || strings.Contains(err.Error(), "Recording not enabled") {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: err.Error(),
-			})
+			errors.Respond(ctx, http.StatusForbidden, err.Error())
 			return
 		}
 		if strings.Contains(err.Error(), "returned 429") || strings.Contains(err.Error(), "Rate limit") {
-			ctx.JSON(http.StatusTooManyRequests, &errors.APIError{
-				ErrorCode:    http.StatusTooManyRequests,
-				ErrorMessage: "Too many requests, please try again later",
-			})
+			errors.Respond(ctx, http.StatusTooManyRequests, "Too many requests, please try again later")
 			return
 		}
 		utils.Debug("GetGroupCommandHistoryStats failed: %v", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get group command history stats",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get group command history stats")
 		return
 	}
 
@@ -2016,10 +1755,7 @@ func (tc *terminalController) GetDistributions(ctx *gin.Context) {
 	backend := ctx.Query("backend")
 	distributions, err := tc.service.GetOfferedDistributions(backend)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get distributions: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to get distributions: %v", err))
 		return
 	}
 	ctx.JSON(http.StatusOK, distributions)
@@ -2038,10 +1774,7 @@ func (tc *terminalController) GetDistributions(ctx *gin.Context) {
 func (tc *terminalController) GetCatalogSizes(ctx *gin.Context) {
 	sizes, err := tc.service.GetCatalogSizes()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get catalog sizes: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to get catalog sizes: %v", err))
 		return
 	}
 	ctx.JSON(http.StatusOK, sizes)
@@ -2060,10 +1793,7 @@ func (tc *terminalController) GetCatalogSizes(ctx *gin.Context) {
 func (tc *terminalController) GetSizes(ctx *gin.Context) {
 	sizes, err := tc.service.GetCatalogSizes()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get sizes catalog: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to get sizes catalog: %v", err))
 		return
 	}
 	ctx.JSON(http.StatusOK, sizes)
@@ -2082,10 +1812,7 @@ func (tc *terminalController) GetSizes(ctx *gin.Context) {
 func (tc *terminalController) GetCatalogFeatures(ctx *gin.Context) {
 	features, err := tc.service.GetCatalogFeatures()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get catalog features: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to get catalog features: %v", err))
 		return
 	}
 	ctx.JSON(http.StatusOK, features)
@@ -2107,10 +1834,7 @@ func (tc *terminalController) GetCatalogFeatures(ctx *gin.Context) {
 func (tc *terminalController) GetSessionOptions(ctx *gin.Context) {
 	distribution := ctx.Query("distribution")
 	if distribution == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "distribution query parameter is required",
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "distribution query parameter is required")
 		return
 	}
 
@@ -2118,28 +1842,19 @@ func (tc *terminalController) GetSessionOptions(ctx *gin.Context) {
 
 	planInterface, exists := ctx.Get("subscription_plan")
 	if !exists {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Subscription plan not found in context",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Subscription plan not found in context")
 		return
 	}
 
 	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Invalid subscription plan type",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Invalid subscription plan type")
 		return
 	}
 
 	options, err := tc.service.GetSessionOptions(plan, distribution, backend)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get session options: %v", err),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to get session options: %v", err))
 		return
 	}
 
@@ -2197,19 +1912,13 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	// the gin context, and falls back to reading the raw body when the
 	// cache is empty (e.g. when the middleware skipped parsing).
 	if err := ctx.ShouldBindBodyWith(&input, binding.JSON); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	planInterface, exists := ctx.Get("subscription_plan")
 	if !exists {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Subscription plan not found in context",
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Subscription plan not found in context")
 		return
 	}
 
@@ -2233,10 +1942,7 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 			statusCode = http.StatusBadRequest
 		}
 
-		ctx.JSON(statusCode, &errors.APIError{
-			ErrorCode:    statusCode,
-			ErrorMessage: errMsg,
-		})
+		errors.Respond(ctx, statusCode, errMsg)
 		return
 	}
 

@@ -46,19 +46,13 @@ func (tc *terminalController) GetDistributionCatalog(ctx *gin.Context) {
 	// made visible again, so it is the one place that must still see them.
 	all, err := tc.service.GetDistributions(backend)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get distributions: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get distributions: "+err.Error())
 		return
 	}
 
 	offered, err := tc.service.GetOfferedDistributions(backend)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get offered distributions: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get offered distributions: "+err.Error())
 		return
 	}
 
@@ -98,18 +92,12 @@ func (tc *terminalController) GetDistributionCatalog(ctx *gin.Context) {
 func (tc *terminalController) UpdateDistributionCatalog(ctx *gin.Context) {
 	var input UpdateDistributionCatalogInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid request body: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
 	if err := tc.service.SetWithheldDistributions(input.Withheld); err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to save the distribution catalogue: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to save the distribution catalogue: "+err.Error())
 		return
 	}
 

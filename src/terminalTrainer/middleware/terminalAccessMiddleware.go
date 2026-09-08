@@ -54,20 +54,14 @@ func (tam *TerminalAccessMiddleware) requireTerminalAccess(allowStopped bool) gi
 		// Get terminal ID from route parameter
 		terminalID := ctx.Param("id")
 		if terminalID == "" {
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "terminal ID is required",
-			})
+			errors.Abort(ctx, http.StatusBadRequest, "terminal ID is required")
 			return
 		}
 
 		// Get user ID from context (set by AuthManagement middleware)
 		userID := ctx.GetString("userId")
 		if userID == "" {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, &errors.APIError{
-				ErrorCode:    http.StatusUnauthorized,
-				ErrorMessage: "user not authenticated",
-			})
+			errors.Abort(ctx, http.StatusUnauthorized, "user not authenticated")
 			return
 		}
 
@@ -82,25 +76,16 @@ func (tam *TerminalAccessMiddleware) requireTerminalAccess(allowStopped bool) gi
 		if err != nil {
 			// Check if it's a "terminal not found" error
 			if err.Error() == "terminal not found" {
-				ctx.AbortWithStatusJSON(http.StatusNotFound, &errors.APIError{
-					ErrorCode:    http.StatusNotFound,
-					ErrorMessage: "terminal not found",
-				})
+				errors.Abort(ctx, http.StatusNotFound, "terminal not found")
 				return
 			}
 			// Other errors are internal server errors
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: fmt.Sprintf("failed to check terminal access: %v", err),
-			})
+			errors.Abort(ctx, http.StatusInternalServerError, fmt.Sprintf("failed to check terminal access: %v", err))
 			return
 		}
 
 		if !hasAccess {
-			ctx.AbortWithStatusJSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "terminal access denied",
-			})
+			errors.Abort(ctx, http.StatusForbidden, "terminal access denied")
 			return
 		}
 
@@ -125,40 +110,25 @@ func (tam *TerminalAccessMiddleware) requireTerminalAccess(allowStopped bool) gi
 		// NEW: Validate session state (use local state only for performance)
 		isValid, reason, err := tam.service.ValidateSessionAccess(terminalID, false)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: fmt.Sprintf("failed to validate session status: %v", err),
-			})
+			errors.Abort(ctx, http.StatusInternalServerError, fmt.Sprintf("failed to validate session status: %v", err))
 			return
 		}
 
 		if !isValid {
 			// Return appropriate status based on reason
 			if reason == "backend_offline" {
-				ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, &errors.APIError{
-					ErrorCode:    http.StatusServiceUnavailable,
-					ErrorMessage: "Session's backend is currently unavailable",
-				})
+				errors.Abort(ctx, http.StatusServiceUnavailable, "Session's backend is currently unavailable")
 			} else if reason == "expired" {
-				ctx.AbortWithStatusJSON(http.StatusGone, &errors.APIError{
-					ErrorCode:    http.StatusGone,
-					ErrorMessage: "Terminal session has expired and is no longer accessible",
-				})
+				errors.Abort(ctx, http.StatusGone, "Terminal session has expired and is no longer accessible")
 			} else if reason == string(models.StateStopped) {
 				if allowStopped {
 					// Lifecycle endpoint (start/delete): pass through.
 					ctx.Next()
 					return
 				}
-				ctx.AbortWithStatusJSON(http.StatusForbidden, &errors.APIError{
-					ErrorCode:    http.StatusForbidden,
-					ErrorMessage: "Terminal session has been stopped and is no longer accessible",
-				})
+				errors.Abort(ctx, http.StatusForbidden, "Terminal session has been stopped and is no longer accessible")
 			} else {
-				ctx.AbortWithStatusJSON(http.StatusForbidden, &errors.APIError{
-					ErrorCode:    http.StatusForbidden,
-					ErrorMessage: fmt.Sprintf("Terminal session is not in an active state: %s", reason),
-				})
+				errors.Abort(ctx, http.StatusForbidden, fmt.Sprintf("Terminal session is not in an active state: %s", reason))
 			}
 			return
 		}

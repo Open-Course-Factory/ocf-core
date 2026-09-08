@@ -62,10 +62,7 @@ func (utc *UserTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 		if err := utc.service.DisableUserKey(userId); err != nil {
 			// Only fail if the LOCAL database update failed
 			// (Terminal Trainer errors are logged as warnings)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to disable old key in local database: " + err.Error(),
-			})
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to disable old key in local database: "+err.Error())
 			return
 		}
 	}
@@ -74,10 +71,7 @@ func (utc *UserTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 	// This will create the key in BOTH databases (Terminal Trainer + OCF Core)
 	userName := "user-" + userId // Placeholder, à améliorer
 	if err := utc.service.CreateUserKey(userId, userName); err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to create new key: " + err.Error(),
-		})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to create new key: "+err.Error())
 		return
 	}
 
@@ -106,10 +100,7 @@ func (utc *UserTerminalKeyController) GetMyKey(ctx *gin.Context) {
 	// Récupérer la clé de l'utilisateur
 	userKey, err := utc.service.GetUserKey(userId)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No terminal key found for user",
-		})
+		errors.Respond(ctx, http.StatusNotFound, "No terminal key found for user")
 		return
 	}
 

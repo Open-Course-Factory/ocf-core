@@ -180,9 +180,6 @@ func EnforceLaunchCapacity(ctx *gin.Context, plan *paymentModels.SubscriptionPla
 		utils.Warn("capacity guard: launch blocked for size=%q (%.2f GB available)",
 			sizeKey, metrics.RAMAvailableGB)
 	}
-	ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-		ErrorCode:    http.StatusServiceUnavailable,
-		ErrorMessage: msg,
-	})
+	errors.Respond(ctx, http.StatusServiceUnavailable, msg)
 	return true
 }

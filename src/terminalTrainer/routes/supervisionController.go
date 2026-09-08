@@ -112,10 +112,7 @@ func (tc *terminalController) GetGroupTerminalSessions(ctx *gin.Context) {
 
 	sessions, ok := ListGroupSupervisionSessions(tc.db, groupID, userID, isAdmin)
 	if !ok {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "You are not a manager of this group",
-		})
+		errors.Respond(ctx, http.StatusForbidden, "You are not a manager of this group")
 		return
 	}
 	ctx.JSON(http.StatusOK, sessions)
@@ -182,7 +179,7 @@ func (tc *terminalController) resolveSupervisionPlan(userID string) *paymentMode
 func (tc *terminalController) SuperviseSession(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 	if sessionID == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{ErrorCode: http.StatusBadRequest, ErrorMessage: "Session ID is required"})
+		errors.Respond(ctx, http.StatusBadRequest, "Session ID is required")
 		return
 	}
 
@@ -233,20 +230,20 @@ func (tc *terminalController) prepareSupervision(ctx *gin.Context, sessionID str
 	// Authorization: derive the learner's group SERVER-SIDE and require manager+.
 	groupID, ok := HasSupervisionAccess(tc.db, userID, isAdmin, sessionID)
 	if !ok {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{ErrorCode: http.StatusForbidden, ErrorMessage: "You are not authorized to supervise this session"})
+		errors.Respond(ctx, http.StatusForbidden, "You are not authorized to supervise this session")
 		return nil, false
 	}
 
 	// Plan gate (ANDed with authz): a valid manager on a plan without the feature
 	// is still denied.
 	if !PlanAllowsSupervision(tc.resolveSupervisionPlan(userID)) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{ErrorCode: http.StatusForbidden, ErrorMessage: "Your plan does not include terminal supervision"})
+		errors.Respond(ctx, http.StatusForbidden, "Your plan does not include terminal supervision")
 		return nil, false
 	}
 
 	auditSvc := auditServices.NewAuditService(tc.db)
 	if _, err := StartSupervision(tc.db, auditSvc, userID, isAdmin, sessionID); err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{ErrorCode: http.StatusInternalServerError, ErrorMessage: "Failed to start supervision"})
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start supervision")
 		return nil, false
 	}
 
@@ -254,12 +251,12 @@ func (tc *terminalController) prepareSupervision(ctx *gin.Context, sessionID str
 	// session owner's key; the supervisor rides it — ocf-core is the authorizer).
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{ErrorCode: http.StatusNotFound, ErrorMessage: "Session not found"})
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return nil, false
 	}
 	ownerKey, keyErr := tc.service.GetUserKey(terminal.UserID)
 	if keyErr != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{ErrorCode: http.StatusInternalServerError, ErrorMessage: "Terminal owner's API key not found"})
+		errors.Respond(ctx, http.StatusInternalServerError, "Terminal owner's API key not found")
 		return nil, false
 	}
 
@@ -269,7 +266,7 @@ func (tc *terminalController) prepareSupervision(ctx *gin.Context, sessionID str
 	}
 	wsURL, buildErr := BuildSuperviseWSURL(tc.terminalTrainerURL, tc.apiVersion, instanceType, terminal.SessionID)
 	if buildErr != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{ErrorCode: http.StatusInternalServerError, ErrorMessage: "Invalid terminal trainer URL"})
+		errors.Respond(ctx, http.StatusInternalServerError, "Invalid terminal trainer URL")
 		return nil, false
 	}
 
