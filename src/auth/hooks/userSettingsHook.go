@@ -92,28 +92,3 @@ func (h *UserSettingsHook) handleAfterUserCreate(ctx *hooks.HookContext) error {
 	log.Printf("✅ Created default settings for user %s", userID)
 	return nil
 }
-
-// Helper function to call from user creation code
-func CreateDefaultSettingsForUser(db *gorm.DB, userID string) error {
-	// Check if settings already exist
-	var existingSettings models.UserSettings
-	result := db.Where("user_id = ?", userID).First(&existingSettings)
-	if result.Error == nil {
-		return nil // Settings already exist
-	}
-
-	// Create default settings
-	defaultSettings := models.UserSettings{
-		UserID:               userID,
-		DefaultLandingPage:   "/dashboard",
-		PreferredLanguage:    "en",
-		Timezone:             "UTC",
-		Theme:                "light",
-		CompactMode:          false,
-		EmailNotifications:   true,
-		DesktopNotifications: false,
-		TwoFactorEnabled:     false,
-	}
-
-	return db.Create(&defaultSettings).Error
-}

@@ -29,15 +29,6 @@ var CasdoorToOCFRoleMap = map[string]RoleName{
 	"administrator": Administrator,
 }
 
-// GetOCFRoleFromCasdoor converts a Casdoor role to OCF system role
-func GetOCFRoleFromCasdoor(casdoorRole string) RoleName {
-	if ocfRole, exists := CasdoorToOCFRoleMap[casdoorRole]; exists {
-		return ocfRole
-	}
-	// Default: authenticated users are members
-	return Member
-}
-
 // GetCasdoorRolesForOCFRole returns all Casdoor roles that map to an OCF role
 func GetCasdoorRolesForOCFRole(ocfRole RoleName) []string {
 	var casdoorRoles []string

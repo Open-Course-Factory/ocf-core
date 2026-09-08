@@ -188,14 +188,6 @@ func (m *MockEnforcer) GetRemoveFilteredPolicyCallCount() int {
 	return len(m.RemoveFilteredPolicyCalls)
 }
 
-func (m *MockEnforcer) GetEnforceCallCount() int {
-	return len(m.EnforceCalls)
-}
-
-func (m *MockEnforcer) GetGetRolesForUserCallCount() int {
-	return len(m.GetRolesForUserCalls)
-}
-
 func (m *MockEnforcer) GetImplicitPermissionsForUser(name string) ([][]string, error) {
 	m.GetImplicitPermissionsForUserCalls = append(m.GetImplicitPermissionsForUserCalls, []any{name})
 	return m.GetImplicitPermissionsForUserFunc(name)
@@ -216,18 +208,6 @@ func (m *MockEnforcer) GetPolicy() ([][]string, error) {
 	return m.GetPolicyFunc()
 }
 
-func (m *MockEnforcer) GetImplicitPermissionsForUserCallCount() int {
-	return len(m.GetImplicitPermissionsForUserCalls)
-}
-
-func (m *MockEnforcer) GetFilteredPolicyCallCount() int {
-	return len(m.GetFilteredPolicyCalls)
-}
-
-func (m *MockEnforcer) GetPolicyCallCount() int {
-	return m.GetPolicyCalls
-}
-
 func (m *MockEnforcer) GetAllSubjects() ([]string, error) {
 	m.GetAllSubjectsCalls++
 	return m.GetAllSubjectsFunc()
@@ -241,16 +221,4 @@ func (m *MockEnforcer) GetAllRoles() ([]string, error) {
 func (m *MockEnforcer) GetUsersForRole(name string) ([]string, error) {
 	m.GetUsersForRoleCalls = append(m.GetUsersForRoleCalls, []any{name})
 	return m.GetUsersForRoleFunc(name)
-}
-
-func (m *MockEnforcer) GetAllSubjectsCallCount() int {
-	return m.GetAllSubjectsCalls
-}
-
-func (m *MockEnforcer) GetAllRolesCallCount() int {
-	return m.GetAllRolesCalls
-}
-
-func (m *MockEnforcer) GetUsersForRoleCallCount() int {
-	return len(m.GetUsersForRoleCalls)
 }

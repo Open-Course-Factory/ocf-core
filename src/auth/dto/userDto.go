@@ -46,10 +46,6 @@ type CreateUserOutput struct {
 	CreatedAt string    `json:"created_at"`
 }
 
-type DeleteUserInput struct {
-	Id uuid.UUID `binding:"required"`
-}
-
 type BatchUsersInput struct {
 	UserIds []string `json:"user_ids" binding:"required"`
 }

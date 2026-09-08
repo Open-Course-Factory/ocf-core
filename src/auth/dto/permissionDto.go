@@ -4,8 +4,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	groupDto "soli/formations/src/groups/dto"
-	organizationDto "soli/formations/src/organizations/dto"
 )
 
 // PermissionRule represents a single Casbin permission rule
@@ -106,36 +104,4 @@ func ParseMethods(methodStr string) []string {
 		return []string{}
 	}
 	return strings.Split(methodStr, "|")
-}
-
-// OrganizationMemberToContext converts OrganizationMemberOutput to context
-func OrganizationMemberToContext(member *organizationDto.OrganizationMemberOutput, orgName string, features []string, hasSubscription bool) *OrganizationMembershipContext {
-	if member == nil {
-		return nil
-	}
-
-	roleStr := string(member.Role)
-	return &OrganizationMembershipContext{
-		OrganizationID:   member.OrganizationID,
-		OrganizationName: orgName,
-		Role:             roleStr,
-		IsOwner:          roleStr == "owner",
-		Features:         features,
-		HasSubscription:  hasSubscription,
-	}
-}
-
-// GroupMemberToContext converts GroupMemberOutput to context
-func GroupMemberToContext(member *groupDto.GroupMemberOutput, groupName string) *GroupMembershipContext {
-	if member == nil {
-		return nil
-	}
-
-	roleStr := string(member.Role)
-	return &GroupMembershipContext{
-		GroupID:   member.GroupID,
-		GroupName: groupName,
-		Role:      roleStr,
-		IsOwner:   roleStr == "owner",
-	}
 }

@@ -327,21 +327,3 @@ func (s *userPermissionsService) convertToGroupMemberships(contexts []authDto.En
 	}
 	return result
 }
-
-// aggregateFeatures combines features from all organization memberships
-func (s *userPermissionsService) aggregateFeatures(orgMemberships []authDto.OrganizationMembershipContext) []string {
-	featureSet := make(map[string]bool)
-
-	for _, org := range orgMemberships {
-		for _, feature := range org.Features {
-			featureSet[feature] = true
-		}
-	}
-
-	features := make([]string, 0, len(featureSet))
-	for feature := range featureSet {
-		features = append(features, feature)
-	}
-
-	return features
-}

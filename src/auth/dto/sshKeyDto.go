@@ -22,14 +22,3 @@ type CreateSshKeyInput struct {
 type EditSshKeyInput struct {
 	KeyName string `binding:"required" mapstructure:"name"`
 }
-
-type CreateSshKeyOutput struct {
-	Id         uuid.UUID
-	KeyName    string
-	PrivateKey string
-	UserId     []uuid.UUID
-}
-
-type DeleteSshKeyInput struct {
-	Id uuid.UUID `binding:"required"`
-}
