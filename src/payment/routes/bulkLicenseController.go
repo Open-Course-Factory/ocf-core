@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -231,9 +230,8 @@ func (c *bulkLicenseController) GetBatchDetails(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 
-	batchID, err := uuid.Parse(batchIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
+	batchID, ok := parseUUIDParam(ctx, batchIDStr, "Invalid batch ID")
+	if !ok {
 		return
 	}
 
@@ -283,9 +281,8 @@ func (c *bulkLicenseController) GetBatchLicenses(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 
-	batchID, err := uuid.Parse(batchIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
+	batchID, ok := parseUUIDParam(ctx, batchIDStr, "Invalid batch ID")
+	if !ok {
 		return
 	}
 
@@ -328,9 +325,8 @@ func (c *bulkLicenseController) AssignLicense(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 
-	batchID, err := uuid.Parse(batchIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
+	batchID, ok := parseUUIDParam(ctx, batchIDStr, "Invalid batch ID")
+	if !ok {
 		return
 	}
 
@@ -368,13 +364,12 @@ func (c *bulkLicenseController) RevokeLicense(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	licenseIDStr := ctx.Param("license_id")
 
-	licenseID, err := uuid.Parse(licenseIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid license ID")
+	licenseID, ok := parseUUIDParam(ctx, licenseIDStr, "Invalid license ID")
+	if !ok {
 		return
 	}
 
-	err = c.bulkService.RevokeLicense(licenseID, userID)
+	err := c.bulkService.RevokeLicense(licenseID, userID)
 	if err != nil {
 		utils.Error("Failed to revoke license: %v", err)
 
@@ -419,9 +414,8 @@ func (c *bulkLicenseController) UpdateBatchQuantity(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 
-	batchID, err := uuid.Parse(batchIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
+	batchID, ok := parseUUIDParam(ctx, batchIDStr, "Invalid batch ID")
+	if !ok {
 		return
 	}
 
@@ -431,7 +425,7 @@ func (c *bulkLicenseController) UpdateBatchQuantity(ctx *gin.Context) {
 		return
 	}
 
-	err = c.bulkService.UpdateBatchQuantity(batchID, userID, input.NewQuantity)
+	err := c.bulkService.UpdateBatchQuantity(batchID, userID, input.NewQuantity)
 	if err != nil {
 		utils.Error("Failed to update batch quantity: %v", err)
 		errors.Respond(ctx, http.StatusBadRequest, err.Error())
@@ -461,13 +455,12 @@ func (c *bulkLicenseController) PermanentlyDeleteBatch(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 	batchIDStr := ctx.Param("id")
 
-	batchID, err := uuid.Parse(batchIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid batch ID")
+	batchID, ok := parseUUIDParam(ctx, batchIDStr, "Invalid batch ID")
+	if !ok {
 		return
 	}
 
-	err = c.bulkService.PermanentlyDeleteBatch(batchID, userID)
+	err := c.bulkService.PermanentlyDeleteBatch(batchID, userID)
 	if err != nil {
 		utils.Error("Failed to permanently delete batch: %v", err)
 

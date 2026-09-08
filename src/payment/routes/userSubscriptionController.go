@@ -254,9 +254,8 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	// Check for optional organization_id query param for org-context-aware resolution
 	var orgID *uuid.UUID
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
-		parsed, err := uuid.Parse(orgIDStr)
-		if err != nil {
-			errors.Respond(ctx, http.StatusBadRequest, "Invalid organization_id format")
+		parsed, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization_id format")
+		if !ok {
 			return
 		}
 		orgID = &parsed
@@ -370,9 +369,8 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 	cancelImmediately := ctx.Query("cancel_immediately") == "true"
 
 	// Vérifier que l'ID est un UUID valide
-	parsedID, parseErr := uuid.Parse(subscriptionID)
-	if parseErr != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid subscription ID format")
+	parsedID, ok := parseUUIDParam(ctx, subscriptionID, "Invalid subscription ID format")
+	if !ok {
 		return
 	}
 
@@ -473,9 +471,8 @@ func (sc *userSubscriptionController) ReactivateSubscription(ctx *gin.Context) {
 	subscriptionID := ctx.Param("id")
 
 	// Vérifier que l'ID est un UUID valide
-	parsedID, parseErr := uuid.Parse(subscriptionID)
-	if parseErr != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid subscription ID format")
+	parsedID, ok := parseUUIDParam(ctx, subscriptionID, "Invalid subscription ID format")
+	if !ok {
 		return
 	}
 
@@ -538,9 +535,8 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 	}
 
 	// Parse the new plan ID
-	newPlanID, err := uuid.Parse(input.NewPlanID)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid plan ID format")
+	newPlanID, ok := parseUUIDParam(ctx, input.NewPlanID, "Invalid plan ID format")
+	if !ok {
 		return
 	}
 
@@ -671,8 +667,7 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	// Parse optional org context to scope the usage metrics.
 	var orgID string
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
-		if _, err := uuid.Parse(orgIDStr); err != nil {
-			errors.Respond(ctx, http.StatusBadRequest, "Invalid organization_id format")
+		if _, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization_id format"); !ok {
 			return
 		}
 		orgID = orgIDStr
@@ -716,9 +711,8 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 //	@Router			/subscription-plans/{id}/sync-stripe [post]
 func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Context) {
 	planIDStr := ctx.Param("id")
-	planID, err := uuid.Parse(planIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid plan ID")
+	planID, ok := parseUUIDParam(ctx, planIDStr, "Invalid plan ID")
+	if !ok {
 		return
 	}
 
@@ -1085,9 +1079,8 @@ func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
 		return
 	}
 
-	planID, err := uuid.Parse(planIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid subscription_plan_id format")
+	planID, ok := parseUUIDParam(ctx, planIDStr, "Invalid subscription_plan_id format")
+	if !ok {
 		return
 	}
 

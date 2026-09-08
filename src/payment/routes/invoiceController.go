@@ -11,7 +11,6 @@ import (
 	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -87,9 +86,8 @@ func (ic *invoiceController) GetOrganizationInvoices(ctx *gin.Context) {
 	// organization before the handler runs, so the :id param is trusted here.
 	orgID := ctx.Param("id")
 
-	parsedID, parseErr := uuid.Parse(orgID)
-	if parseErr != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID format")
+	parsedID, ok := parseUUIDParam(ctx, orgID, "Invalid organization ID format")
+	if !ok {
 		return
 	}
 
@@ -121,9 +119,8 @@ func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	invoiceID := ctx.Param("id")
 
-	parsedID, parseErr := uuid.Parse(invoiceID)
-	if parseErr != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid invoice ID format")
+	parsedID, ok := parseUUIDParam(ctx, invoiceID, "Invalid invoice ID format")
+	if !ok {
 		return
 	}
 

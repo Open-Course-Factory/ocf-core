@@ -9,7 +9,6 @@ import (
 	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -51,9 +50,8 @@ func (pmc *paymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	paymentMethodID := ctx.Param("id")
 
-	parsedID, parseErr := uuid.Parse(paymentMethodID)
-	if parseErr != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid payment method ID format")
+	parsedID, ok := parseUUIDParam(ctx, paymentMethodID, "Invalid payment method ID format")
+	if !ok {
 		return
 	}
 

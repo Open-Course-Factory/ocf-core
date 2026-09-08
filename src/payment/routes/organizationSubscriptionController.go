@@ -65,9 +65,8 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
-	orgID, err := uuid.Parse(orgIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
+	orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization ID")
+	if !ok {
 		return
 	}
 
@@ -131,9 +130,8 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *gin.Context) {
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
-	orgID, err := uuid.Parse(orgIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
+	orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization ID")
+	if !ok {
 		return
 	}
 
@@ -221,9 +219,8 @@ func (osc *organizationSubscriptionController) GetAllOrganizationSubscriptions(c
 func (osc *organizationSubscriptionController) CancelOrganizationSubscription(ctx *gin.Context) {
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
-	orgID, err := uuid.Parse(orgIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
+	orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization ID")
+	if !ok {
 		return
 	}
 
@@ -239,7 +236,7 @@ func (osc *organizationSubscriptionController) CancelOrganizationSubscription(ct
 		cancelAtPeriodEnd = *input.CancelAtPeriodEnd
 	}
 
-	err = osc.orgSubService.CancelOrganizationSubscription(orgID, cancelAtPeriodEnd)
+	err := osc.orgSubService.CancelOrganizationSubscription(orgID, cancelAtPeriodEnd)
 	if err != nil {
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel subscription: "+err.Error())
 		return
@@ -270,9 +267,8 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 
 	// Check for optional organization_id query param for org-context-aware resolution
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
-		orgID, err := uuid.Parse(orgIDStr)
-		if err != nil {
-			errors.Respond(ctx, http.StatusBadRequest, "Invalid organization_id format")
+		orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization_id format")
+		if !ok {
 			return
 		}
 
@@ -374,9 +370,8 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.Context) {
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
-	orgID, err := uuid.Parse(orgIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
+	orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization ID")
+	if !ok {
 		return
 	}
 
@@ -407,9 +402,8 @@ func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.
 func (osc *organizationSubscriptionController) GetOrganizationUsageLimits(ctx *gin.Context) {
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
-	orgID, err := uuid.Parse(orgIDStr)
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid organization ID")
+	orgID, ok := parseUUIDParam(ctx, orgIDStr, "Invalid organization ID")
+	if !ok {
 		return
 	}
 

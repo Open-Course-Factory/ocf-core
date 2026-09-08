@@ -8,7 +8,6 @@ import (
 	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -53,9 +52,8 @@ func (bac *billingAddressController) SetDefaultBillingAddress(ctx *gin.Context) 
 	userId := ctx.GetString("userId")
 	addressID := ctx.Param("id")
 
-	parsedID, parseErr := uuid.Parse(addressID)
-	if parseErr != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid billing address ID format")
+	parsedID, ok := parseUUIDParam(ctx, addressID, "Invalid billing address ID format")
+	if !ok {
 		return
 	}
 
