@@ -24,14 +24,12 @@ type BillingAddressController interface {
 type billingAddressController struct {
 	controller.GenericController
 	subscriptionService services.UserSubscriptionService
-	conversionService   services.ConversionService
 }
 
 func NewBillingAddressController(db *gorm.DB) BillingAddressController {
 	return &billingAddressController{
 		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
-		conversionService:   services.NewConversionService(),
 	}
 }
 
@@ -46,11 +44,7 @@ func (bac *billingAddressController) GetUserBillingAddresses(ctx *gin.Context) {
 	}
 
 	// Convertir vers DTO
-	addressesDTO, err := bac.conversionService.BillingAddressesToDTO(addresses)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert billing addresses")
-		return
-	}
+	addressesDTO := services.BillingAddressesToDTO(addresses)
 
 	ctx.JSON(http.StatusOK, addressesDTO)
 }

@@ -67,7 +67,6 @@ type userSubscriptionController struct {
 	controller.GenericController
 	db                   *gorm.DB
 	subscriptionService  services.UserSubscriptionService
-	conversionService    services.ConversionService
 	stripeService        services.StripeService
 	effectivePlanService services.EffectivePlanService
 }
@@ -81,7 +80,6 @@ func NewSubscriptionController(db *gorm.DB) SubscriptionController {
 		GenericController:    controller.NewGenericController(db, casdoor.Enforcer),
 		db:                   db,
 		subscriptionService:  svc,
-		conversionService:    services.NewConversionService(),
 		stripeService:        services.NewStripeService(db),
 		effectivePlanService: services.NewEffectivePlanService(db),
 	}
@@ -188,11 +186,7 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 		}
 
 		// Convert to DTO and return
-		subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
-		if err != nil {
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert subscription data")
-			return
-		}
+		subscriptionDTO := services.UserSubscriptionToDTO(subscription)
 
 		ctx.JSON(http.StatusOK, gin.H{
 			"subscription": subscriptionDTO,
@@ -293,11 +287,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 
 	switch result.Source {
 	case services.PlanSourcePersonal:
-		subscriptionDTO, convErr := sc.conversionService.UserSubscriptionToDTO(result.UserSubscription)
-		if convErr != nil {
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert subscription data")
-			return
-		}
+		subscriptionDTO := services.UserSubscriptionToDTO(result.UserSubscription)
 		subscriptionDTO.IsPrimary = true
 		subscriptionDTO.IsFallback = result.IsFallback
 		ctx.JSON(http.StatusOK, subscriptionDTO)
@@ -350,11 +340,7 @@ func (sc *userSubscriptionController) GetAllUserSubscriptions(ctx *gin.Context) 
 	// Initialize as empty array instead of nil to ensure JSON returns [] instead of null
 	subscriptionDTOs := make([]dto.UserSubscriptionOutput, 0)
 	for _, sub := range subscriptions {
-		subDTO, err := sc.conversionService.UserSubscriptionToDTO(&sub)
-		if err != nil {
-			utils.Warn("Failed to convert subscription %s: %v", sub.ID, err)
-			continue
-		}
+		subDTO := services.UserSubscriptionToDTO(&sub)
 
 		// Mark as primary if it's the highest priority subscription
 		subDTO.IsPrimary = (sub.ID == primaryID)
@@ -628,11 +614,7 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 	}
 
 	// Convert to DTO
-	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert subscription data")
-		return
-	}
+	subscriptionDTO := services.UserSubscriptionToDTO(subscription)
 
 	ctx.JSON(http.StatusOK, subscriptionDTO)
 }
@@ -667,7 +649,7 @@ func (sc *userSubscriptionController) GetSubscriptionAnalytics(ctx *gin.Context)
 	}
 
 	// Convertir vers DTO
-	analyticsDTO := sc.conversionService.SubscriptionAnalyticsToDTO(analytics)
+	analyticsDTO := services.SubscriptionAnalyticsToDTO(analytics)
 
 	ctx.JSON(http.StatusOK, analyticsDTO)
 }
@@ -713,11 +695,7 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	}
 
 	// Convertir vers DTO
-	usageMetricsDTO, err := sc.conversionService.UsageMetricsListToDTO(usageMetrics)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert usage metrics")
-		return
-	}
+	usageMetricsDTO := services.UsageMetricsListToDTO(usageMetrics)
 
 	ctx.JSON(http.StatusOK, usageMetricsDTO)
 }
@@ -779,11 +757,7 @@ func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Co
 	}
 
 	// Convertir en DTO
-	planDTO, err := sc.conversionService.SubscriptionPlanToDTO(updatedPlan)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert plan to DTO")
-		return
-	}
+	planDTO := services.SubscriptionPlanToDTO(updatedPlan)
 
 	ctx.JSON(http.StatusOK, planDTO)
 }
@@ -1079,11 +1053,7 @@ func (sc *userSubscriptionController) SyncUsageLimits(ctx *gin.Context) {
 		return
 	}
 
-	metricsDTO, err := sc.conversionService.UsageMetricsListToDTO(metrics)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert metrics")
-		return
-	}
+	metricsDTO := services.UsageMetricsListToDTO(metrics)
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "Usage limits synced successfully",
@@ -1251,12 +1221,7 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 			"action":         "admin_assign_subscription",
 		})
 
-	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
-	if err != nil {
-		utils.Error("Failed to convert subscription to DTO: %v", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to format subscription response")
-		return
-	}
+	subscriptionDTO := services.UserSubscriptionToDTO(subscription)
 
 	ctx.JSON(http.StatusOK, subscriptionDTO)
 }

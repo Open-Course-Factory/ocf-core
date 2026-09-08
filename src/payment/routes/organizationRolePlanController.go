@@ -23,15 +23,13 @@ type OrganizationRolePlanController interface {
 
 type organizationRolePlanController struct {
 	controller.GenericController
-	orgSubRepo        repositories.OrganizationSubscriptionRepository
-	conversionService services.ConversionService
+	orgSubRepo repositories.OrganizationSubscriptionRepository
 }
 
 func NewOrganizationRolePlanController(db *gorm.DB) OrganizationRolePlanController {
 	return &organizationRolePlanController{
 		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
 		orgSubRepo:        repositories.NewOrganizationSubscriptionRepository(db),
-		conversionService: services.NewConversionService(),
 	}
 }
 
@@ -65,11 +63,7 @@ func (c *organizationRolePlanController) GetOrganizationRolePlans(ctx *gin.Conte
 		return
 	}
 
-	rolePlansDTO, err := c.conversionService.OrganizationRolePlansToDTO(rolePlans)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert organization role plans")
-		return
-	}
+	rolePlansDTO := services.OrganizationRolePlansToDTO(rolePlans)
 
 	ctx.JSON(http.StatusOK, rolePlansDTO)
 }

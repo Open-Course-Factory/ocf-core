@@ -25,14 +25,12 @@ type UsageMetricsController interface {
 type usageMetricsController struct {
 	controller.GenericController
 	subscriptionService services.UserSubscriptionService
-	conversionService   services.ConversionService
 }
 
 func NewUsageMetricsController(db *gorm.DB) UsageMetricsController {
 	return &usageMetricsController{
 		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
-		conversionService:   services.NewConversionService(),
 	}
 }
 
@@ -62,11 +60,7 @@ func (umc *usageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
 	}
 
 	// Convertir vers DTO
-	metricsDTO, err := umc.conversionService.UsageMetricsListToDTO(metrics)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert usage metrics")
-		return
-	}
+	metricsDTO := services.UsageMetricsListToDTO(metrics)
 
 	ctx.JSON(http.StatusOK, metricsDTO)
 }

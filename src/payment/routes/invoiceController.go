@@ -31,7 +31,6 @@ type invoiceController struct {
 	controller.GenericController
 	subscriptionService services.UserSubscriptionService
 	stripeService       services.StripeService
-	conversionService   services.ConversionService
 }
 
 func NewInvoiceController(db *gorm.DB) InvoiceController {
@@ -39,7 +38,6 @@ func NewInvoiceController(db *gorm.DB) InvoiceController {
 		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
 		stripeService:       services.NewStripeService(db),
-		conversionService:   services.NewConversionService(),
 	}
 }
 
@@ -66,11 +64,7 @@ func (ic *invoiceController) GetUserInvoices(ctx *gin.Context) {
 	}
 
 	// Convertir vers DTO
-	invoicesDTO, err := ic.conversionService.InvoicesToDTO(invoices)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert invoices")
-		return
-	}
+	invoicesDTO := services.InvoicesToDTO(invoices)
 
 	ctx.JSON(http.StatusOK, invoicesDTO)
 }
@@ -105,11 +99,7 @@ func (ic *invoiceController) GetOrganizationInvoices(ctx *gin.Context) {
 		return
 	}
 
-	invoicesDTO, err := ic.conversionService.InvoicesToDTO(invoices)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert invoices")
-		return
-	}
+	invoicesDTO := services.InvoicesToDTO(invoices)
 
 	ctx.JSON(http.StatusOK, invoicesDTO)
 }

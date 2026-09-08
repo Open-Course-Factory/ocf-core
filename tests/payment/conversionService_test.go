@@ -17,7 +17,6 @@ import (
 func ptrString(s string) *string { return &s }
 
 func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
-	conversionService := services.NewConversionService()
 
 	planID := uuid.New()
 	createdAt := time.Now()
@@ -45,9 +44,8 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 		RequiredRole:           "member_pro",
 	}
 
-	result, err := conversionService.SubscriptionPlanToDTO(plan)
+	result := services.SubscriptionPlanToDTO(plan)
 
-	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, planID, result.ID)
 	assert.Equal(t, "Pro Plan", result.Name)
@@ -66,16 +64,13 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 }
 
 func TestConversionService_SubscriptionPlanToDTO_Nil(t *testing.T) {
-	conversionService := services.NewConversionService()
 
-	result, err := conversionService.SubscriptionPlanToDTO(nil)
+	result := services.SubscriptionPlanToDTO(nil)
 
-	assert.NoError(t, err)
 	assert.Nil(t, result)
 }
 
 func TestConversionService_UserSubscriptionToDTO(t *testing.T) {
-	conversionService := services.NewConversionService()
 
 	subscriptionID := uuid.New()
 	planID := uuid.New()
@@ -105,9 +100,8 @@ func TestConversionService_UserSubscriptionToDTO(t *testing.T) {
 		CancelAtPeriodEnd:    false,
 	}
 
-	result, err := conversionService.UserSubscriptionToDTO(subscription)
+	result := services.UserSubscriptionToDTO(subscription)
 
-	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, subscriptionID, result.ID)
 	assert.Equal(t, "user123", result.UserID)
@@ -126,7 +120,6 @@ func TestConversionService_UserSubscriptionToDTO(t *testing.T) {
 }
 
 func TestConversionService_UsageMetricsToDTO(t *testing.T) {
-	conversionService := services.NewConversionService()
 
 	metricsID := uuid.New()
 	now := time.Now()
@@ -144,9 +137,8 @@ func TestConversionService_UsageMetricsToDTO(t *testing.T) {
 		LastUpdated:  now,
 	}
 
-	result, err := conversionService.UsageMetricsToDTO(metrics)
+	result := services.UsageMetricsToDTO(metrics)
 
-	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, metricsID, result.ID)
 	assert.Equal(t, "user123", result.UserID)
@@ -158,7 +150,6 @@ func TestConversionService_UsageMetricsToDTO(t *testing.T) {
 }
 
 func TestConversionService_UsageMetricsToDTO_UnlimitedUsage(t *testing.T) {
-	conversionService := services.NewConversionService()
 
 	metrics := &models.UsageMetrics{
 		UserID:       "user123",
@@ -167,9 +158,8 @@ func TestConversionService_UsageMetricsToDTO_UnlimitedUsage(t *testing.T) {
 		LimitValue:   -1, // Unlimited
 	}
 
-	result, err := conversionService.UsageMetricsToDTO(metrics)
+	result := services.UsageMetricsToDTO(metrics)
 
-	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, int64(50), result.CurrentValue)
 	assert.Equal(t, int64(-1), result.LimitValue)
@@ -177,7 +167,6 @@ func TestConversionService_UsageMetricsToDTO_UnlimitedUsage(t *testing.T) {
 }
 
 func TestConversionService_PaymentMethodToDTO(t *testing.T) {
-	conversionService := services.NewConversionService()
 
 	pmID := uuid.New()
 	createdAt := time.Now()
@@ -200,9 +189,8 @@ func TestConversionService_PaymentMethodToDTO(t *testing.T) {
 		IsActive:              true,
 	}
 
-	result, err := conversionService.PaymentMethodToDTO(pm)
+	result := services.PaymentMethodToDTO(pm)
 
-	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, pmID, result.ID)
 	assert.Equal(t, "user123", result.UserID)
@@ -218,7 +206,6 @@ func TestConversionService_PaymentMethodToDTO(t *testing.T) {
 }
 
 func TestConversionService_SubscriptionPlansToDTO(t *testing.T) {
-	conversionService := services.NewConversionService()
 
 	plan1 := models.SubscriptionPlan{
 		BaseModel: emm.BaseModel{ID: uuid.New()},
@@ -234,9 +221,8 @@ func TestConversionService_SubscriptionPlansToDTO(t *testing.T) {
 
 	plans := &[]models.SubscriptionPlan{plan1, plan2}
 
-	result, err := conversionService.SubscriptionPlansToDTO(plans)
+	result := services.SubscriptionPlansToDTO(plans)
 
-	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Len(t, *result, 2)
 	assert.Equal(t, "Basic Plan", (*result)[0].Name)
@@ -244,16 +230,13 @@ func TestConversionService_SubscriptionPlansToDTO(t *testing.T) {
 }
 
 func TestConversionService_SubscriptionPlansToDTO_Nil(t *testing.T) {
-	conversionService := services.NewConversionService()
 
-	result, err := conversionService.SubscriptionPlansToDTO(nil)
+	result := services.SubscriptionPlansToDTO(nil)
 
-	assert.NoError(t, err)
 	assert.Nil(t, result)
 }
 
 func TestConversionService_SubscriptionAnalyticsToDTO(t *testing.T) {
-	conversionService := services.NewConversionService()
 
 	now := time.Now()
 
@@ -284,7 +267,7 @@ func TestConversionService_SubscriptionAnalyticsToDTO(t *testing.T) {
 		GeneratedAt:             now,
 	}
 
-	result := conversionService.SubscriptionAnalyticsToDTO(analytics)
+	result := services.SubscriptionAnalyticsToDTO(analytics)
 
 	assert.NotNil(t, result)
 	assert.Equal(t, int64(100), result.TotalSubscriptions)
@@ -301,15 +284,13 @@ func TestConversionService_SubscriptionAnalyticsToDTO(t *testing.T) {
 }
 
 func TestConversionService_SubscriptionAnalyticsToDTO_Nil(t *testing.T) {
-	conversionService := services.NewConversionService()
 
-	result := conversionService.SubscriptionAnalyticsToDTO(nil)
+	result := services.SubscriptionAnalyticsToDTO(nil)
 
 	assert.Nil(t, result)
 }
 
 func TestConversionService_SubscriptionPlanToDTO_PricingTiers(t *testing.T) {
-	conversionService := services.NewConversionService()
 
 	planID := uuid.New()
 
@@ -346,9 +327,8 @@ func TestConversionService_SubscriptionPlanToDTO_PricingTiers(t *testing.T) {
 		},
 	}
 
-	result, err := conversionService.SubscriptionPlanToDTO(plan)
+	result := services.SubscriptionPlanToDTO(plan)
 
-	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, planID, result.ID)
 	assert.True(t, result.UseTieredPricing)
@@ -379,7 +359,6 @@ func TestConversionService_SubscriptionPlanToDTO_PricingTiers(t *testing.T) {
 // AllowedBackends and DefaultBackend were vestigial on SubscriptionPlan — backends
 // are managed at the Organization level.
 func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
-	conversionService := services.NewConversionService()
 
 	planID := uuid.New()
 	createdAt := time.Now()
@@ -403,9 +382,8 @@ func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
 		NetworkAccessEnabled:      true,
 	}
 
-	result, err := conversionService.SubscriptionPlanToDTO(plan)
+	result := services.SubscriptionPlanToDTO(plan)
 
-	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, planID, result.ID)
 	assert.Equal(t, "Pro Plan", result.Name)
@@ -416,7 +394,6 @@ func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
 
 // Test de performance pour vérifier que les conversions sont rapides
 func BenchmarkConversionService_SubscriptionPlanToDTO(b *testing.B) {
-	conversionService := services.NewConversionService()
 
 	plan := &models.SubscriptionPlan{
 		BaseModel:       emm.BaseModel{ID: uuid.New()},
@@ -430,12 +407,11 @@ func BenchmarkConversionService_SubscriptionPlanToDTO(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = conversionService.SubscriptionPlanToDTO(plan)
+		_ = services.SubscriptionPlanToDTO(plan)
 	}
 }
 
 func BenchmarkConversionService_UserSubscriptionToDTO(b *testing.B) {
-	conversionService := services.NewConversionService()
 
 	subscription := &models.UserSubscription{
 		BaseModel:          emm.BaseModel{ID: uuid.New()},
@@ -450,6 +426,6 @@ func BenchmarkConversionService_UserSubscriptionToDTO(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = conversionService.UserSubscriptionToDTO(subscription)
+		_ = services.UserSubscriptionToDTO(subscription)
 	}
 }

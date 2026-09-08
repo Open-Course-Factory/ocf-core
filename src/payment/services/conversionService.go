@@ -10,56 +10,13 @@ import (
 )
 
 // ConversionService gère les conversions entre models et DTOs
-type ConversionService interface {
-	// Subscription conversions
-	UserSubscriptionToDTO(subscription *models.UserSubscription) (*dto.UserSubscriptionOutput, error)
-	UserSubscriptionsToDTO(subscriptions *[]models.UserSubscription) (*[]dto.UserSubscriptionOutput, error)
-
-	// Plan conversions
-	SubscriptionPlanToDTO(plan *models.SubscriptionPlan) (*dto.SubscriptionPlanOutput, error)
-	SubscriptionPlansToDTO(plans *[]models.SubscriptionPlan) (*[]dto.SubscriptionPlanOutput, error)
-
-	// Usage metrics conversions
-	UsageMetricsToDTO(metrics *models.UsageMetrics) (*dto.UsageMetricsOutput, error)
-	UsageMetricsListToDTO(metricsList *[]models.UsageMetrics) (*[]dto.UsageMetricsOutput, error)
-
-	// Payment method conversions
-	PaymentMethodToDTO(pm *models.PaymentMethod) (*dto.PaymentMethodOutput, error)
-	PaymentMethodsToDTO(pms *[]models.PaymentMethod) (*[]dto.PaymentMethodOutput, error)
-
-	// Invoice conversions
-	InvoiceToDTO(invoice *models.Invoice) (*dto.InvoiceOutput, error)
-	InvoicesToDTO(invoices *[]models.Invoice) (*[]dto.InvoiceOutput, error)
-
-	// Organization role plan conversions
-	OrganizationRolePlanToDTO(rolePlan *models.OrganizationRolePlan) (*dto.OrganizationRolePlanOutput, error)
-	OrganizationRolePlansToDTO(rolePlans []models.OrganizationRolePlan) ([]dto.OrganizationRolePlanOutput, error)
-
-	// Billing address conversions
-	BillingAddressToDTO(address *models.BillingAddress) (*dto.BillingAddressOutput, error)
-	BillingAddressesToDTO(addresses *[]models.BillingAddress) (*[]dto.BillingAddressOutput, error)
-
-	// Analytics conversions
-	SubscriptionAnalyticsToDTO(analytics *SubscriptionAnalytics) *dto.SubscriptionAnalyticsOutput
-}
-
-type conversionService struct{}
-
-func NewConversionService() ConversionService {
-	return &conversionService{}
-}
-
 // UserSubscriptionToDTO convertit un UserSubscription model vers DTO
-func (cs *conversionService) UserSubscriptionToDTO(subscription *models.UserSubscription) (*dto.UserSubscriptionOutput, error) {
+func UserSubscriptionToDTO(subscription *models.UserSubscription) *dto.UserSubscriptionOutput {
 	if subscription == nil {
-		return nil, nil
+		return nil
 	}
 
-	SubscriptionPlanDto, err := cs.SubscriptionPlanToDTO(&subscription.SubscriptionPlan)
-
-	if err != nil {
-		return nil, err
-	}
+	SubscriptionPlanDto := SubscriptionPlanToDTO(&subscription.SubscriptionPlan)
 
 	output := &dto.UserSubscriptionOutput{
 		ID:                   subscription.ID,
@@ -86,7 +43,7 @@ func (cs *conversionService) UserSubscriptionToDTO(subscription *models.UserSubs
 		output.AssignedAt = &subscription.CreatedAt // License was assigned when subscription was created
 
 		// Fetch batch owner details from Casdoor
-		cs.populateBatchOwnerInfo(output, *subscription.PurchaserUserID)
+		populateBatchOwnerInfo(output, *subscription.PurchaserUserID)
 	}
 
 	// Admin assignment tracking
@@ -94,27 +51,24 @@ func (cs *conversionService) UserSubscriptionToDTO(subscription *models.UserSubs
 		output.AssignedByUserID = subscription.AssignedByUserID
 	}
 
-	return output, nil
+	return output
 }
 
 // UserSubscriptionsToDTO convertit une liste de UserSubscription
-func (cs *conversionService) UserSubscriptionsToDTO(subscriptions *[]models.UserSubscription) (*[]dto.UserSubscriptionOutput, error) {
+func UserSubscriptionsToDTO(subscriptions *[]models.UserSubscription) *[]dto.UserSubscriptionOutput {
 	if subscriptions == nil {
-		return nil, nil
+		return nil
 	}
 
 	var outputs []dto.UserSubscriptionOutput
 	for _, subscription := range *subscriptions {
-		output, err := cs.UserSubscriptionToDTO(&subscription)
-		if err != nil {
-			return nil, err
-		}
+		output := UserSubscriptionToDTO(&subscription)
 		if output != nil {
 			outputs = append(outputs, *output)
 		}
 	}
 
-	return &outputs, nil
+	return &outputs
 }
 
 // SubscriptionPlanToDTO convertit un SubscriptionPlan model vers DTO.
@@ -122,39 +76,36 @@ func (cs *conversionService) UserSubscriptionsToDTO(subscriptions *[]models.User
 // Delegates to SubscriptionPlanToOutput, the single producer. This function used
 // to build the DTO itself and dropped six fields doing so — including the budget
 // caps, whose zero value then meant "unlimited" (#454).
-func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan) (*dto.SubscriptionPlanOutput, error) {
+func SubscriptionPlanToDTO(plan *models.SubscriptionPlan) *dto.SubscriptionPlanOutput {
 	if plan == nil {
-		return nil, nil
+		return nil
 	}
 
 	out := SubscriptionPlanToOutput(plan)
-	return &out, nil
+	return &out
 }
 
 // SubscriptionPlansToDTO convertit une liste de SubscriptionPlan
-func (cs *conversionService) SubscriptionPlansToDTO(plans *[]models.SubscriptionPlan) (*[]dto.SubscriptionPlanOutput, error) {
+func SubscriptionPlansToDTO(plans *[]models.SubscriptionPlan) *[]dto.SubscriptionPlanOutput {
 	if plans == nil {
-		return nil, nil
+		return nil
 	}
 
 	var outputs []dto.SubscriptionPlanOutput
 	for _, plan := range *plans {
-		output, err := cs.SubscriptionPlanToDTO(&plan)
-		if err != nil {
-			return nil, err
-		}
+		output := SubscriptionPlanToDTO(&plan)
 		if output != nil {
 			outputs = append(outputs, *output)
 		}
 	}
 
-	return &outputs, nil
+	return &outputs
 }
 
 // UsageMetricsToDTO convertit des UsageMetrics model vers DTO
-func (cs *conversionService) UsageMetricsToDTO(metrics *models.UsageMetrics) (*dto.UsageMetricsOutput, error) {
+func UsageMetricsToDTO(metrics *models.UsageMetrics) *dto.UsageMetricsOutput {
 	if metrics == nil {
-		return nil, nil
+		return nil
 	}
 
 	var usagePercent float64
@@ -174,33 +125,30 @@ func (cs *conversionService) UsageMetricsToDTO(metrics *models.UsageMetrics) (*d
 		PeriodEnd:    metrics.PeriodEnd,
 		LastUpdated:  metrics.LastUpdated,
 		UsagePercent: usagePercent,
-	}, nil
+	}
 }
 
 // UsageMetricsListToDTO convertit une liste d'UsageMetrics
-func (cs *conversionService) UsageMetricsListToDTO(metricsList *[]models.UsageMetrics) (*[]dto.UsageMetricsOutput, error) {
+func UsageMetricsListToDTO(metricsList *[]models.UsageMetrics) *[]dto.UsageMetricsOutput {
 	if metricsList == nil {
-		return nil, nil
+		return nil
 	}
 
 	var outputs []dto.UsageMetricsOutput
 	for _, metrics := range *metricsList {
-		output, err := cs.UsageMetricsToDTO(&metrics)
-		if err != nil {
-			return nil, err
-		}
+		output := UsageMetricsToDTO(&metrics)
 		if output != nil {
 			outputs = append(outputs, *output)
 		}
 	}
 
-	return &outputs, nil
+	return &outputs
 }
 
 // PaymentMethodToDTO convertit un PaymentMethod model vers DTO
-func (cs *conversionService) PaymentMethodToDTO(pm *models.PaymentMethod) (*dto.PaymentMethodOutput, error) {
+func PaymentMethodToDTO(pm *models.PaymentMethod) *dto.PaymentMethodOutput {
 	if pm == nil {
-		return nil, nil
+		return nil
 	}
 
 	return &dto.PaymentMethodOutput{
@@ -215,39 +163,33 @@ func (cs *conversionService) PaymentMethodToDTO(pm *models.PaymentMethod) (*dto.
 		IsDefault:             pm.IsDefault,
 		IsActive:              pm.IsActive,
 		CreatedAt:             pm.CreatedAt,
-	}, nil
+	}
 }
 
 // PaymentMethodsToDTO convertit une liste de PaymentMethod
-func (cs *conversionService) PaymentMethodsToDTO(pms *[]models.PaymentMethod) (*[]dto.PaymentMethodOutput, error) {
+func PaymentMethodsToDTO(pms *[]models.PaymentMethod) *[]dto.PaymentMethodOutput {
 	if pms == nil {
-		return nil, nil
+		return nil
 	}
 
 	var outputs []dto.PaymentMethodOutput
 	for _, pm := range *pms {
-		output, err := cs.PaymentMethodToDTO(&pm)
-		if err != nil {
-			return nil, err
-		}
+		output := PaymentMethodToDTO(&pm)
 		if output != nil {
 			outputs = append(outputs, *output)
 		}
 	}
 
-	return &outputs, nil
+	return &outputs
 }
 
 // InvoiceToDTO convertit un Invoice model vers DTO
-func (cs *conversionService) InvoiceToDTO(invoice *models.Invoice) (*dto.InvoiceOutput, error) {
+func InvoiceToDTO(invoice *models.Invoice) *dto.InvoiceOutput {
 	if invoice == nil {
-		return nil, nil
+		return nil
 	}
 
-	subscriptionOutput, err := cs.UserSubscriptionToDTO(&invoice.UserSubscription)
-	if err != nil {
-		return nil, err
-	}
+	subscriptionOutput := UserSubscriptionToDTO(&invoice.UserSubscription)
 
 	return &dto.InvoiceOutput{
 		ID:                         invoice.ID,
@@ -266,40 +208,34 @@ func (cs *conversionService) InvoiceToDTO(invoice *models.Invoice) (*dto.Invoice
 		StripeHostedURL:            invoice.StripeHostedURL,
 		DownloadURL:                invoice.DownloadURL,
 		CreatedAt:                  invoice.CreatedAt,
-	}, nil
+	}
 }
 
 // InvoicesToDTO convertit une liste d'Invoice
-func (cs *conversionService) InvoicesToDTO(invoices *[]models.Invoice) (*[]dto.InvoiceOutput, error) {
+func InvoicesToDTO(invoices *[]models.Invoice) *[]dto.InvoiceOutput {
 	if invoices == nil {
-		return nil, nil
+		return nil
 	}
 
 	var outputs []dto.InvoiceOutput
 	for _, invoice := range *invoices {
-		output, err := cs.InvoiceToDTO(&invoice)
-		if err != nil {
-			return nil, err
-		}
+		output := InvoiceToDTO(&invoice)
 		if output != nil {
 			outputs = append(outputs, *output)
 		}
 	}
 
-	return &outputs, nil
+	return &outputs
 }
 
 // OrganizationRolePlanToDTO convertit un OrganizationRolePlan model vers DTO
-func (cs *conversionService) OrganizationRolePlanToDTO(rolePlan *models.OrganizationRolePlan) (*dto.OrganizationRolePlanOutput, error) {
+func OrganizationRolePlanToDTO(rolePlan *models.OrganizationRolePlan) *dto.OrganizationRolePlanOutput {
 	if rolePlan == nil {
-		return nil, nil
+		return nil
 	}
 
 	var planOutput dto.SubscriptionPlanOutput
-	converted, err := cs.SubscriptionPlanToDTO(&rolePlan.SubscriptionPlan)
-	if err != nil {
-		return nil, err
-	}
+	converted := SubscriptionPlanToDTO(&rolePlan.SubscriptionPlan)
 	if converted != nil {
 		planOutput = *converted
 	}
@@ -312,29 +248,26 @@ func (cs *conversionService) OrganizationRolePlanToDTO(rolePlan *models.Organiza
 		SubscriptionPlan:   planOutput,
 		CreatedAt:          rolePlan.CreatedAt,
 		UpdatedAt:          rolePlan.UpdatedAt,
-	}, nil
+	}
 }
 
 // OrganizationRolePlansToDTO convertit une liste d'OrganizationRolePlan
-func (cs *conversionService) OrganizationRolePlansToDTO(rolePlans []models.OrganizationRolePlan) ([]dto.OrganizationRolePlanOutput, error) {
+func OrganizationRolePlansToDTO(rolePlans []models.OrganizationRolePlan) []dto.OrganizationRolePlanOutput {
 	outputs := make([]dto.OrganizationRolePlanOutput, 0, len(rolePlans))
 	for i := range rolePlans {
-		output, err := cs.OrganizationRolePlanToDTO(&rolePlans[i])
-		if err != nil {
-			return nil, err
-		}
+		output := OrganizationRolePlanToDTO(&rolePlans[i])
 		if output != nil {
 			outputs = append(outputs, *output)
 		}
 	}
 
-	return outputs, nil
+	return outputs
 }
 
 // BillingAddressToDTO convertit un BillingAddress model vers DTO
-func (cs *conversionService) BillingAddressToDTO(address *models.BillingAddress) (*dto.BillingAddressOutput, error) {
+func BillingAddressToDTO(address *models.BillingAddress) *dto.BillingAddressOutput {
 	if address == nil {
-		return nil, nil
+		return nil
 	}
 
 	return &dto.BillingAddressOutput{
@@ -352,31 +285,28 @@ func (cs *conversionService) BillingAddressToDTO(address *models.BillingAddress)
 		IsDefault:   address.IsDefault,
 		CreatedAt:   address.CreatedAt,
 		UpdatedAt:   address.UpdatedAt,
-	}, nil
+	}
 }
 
 // BillingAddressesToDTO convertit une liste de BillingAddress
-func (cs *conversionService) BillingAddressesToDTO(addresses *[]models.BillingAddress) (*[]dto.BillingAddressOutput, error) {
+func BillingAddressesToDTO(addresses *[]models.BillingAddress) *[]dto.BillingAddressOutput {
 	if addresses == nil {
-		return nil, nil
+		return nil
 	}
 
 	var outputs []dto.BillingAddressOutput
 	for _, address := range *addresses {
-		output, err := cs.BillingAddressToDTO(&address)
-		if err != nil {
-			return nil, err
-		}
+		output := BillingAddressToDTO(&address)
 		if output != nil {
 			outputs = append(outputs, *output)
 		}
 	}
 
-	return &outputs, nil
+	return &outputs
 }
 
 // SubscriptionAnalyticsToDTO convertit SubscriptionAnalytics vers DTO
-func (cs *conversionService) SubscriptionAnalyticsToDTO(analytics *SubscriptionAnalytics) *dto.SubscriptionAnalyticsOutput {
+func SubscriptionAnalyticsToDTO(analytics *SubscriptionAnalytics) *dto.SubscriptionAnalyticsOutput {
 	if analytics == nil {
 		return nil
 	}
@@ -384,16 +314,16 @@ func (cs *conversionService) SubscriptionAnalyticsToDTO(analytics *SubscriptionA
 	// Convertir les subscriptions récentes
 	var recentSignups []dto.UserSubscriptionOutput
 	for _, signup := range analytics.RecentSignups {
-		output, err := cs.UserSubscriptionToDTO(&signup)
-		if err == nil && output != nil {
+		output := UserSubscriptionToDTO(&signup)
+		if output != nil {
 			recentSignups = append(recentSignups, *output)
 		}
 	}
 
 	var recentCancellations []dto.UserSubscriptionOutput
 	for _, cancellation := range analytics.RecentCancellations {
-		output, err := cs.UserSubscriptionToDTO(&cancellation)
-		if err == nil && output != nil {
+		output := UserSubscriptionToDTO(&cancellation)
+		if output != nil {
 			recentCancellations = append(recentCancellations, *output)
 		}
 	}
@@ -414,7 +344,7 @@ func (cs *conversionService) SubscriptionAnalyticsToDTO(analytics *SubscriptionA
 }
 
 // populateBatchOwnerInfo fetches batch owner details from Casdoor and populates the DTO
-func (cs *conversionService) populateBatchOwnerInfo(output *dto.UserSubscriptionOutput, purchaserUserID string) {
+func populateBatchOwnerInfo(output *dto.UserSubscriptionOutput, purchaserUserID string) {
 	// Fetch user from Casdoor
 	user, err := casdoorsdk.GetUserByUserId(purchaserUserID)
 	if err != nil {

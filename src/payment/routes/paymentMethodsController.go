@@ -23,7 +23,6 @@ type PaymentMethodController interface {
 type paymentMethodController struct {
 	controller.GenericController
 	subscriptionService services.UserSubscriptionService
-	conversionService   services.ConversionService
 	stripeService       services.StripeService
 }
 
@@ -31,7 +30,6 @@ func NewPaymentMethodController(db *gorm.DB) PaymentMethodController {
 	return &paymentMethodController{
 		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
-		conversionService:   services.NewConversionService(),
 		stripeService:       services.NewStripeService(db),
 	}
 }
@@ -92,11 +90,7 @@ func (pmc *paymentMethodController) GetUserPaymentMethods(ctx *gin.Context) {
 	}
 
 	// Convertir vers DTO
-	paymentMethodsDTO, err := pmc.conversionService.PaymentMethodsToDTO(paymentMethods)
-	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to convert payment methods")
-		return
-	}
+	paymentMethodsDTO := services.PaymentMethodsToDTO(paymentMethods)
 
 	ctx.JSON(http.StatusOK, paymentMethodsDTO)
 }

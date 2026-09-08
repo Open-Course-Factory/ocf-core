@@ -12,18 +12,13 @@ import (
 )
 
 func RegisterOrganizationRolePlan(service *ems.EntityRegistrationService) {
-	conversionService := paymentServices.NewConversionService()
-
 	ems.RegisterTypedEntity[models.OrganizationRolePlan, dto.CreateOrganizationRolePlanInput, dto.UpdateOrganizationRolePlanInput, dto.OrganizationRolePlanOutput](
 		service,
 		"OrganizationRolePlan",
 		entityManagementInterfaces.TypedEntityRegistration[models.OrganizationRolePlan, dto.CreateOrganizationRolePlanInput, dto.UpdateOrganizationRolePlanInput, dto.OrganizationRolePlanOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.OrganizationRolePlan, dto.CreateOrganizationRolePlanInput, dto.UpdateOrganizationRolePlanInput, dto.OrganizationRolePlanOutput]{
 				ModelToDto: func(rolePlan *models.OrganizationRolePlan) (dto.OrganizationRolePlanOutput, error) {
-					output, err := conversionService.OrganizationRolePlanToDTO(rolePlan)
-					if err != nil {
-						return dto.OrganizationRolePlanOutput{}, err
-					}
+					output := paymentServices.OrganizationRolePlanToDTO(rolePlan)
 					if output == nil {
 						return dto.OrganizationRolePlanOutput{}, nil
 					}

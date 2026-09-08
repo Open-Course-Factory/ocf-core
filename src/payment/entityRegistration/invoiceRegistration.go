@@ -12,22 +12,17 @@ import (
 )
 
 func RegisterInvoice(service *ems.EntityRegistrationService) {
-	conversionService := paymentServices.NewConversionService()
-
 	ems.RegisterTypedEntity[models.Invoice, dto.InvoiceOutput, dto.InvoiceOutput, dto.InvoiceOutput](
 		service,
 		"Invoice",
 		entityManagementInterfaces.TypedEntityRegistration[models.Invoice, dto.InvoiceOutput, dto.InvoiceOutput, dto.InvoiceOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.Invoice, dto.InvoiceOutput, dto.InvoiceOutput, dto.InvoiceOutput]{
 				ModelToDto: func(invoice *models.Invoice) (dto.InvoiceOutput, error) {
-					// Single source of truth: delegate to ConversionService.InvoiceToDTO so
+					// Single source of truth: delegate to services.InvoiceToDTO so
 					// the generic entity endpoint and the invoice controllers share ONE
 					// Invoice→DTO mapping (organization fields included). A second local
 					// mapper here would silently drift when the DTO gains fields.
-					output, err := conversionService.InvoiceToDTO(invoice)
-					if err != nil {
-						return dto.InvoiceOutput{}, err
-					}
+					output := paymentServices.InvoiceToDTO(invoice)
 					if output == nil {
 						return dto.InvoiceOutput{}, nil
 					}

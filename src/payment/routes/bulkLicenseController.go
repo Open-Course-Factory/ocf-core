@@ -32,7 +32,6 @@ type bulkLicenseController struct {
 	db                *gorm.DB
 	bulkService       services.BulkLicenseService
 	stripeService     services.StripeService
-	conversionService services.ConversionService
 }
 
 func NewBulkLicenseController(db *gorm.DB) BulkLicenseController {
@@ -40,7 +39,6 @@ func NewBulkLicenseController(db *gorm.DB) BulkLicenseController {
 		db:                db,
 		bulkService:       services.NewBulkLicenseService(db),
 		stripeService:     services.NewStripeService(db),
-		conversionService: services.NewConversionService(),
 	}
 }
 
@@ -137,7 +135,7 @@ func (c *bulkLicenseController) PurchaseBulkLicenses(ctx *gin.Context) {
 	}
 
 	// Convert subscription plan
-	planOutput, _ := c.conversionService.SubscriptionPlanToDTO(&batch.SubscriptionPlan)
+	planOutput := services.SubscriptionPlanToDTO(&batch.SubscriptionPlan)
 	batchOutput.SubscriptionPlan = *planOutput
 
 	ctx.JSON(http.StatusCreated, batchOutput)
@@ -209,7 +207,7 @@ func (c *bulkLicenseController) GetMyBatches(ctx *gin.Context) {
 			UpdatedAt:                batch.UpdatedAt,
 		}
 
-		planOutput, _ := c.conversionService.SubscriptionPlanToDTO(&batch.SubscriptionPlan)
+		planOutput := services.SubscriptionPlanToDTO(&batch.SubscriptionPlan)
 		batchOutput.SubscriptionPlan = *planOutput
 
 		output = append(output, batchOutput)
@@ -263,7 +261,7 @@ func (c *bulkLicenseController) GetBatchDetails(ctx *gin.Context) {
 		UpdatedAt:                batch.UpdatedAt,
 	}
 
-	planOutput, _ := c.conversionService.SubscriptionPlanToDTO(&batch.SubscriptionPlan)
+	planOutput := services.SubscriptionPlanToDTO(&batch.SubscriptionPlan)
 	batchOutput.SubscriptionPlan = *planOutput
 
 	ctx.JSON(http.StatusOK, batchOutput)
@@ -305,7 +303,7 @@ func (c *bulkLicenseController) GetBatchLicenses(ctx *gin.Context) {
 	// Initialize as empty array instead of nil to ensure JSON returns [] instead of null
 	output := make([]dto.UserSubscriptionOutput, 0)
 	for _, license := range *licenses {
-		licenseOutput, _ := c.conversionService.UserSubscriptionToDTO(&license)
+		licenseOutput := services.UserSubscriptionToDTO(&license)
 		output = append(output, *licenseOutput)
 	}
 
@@ -349,7 +347,7 @@ func (c *bulkLicenseController) AssignLicense(ctx *gin.Context) {
 		return
 	}
 
-	licenseOutput, _ := c.conversionService.UserSubscriptionToDTO(license)
+	licenseOutput := services.UserSubscriptionToDTO(license)
 	ctx.JSON(http.StatusOK, licenseOutput)
 }
 
