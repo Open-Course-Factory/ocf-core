@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/interfaces"
 	services "soli/formations/src/auth/services"
 
@@ -25,10 +26,8 @@ func NewSecurityAdminController(enforcer interfaces.EnforcerInterface, db *gorm.
 // Returns true if the user is an admin, false otherwise (and sends a 403 response).
 func (c *SecurityAdminController) requireAdmin(ctx *gin.Context) bool {
 	userRoles := ctx.GetStringSlice("userRoles")
-	for _, role := range userRoles {
-		if role == "administrator" {
-			return true
-		}
+	if access.IsAdmin(userRoles) {
+		return true
 	}
 	ctx.JSON(http.StatusForbidden, gin.H{"error": "Access denied - admin role required"})
 	return false

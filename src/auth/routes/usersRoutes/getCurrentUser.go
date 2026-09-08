@@ -2,8 +2,9 @@ package userController
 
 import (
 	"net/http"
-	"slices"
 	"time"
+
+	"soli/formations/src/auth/access"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
@@ -70,7 +71,7 @@ func GetCurrentUser(ctx *gin.Context) {
 	}
 
 	// Check if user is admin based on roles
-	isAdmin := slices.Contains(roles, "administrator")
+	isAdmin := access.IsAdmin(roles)
 
 	// Extract properties that remain in the custom map
 	emailVerifiedAt := ""

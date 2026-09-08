@@ -2,9 +2,9 @@ package services
 
 import (
 	"fmt"
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	authDto "soli/formations/src/auth/dto"
-	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/utils"
@@ -57,13 +57,7 @@ func (s *userPermissionsService) GetUserPermissions(userID string) (*authDto.Use
 	}
 
 	// 3. Check if user is system admin
-	isSystemAdmin := false
-	for _, role := range roles {
-		if role == string(authModels.Administrator) || role == "administrator" {
-			isSystemAdmin = true
-			break
-		}
-	}
+	isSystemAdmin := access.IsAdmin(roles)
 
 	// 4. NEW: Get all entity memberships generically
 	entityMemberships, err := s.getAllEntityMemberships(userID)

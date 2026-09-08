@@ -2,6 +2,7 @@ package userController
 
 import (
 	"net/http"
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/auth/services"
@@ -34,13 +35,7 @@ import (
 //	@Router			/users/{id} [delete]
 func (u userController) DeleteUser(ctx *gin.Context) {
 	userRoles := ctx.GetStringSlice("userRoles")
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
+	isAdmin := access.IsAdmin(userRoles)
 	if !isAdmin {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
