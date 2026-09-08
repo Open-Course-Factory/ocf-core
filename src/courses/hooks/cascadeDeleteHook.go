@@ -14,37 +14,21 @@ import (
 
 // CourseCascadeDeleteHook handles cascade deletion of orphaned chapters when a course is deleted
 type CourseCascadeDeleteHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewCourseCascadeDeleteHook(db *gorm.DB) hooks.Hook {
 	return &CourseCascadeDeleteHook{
-		db:       db,
-		enabled:  true,
-		priority: 10,
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "course_cascade_delete",
+			EntityName: "Course",
+			HookTypes:  []hooks.HookType{hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *CourseCascadeDeleteHook) GetName() string {
-	return "course_cascade_delete"
-}
-
-func (h *CourseCascadeDeleteHook) GetEntityName() string {
-	return "Course"
-}
-
-func (h *CourseCascadeDeleteHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeDelete}
-}
-
-func (h *CourseCascadeDeleteHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *CourseCascadeDeleteHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *CourseCascadeDeleteHook) Execute(ctx *hooks.HookContext) error {
@@ -113,37 +97,21 @@ func (h *CourseCascadeDeleteHook) Execute(ctx *hooks.HookContext) error {
 
 // ChapterCascadeDeleteHook handles cascade deletion of orphaned sections when a chapter is deleted
 type ChapterCascadeDeleteHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewChapterCascadeDeleteHook(db *gorm.DB) hooks.Hook {
 	return &ChapterCascadeDeleteHook{
-		db:       db,
-		enabled:  true,
-		priority: 10,
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "chapter_cascade_delete",
+			EntityName: "Chapter",
+			HookTypes:  []hooks.HookType{hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *ChapterCascadeDeleteHook) GetName() string {
-	return "chapter_cascade_delete"
-}
-
-func (h *ChapterCascadeDeleteHook) GetEntityName() string {
-	return "Chapter"
-}
-
-func (h *ChapterCascadeDeleteHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeDelete}
-}
-
-func (h *ChapterCascadeDeleteHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *ChapterCascadeDeleteHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *ChapterCascadeDeleteHook) Execute(ctx *hooks.HookContext) error {
@@ -212,37 +180,21 @@ func (h *ChapterCascadeDeleteHook) Execute(ctx *hooks.HookContext) error {
 
 // SectionCascadeDeleteHook handles cascade deletion of orphaned pages when a section is deleted
 type SectionCascadeDeleteHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
+	db *gorm.DB
+	hooks.BaseHook
 }
 
 func NewSectionCascadeDeleteHook(db *gorm.DB) hooks.Hook {
 	return &SectionCascadeDeleteHook{
-		db:       db,
-		enabled:  true,
-		priority: 10,
+		db: db,
+		BaseHook: hooks.BaseHook{
+			Name:       "section_cascade_delete",
+			EntityName: "Section",
+			HookTypes:  []hooks.HookType{hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *SectionCascadeDeleteHook) GetName() string {
-	return "section_cascade_delete"
-}
-
-func (h *SectionCascadeDeleteHook) GetEntityName() string {
-	return "Section"
-}
-
-func (h *SectionCascadeDeleteHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeDelete}
-}
-
-func (h *SectionCascadeDeleteHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *SectionCascadeDeleteHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *SectionCascadeDeleteHook) Execute(ctx *hooks.HookContext) error {
