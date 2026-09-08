@@ -30,9 +30,8 @@ import (
 // Platform administrators bypass the check: they provision organizations for
 // customers and hold no subscription of their own.
 type OrganizationCreationEntitlementHook struct {
-	plans    paymentServices.EffectivePlanService
-	enabled  bool
-	priority int
+	plans paymentServices.EffectivePlanService
+	hooks.BaseHook
 }
 
 func NewOrganizationCreationEntitlementHook(db *gorm.DB) hooks.Hook {
@@ -41,25 +40,15 @@ func NewOrganizationCreationEntitlementHook(db *gorm.DB) hooks.Hook {
 		// Ahead of plan protection (5) and owner setup (10): refusing a creation
 		// must not depend on another hook having run first, and there is no point
 		// preparing an organization that is about to be rejected.
-		priority: 1,
-		enabled:  true,
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_creation_entitlement",
+			EntityName: "Organization",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate},
+			Enabled:    true,
+			Priority:   1,
+		},
 	}
 }
-
-func (h *OrganizationCreationEntitlementHook) GetName() string {
-	return "organization_creation_entitlement"
-}
-
-func (h *OrganizationCreationEntitlementHook) GetEntityName() string {
-	return "Organization"
-}
-
-func (h *OrganizationCreationEntitlementHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate}
-}
-
-func (h *OrganizationCreationEntitlementHook) IsEnabled() bool  { return h.enabled }
-func (h *OrganizationCreationEntitlementHook) GetPriority() int { return h.priority }
 
 func (h *OrganizationCreationEntitlementHook) Execute(ctx *hooks.HookContext) error {
 	// An unauthenticated context means this is not a user-facing write (startup

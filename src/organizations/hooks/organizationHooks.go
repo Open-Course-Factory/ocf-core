@@ -19,35 +19,19 @@ import (
 // payloads when the caller is not an Administrator. This prevents Members from
 // bypassing payment by injecting a paid plan UUID into the request body.
 type OrganizationPlanProtectionHook struct {
-	enabled  bool
-	priority int
+	hooks.BaseHook
 }
 
 func NewOrganizationPlanProtectionHook() hooks.Hook {
 	return &OrganizationPlanProtectionHook{
-		enabled:  true,
-		priority: 5, // Run before owner setup (priority 10)
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_plan_protection",
+			EntityName: "Organization",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate},
+			Enabled:    true,
+			Priority:   5, // Run before owner setup (priority 10)
+		},
 	}
-}
-
-func (h *OrganizationPlanProtectionHook) GetName() string {
-	return "organization_plan_protection"
-}
-
-func (h *OrganizationPlanProtectionHook) GetEntityName() string {
-	return "Organization"
-}
-
-func (h *OrganizationPlanProtectionHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate}
-}
-
-func (h *OrganizationPlanProtectionHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *OrganizationPlanProtectionHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *OrganizationPlanProtectionHook) Execute(ctx *hooks.HookContext) error {
@@ -84,37 +68,21 @@ func (h *OrganizationPlanProtectionHook) Execute(ctx *hooks.HookContext) error {
 type OrganizationOwnerSetupHook struct {
 	db                  *gorm.DB
 	organizationService services.OrganizationService
-	enabled             bool
-	priority            int
+	hooks.BaseHook
 }
 
 func NewOrganizationOwnerSetupHook(db *gorm.DB) hooks.Hook {
 	return &OrganizationOwnerSetupHook{
 		db:                  db,
 		organizationService: services.NewOrganizationService(db),
-		enabled:             true,
-		priority:            10,
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_owner_setup",
+			EntityName: "Organization",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.AfterCreate},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *OrganizationOwnerSetupHook) GetName() string {
-	return "organization_owner_setup"
-}
-
-func (h *OrganizationOwnerSetupHook) GetEntityName() string {
-	return "Organization"
-}
-
-func (h *OrganizationOwnerSetupHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.AfterCreate}
-}
-
-func (h *OrganizationOwnerSetupHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *OrganizationOwnerSetupHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *OrganizationOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
@@ -179,37 +147,21 @@ func (h *OrganizationOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
 type OrganizationCleanupHook struct {
 	db                  *gorm.DB
 	organizationService services.OrganizationService
-	enabled             bool
-	priority            int
+	hooks.BaseHook
 }
 
 func NewOrganizationCleanupHook(db *gorm.DB) hooks.Hook {
 	return &OrganizationCleanupHook{
 		db:                  db,
 		organizationService: services.NewOrganizationService(db),
-		enabled:             true,
-		priority:            10,
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_cleanup",
+			EntityName: "Organization",
+			HookTypes:  []hooks.HookType{hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *OrganizationCleanupHook) GetName() string {
-	return "organization_cleanup"
-}
-
-func (h *OrganizationCleanupHook) GetEntityName() string {
-	return "Organization"
-}
-
-func (h *OrganizationCleanupHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeDelete}
-}
-
-func (h *OrganizationCleanupHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *OrganizationCleanupHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *OrganizationCleanupHook) Execute(ctx *hooks.HookContext) error {
@@ -310,37 +262,21 @@ func (h *OrganizationCleanupHook) archiveOrganizationClasses(orgID uuid.UUID) er
 type OrganizationMemberValidationHook struct {
 	db                  *gorm.DB
 	organizationService services.OrganizationService
-	enabled             bool
-	priority            int
+	hooks.BaseHook
 }
 
 func NewOrganizationMemberValidationHook(db *gorm.DB) hooks.Hook {
 	return &OrganizationMemberValidationHook{
 		db:                  db,
 		organizationService: services.NewOrganizationService(db),
-		enabled:             true,
-		priority:            10, // Run before creation
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_member_validation",
+			EntityName: "OrganizationMember",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate},
+			Enabled:    true,
+			Priority:   10, // Run before creation
+		},
 	}
-}
-
-func (h *OrganizationMemberValidationHook) GetName() string {
-	return "organization_member_validation"
-}
-
-func (h *OrganizationMemberValidationHook) GetEntityName() string {
-	return "OrganizationMember"
-}
-
-func (h *OrganizationMemberValidationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate}
-}
-
-func (h *OrganizationMemberValidationHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *OrganizationMemberValidationHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error {
@@ -448,37 +384,21 @@ func (h *OrganizationMemberValidationHook) isOffboardedMember(orgID uuid.UUID, u
 type OrganizationMemberUpdateAuthorizationHook struct {
 	db                  *gorm.DB
 	organizationService services.OrganizationService
-	enabled             bool
-	priority            int
+	hooks.BaseHook
 }
 
 func NewOrganizationMemberUpdateAuthorizationHook(db *gorm.DB) hooks.Hook {
 	return &OrganizationMemberUpdateAuthorizationHook{
 		db:                  db,
 		organizationService: services.NewOrganizationService(db),
-		enabled:             true,
-		priority:            10, // Run before write, alongside the create/delete validation hooks
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_member_update_authorization",
+			EntityName: "OrganizationMember",
+			HookTypes:  []hooks.HookType{hooks.BeforeUpdate},
+			Enabled:    true,
+			Priority:   10, // Run before write, alongside the create/delete validation hooks
+		},
 	}
-}
-
-func (h *OrganizationMemberUpdateAuthorizationHook) GetName() string {
-	return "organization_member_update_authorization"
-}
-
-func (h *OrganizationMemberUpdateAuthorizationHook) GetEntityName() string {
-	return "OrganizationMember"
-}
-
-func (h *OrganizationMemberUpdateAuthorizationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeUpdate}
-}
-
-func (h *OrganizationMemberUpdateAuthorizationHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *OrganizationMemberUpdateAuthorizationHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *OrganizationMemberUpdateAuthorizationHook) Execute(ctx *hooks.HookContext) error {
@@ -566,37 +486,21 @@ func requestedRoleFromPatch(patch map[string]any) (models.OrganizationMemberRole
 type OrganizationMemberPermissionHook struct {
 	db                  *gorm.DB
 	organizationService services.OrganizationService
-	enabled             bool
-	priority            int
+	hooks.BaseHook
 }
 
 func NewOrganizationMemberPermissionHook(db *gorm.DB) hooks.Hook {
 	return &OrganizationMemberPermissionHook{
 		db:                  db,
 		organizationService: services.NewOrganizationService(db),
-		enabled:             true,
-		priority:            20, // Run after creation/update
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_member_permission",
+			EntityName: "OrganizationMember",
+			HookTypes:  []hooks.HookType{hooks.AfterCreate, hooks.AfterUpdate},
+			Enabled:    true,
+			Priority:   20, // Run after creation/update
+		},
 	}
-}
-
-func (h *OrganizationMemberPermissionHook) GetName() string {
-	return "organization_member_permission"
-}
-
-func (h *OrganizationMemberPermissionHook) GetEntityName() string {
-	return "OrganizationMember"
-}
-
-func (h *OrganizationMemberPermissionHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.AfterCreate, hooks.AfterUpdate}
-}
-
-func (h *OrganizationMemberPermissionHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *OrganizationMemberPermissionHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *OrganizationMemberPermissionHook) Execute(ctx *hooks.HookContext) error {
@@ -670,37 +574,21 @@ func (h *OrganizationMemberPermissionHook) syncManagerGroupingOnRoleChange(ctx *
 type OrganizationMemberDeletionHook struct {
 	db                  *gorm.DB
 	organizationService services.OrganizationService
-	enabled             bool
-	priority            int
+	hooks.BaseHook
 }
 
 func NewOrganizationMemberDeletionHook(db *gorm.DB) hooks.Hook {
 	return &OrganizationMemberDeletionHook{
 		db:                  db,
 		organizationService: services.NewOrganizationService(db),
-		enabled:             true,
-		priority:            10,
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_member_deletion",
+			EntityName: "OrganizationMember",
+			HookTypes:  []hooks.HookType{hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   10,
+		},
 	}
-}
-
-func (h *OrganizationMemberDeletionHook) GetName() string {
-	return "organization_member_deletion"
-}
-
-func (h *OrganizationMemberDeletionHook) GetEntityName() string {
-	return "OrganizationMember"
-}
-
-func (h *OrganizationMemberDeletionHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeDelete}
-}
-
-func (h *OrganizationMemberDeletionHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *OrganizationMemberDeletionHook) GetPriority() int {
-	return h.priority
 }
 
 func (h *OrganizationMemberDeletionHook) Execute(ctx *hooks.HookContext) error {
