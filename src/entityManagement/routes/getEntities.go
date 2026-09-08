@@ -3,6 +3,7 @@ package controller
 import (
 	"math"
 	"net/http"
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	filterStrategies "soli/formations/src/entityManagement/repositories/filters"
@@ -91,19 +92,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		userID := ctx.GetString("userId")
 		if userID != "" {
 			// Check if user is a system admin
-			roles, exists := ctx.Get("userRoles")
-			isAdmin := false
-			if exists {
-				roleList, ok := roles.([]string)
-				if ok {
-					for _, role := range roleList {
-						if role == "administrator" || role == "admin" {
-							isAdmin = true
-							break
-						}
-					}
-				}
-			}
+			isAdmin := access.IsAdmin(ctx.GetStringSlice("userRoles"))
 
 			// Non-admin users only see entities they have access to via membership
 			if !isAdmin {
