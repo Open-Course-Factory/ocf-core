@@ -198,6 +198,7 @@ type SeedScenarioInput struct {
 	FlagsEnabled     bool   `json:"flags_enabled"`
 	AllowedFlagPaths string `json:"allowed_flag_paths,omitempty"`
 	CrashTraps       bool   `json:"crash_traps"`
+	PortExposureAllowed bool `json:"port_exposure_allowed"`
 	// SessionUser is the uid the learner's console runs as. Absent means the
 	// distribution decides, which is root — fine for every scenario whose
 	// lesson is not "the kernel said no".
@@ -302,6 +303,7 @@ type ScenarioExportOutput struct {
 	FlagsEnabled     bool                       `json:"flags_enabled"`
 	AllowedFlagPaths string                     `json:"allowed_flag_paths,omitempty"`
 	CrashTraps       bool                       `json:"crash_traps"`
+	PortExposureAllowed bool                    `json:"port_exposure_allowed"`
 	SessionUser      *int                       `json:"session_user,omitempty"`
 	IsPublic         bool                       `json:"is_public"`
 	IntroText        string                     `json:"intro_text,omitempty"`

@@ -24,7 +24,7 @@ import (
 //	@Security		Bearer
 //	@Success		201	{object}	dto.ExposedPortResponse
 //	@Failure		400	{object}	errors.APIError	"Invalid port or session not running"
-//	@Failure		403	{object}	errors.APIError	"Plan does not allow port exposure"
+//	@Failure		403	{object}	errors.APIError	"Plan or scenario does not allow port exposure"
 //	@Router			/terminals/{id}/exposed-ports [post]
 func (tc *terminalController) CreateExposedPort(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
@@ -41,17 +41,12 @@ func (tc *terminalController) CreateExposedPort(ctx *gin.Context) {
 	response, err := tc.service.CreateExposedPort(sessionID, input.Port)
 	if err != nil {
 		var planErr *services.PlanDisabledError
-		if stderrors.As(err, &planErr) {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: err.Error(),
-			})
+		var scenarioErr *services.ScenarioDisallowsError
+		if stderrors.As(err, &planErr) || stderrors.As(err, &scenarioErr) {
+			errors.Respond(ctx, http.StatusForbidden, err.Error())
 			return
 		}
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -72,10 +67,15 @@ func (tc *terminalController) ListExposedPorts(ctx *gin.Context) {
 
 	response, err := tc.service.ListExposedPorts(sessionID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
+		// The list runs the same plan/scenario gate as create: a 403 here is
+		// what tells the frontend not to show the panel at all.
+		var planErr *services.PlanDisabledError
+		var scenarioErr *services.ScenarioDisallowsError
+		if stderrors.As(err, &planErr) || stderrors.As(err, &scenarioErr) {
+			errors.Respond(ctx, http.StatusForbidden, err.Error())
+			return
+		}
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -114,5 +114,68 @@ func (tc *terminalController) DeleteExposedPort(ctx *gin.Context) {
 		return
 	}
 
+	ctx.JSON(http.StatusOK, gin.H{"message": "Exposed port deleted successfully"})
+}
+
+// AdminListExposedPorts godoc
+//
+//	@Summary		List every active exposed port (admin)
+//	@Description	Every exposure whose session is currently running, across all users — the abuse-handling view.
+//	@Tags			terminals
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{array}	dto.AdminExposedPortResponse
+//	@Router			/terminals/admin/exposed-ports [get]
+func (tc *terminalController) AdminListExposedPorts(ctx *gin.Context) {
+	active, err := tc.service.GetActiveExposedPortsForTraefik()
+	if err != nil {
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]dto.AdminExposedPortResponse, 0, len(active))
+	for _, ep := range active {
+		out = append(out, dto.AdminExposedPortResponse{
+			ExposedPortResponse: dto.ExposedPortResponse{
+				ID:        ep.ID,
+				Port:      ep.ContainerPort,
+				Slug:      ep.Slug,
+				URL:       services.ExposedPortURL(ep.Slug),
+				CreatedAt: ep.CreatedAt,
+				ExpiresAt: ep.ExpiresAt,
+			},
+			UserID:    ep.UserID,
+			SessionID: ep.SessionID,
+			Backend:   ep.Backend,
+		})
+	}
+	ctx.JSON(http.StatusOK, out)
+}
+
+// AdminDeleteExposedPort godoc
+//
+//	@Summary		Stop exposing a port, whoever owns it (admin)
+//	@Tags			terminals
+//	@Produce		json
+//	@Param			portId	path	string	true	"Exposed port ID"
+//	@Security		Bearer
+//	@Success		200	{object}	gin.H
+//	@Failure		400	{object}	errors.APIError	"Invalid exposed port ID"
+//	@Failure		404	{object}	errors.APIError	"Exposed port not found"
+//	@Router			/terminals/admin/exposed-ports/{portId} [delete]
+func (tc *terminalController) AdminDeleteExposedPort(ctx *gin.Context) {
+	portID, err := uuid.Parse(ctx.Param("portId"))
+	if err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid exposed port ID")
+		return
+	}
+	repo := tc.service.GetRepository()
+	if _, err := repo.GetExposedPortByID(portID); err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Exposed port not found")
+		return
+	}
+	if err := repo.DeleteExposedPort(portID); err != nil {
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "Exposed port deleted successfully"})
 }

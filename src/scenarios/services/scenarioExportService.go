@@ -147,6 +147,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 		FlagsEnabled:     scenario.FlagsEnabled,
 		AllowedFlagPaths: scenario.AllowedFlagPaths,
 		CrashTraps:    scenario.CrashTraps,
+		PortExposureAllowed: scenario.PortExposureAllowed,
 		// Without this, exporting a scenario and importing it back changes what
 		// it is: the copy runs its console as root, and every permission
 		// mission in it goes quiet. Import has always read this field; only

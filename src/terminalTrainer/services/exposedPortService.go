@@ -7,6 +7,7 @@ import (
 	"os"
 
 	paymentModels "soli/formations/src/payment/models"
+	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
@@ -58,6 +59,15 @@ func (e *PlanDisabledError) Error() string {
 	return "the current plan does not allow exposing session ports publicly"
 }
 
+// ScenarioDisallowsError is returned when the session is running a scenario
+// whose PortExposureAllowed is off. Same 403 mapping as PlanDisabledError;
+// kept distinct so the message tells the learner which gate said no.
+type ScenarioDisallowsError struct{}
+
+func (e *ScenarioDisallowsError) Error() string {
+	return "this scenario does not allow exposing session ports publicly"
+}
+
 // CreateExposedPort publishes containerPort of the given session to a new
 // public URL. Ownership of the session is assumed already verified by the
 // caller (RequireTerminalAccess on the route) — this only re-derives what it
@@ -78,7 +88,7 @@ func (s *exposedPortService) CreateExposedPort(sessionID string, containerPort i
 		return nil, fmt.Errorf("session is not running")
 	}
 
-	if err := s.checkPlanAllowsExposure(terminal); err != nil {
+	if err := s.checkExposureAllowed(terminal); err != nil {
 		return nil, err
 	}
 
@@ -103,10 +113,16 @@ func (s *exposedPortService) CreateExposedPort(sessionID string, containerPort i
 		return nil, err
 	}
 
+	backend := terminal.Backend
+	if backend == "" {
+		backend = sessionInfo.Backend
+	}
+
 	exposedPort := &models.ExposedPort{
 		TerminalID:    terminal.ID,
 		SessionID:     sessionID,
 		UserID:        terminal.UserID,
+		Backend:       backend,
 		ContainerPort: containerPort,
 		Slug:          slug,
 		ContainerIP:   sessionInfo.IP,
@@ -122,8 +138,18 @@ func (s *exposedPortService) CreateExposedPort(sessionID string, containerPort i
 // ListExposedPorts returns every exposure recorded for a session (active or
 // past its terminal's lifetime — the caller-facing list does not filter on
 // RunningDisplayScope so a user can see what they created even right after
-// their session stopped).
+// their session stopped). It runs the same plan/scenario gate as
+// CreateExposedPort so the frontend can hide the panel on its 403 instead of
+// re-deriving the rule from plan fields.
 func (s *exposedPortService) ListExposedPorts(sessionID string) ([]dto.ExposedPortResponse, error) {
+	terminal, err := s.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+	if err := s.checkExposureAllowed(terminal); err != nil {
+		return nil, err
+	}
+
 	exposedPorts, err := s.repository.GetExposedPortsBySessionID(sessionID)
 	if err != nil {
 		return nil, err
@@ -158,6 +184,36 @@ func (s *exposedPortService) GetActiveExposedPortsForTraefik() ([]models.Exposed
 		return nil, err
 	}
 	return *exposedPorts, nil
+}
+
+// checkExposureAllowed is the one gate for both the create and the list
+// path: the plan must carry PortExposureEnabled, and if the terminal is
+// running a scenario, that scenario must allow exposure too.
+func (s *exposedPortService) checkExposureAllowed(terminal *models.Terminal) error {
+	if err := s.checkPlanAllowsExposure(terminal); err != nil {
+		return err
+	}
+	return s.checkScenarioAllowsExposure(terminal.SessionID)
+}
+
+// checkScenarioAllowsExposure looks for an open scenario run on this
+// terminal. A plain terminal has none and passes; a run whose scenario keeps
+// PortExposureAllowed off is refused. The open-run definition belongs to the
+// scenarios package (OpenSessionStatuses), as in terminalLifecycleService.
+func (s *exposedPortService) checkScenarioAllowsExposure(sessionID string) error {
+	var disallowed int64
+	err := s.db.Table("scenario_sessions").
+		Joins("JOIN scenarios ON scenarios.id = scenario_sessions.scenario_id").
+		Where("scenario_sessions.terminal_session_id = ? AND scenario_sessions.status IN ? AND scenarios.port_exposure_allowed = ?",
+			sessionID, scenarioModels.OpenSessionStatuses, false).
+		Count(&disallowed).Error
+	if err != nil {
+		return fmt.Errorf("failed to check scenario exposure policy: %w", err)
+	}
+	if disallowed > 0 {
+		return &ScenarioDisallowsError{}
+	}
+	return nil
 }
 
 // checkPlanAllowsExposure resolves the plan the session was launched under
@@ -217,10 +273,16 @@ func (s *exposedPortService) toResponse(exposedPort *models.ExposedPort) *dto.Ex
 		ID:        exposedPort.ID,
 		Port:      exposedPort.ContainerPort,
 		Slug:      exposedPort.Slug,
-		URL:       fmt.Sprintf("%s://%s.%s", exposeScheme(), exposedPort.Slug, exposeDomain()),
+		URL:       ExposedPortURL(exposedPort.Slug),
 		CreatedAt: exposedPort.CreatedAt,
 		ExpiresAt: exposedPort.ExpiresAt,
 	}
+}
+
+// ExposedPortURL is the one place the public URL of an exposure is minted
+// from its slug; the admin listing uses it too.
+func ExposedPortURL(slug string) string {
+	return fmt.Sprintf("%s://%s.%s", exposeScheme(), slug, exposeDomain())
 }
 
 // exposeDomain reads the domain under which exposed-port URLs are minted
@@ -233,16 +295,19 @@ func exposeDomain() string {
 }
 
 // exposeScheme reads the scheme minted into exposed-port URLs. Defaults to
-// "http": during development there is deliberately no TLS/certificate setup
-// on the reference Traefik instance (see traefik/README.md) — flipping this
-// to "https" once TLS is configured operator-side is a pure env change, no
-// code change needed on either side (see also traefikConfigController.go,
-// which only adds a router's TLS block when TRAEFIK_CERT_RESOLVER is set).
+// "http" for a bare dev Traefik; "https" once the operator's Traefik carries
+// a certificate — traefikConfigController then also marks every router TLS.
 func exposeScheme() string {
 	if scheme := os.Getenv("EXPOSE_SCHEME"); scheme != "" {
 		return scheme
 	}
 	return "http"
+}
+
+// ExposeTLSEnabled reports whether minted URLs are https, i.e. whether the
+// Traefik routers must terminate TLS. One env var drives both.
+func ExposeTLSEnabled() bool {
+	return exposeScheme() == "https"
 }
 
 // IsExposedPortsFeatureEnabled reports whether the operator configured the

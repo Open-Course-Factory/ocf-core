@@ -32,6 +32,10 @@ type Scenario struct {
 	FlagSecret       string     `gorm:"type:varchar(500)" json:"-"` // never exposed in API
 	AllowedFlagPaths string     `gorm:"type:text" json:"allowed_flag_paths,omitempty" mapstructure:"allowed_flag_paths"` // comma-separated allowed path prefixes; empty = defaults
 	CrashTraps     bool       `gorm:"default:false" json:"crash_traps"`
+	// PortExposureAllowed lets learners of this scenario publish a port of
+	// the lab at a public URL, when their plan allows it too. Off by default:
+	// a lab is not a hosting account.
+	PortExposureAllowed bool  `gorm:"default:false" json:"port_exposure_allowed"`
 	Objectives     string     `gorm:"type:text" json:"objectives,omitempty"`
 	Prerequisites  string     `gorm:"type:text" json:"prerequisites,omitempty"`
 	IntroText      string     `gorm:"type:text" json:"intro_text,omitempty"`

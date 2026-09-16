@@ -7,6 +7,7 @@ import (
 	"time"
 
 	paymentModels "soli/formations/src/payment/models"
+	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
 
@@ -25,8 +26,25 @@ func setupExposedPortTestDB(t *testing.T) *gorm.DB {
 		&models.Terminal{},
 		&models.ExposedPort{},
 		&paymentModels.SubscriptionPlan{},
+		&scenarioModels.Scenario{},
+		&scenarioModels.ScenarioSession{},
 	))
 	return db
+}
+
+// createOpenScenarioRun links an open scenario run to the given terminal
+// session, on a scenario that does or does not allow port exposure.
+func createOpenScenarioRun(t *testing.T, db *gorm.DB, sessionID string, portExposureAllowed bool) {
+	scenario := &scenarioModels.Scenario{Name: "s", Title: "S", InstanceType: "alp", PortExposureAllowed: portExposureAllowed}
+	require.NoError(t, db.Create(scenario).Error)
+	run := &scenarioModels.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "user1",
+		TerminalSessionID: &sessionID,
+		Status:            "active",
+		StartedAt:         time.Now(),
+	}
+	require.NoError(t, db.Create(run).Error)
 }
 
 // newExposedPortTestService wires an exposedPortService whose proxy talks to
@@ -59,7 +77,6 @@ func createTestTerminal(t *testing.T, db *gorm.DB, sessionID string, planID uuid
 		APIKey:      "test-api-key",
 		KeyName:     "test-key",
 		IsActive:    true,
-		MaxSessions: 5,
 	}
 	require.NoError(t, db.Create(userKey).Error)
 
@@ -208,4 +225,82 @@ func TestGetActiveExposedPortsForTraefik_ExcludesStoppedSessions(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, active, 1)
 	assert.Equal(t, "sess-running", active[0].SessionID)
+}
+
+func TestCreateExposedPort_RejectsWhenScenarioDisallows(t *testing.T) {
+	server := httptest.NewServer(infoStub("10.0.0.5"))
+	defer server.Close()
+
+	db := setupExposedPortTestDB(t)
+	planID := createTestPlan(t, db, true)
+	createTestTerminal(t, db, "sess-1", planID)
+	createOpenScenarioRun(t, db, "sess-1", false)
+
+	svc := newExposedPortTestService(server.URL, db)
+	_, err := svc.CreateExposedPort("sess-1", 8080)
+
+	var scenarioErr *ScenarioDisallowsError
+	assert.ErrorAs(t, err, &scenarioErr)
+}
+
+func TestCreateExposedPort_AllowedWhenScenarioAllows(t *testing.T) {
+	server := httptest.NewServer(infoStub("10.0.0.5"))
+	defer server.Close()
+
+	db := setupExposedPortTestDB(t)
+	planID := createTestPlan(t, db, true)
+	createTestTerminal(t, db, "sess-1", planID)
+	createOpenScenarioRun(t, db, "sess-1", true)
+
+	svc := newExposedPortTestService(server.URL, db)
+	_, err := svc.CreateExposedPort("sess-1", 8080)
+	assert.NoError(t, err)
+}
+
+func TestListExposedPorts_RunsTheSameGateAsCreate(t *testing.T) {
+	db := setupExposedPortTestDB(t)
+	deniedPlan := createTestPlan(t, db, false)
+	createTestTerminal(t, db, "sess-denied", deniedPlan)
+	allowedPlan := createTestPlan(t, db, true)
+	createTestTerminal(t, db, "sess-allowed", allowedPlan)
+
+	svc := newExposedPortTestService("http://unused", db)
+
+	_, err := svc.ListExposedPorts("sess-denied")
+	var planErr *PlanDisabledError
+	assert.ErrorAs(t, err, &planErr)
+
+	list, err := svc.ListExposedPorts("sess-allowed")
+	require.NoError(t, err)
+	assert.Empty(t, list)
+}
+
+func TestCreateExposedPort_RecordsBackend(t *testing.T) {
+	server := httptest.NewServer(infoStub("10.0.0.5"))
+	defer server.Close()
+
+	db := setupExposedPortTestDB(t)
+	planID := createTestPlan(t, db, true)
+	terminal := createTestTerminal(t, db, "sess-1", planID)
+	terminal.Backend = "hexceos"
+	require.NoError(t, db.Save(terminal).Error)
+
+	svc := newExposedPortTestService(server.URL, db)
+	_, err := svc.CreateExposedPort("sess-1", 8080)
+	require.NoError(t, err)
+
+	stored, err := svc.repository.GetExposedPortsBySessionID("sess-1")
+	require.NoError(t, err)
+	assert.Equal(t, "hexceos", (*stored)[0].Backend)
+}
+
+func TestExposedPortURL_FollowsScheme(t *testing.T) {
+	t.Setenv("EXPOSE_DOMAIN", "expose.example")
+	t.Setenv("EXPOSE_SCHEME", "")
+	assert.Equal(t, "http://abc.expose.example", ExposedPortURL("abc"))
+	assert.False(t, ExposeTLSEnabled())
+
+	t.Setenv("EXPOSE_SCHEME", "https")
+	assert.Equal(t, "https://abc.expose.example", ExposedPortURL("abc"))
+	assert.True(t, ExposeTLSEnabled())
 }

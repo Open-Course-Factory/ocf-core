@@ -112,6 +112,7 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			AllowedFlagPaths: source.AllowedFlagPaths,
 			FlagSecret:       flagSecret,
 			CrashTraps:     source.CrashTraps,
+			PortExposureAllowed: source.PortExposureAllowed,
 			Objectives:     source.Objectives,
 			Prerequisites:  source.Prerequisites,
 			IntroText:      source.IntroText,

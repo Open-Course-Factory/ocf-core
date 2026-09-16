@@ -26,6 +26,10 @@ type ExposedPort struct {
 	// terminals for the common case.
 	SessionID string `gorm:"type:varchar(255);not null;index" json:"session_id"`
 	UserID    string `gorm:"type:varchar(255);not null;index" json:"user_id"`
+	// Backend is the tt-backend backend id the container runs on. Routing
+	// does not need it (Traefik reaches ContainerIP over the overlay); ops do,
+	// to tell which host's gateway a broken exposure goes through.
+	Backend string `gorm:"type:varchar(255);default:''" json:"backend"`
 	// ContainerPort is the port the user's process listens on inside the
 	// sandbox (validated to 1024-65535 — see exposedPortService).
 	ContainerPort int `gorm:"not null" json:"container_port"`

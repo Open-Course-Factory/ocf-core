@@ -288,6 +288,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			RequiredFeatures: requiredFeatures,
 			BuildFeatures:    buildFeatures,
 			CrashTraps:       input.CrashTraps,
+			PortExposureAllowed: input.PortExposureAllowed,
 			SessionUser:      input.SessionUser,
 			IntroText:        input.IntroText,
 			FinishText:       input.FinishText,
