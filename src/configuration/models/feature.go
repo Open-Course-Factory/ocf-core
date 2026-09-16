@@ -10,7 +10,9 @@ type Feature struct {
 	Key         string `gorm:"type:varchar(100);uniqueIndex;not null" json:"key"`
 	Name        string `gorm:"type:varchar(200);not null" json:"name"`
 	Description string `gorm:"type:text" json:"description"`
-	Enabled     bool   `gorm:"default:true" json:"enabled"`
+	// No GORM default: Create omits zero-value columns, so a default of true
+	// silently turned every feature declared disabled into an enabled one.
+	Enabled     bool   `json:"enabled"`
 	Category    string `gorm:"type:varchar(50)" json:"category"` // e.g., "modules", "features"
 	Module      string `gorm:"type:varchar(100)" json:"module"`  // e.g., "courses", "labs", "terminals"
 	Value       string `gorm:"type:text" json:"value,omitempty"`
