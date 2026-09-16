@@ -29,6 +29,14 @@ func (t *TerminalTrainerModuleConfig) GetFeatures() []models.FeatureDefinition {
 			Module:      "terminals",
 		},
 		{
+			Key:         services.PortExposureFeatureKey,
+			Name:        "Public port exposure",
+			Description: "Let learners publish a port of their terminal session at a public URL, on plans that allow it. Off until the operator's Traefik and overlay are in place; switching it off stops every published route within one poll.",
+			Enabled:     false,
+			Category:    "modules",
+			Module:      "terminals",
+		},
+		{
 			// Not a toggle: the value carries the curation. tt-backend answers
 			// with every image it can run, including scenario base images that
 			// were never meant to be offered when starting a terminal.

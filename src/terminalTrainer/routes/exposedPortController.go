@@ -42,7 +42,8 @@ func (tc *terminalController) CreateExposedPort(ctx *gin.Context) {
 	if err != nil {
 		var planErr *services.PlanDisabledError
 		var scenarioErr *services.ScenarioDisallowsError
-		if stderrors.As(err, &planErr) || stderrors.As(err, &scenarioErr) {
+		var featureErr *services.FeatureDisabledError
+		if stderrors.As(err, &planErr) || stderrors.As(err, &scenarioErr) || stderrors.As(err, &featureErr) {
 			errors.Respond(ctx, http.StatusForbidden, err.Error())
 			return
 		}
@@ -71,7 +72,8 @@ func (tc *terminalController) ListExposedPorts(ctx *gin.Context) {
 		// what tells the frontend not to show the panel at all.
 		var planErr *services.PlanDisabledError
 		var scenarioErr *services.ScenarioDisallowsError
-		if stderrors.As(err, &planErr) || stderrors.As(err, &scenarioErr) {
+		var featureErr *services.FeatureDisabledError
+		if stderrors.As(err, &planErr) || stderrors.As(err, &scenarioErr) || stderrors.As(err, &featureErr) {
 			errors.Respond(ctx, http.StatusForbidden, err.Error())
 			return
 		}

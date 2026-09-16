@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 
+	configRepositories "soli/formations/src/configuration/repositories"
 	paymentModels "soli/formations/src/payment/models"
 	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/dto"
@@ -28,6 +29,13 @@ const slugAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
 
 const slugLength = 10
 
+// PortExposureFeatureKey is the platform feature flag (admin → Platform
+// settings) that turns the whole capability on. It is declared in
+// terminalTrainer/moduleConfig.go, disabled by default, and sits above the
+// plan and scenario gates: off means no create, no list, and an empty
+// Traefik config — every published route dies within one poll.
+const PortExposureFeatureKey = "port_exposure"
+
 // exposedPortService owns the "publish a session port to a public URL"
 // concern: plan/state validation, container IP resolution via tt-backend,
 // slug allocation, and the read path Traefik's dynamic-config provider
@@ -37,6 +45,7 @@ const slugLength = 10
 type exposedPortService struct {
 	proxy      *terminalProxyClient
 	repository repositories.TerminalRepository
+	features   configRepositories.FeatureRepository
 	db         *gorm.DB
 }
 
@@ -44,8 +53,18 @@ func newExposedPortService(proxy *terminalProxyClient, repository repositories.T
 	return &exposedPortService{
 		proxy:      proxy,
 		repository: repository,
+		features:   configRepositories.NewFeatureRepository(db),
 		db:         db,
 	}
+}
+
+// FeatureDisabledError is returned while the platform feature flag is off.
+// Same 403 mapping as the plan and scenario gates: the frontend hides the
+// chip on it.
+type FeatureDisabledError struct{}
+
+func (e *FeatureDisabledError) Error() string {
+	return "public port exposure is not enabled on this platform"
 }
 
 // PlanDisabledError is returned when the resolved plan does not have
@@ -189,8 +208,12 @@ func (s *exposedPortService) DeleteExposedPort(sessionID string, exposedPortID u
 }
 
 // GetActiveExposedPortsForTraefik is the read path polled by
-// GET /internal/traefik/dynamic-config.
+// GET /internal/traefik/dynamic-config. With the feature flag off it
+// publishes nothing, which is the operator's kill switch.
 func (s *exposedPortService) GetActiveExposedPortsForTraefik() ([]models.ExposedPort, error) {
+	if !s.features.IsFeatureEnabled(PortExposureFeatureKey) {
+		return nil, nil
+	}
 	exposedPorts, err := s.repository.GetActiveExposedPortsForTraefik()
 	if err != nil {
 		return nil, err
@@ -202,6 +225,9 @@ func (s *exposedPortService) GetActiveExposedPortsForTraefik() ([]models.Exposed
 // path: the plan must carry PortExposureEnabled, and if the terminal is
 // running a scenario, that scenario must allow exposure too.
 func (s *exposedPortService) checkExposureAllowed(terminal *models.Terminal) error {
+	if !s.features.IsFeatureEnabled(PortExposureFeatureKey) {
+		return &FeatureDisabledError{}
+	}
 	if err := s.checkPlanAllowsExposure(terminal); err != nil {
 		return err
 	}

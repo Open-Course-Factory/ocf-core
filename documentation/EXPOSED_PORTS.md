@@ -29,13 +29,16 @@ Rows are deleted when the session stops, is deleted or expires; the Traefik endp
 publishes exposures whose terminal is live (`RunningDisplayScope`), so a dead session never
 keeps a route alive.
 
-## Three gates, all off by default
+## Four gates, all off by default
 
-1. **Operator**: `EXPOSE_DOMAIN` and `TRAEFIK_PROVIDER_SECRET` must both be set, or none of the
-   routes are mounted (404).
-2. **Plan**: `SubscriptionPlan.PortExposureEnabled` — `false` on every new plan, toggled by an
+1. **Operator env**: `EXPOSE_DOMAIN` and `TRAEFIK_PROVIDER_SECRET` must both be set, or none of
+   the routes are mounted (404).
+2. **Platform feature flag** `port_exposure` (admin → Platform settings, declared in
+   `src/terminalTrainer/moduleConfig.go`, seeded disabled): off means 403 on create and list,
+   and an empty Traefik config — switching it off kills every published route within one poll.
+3. **Plan**: `SubscriptionPlan.PortExposureEnabled` — `false` on every new plan, toggled by an
    admin in the plan form (`PATCH /subscription-plans/:id {"port_exposure_enabled": true}`).
-3. **Scenario**: a terminal running a scenario is refused unless `Scenario.PortExposureAllowed`
+4. **Scenario**: a terminal running a scenario is refused unless `Scenario.PortExposureAllowed`
    is on. Plain terminals skip this gate.
 
 The list endpoint runs the same gate as the create endpoint, so the frontend hides the panel

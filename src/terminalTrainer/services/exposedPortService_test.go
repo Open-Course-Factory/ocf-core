@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	configModels "soli/formations/src/configuration/models"
 	paymentModels "soli/formations/src/payment/models"
 	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/models"
@@ -28,8 +29,15 @@ func setupExposedPortTestDB(t *testing.T) *gorm.DB {
 		&paymentModels.SubscriptionPlan{},
 		&scenarioModels.Scenario{},
 		&scenarioModels.ScenarioSession{},
+		&configModels.Feature{},
 	))
 	return db
+}
+
+// setPortExposureFeature writes the platform flag row; absent, the
+// repository defaults to enabled, which is what every other test relies on.
+func setPortExposureFeature(t *testing.T, db *gorm.DB, enabled bool) {
+	require.NoError(t, db.Create(&configModels.Feature{Key: PortExposureFeatureKey, Name: "x", Enabled: enabled}).Error)
 }
 
 // createOpenScenarioRun links an open scenario run to the given terminal
@@ -303,4 +311,29 @@ func TestExposedPortURL_FollowsScheme(t *testing.T) {
 	t.Setenv("EXPOSE_SCHEME", "https")
 	assert.Equal(t, "https://abc.expose.example", ExposedPortURL("abc"))
 	assert.True(t, ExposeTLSEnabled())
+}
+
+func TestExposedPorts_FeatureFlagOffRefusesAndPublishesNothing(t *testing.T) {
+	server := httptest.NewServer(infoStub("10.0.0.5"))
+	defer server.Close()
+
+	db := setupExposedPortTestDB(t)
+	planID := createTestPlan(t, db, true)
+	createTestTerminal(t, db, "sess-1", planID)
+	svc := newExposedPortTestService(server.URL, db)
+
+	_, err := svc.CreateExposedPort("sess-1", 8080)
+	require.NoError(t, err, "flag row absent: enabled")
+
+	setPortExposureFeature(t, db, false)
+
+	_, err = svc.CreateExposedPort("sess-1", 8081)
+	var featureErr *FeatureDisabledError
+	assert.ErrorAs(t, err, &featureErr)
+	_, err = svc.ListExposedPorts("sess-1")
+	assert.ErrorAs(t, err, &featureErr)
+
+	active, err := svc.GetActiveExposedPortsForTraefik()
+	require.NoError(t, err)
+	assert.Empty(t, active, "the kill switch: an existing exposure is no longer published")
 }
