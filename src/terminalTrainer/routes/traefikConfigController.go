@@ -2,8 +2,10 @@ package terminalController
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 
 	terminalMiddleware "soli/formations/src/terminalTrainer/middleware"
 	services "soli/formations/src/terminalTrainer/services"
@@ -150,7 +152,9 @@ func getDynamicConfig(ctx *gin.Context, svc traefikService) {
 		config.HTTP.Routers[ep.Slug] = router
 		config.HTTP.Services[ep.Slug] = traefikService_{
 			LoadBalancer: traefikLoadBalancer{
-				Servers: []traefikServer{{URL: fmt.Sprintf("http://%s:%d", ep.ContainerIP, ep.ContainerPort)}},
+				// JoinHostPort brackets an IPv6 address; a bare one makes an
+				// unparsable URL and every request to the route a 502.
+				Servers: []traefikServer{{URL: "http://" + net.JoinHostPort(ep.ContainerIP, strconv.Itoa(ep.ContainerPort))}},
 			},
 		}
 	}

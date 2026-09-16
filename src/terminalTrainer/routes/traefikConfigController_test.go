@@ -58,3 +58,8 @@ func TestDynamicConfig_BareObjectWhenNothingExposed(t *testing.T) {
 	getDynamicConfig(ctx, stubTraefikService{})
 	assert.Equal(t, "{}", w.Body.String())
 }
+
+func TestDynamicConfig_BracketsIPv6(t *testing.T) {
+	cfg := dynamicConfigFor(t, "", []exposedPortRow{{Slug: "v6", ContainerIP: "fd42::1", ContainerPort: 8000}})
+	assert.Equal(t, "http://[fd42::1]:8000", cfg.HTTP.Services["v6"].LoadBalancer.Servers[0].URL)
+}
