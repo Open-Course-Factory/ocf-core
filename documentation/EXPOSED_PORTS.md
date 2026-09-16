@@ -63,6 +63,11 @@ on a 403 from `GET /terminals/:id/exposed-ports` instead of re-deriving the rule
 Ports must be in `1024–65535`. A session holds at most 3 exposures
 (`maxExposedPortsPerSession`).
 
+**The session needs the `network` feature.** The `ocf-base` profile is NIC-less, so a session
+started without network has no address for Traefik to reach: `POST` answers 400 with
+"this session has no network interface". Exposure is therefore only possible on plans that
+also grant `network_access_enabled`.
+
 ## Local end-to-end
 
 1. `.env`: `EXPOSE_DOMAIN=expose.local`, `TRAEFIK_PROVIDER_SECRET=$(openssl rand -hex 32)`;
@@ -70,8 +75,8 @@ Ports must be in `1024–65535`. A session holds at most 3 exposures
 2. Run the reference Traefik from the `ocf-exposed-ports-traefik` repo (joins the `ocf-shared`
    Docker network, polls `http://ocf-core:8080/internal/traefik/dynamic-config`).
 3. `curl -H "X-Provider-Secret: <secret>" http://localhost:8080/internal/traefik/dynamic-config`
-   → `{"http":{"routers":{},"services":{}}}`.
-4. Enable the flag on the test plan, start a session, inside it
+   → `{}` while nothing is exposed (the only idle payload Traefik v3 accepts).
+4. Enable the flag on the test plan, start a session **with the network feature**, inside it
    `python3 -m http.server 8000 --bind 0.0.0.0`, expose 8000 from the panel, add
    `<traefik ip> <slug>.expose.local` to `/etc/hosts`, open the URL.
 5. Stop the session: the URL stops answering within one poll interval.

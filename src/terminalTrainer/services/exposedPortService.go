@@ -59,6 +59,15 @@ func (e *PlanDisabledError) Error() string {
 	return "the current plan does not allow exposing session ports publicly"
 }
 
+// NoNetworkError is returned when the container has no network interface:
+// it was started without the "network" feature, so there is no address a
+// public route could reach. Its own type so the frontend can word the fix.
+type NoNetworkError struct{}
+
+func (e *NoNetworkError) Error() string {
+	return "this session has no network interface; start a session with the network feature to expose a port"
+}
+
 // ScenarioDisallowsError is returned when the session is running a scenario
 // whose PortExposureAllowed is off. Same 403 mapping as PlanDisabledError;
 // kept distinct so the message tells the learner which gate said no.
@@ -102,10 +111,13 @@ func (s *exposedPortService) CreateExposedPort(sessionID string, containerPort i
 
 	sessionInfo, err := s.proxy.GetSessionInfoFromAPI(sessionID)
 	if err != nil {
+		utils.Warn("CreateExposedPort: /info failed for session %s: %v", sessionID, err)
 		return nil, fmt.Errorf("failed to resolve container address: %w", err)
 	}
 	if sessionInfo.IP == "" {
-		return nil, fmt.Errorf("backend did not report a container address for this session")
+		// The ocf-base profile is NIC-less: only a session started with the
+		// "network" feature has an interface, hence an address to route to.
+		return nil, &NoNetworkError{}
 	}
 
 	slug, err := s.allocateSlug()

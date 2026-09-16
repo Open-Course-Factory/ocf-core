@@ -58,9 +58,14 @@ type traefikDynamicConfig struct {
 	HTTP traefikHTTPConfig `json:"http"`
 }
 
+// Both maps are omitted when empty: Traefik v3's decoder rejects any empty
+// object ("cannot be a standalone element") — "routers": {} and "http": {}
+// alike — and would log a provider error on every poll while nothing is
+// exposed. The only idle payload it accepts is a bare {}, which also clears
+// every previously published route; getDynamicConfig returns that directly.
 type traefikHTTPConfig struct {
-	Routers  map[string]traefikRouter   `json:"routers"`
-	Services map[string]traefikService_ `json:"services"`
+	Routers  map[string]traefikRouter   `json:"routers,omitempty"`
+	Services map[string]traefikService_ `json:"services,omitempty"`
 }
 
 type traefikRouter struct {
@@ -113,16 +118,17 @@ func getDynamicConfig(ctx *gin.Context, svc traefikService) {
 		// IsExposedPortsFeatureEnabled() is true, which already implies
 		// EXPOSE_DOMAIN is set. An empty config here still avoids
 		// Traefik installing valid-looking-but-broken hostless routes.
-		ctx.JSON(http.StatusOK, traefikDynamicConfig{HTTP: traefikHTTPConfig{
-			Routers:  map[string]traefikRouter{},
-			Services: map[string]traefikService_{},
-		}})
+		ctx.JSON(http.StatusOK, gin.H{})
 		return
 	}
 
 	exposedPorts, err := svc.GetActiveExposedPortsForTraefik()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(exposedPorts) == 0 {
+		ctx.JSON(http.StatusOK, gin.H{})
 		return
 	}
 

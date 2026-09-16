@@ -47,8 +47,14 @@ func TestDynamicConfig_HTTPSMarksRoutersTLS(t *testing.T) {
 	assert.NotNil(t, cfg.HTTP.Routers["abc"].TLS)
 }
 
-func TestDynamicConfig_EmptyWhenNothingExposed(t *testing.T) {
-	cfg := dynamicConfigFor(t, "https", nil)
-	assert.Empty(t, cfg.HTTP.Routers)
-	assert.Empty(t, cfg.HTTP.Services)
+func TestDynamicConfig_BareObjectWhenNothingExposed(t *testing.T) {
+	// Traefik v3 rejects every empty nested object; {} is the one idle payload
+	// it accepts, and it clears previously published routes.
+	t.Setenv("EXPOSE_DOMAIN", "expose.example")
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/internal/traefik/dynamic-config", nil)
+	getDynamicConfig(ctx, stubTraefikService{})
+	assert.Equal(t, "{}", w.Body.String())
 }
