@@ -1,114 +1,84 @@
-# Publishing a Terminal Session Port (Traefik)
+# Exposed ports — publishing a session port at a public URL
 
-Configuration guide for the opt-in feature that lets a user publish a port
-from inside their running terminal session to a public URL, served by a
-dedicated Traefik instance.
+Opt-in feature: a learner publishes a port of their running terminal container at
+`https://<slug>.<EXPOSE_DOMAIN>`. ocf-core owns the policy and the registry; a Traefik
+instance run by the operator owns the traffic.
 
-Code: `src/terminalTrainer/services/exposedPortService.go`,
-`src/terminalTrainer/routes/traefikConfigController.go`.
-Reference infra: separate git repo `traefik/` (see its `README.md` for the
-Traefik deployment itself — this document covers the `ocf-core` side of the
-configuration).
+Code: `src/terminalTrainer/services/exposedPortService.go` (policy, registry),
+`src/terminalTrainer/routes/traefikConfigController.go` (the endpoint Traefik polls),
+`src/terminalTrainer/routes/exposedPortController.go` (learner + admin routes).
 
-**Current status: dev mode, plain HTTP, no TLS.** See the "Adding TLS
-later" section of the `traefik/` repo's `README.md` to turn it on later —
-no code change is needed on either side, only configuration.
-
-Disabled by default at three independent levels: operator config
-(`EXPOSE_DOMAIN`/`TRAEFIK_PROVIDER_SECRET` must both be explicitly set, or
-the routes aren't even mounted), plan flag (`port_exposure_enabled`,
-`false` by default on any new plan), and explicit user action (nothing is
-exposed until the user calls `POST /terminals/:id/exposed-ports`).
-
-## 1. Configure `ocf-core`
-
-In `.env`:
+## How it fits together
 
 ```
-EXPOSE_DOMAIN=expose.local          # domain you'll use (see step 2)
-TRAEFIK_PROVIDER_SECRET=a-long-random-secret
-EXPOSE_SCHEME=http                  # or leave empty, "http" is the default
-TRAEFIK_CERT_RESOLVER=              # leave empty in dev
+learner ─► POST /terminals/:id/exposed-ports {port}   (plan + scenario gate, max 3 per session)
+                │ row in exposed_ports: slug, container IP (from tt-backend /info), backend, expires_at
+                ▼
+Traefik ─► GET /internal/traefik/dynamic-config  every 5 s, header X-Provider-Secret
+                │ one router Host(`<slug>.<EXPOSE_DOMAIN>`) + one service http://<container ip>:<port>
+                ▼
+visitor ─► https://<slug>.<EXPOSE_DOMAIN> ─► Traefik ─► container ip:port
 ```
 
-Generate the secret e.g. with `openssl rand -hex 32`. Restart `ocf-core` —
-without both `EXPOSE_DOMAIN` and `TRAEFIK_PROVIDER_SECRET`, the routes
-aren't even mounted (404), so that's the first thing to check if nothing
-responds.
+Traefik must be able to reach the container IPs. On one host that is the Incus bridge; in
+production the Traefik lives in the cluster and reaches each host's bridge over an overlay
+through a gateway instance — that topology, the wildcard certificate and the second load
+balancer are documented in `deploy-to-k8s` (`docs/EXPOSED_PORTS_RUNBOOK.md`), not here.
 
-## 2. Resolve the domain to the Traefik machine
+Rows are deleted when the session stops, is deleted or expires; the Traefik endpoint only
+publishes exposures whose terminal is live (`RunningDisplayScope`), so a dead session never
+keeps a route alive.
 
-In dev, no need for a real public wildcard DNS record: add to `/etc/hosts`
-(on the machine you'll test from in a browser):
+## Three gates, all off by default
 
-```
-<Traefik_machine_IP>  test.expose.local
-```
+1. **Operator**: `EXPOSE_DOMAIN` and `TRAEFIK_PROVIDER_SECRET` must both be set, or none of the
+   routes are mounted (404).
+2. **Plan**: `SubscriptionPlan.PortExposureEnabled` — `false` on every new plan, toggled by an
+   admin in the plan form (`PATCH /subscription-plans/:id {"port_exposure_enabled": true}`).
+3. **Scenario**: a terminal running a scenario is refused unless `Scenario.PortExposureAllowed`
+   is on. Plain terminals skip this gate.
 
-One per exposure you want to test (the slug is random, generated on every
-`POST`), or simpler: point a real wildcard DNS record at that IP if you
-have a test domain available — saves editing `/etc/hosts` on every attempt.
+The list endpoint runs the same gate as the create endpoint, so the frontend hides the panel
+on a 403 from `GET /terminals/:id/exposed-ports` instead of re-deriving the rule.
 
-## 3. Launch Traefik
-
-See the `traefik/` repo's `README.md` (startup, networking — same machine
-or a separate one). Both topologies are validated and documented there.
-
-## 4. Enable the feature on a plan
-
-`port_exposure_enabled` defaults to `false` on every plan. Flip it to
-`true` on the plan your test user is on:
-
-```
-PATCH /api/v1/subscription-plans/:id
-{"port_exposure_enabled": true}
-```
-
-(as an admin), or directly in the database for a quick dev shortcut:
-
-```sql
-UPDATE subscription_plans SET port_exposure_enabled = true WHERE id = '<test-plan-id>';
-```
-
-(or without the `WHERE` to enable it on every existing plan — dev only,
-never in production: the flag still defaults to `false` for any plan
-created afterward, this `UPDATE` only touches rows already in the database
-at the time it runs).
-
-## 5. Verify the internal endpoint responds
-
-```
-curl -H "X-Provider-Secret: <your-secret>" http://<ocf-core-host>:8080/internal/traefik/dynamic-config
-```
-
-→ should return `{"http":{"routers":{},"services":{}}}` as long as no
-session is exposing a port.
-
-## 6. End-to-end test
-
-1. Launch a terminal session on that plan.
-2. Inside it: `python3 -m http.server 8000 --bind 0.0.0.0`.
-3. From the outside:
-   ```
-   curl -X POST https://<ocf-front-or-api>/api/v1/terminals/<session_id>/exposed-ports \
-     -H "Authorization: Bearer <your-token>" -H "Content-Type: application/json" \
-     -d '{"port": 8000}'
-   ```
-4. Grab the `url` from the response, open it in a browser (or `curl` it).
-5. Stop the session — the URL should stop responding within ~5s (Traefik's
-   poll interval).
-
-## Environment variables — summary
+## Environment variables
 
 | Variable | Default | Role |
 |---|---|---|
-| `EXPOSE_DOMAIN` | empty (disables the feature) | Domain under which public URLs are minted |
-| `TRAEFIK_PROVIDER_SECRET` | empty (disables the feature) | Secret expected on the `X-Provider-Secret` header of the internal endpoint, must match the Traefik side |
-| `EXPOSE_SCHEME` | `http` | Scheme minted into generated URLs (`http` in dev, `https` once TLS is configured) |
-| `TRAEFIK_CERT_RESOLVER` | empty | Name of the Traefik ACME cert resolver; as long as empty, no `tls` block is generated in the dynamic config |
+| `EXPOSE_DOMAIN` | empty (feature off) | Domain under which public URLs are minted |
+| `TRAEFIK_PROVIDER_SECRET` | empty (feature off) | Value Traefik must send in `X-Provider-Secret`; compared constant-time, never fails open |
+| `EXPOSE_SCHEME` | `http` | `https` once Traefik carries a certificate: URLs are minted https and every generated router gets a `tls: {}` block, so Traefik terminates with its default TLS store |
+
+## Routes
+
+| Method | Path | Who |
+|---|---|---|
+| `POST` | `/api/v1/terminals/:id/exposed-ports` `{"port": 8000}` | session owner |
+| `GET` | `/api/v1/terminals/:id/exposed-ports` | session owner |
+| `DELETE` | `/api/v1/terminals/:id/exposed-ports/:portId` | session owner |
+| `GET` | `/api/v1/terminals/admin/exposed-ports` | platform admin — every active exposure with user, session, backend |
+| `DELETE` | `/api/v1/terminals/admin/exposed-ports/:portId` | platform admin — kill any exposure |
+| `GET` | `/internal/traefik/dynamic-config` | Traefik, `X-Provider-Secret` (outside `/api/v1`, no JWT) |
+
+Ports must be in `1024–65535`. A session holds at most 3 exposures
+(`maxExposedPortsPerSession`).
+
+## Local end-to-end
+
+1. `.env`: `EXPOSE_DOMAIN=expose.local`, `TRAEFIK_PROVIDER_SECRET=$(openssl rand -hex 32)`;
+   restart ocf-core.
+2. Run the reference Traefik from the `ocf-exposed-ports-traefik` repo (joins the `ocf-shared`
+   Docker network, polls `http://ocf-core:8080/internal/traefik/dynamic-config`).
+3. `curl -H "X-Provider-Secret: <secret>" http://localhost:8080/internal/traefik/dynamic-config`
+   → `{"http":{"routers":{},"services":{}}}`.
+4. Enable the flag on the test plan, start a session, inside it
+   `python3 -m http.server 8000 --bind 0.0.0.0`, expose 8000 from the panel, add
+   `<traefik ip> <slug>.expose.local` to `/etc/hosts`, open the URL.
+5. Stop the session: the URL stops answering within one poll interval.
 
 ## Data model
 
-- `SubscriptionPlan.PortExposureEnabled` (`src/payment/models/subscriptionPlan.go`) — plan flag, `false` by default. `CreateSubscriptionPlanInput.PortExposureEnabled` is a `*bool` (not a bare `bool`): the application-level `true` default only exists on that one creation path (see the comment on the model field) — any other direct construction of a `SubscriptionPlan{}` (seed, script, test) stays `false` unless set explicitly.
-- `ExposedPort` (`src/terminalTrainer/models/exposedPort.go`) — one row per published port: `SessionID`, `ContainerPort`, `Slug` (random, never derived from guessable data), `ContainerIP` (resolved once at creation time via tt-backend, not re-resolved periodically), `ExpiresAt`. Cleaned up automatically when the session stops/is deleted, and by the expiry sweep.
-- Cap of 3 active exposures per session (`maxExposedPortsPerSession`, `exposedPortService.go`) — a simple abuse guard, not a plan field.
+`ExposedPort` (`src/terminalTrainer/models/exposedPort.go`): `TerminalID`, `SessionID`,
+`UserID`, `Backend`, `ContainerPort`, `Slug` (random, 10 chars, never derived from anything
+guessable), `ContainerIP` (resolved once at creation from tt-backend `/info`; a resumed session
+gets a fresh IP, which is why stop/resume clears exposures), `ExpiresAt` (the terminal's).
