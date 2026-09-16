@@ -118,6 +118,8 @@ type TerminalController interface {
 	CreateExposedPort(ctx *gin.Context)
 	ListExposedPorts(ctx *gin.Context)
 	DeleteExposedPort(ctx *gin.Context)
+	AdminListExposedPorts(ctx *gin.Context)
+	AdminDeleteExposedPort(ctx *gin.Context)
 }
 
 type terminalController struct {

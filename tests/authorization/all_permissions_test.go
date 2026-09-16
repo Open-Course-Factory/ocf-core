@@ -197,6 +197,9 @@ func TestSetupTerminalPermissions_AdminRoutes(t *testing.T) {
 		{"/api/v1/terminals/catalog-features", "GET"},
 		{"/api/v1/terminals/enums/status", "GET"},
 		{"/api/v1/terminals/enums/refresh", "POST"},
+		// Exposed ports: the abuse handle.
+		{"/api/v1/terminals/admin/exposed-ports", "GET"},
+		{"/api/v1/terminals/admin/exposed-ports/:portId", "DELETE"},
 	}
 
 	for _, r := range adminRoutes {

@@ -15,6 +15,15 @@ type CreateExposedPortInput struct {
 // ExposedPortResponse is the ocf-core-owned shape returned to the frontend
 // for a published port. URL is precomputed server-side from EXPOSE_DOMAIN so
 // the frontend never has to know the domain convention.
+// AdminExposedPortResponse is the platform-admin view of an active exposure:
+// the owner-facing shape plus who holds it and where the container runs.
+type AdminExposedPortResponse struct {
+	ExposedPortResponse
+	UserID    string `json:"user_id"`
+	SessionID string `json:"session_id"`
+	Backend   string `json:"backend"`
+}
+
 type ExposedPortResponse struct {
 	ID        uuid.UUID `json:"id"`
 	Port      int       `json:"port"`

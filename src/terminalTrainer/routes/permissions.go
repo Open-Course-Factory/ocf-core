@@ -56,6 +56,8 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{Path: "/api/v1/terminals/:id/exposed-ports", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Publish a session port to a public URL (controller-enforced ownership + plan gate)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/exposed-ports", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "List a session's exposed ports (controller-enforced ownership)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/exposed-ports/:portId", Method: "DELETE", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Stop exposing a session port (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/admin/exposed-ports", Method: "GET", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "List every active exposed port across users (abuse handling)"},
+		access.RoutePermission{Path: "/api/v1/terminals/admin/exposed-ports/:portId", Method: "DELETE", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "Stop any exposed port, whoever owns it (abuse handling)"},
 
 		// Access status (self-scoped - checks own access level)
 		access.RoutePermission{Path: "/api/v1/terminals/:id/access-status", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Check current user's access level for a terminal"},

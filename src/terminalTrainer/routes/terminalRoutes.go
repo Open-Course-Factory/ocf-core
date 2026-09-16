@@ -57,6 +57,9 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		routes.POST("/:id/exposed-ports", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.CreateExposedPort)
 		routes.GET("/:id/exposed-ports", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.ListExposedPorts)
 		routes.DELETE("/:id/exposed-ports/:portId", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.DeleteExposedPort)
+		// Platform admins see and can kill any exposure — the abuse handle.
+		routes.GET("/admin/exposed-ports", middleware.AuthManagement(), terminalController.AdminListExposedPorts)
+		routes.DELETE("/admin/exposed-ports/:portId", middleware.AuthManagement(), terminalController.AdminDeleteExposedPort)
 	}
 
 	// Supervision (#425): observe a learner's terminal + broker take-hand. The
