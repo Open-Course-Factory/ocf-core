@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,12 +34,20 @@ func setupExposedPortTestDB(t *testing.T) *gorm.DB {
 		&scenarioModels.ScenarioSession{},
 		&configModels.Feature{},
 	))
+	// The platform flag fails closed: the row must exist, enabled, for any
+	// exposure to work. Tests that exercise the switch flip it explicitly.
+	setPortExposureFeature(t, db, true)
 	return db
 }
 
 // setPortExposureFeature writes the platform flag row; absent, the
 // repository defaults to enabled, which is what every other test relies on.
 func setPortExposureFeature(t *testing.T, db *gorm.DB, enabled bool) {
+	var existing configModels.Feature
+	if err := db.Where("key = ?", PortExposureFeatureKey).First(&existing).Error; err == nil {
+		require.NoError(t, db.Model(&existing).Update("enabled", enabled).Error)
+		return
+	}
 	require.NoError(t, db.Create(&configModels.Feature{Key: PortExposureFeatureKey, Name: "x", Enabled: enabled}).Error)
 }
 
@@ -325,7 +334,7 @@ func TestExposedPorts_FeatureFlagOffRefusesAndPublishesNothing(t *testing.T) {
 	svc := newExposedPortTestService(server.URL, db)
 
 	_, err := svc.CreateExposedPort("sess-1", 8080)
-	require.NoError(t, err, "flag row absent: enabled")
+	require.NoError(t, err, "flag row enabled")
 
 	setPortExposureFeature(t, db, false)
 
@@ -429,4 +438,98 @@ func TestExposureAuditEntry_AdminKillNamesTheOwnerAsOnBehalfOf(t *testing.T) {
 
 	own := ExposureAuditEntry(auditModels.AuditEventPortUnexposed, ep, owner.String())
 	assert.Nil(t, own.OnBehalfOfID, "the owner acting on their own exposure has no on-behalf-of")
+}
+
+func TestExposedPorts_MissingFeatureRowFailsClosed(t *testing.T) {
+	server := httptest.NewServer(infoStub("10.0.0.5"))
+	defer server.Close()
+	db := setupExposedPortTestDB(t)
+	require.NoError(t, db.Where("key = ?", PortExposureFeatureKey).Delete(&configModels.Feature{}).Error)
+	planID := createTestPlan(t, db, true)
+	createTestTerminal(t, db, "sess-norow", planID)
+	svc := newExposedPortTestService(server.URL, db)
+
+	_, err := svc.CreateExposedPort("sess-norow", 8080)
+	var featureErr *FeatureDisabledError
+	require.ErrorAs(t, err, &featureErr, "no flag row must read as disabled, never as enabled")
+	rows, err := svc.GetActiveExposedPortsForTraefik()
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+}
+
+func TestExposureExpiry_PlanTTLIsCapped(t *testing.T) {
+	farSessionEnd := time.Now().Add(48 * time.Hour)
+	assert.WithinDuration(t, time.Now().Add(maxExposeTTL), exposureExpiry(farSessionEnd, 24*60), time.Second)
+}
+
+// infoStubPerSession answers /info differently per session id: a map value
+// of "" means 404, "stopped:<ip>" a present-but-stopped container.
+func infoStubPerSession(answers map[string]string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		answer, ok := answers[r.URL.Query().Get("id")]
+		if !ok || answer == "" {
+			http.NotFound(w, r)
+			return
+		}
+		running, ip := "true", answer
+		if strings.HasPrefix(answer, "stopped:") {
+			running, ip = "false", strings.TrimPrefix(answer, "stopped:")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"stub","status":0,"ip":"` + ip + `","instance_running":` + running + `}`))
+	}
+}
+
+func TestReconcileExposedPorts_DropsGoneStoppedAndReaddressedContainers(t *testing.T) {
+	db := setupExposedPortTestDB(t)
+	require.NoError(t, db.AutoMigrate(&auditModels.AuditLog{}))
+	planID := createTestPlan(t, db, true)
+	create := httptest.NewServer(infoStub("10.0.0.5"))
+	defer create.Close()
+	svc := newExposedPortTestService(create.URL, db)
+	for _, sess := range []string{"sess-ok", "sess-gone", "sess-stopped", "sess-moved", "sess-unknown"} {
+		createTestTerminal(t, db, sess, planID)
+		_, err := svc.CreateExposedPort(sess, 8000)
+		require.NoError(t, err)
+	}
+
+	// what tt-backend says now; sess-unknown gets a broken backend
+	reconcile := httptest.NewServer(infoStubPerSession(map[string]string{
+		"sess-ok": "10.0.0.5", "sess-gone": "", "sess-stopped": "stopped:10.0.0.5", "sess-moved": "10.0.0.9",
+		"sess-unknown": "10.0.0.5",
+	}))
+	defer reconcile.Close()
+	newExposedPortTestService(reconcile.URL, db).ReconcileExposedPorts()
+
+	var left []models.ExposedPort
+	require.NoError(t, db.Find(&left).Error)
+	sessions := []string{}
+	for _, ep := range left {
+		sessions = append(sessions, ep.SessionID)
+	}
+	assert.ElementsMatch(t, []string{"sess-ok", "sess-unknown"}, sessions, "only exposures whose container still matches survive")
+
+	var trail []auditModels.AuditLog
+	require.NoError(t, db.Where("event_type = ? AND error_message <> ''", auditModels.AuditEventPortUnexposed).Order("target_name").Find(&trail).Error)
+	reasons := map[string]string{}
+	for _, e := range trail {
+		reasons[e.SessionID] = e.ErrorMessage
+	}
+	assert.Equal(t, map[string]string{"sess-gone": "container gone", "sess-stopped": "container stopped", "sess-moved": "container address changed"}, reasons)
+}
+
+func TestReconcileExposedPorts_UnreachableBackendChangesNothing(t *testing.T) {
+	db := setupExposedPortTestDB(t)
+	planID := createTestPlan(t, db, true)
+	create := httptest.NewServer(infoStub("10.0.0.5"))
+	svc := newExposedPortTestService(create.URL, db)
+	createTestTerminal(t, db, "sess-1", planID)
+	_, err := svc.CreateExposedPort("sess-1", 8000)
+	require.NoError(t, err)
+	create.Close() // tt-backend now refuses connections
+
+	newExposedPortTestService(create.URL, db).ReconcileExposedPorts()
+	var count int64
+	require.NoError(t, db.Model(&models.ExposedPort{}).Count(&count).Error)
+	assert.EqualValues(t, 1, count, "no answer is not evidence that the container is gone")
 }

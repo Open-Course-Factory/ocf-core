@@ -69,6 +69,12 @@ edited in the plan admin form) or until the session ends, whichever comes first:
 at one's own work during the training, not for sharing. Expired exposures are neither listed nor
 counted against the cap.
 
+A reconcile job (`cron.StartExposedPortReconcileJob`, every minute) asks tt-backend `/info` about
+every active exposure and withdraws those whose container is gone, stopped or re-addressed, so a
+freed bridge address is never routed to a newer container; an unreachable tt-backend changes
+nothing. The plan TTL is capped at 3 hours (`maxExposeTTL`). The platform flag fails closed: no
+`port_exposure` feature row means disabled.
+
 Every exposure and withdrawal lands in `audit_logs` (`terminal.port.exposed` /
 `terminal.port.unexposed`, target `exposed_port`, metadata: slug, URL, port, container IP,
 backend, session, owner, expiry); the admin kill switch is recorded with the admin as actor and

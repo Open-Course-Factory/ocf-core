@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"strings"
 	"time"
 
 	auditModels "soli/formations/src/audit/models"
@@ -225,7 +226,13 @@ func (s *exposedPortService) DeleteExposedPort(sessionID string, exposedPortID u
 // recordExposure writes the audit entry of one exposure event. A failed
 // write is logged, never surfaced: the exposure itself already happened.
 func (s *exposedPortService) recordExposure(event auditModels.AuditEventType, exposedPort *models.ExposedPort, actorUserID string) {
-	if err := s.audit.Log(ExposureAuditEntry(event, exposedPort, actorUserID)); err != nil {
+	s.recordExposureWithReason(event, exposedPort, actorUserID, "")
+}
+
+func (s *exposedPortService) recordExposureWithReason(event auditModels.AuditEventType, exposedPort *models.ExposedPort, actorUserID, reason string) {
+	entry := ExposureAuditEntry(event, exposedPort, actorUserID)
+	entry.ErrorMessage = reason
+	if err := s.audit.Log(entry); err != nil {
 		utils.Warn("exposed port audit (%s, slug %s): %v", event, exposedPort.Slug, err)
 	}
 }
@@ -274,7 +281,7 @@ func ExposureAuditEntry(event auditModels.AuditEventType, exposedPort *models.Ex
 // GET /internal/traefik/dynamic-config. With the feature flag off it
 // publishes nothing, which is the operator's kill switch.
 func (s *exposedPortService) GetActiveExposedPortsForTraefik() ([]models.ExposedPort, error) {
-	if !s.features.IsFeatureEnabled(PortExposureFeatureKey) {
+	if !s.portExposureEnabled() {
 		return nil, nil
 	}
 	exposedPorts, err := s.repository.GetActiveExposedPortsForTraefik()
@@ -288,7 +295,7 @@ func (s *exposedPortService) GetActiveExposedPortsForTraefik() ([]models.Exposed
 // path: the plan must carry PortExposureEnabled, and if the terminal is
 // running a scenario, that scenario must allow exposure too.
 func (s *exposedPortService) checkExposureAllowed(terminal *models.Terminal) error {
-	if !s.features.IsFeatureEnabled(PortExposureFeatureKey) {
+	if !s.portExposureEnabled() {
 		return &FeatureDisabledError{}
 	}
 	if err := s.checkPlanAllowsExposure(terminal); err != nil {
@@ -395,7 +402,7 @@ func (s *exposedPortService) toResponse(exposedPort *models.ExposedPort) *dto.Ex
 func exposureExpiry(sessionExpiry time.Time, ttlMinutes int) time.Time {
 	ttl := defaultExposeTTL
 	if ttlMinutes > 0 {
-		ttl = time.Duration(ttlMinutes) * time.Minute
+		ttl = min(time.Duration(ttlMinutes)*time.Minute, maxExposeTTL)
 	}
 	expiry := time.Now().Add(ttl)
 	if sessionExpiry.Before(expiry) {
@@ -404,8 +411,73 @@ func exposureExpiry(sessionExpiry time.Time, ttlMinutes int) time.Time {
 	return expiry
 }
 
-// defaultExposeTTL applies to a plan whose PortExposureTTLMinutes is unset.
-const defaultExposeTTL = time.Hour
+// defaultExposeTTL applies to a plan whose PortExposureTTLMinutes is unset;
+// maxExposeTTL bounds what a plan may ask for — a URL that lives for days is
+// a hosting service, which this is not.
+const (
+	defaultExposeTTL = time.Hour
+	maxExposeTTL     = 3 * time.Hour
+)
+
+// portExposureEnabled is the platform kill switch, and it fails closed: a
+// missing flag row (failed seed, deleted row) must not turn the switch on.
+func (s *exposedPortService) portExposureEnabled() bool {
+	feature, err := s.features.GetFeatureByKey(PortExposureFeatureKey)
+	return err == nil && feature.Enabled
+}
+
+// ReconcileExposedPorts drops every exposure whose container is gone,
+// stopped or re-addressed on tt-backend, as seen through /info. ocf-core
+// learns about a session only when its owner's client syncs, while
+// tt-backend stops and reaps containers on its own; until then a route would
+// point at a freed bridge address that the next container may inherit. A
+// tt-backend that cannot be reached leaves the rows alone: absence of an
+// answer is not evidence.
+func (s *exposedPortService) ReconcileExposedPorts() {
+	exposedPorts, err := s.repository.GetActiveExposedPortsForTraefik()
+	if err != nil {
+		utils.Warn("reconcile exposed ports: %v", err)
+		return
+	}
+	for i := range *exposedPorts {
+		exposedPort := &(*exposedPorts)[i]
+		reason, decided := s.staleReason(exposedPort)
+		if !decided || reason == "" {
+			continue
+		}
+		if err := s.repository.DeleteExposedPort(exposedPort.ID); err != nil {
+			utils.Warn("reconcile exposed ports: delete %s: %v", exposedPort.Slug, err)
+			continue
+		}
+		s.recordExposureWithReason(auditModels.AuditEventPortUnexposed, exposedPort, "system", reason)
+	}
+}
+
+// staleReason says why an exposure no longer matches its container, "" when
+// it still does; decided is false when tt-backend gave no usable answer.
+func (s *exposedPortService) staleReason(exposedPort *models.ExposedPort) (reason string, decided bool) {
+	info, err := s.proxy.GetSessionInfoFromAPI(exposedPort.SessionID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return "container gone", true
+		}
+		return "", false
+	}
+	switch {
+	case info.InstanceRunning != nil && !*info.InstanceRunning:
+		return "container stopped", true
+	case info.IP != "" && info.IP != exposedPort.ContainerIP:
+		return "container address changed", true
+	}
+	return "", true
+}
+
+// ReconcileExposedPorts is the cron entry point: it wires the service the
+// same way the facade does, without widening the facade interface.
+func ReconcileExposedPorts(db *gorm.DB) {
+	repository := repositories.NewTerminalRepository(db)
+	newExposedPortService(newTerminalProxyClient(repository), repository, db).ReconcileExposedPorts()
+}
 
 // ExposedPortURL is the one place the public URL of an exposure is minted
 // from its slug; the admin listing uses it too.
