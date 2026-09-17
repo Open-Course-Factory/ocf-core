@@ -46,6 +46,17 @@ func (t *TerminalTrainerModuleConfig) GetFeatures() []models.FeatureDefinition {
 			// scenario content, so a built-in list would couple this module to
 			// data it does not own. An administrator sets it in Platform
 			// Settings.
+			// A retention period, set by the administrator in Platform
+			// Settings. Empty or unreadable means the built-in default.
+			Key:         services.ExposedPortRetentionDaysKey,
+			Name:        "Exposed ports: row retention (days)",
+			Description: "How many days an exposed-port record is kept after its expiry before it is deleted. The audit trail keeps who/what/when under its own retention. Blank means 30.",
+			Enabled:     true,
+			Category:    "settings",
+			Module:      "terminals",
+			Value:       "30",
+		},
+		{
 			Key:         services.UnlistedDistributionsKey,
 			Name:        "Distributions hidden from the picker",
 			Description: "Comma-separated distribution names to withhold from the terminal launcher, e.g. scenario base images. They stay launchable by name, so scenarios are unaffected. Empty withholds nothing.",

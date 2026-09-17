@@ -75,6 +75,14 @@ freed bridge address is never routed to a newer container; an unreachable tt-bac
 nothing. The plan TTL is capped at 3 hours (`maxExposeTTL`). The platform flag fails closed: no
 `port_exposure` feature row means disabled.
 
+Retention (RGPD register): an exposure row is hard-deleted after its expiry plus the number of
+days set in Platform Settings → "Exposed ports: row retention (days)" (`exposed_port_retention_days`,
+30 by default; blank or unreadable means 30), whether it ended by withdrawal, reconcile or expiry
+(`cron.StartExposedPortRetentionJob`); the
+audit trail keeps who/what/when under the audit-log retention. Visitor access logs live on the
+Traefik pod's stdout only (node log rotation, no log stack), so a complaint's evidence must be
+copied when it arrives.
+
 Every exposure and withdrawal lands in `audit_logs` (`terminal.port.exposed` /
 `terminal.port.unexposed`, target `exposed_port`, metadata: slug, URL, port, container IP,
 backend, session, owner, expiry); the admin kill switch is recorded with the admin as actor and

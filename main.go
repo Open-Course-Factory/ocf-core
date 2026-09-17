@@ -190,6 +190,7 @@ func main() {
 	cron.StartScenarioSessionCleanupJob(sqldb.DB)      // Abandon zombie scenario sessions with dead terminals
 	cron.StartClassAutoArchiveJob(sqldb.DB)            // Archive classes past their expires_at (#491)
 	cron.StartExposedPortReconcileJob(sqldb.DB)        // Drop exposed ports whose container is gone on tt-backend
+	cron.StartExposedPortRetentionJob(sqldb.DB)        // Hard-delete exposure rows 30 days past their expiry (RGPD register)
 	cron.StartMemberErasureJob(sqldb.DB, authServices.NewUserDeletionService(sqldb.DB, authServices.NewUserService(authServices.NewCasdoorUserClient(), paymentServices.NewPaymentDeletionHelper(sqldb.DB)), authServices.NewTerminalTrainerService(sqldb.DB))) // Erase offboarded members past their retention
 
 	// Background job: close idle impersonation sessions every minute. Mirrors

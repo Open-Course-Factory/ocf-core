@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,26 @@ const slugLength = 10
 // plan and scenario gates: off means no create, no list, and an empty
 // Traefik config — every published route dies within one poll.
 const PortExposureFeatureKey = "port_exposure"
+
+// ExposedPortRetentionDaysKey is the Platform Settings entry holding how many
+// days an exposure row outlives its expiry before the retention job deletes
+// it; see ExposedPortRetention.
+const ExposedPortRetentionDaysKey = "exposed_port_retention_days"
+
+const defaultExposedPortRetentionDays = 30
+
+// ExposedPortRetention reads the administrator's retention period; a blank,
+// unreadable or non-positive value falls back to the default rather than
+// keeping rows forever or deleting them at once.
+func ExposedPortRetention(db *gorm.DB) time.Duration {
+	days := defaultExposedPortRetentionDays
+	if feature, err := configRepositories.NewFeatureRepository(db).GetFeatureByKey(ExposedPortRetentionDaysKey); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(feature.Value)); err == nil && n > 0 {
+			days = n
+		}
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
 
 // exposedPortService owns the "publish a session port to a public URL"
 // concern: plan/state validation, container IP resolution via tt-backend,
