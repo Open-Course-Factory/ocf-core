@@ -4,9 +4,12 @@ import (
 	stderrors "errors"
 	"net/http"
 
+	auditModels "soli/formations/src/audit/models"
+	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/terminalTrainer/dto"
 	services "soli/formations/src/terminalTrainer/services"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -171,13 +174,20 @@ func (tc *terminalController) AdminDeleteExposedPort(ctx *gin.Context) {
 		return
 	}
 	repo := tc.service.GetRepository()
-	if _, err := repo.GetExposedPortByID(portID); err != nil {
+	exposedPort, err := repo.GetExposedPortByID(portID)
+	if err != nil {
 		errors.Respond(ctx, http.StatusNotFound, "Exposed port not found")
 		return
 	}
 	if err := repo.DeleteExposedPort(portID); err != nil {
 		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// The kill switch is as traceable as the learner's own actions: the
+	// admin is the actor, the owner the on-behalf-of.
+	entry := services.ExposureAuditEntry(auditModels.AuditEventPortUnexposed, exposedPort, ctx.GetString("userId"))
+	if err := auditServices.NewAuditService(tc.db).Log(entry); err != nil {
+		utils.Warn("exposed port admin kill audit (slug %s): %v", exposedPort.Slug, err)
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "Exposed port deleted successfully"})
 }

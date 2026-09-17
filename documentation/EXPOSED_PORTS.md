@@ -69,6 +69,11 @@ edited in the plan admin form) or until the session ends, whichever comes first:
 at one's own work during the training, not for sharing. Expired exposures are neither listed nor
 counted against the cap.
 
+Every exposure and withdrawal lands in `audit_logs` (`terminal.port.exposed` /
+`terminal.port.unexposed`, target `exposed_port`, metadata: slug, URL, port, container IP,
+backend, session, owner, expiry); the admin kill switch is recorded with the admin as actor and
+the owner as on-behalf-of.
+
 **The session needs the `network` feature.** The `ocf-base` profile is NIC-less, so a session
 started without network has no address for Traefik to reach: `POST` answers 400 with
 "this session has no network interface". Exposure is therefore only possible on plans that

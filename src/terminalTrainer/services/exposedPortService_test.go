@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	auditModels "soli/formations/src/audit/models"
 	configModels "soli/formations/src/configuration/models"
 	paymentModels "soli/formations/src/payment/models"
 	scenarioModels "soli/formations/src/scenarios/models"
@@ -388,4 +389,44 @@ func TestExposedPorts_ExpiredOnesAreNeitherListedNorCounted(t *testing.T) {
 
 	_, err = svc.CreateExposedPort("sess-exp", 8000)
 	assert.NoError(t, err, "expired exposures must not count against the per-session cap")
+}
+
+func TestExposedPorts_ExposeAndWithdrawLeaveAnAuditTrail(t *testing.T) {
+	db := setupExposedPortTestDB(t)
+	require.NoError(t, db.AutoMigrate(&auditModels.AuditLog{}))
+	planID := createTestPlan(t, db, true)
+	stub := httptest.NewServer(infoStub("10.0.0.5"))
+	defer stub.Close()
+	svc := newExposedPortTestService(stub.URL, db)
+	createTestTerminal(t, db, "sess-audit", planID)
+
+	created, err := svc.CreateExposedPort("sess-audit", 8000)
+	require.NoError(t, err)
+	require.NoError(t, svc.DeleteExposedPort("sess-audit", created.ID))
+
+	var trail []auditModels.AuditLog
+	require.NoError(t, db.Order("created_at").Find(&trail).Error)
+	require.Len(t, trail, 2)
+	assert.Equal(t, auditModels.AuditEventPortExposed, trail[0].EventType)
+	assert.Equal(t, auditModels.AuditEventPortUnexposed, trail[1].EventType)
+	for _, e := range trail {
+		assert.Equal(t, "exposed_port", e.TargetType)
+		assert.Equal(t, created.Slug, e.TargetName)
+		assert.Equal(t, "sess-audit", e.SessionID)
+		assert.Contains(t, e.Metadata, `"container_ip":"10.0.0.5"`)
+		assert.Contains(t, e.Metadata, `"port":8000`)
+	}
+}
+
+func TestExposureAuditEntry_AdminKillNamesTheOwnerAsOnBehalfOf(t *testing.T) {
+	owner, admin := uuid.New(), uuid.New()
+	ep := &models.ExposedPort{UserID: owner.String(), SessionID: "s", Slug: "abc", ContainerPort: 8000}
+	entry := ExposureAuditEntry(auditModels.AuditEventPortUnexposed, ep, admin.String())
+	require.NotNil(t, entry.ActorID)
+	assert.Equal(t, admin, *entry.ActorID)
+	require.NotNil(t, entry.OnBehalfOfID, "an admin killing someone's exposure is recorded as acting on their behalf")
+	assert.Equal(t, owner, *entry.OnBehalfOfID)
+
+	own := ExposureAuditEntry(auditModels.AuditEventPortUnexposed, ep, owner.String())
+	assert.Nil(t, own.OnBehalfOfID, "the owner acting on their own exposure has no on-behalf-of")
 }

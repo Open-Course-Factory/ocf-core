@@ -96,6 +96,13 @@ const (
 	AuditEventSupervisionStopped  AuditEventType = "terminal.supervision.stopped"
 	AuditEventSupervisionTakeHand AuditEventType = "terminal.supervision.take_hand"
 	AuditEventSupervisionReleased AuditEventType = "terminal.supervision.released"
+
+	// Exposed ports — a learner publishing a port of their session at a
+	// public URL, and that URL being withdrawn (by the learner, or by the
+	// platform admin kill switch). The trail answers "who put what on the
+	// internet, from which container, when".
+	AuditEventPortExposed   AuditEventType = "terminal.port.exposed"
+	AuditEventPortUnexposed AuditEventType = "terminal.port.unexposed"
 )
 
 // AuditSeverity represents the importance level of an audit event

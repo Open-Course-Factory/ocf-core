@@ -2,11 +2,14 @@ package services
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
 	"time"
 
+	auditModels "soli/formations/src/audit/models"
+	auditServices "soli/formations/src/audit/services"
 	configRepositories "soli/formations/src/configuration/repositories"
 	paymentModels "soli/formations/src/payment/models"
 	scenarioModels "soli/formations/src/scenarios/models"
@@ -47,6 +50,7 @@ type exposedPortService struct {
 	proxy      *terminalProxyClient
 	repository repositories.TerminalRepository
 	features   configRepositories.FeatureRepository
+	audit      auditServices.AuditService
 	db         *gorm.DB
 }
 
@@ -55,6 +59,7 @@ func newExposedPortService(proxy *terminalProxyClient, repository repositories.T
 		proxy:      proxy,
 		repository: repository,
 		features:   configRepositories.NewFeatureRepository(db),
+		audit:      auditServices.NewAuditService(db),
 		db:         db,
 	}
 }
@@ -167,6 +172,7 @@ func (s *exposedPortService) CreateExposedPort(sessionID string, containerPort i
 	if err := s.repository.CreateExposedPort(exposedPort); err != nil {
 		return nil, fmt.Errorf("failed to save exposure: %w", err)
 	}
+	s.recordExposure(auditModels.AuditEventPortExposed, exposedPort, terminal.UserID)
 
 	return s.toResponse(exposedPort), nil
 }
@@ -209,7 +215,59 @@ func (s *exposedPortService) DeleteExposedPort(sessionID string, exposedPortID u
 	if exposedPort.SessionID != sessionID {
 		return fmt.Errorf("exposed port not found")
 	}
-	return s.repository.DeleteExposedPort(exposedPortID)
+	if err := s.repository.DeleteExposedPort(exposedPortID); err != nil {
+		return err
+	}
+	s.recordExposure(auditModels.AuditEventPortUnexposed, exposedPort, exposedPort.UserID)
+	return nil
+}
+
+// recordExposure writes the audit entry of one exposure event. A failed
+// write is logged, never surfaced: the exposure itself already happened.
+func (s *exposedPortService) recordExposure(event auditModels.AuditEventType, exposedPort *models.ExposedPort, actorUserID string) {
+	if err := s.audit.Log(ExposureAuditEntry(event, exposedPort, actorUserID)); err != nil {
+		utils.Warn("exposed port audit (%s, slug %s): %v", event, exposedPort.Slug, err)
+	}
+}
+
+// ExposureAuditEntry builds the audit entry of an exposure event: the
+// exposure is the target, whoever acted is the actor, and an admin killing
+// someone else's exposure is recorded as acting on the owner's behalf.
+// Exported so the routes layer records the admin kill switch in the same
+// shape.
+func ExposureAuditEntry(event auditModels.AuditEventType, exposedPort *models.ExposedPort, actorUserID string) auditModels.AuditLogCreate {
+	meta, _ := json.Marshal(map[string]any{
+		"slug":         exposedPort.Slug,
+		"url":          ExposedPortURL(exposedPort.Slug),
+		"port":         exposedPort.ContainerPort,
+		"container_ip": exposedPort.ContainerIP,
+		"backend":      exposedPort.Backend,
+		"session_id":   exposedPort.SessionID,
+		"owner_id":     exposedPort.UserID,
+		"expires_at":   exposedPort.ExpiresAt,
+	})
+	id := exposedPort.ID
+	entry := auditModels.AuditLogCreate{
+		EventType:  event,
+		Severity:   auditModels.AuditSeverityInfo,
+		TargetID:   &id,
+		TargetType: "exposed_port",
+		TargetName: exposedPort.Slug,
+		Action:     string(event),
+		Status:     "success",
+		Metadata:   string(meta),
+		SessionID:  exposedPort.SessionID,
+	}
+	// User ids are Casdoor ids, UUIDs in production; tests use plain strings.
+	if actor, err := uuid.Parse(actorUserID); err == nil {
+		entry.ActorID = &actor
+	}
+	if actorUserID != exposedPort.UserID {
+		if owner, err := uuid.Parse(exposedPort.UserID); err == nil {
+			entry.OnBehalfOfID = &owner
+		}
+	}
+	return entry
 }
 
 // GetActiveExposedPortsForTraefik is the read path polled by
