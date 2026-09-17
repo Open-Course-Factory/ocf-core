@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"time"
 
 	configRepositories "soli/formations/src/configuration/repositories"
 	paymentModels "soli/formations/src/payment/models"
@@ -119,6 +120,10 @@ func (s *exposedPortService) CreateExposedPort(sessionID string, containerPort i
 	if err := s.checkExposureAllowed(terminal); err != nil {
 		return nil, err
 	}
+	plan, err := s.exposurePlan(terminal)
+	if err != nil {
+		return nil, err
+	}
 
 	count, err := s.repository.CountExposedPortsBySessionID(sessionID)
 	if err != nil {
@@ -157,7 +162,7 @@ func (s *exposedPortService) CreateExposedPort(sessionID string, containerPort i
 		ContainerPort: containerPort,
 		Slug:          slug,
 		ContainerIP:   sessionInfo.IP,
-		ExpiresAt:     terminal.ExpiresAt,
+		ExpiresAt:     exposureExpiry(terminal.ExpiresAt, plan.PortExposureTTLMinutes),
 	}
 	if err := s.repository.CreateExposedPort(exposedPort); err != nil {
 		return nil, fmt.Errorf("failed to save exposure: %w", err)
@@ -260,18 +265,26 @@ func (s *exposedPortService) checkScenarioAllowsExposure(sessionID string) error
 // a newly opt-in capability, so the safe default on ambiguity is "off", not
 // "on".
 func (s *exposedPortService) checkPlanAllowsExposure(terminal *models.Terminal) error {
+	_, err := s.exposurePlan(terminal)
+	return err
+}
+
+// exposurePlan loads the plan a terminal runs under and refuses exposure
+// unless it carries PortExposureEnabled. A terminal predating
+// SubscriptionPlanID, or whose plan cannot be loaded, is refused too.
+func (s *exposedPortService) exposurePlan(terminal *models.Terminal) (*paymentModels.SubscriptionPlan, error) {
 	if terminal.SubscriptionPlanID == nil {
-		return &PlanDisabledError{}
+		return nil, &PlanDisabledError{}
 	}
 	var plan paymentModels.SubscriptionPlan
 	if err := s.db.First(&plan, "id = ?", *terminal.SubscriptionPlanID).Error; err != nil {
-		utils.Warn("checkPlanAllowsExposure: failed to load plan %s for session %s: %v", terminal.SubscriptionPlanID.String(), terminal.SessionID, err)
-		return &PlanDisabledError{}
+		utils.Warn("exposurePlan: failed to load plan %s for session %s: %v", terminal.SubscriptionPlanID.String(), terminal.SessionID, err)
+		return nil, &PlanDisabledError{}
 	}
 	if !plan.PortExposureEnabled {
-		return &PlanDisabledError{}
+		return nil, &PlanDisabledError{}
 	}
-	return nil
+	return &plan, nil
 }
 
 // allocateSlug generates a random DNS-label-safe slug and retries on the
@@ -316,6 +329,25 @@ func (s *exposedPortService) toResponse(exposedPort *models.ExposedPort) *dto.Ex
 		ExpiresAt: exposedPort.ExpiresAt,
 	}
 }
+
+// exposureExpiry bounds an exposure to the plan's TTL after now, or to the
+// end of the session if that comes first. A public URL exists to look at
+// one's own work during the training, not to hand out links: the short
+// lifetime is the feature's policy, not a technical limit.
+func exposureExpiry(sessionExpiry time.Time, ttlMinutes int) time.Time {
+	ttl := defaultExposeTTL
+	if ttlMinutes > 0 {
+		ttl = time.Duration(ttlMinutes) * time.Minute
+	}
+	expiry := time.Now().Add(ttl)
+	if sessionExpiry.Before(expiry) {
+		return sessionExpiry
+	}
+	return expiry
+}
+
+// defaultExposeTTL applies to a plan whose PortExposureTTLMinutes is unset.
+const defaultExposeTTL = time.Hour
 
 // ExposedPortURL is the one place the public URL of an exposure is minted
 // from its slug; the admin listing uses it too.

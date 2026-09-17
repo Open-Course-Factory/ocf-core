@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -336,4 +337,55 @@ func TestExposedPorts_FeatureFlagOffRefusesAndPublishesNothing(t *testing.T) {
 	active, err := svc.GetActiveExposedPortsForTraefik()
 	require.NoError(t, err)
 	assert.Empty(t, active, "the kill switch: an existing exposure is no longer published")
+}
+
+func TestCreateExposedPort_LifetimeIsThePlanTTLOrTheSessionEndWhicheverComesFirst(t *testing.T) {
+	db := setupExposedPortTestDB(t)
+	planID := createTestPlan(t, db, true)
+	require.NoError(t, db.Model(&paymentModels.SubscriptionPlan{}).Where("id = ?", planID).Update("port_exposure_ttl_minutes", 30).Error)
+	stub := httptest.NewServer(infoStub("10.0.0.5"))
+	defer stub.Close()
+	svc := newExposedPortTestService(stub.URL, db)
+
+	// session ends in an hour: the 30 min TTL wins
+	createTestTerminal(t, db, "sess-ttl", planID)
+	resp, err := svc.CreateExposedPort("sess-ttl", 8000)
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now().Add(30*time.Minute), resp.ExpiresAt, 5*time.Second)
+
+	// session ends in ten minutes: the session end wins
+	short := createTestTerminal(t, db, "sess-short", planID)
+	short.ExpiresAt = time.Now().Add(10 * time.Minute)
+	require.NoError(t, db.Save(short).Error)
+	resp, err = svc.CreateExposedPort("sess-short", 8000)
+	require.NoError(t, err)
+	assert.WithinDuration(t, short.ExpiresAt, resp.ExpiresAt, time.Second)
+}
+
+func TestExposureExpiry_UnsetPlanTTLMeansAnHour(t *testing.T) {
+	farSessionEnd := time.Now().Add(8 * time.Hour)
+	assert.WithinDuration(t, time.Now().Add(time.Hour), exposureExpiry(farSessionEnd, 0), time.Second)
+	assert.WithinDuration(t, time.Now().Add(2*time.Hour), exposureExpiry(farSessionEnd, 120), time.Second)
+}
+
+func TestExposedPorts_ExpiredOnesAreNeitherListedNorCounted(t *testing.T) {
+	db := setupExposedPortTestDB(t)
+	planID := createTestPlan(t, db, true)
+	stub := httptest.NewServer(infoStub("10.0.0.5"))
+	defer stub.Close()
+	svc := newExposedPortTestService(stub.URL, db)
+	terminal := createTestTerminal(t, db, "sess-exp", planID)
+
+	// three expired rows the sweep has not deleted yet
+	for i := 0; i < maxExposedPortsPerSession; i++ {
+		require.NoError(t, db.Create(&models.ExposedPort{TerminalID: terminal.ID, SessionID: "sess-exp", UserID: "user1",
+			ContainerPort: 9000 + i, Slug: fmt.Sprintf("old%d", i), ContainerIP: "10.0.0.5", ExpiresAt: time.Now().Add(-time.Minute)}).Error)
+	}
+
+	listed, err := svc.ListExposedPorts("sess-exp")
+	require.NoError(t, err)
+	assert.Empty(t, listed, "expired exposures are unreachable, the list must not show them")
+
+	_, err = svc.CreateExposedPort("sess-exp", 8000)
+	assert.NoError(t, err, "expired exposures must not count against the per-session cap")
 }

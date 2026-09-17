@@ -67,6 +67,10 @@ type SubscriptionPlan struct {
 	// Deliberately separate from NetworkAccessEnabled: outbound access does not
 	// imply public inbound exposure of the sandbox. Opt-in like every toggle.
 	PortExposureEnabled       bool `gorm:"default:false" json:"port_exposure_enabled"`                                            // Allow exposing a session port to a public URL via Traefik
+	// PortExposureTTLMinutes bounds how long one exposure stays public: a URL
+	// is for looking at one's own work during the training, not for handing
+	// out links. 0 means the service default (an hour).
+	PortExposureTTLMinutes    int  `gorm:"default:60" json:"port_exposure_ttl_minutes"`
 	DataPersistenceEnabled    bool `gorm:"default:false" json:"data_persistence_enabled"`                                         // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)
 	SessionSupervisionEnabled bool `gorm:"default:false" json:"session_supervision_enabled"`                                      // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
 	GroupManagementEnabled    bool `gorm:"default:false" json:"group_management_enabled" mapstructure:"group_management_enabled"` // Typed entitlement: plan grants group management (replaces the legacy features[] "group_management" string)

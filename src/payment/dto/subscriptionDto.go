@@ -22,6 +22,7 @@ type CreateSubscriptionPlanInput struct {
 	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
 	PortExposureEnabled         bool     `json:"port_exposure_enabled" mapstructure:"port_exposure_enabled"`
+	PortExposureTTLMinutes      int      `json:"port_exposure_ttl_minutes" mapstructure:"port_exposure_ttl_minutes"`
 	DataPersistenceEnabled      bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
 	SessionSupervisionEnabled   bool     `json:"session_supervision_enabled" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
@@ -49,6 +50,7 @@ type UpdateSubscriptionPlanInput struct {
 	MaxSessionDurationMinutes   *int     `json:"max_session_duration_minutes,omitempty" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
 	PortExposureEnabled         *bool    `json:"port_exposure_enabled,omitempty" mapstructure:"port_exposure_enabled"`
+	PortExposureTTLMinutes      *int     `json:"port_exposure_ttl_minutes,omitempty" mapstructure:"port_exposure_ttl_minutes"`
 	DataPersistenceEnabled      *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
 	SessionSupervisionEnabled   *bool    `json:"session_supervision_enabled,omitempty" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           *int     `json:"data_persistence_gb,omitempty" mapstructure:"data_persistence_gb"`
@@ -112,6 +114,7 @@ type SubscriptionPlanOutput struct {
 	MaxSessionDurationMinutes   int  `json:"max_session_duration_minutes"`
 	NetworkAccessEnabled        bool `json:"network_access_enabled"`
 	PortExposureEnabled         bool `json:"port_exposure_enabled"`
+	PortExposureTTLMinutes      int  `json:"port_exposure_ttl_minutes"`
 	DataPersistenceEnabled      bool `json:"data_persistence_enabled"`
 	SessionSupervisionEnabled   bool `json:"session_supervision_enabled" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           int  `json:"data_persistence_gb"`

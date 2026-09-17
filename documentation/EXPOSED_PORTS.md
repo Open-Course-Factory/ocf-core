@@ -64,7 +64,10 @@ on a 403 from `GET /terminals/:id/exposed-ports` instead of re-deriving the rule
 | `GET` | `/internal/traefik/dynamic-config` | Traefik, `X-Provider-Secret` (outside `/api/v1`, no JWT) |
 
 Ports must be in `1024–65535`. A session holds at most 3 exposures
-(`maxExposedPortsPerSession`).
+(`maxExposedPortsPerSession`). An exposure lives `port_exposure_ttl_minutes` of the plan (default 60,
+edited in the plan admin form) or until the session ends, whichever comes first: a URL is for looking
+at one's own work during the training, not for sharing. Expired exposures are neither listed nor
+counted against the cap.
 
 **The session needs the `network` feature.** The `ocf-base` profile is NIC-less, so a session
 started without network has no address for Traefik to reach: `POST` answers 400 with

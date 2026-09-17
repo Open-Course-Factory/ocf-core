@@ -404,11 +404,13 @@ func (r *terminalRepository) CreateExposedPort(exposedPort *models.ExposedPort) 
 	return r.db.Create(exposedPort).Error
 }
 
-// GetExposedPortsBySessionID lists every exposure (active or not) for a
-// session, newest first — used by the owner-facing list endpoint.
+// GetExposedPortsBySessionID lists the live exposures of a session: an
+// expired one is already unreachable, so it is neither shown nor counted
+// against the cap, whether or not the sweep has deleted its row yet.
+// Newest first — used by the owner-facing list endpoint.
 func (r *terminalRepository) GetExposedPortsBySessionID(sessionID string) (*[]models.ExposedPort, error) {
 	var exposedPorts []models.ExposedPort
-	err := r.db.Where("session_id = ?", sessionID).Order("created_at DESC").Find(&exposedPorts).Error
+	err := r.db.Where("session_id = ? AND expires_at > ?", sessionID, time.Now()).Order("created_at DESC").Find(&exposedPorts).Error
 	if err != nil {
 		return nil, err
 	}
@@ -427,7 +429,7 @@ func (r *terminalRepository) GetExposedPortByID(id uuid.UUID) (*models.ExposedPo
 // by exposedPortService.
 func (r *terminalRepository) CountExposedPortsBySessionID(sessionID string) (int64, error) {
 	var count int64
-	err := r.db.Model(&models.ExposedPort{}).Where("session_id = ?", sessionID).Count(&count).Error
+	err := r.db.Model(&models.ExposedPort{}).Where("session_id = ? AND expires_at > ?", sessionID, time.Now()).Count(&count).Error
 	return count, err
 }
 
