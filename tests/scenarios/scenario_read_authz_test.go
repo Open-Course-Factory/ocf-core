@@ -505,6 +505,35 @@ func TestListScenarios_AsRegularMember_StripsStepsAndQuestions(t *testing.T) {
 	}
 }
 
+// A class that was deleted keeps its (soft-deleted) assignment rows. The
+// manage check used to walk them with a raw table query, ask the group
+// service about a group that no longer exists, and turn "record not found"
+// into a 500 on the public catalogue for every non-admin user.
+func TestListScenarios_AssignedToDeletedGroup_StillListsForMembers(t *testing.T) {
+	db := freshTestDB(t)
+	creatorID := "creator-deleted-grp-001"
+	groupID := makeGroupWithOwner(t, db, "group-owner-deleted-001")
+	scenario := buildLeakyScenario(t, db, "leak-deleted-group", creatorID, nil)
+
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID:  scenario.ID,
+		GroupID:     &groupID,
+		Scope:       "group",
+		CreatedByID: creatorID,
+		IsActive:    true,
+	}).Error)
+	require.NoError(t, db.Where("group_id = ?", groupID).Delete(&models.ScenarioAssignment{}).Error)
+	require.NoError(t, db.Where("id = ?", groupID).Delete(&groupModels.ClassGroup{}).Error)
+
+	router := setupScenarioReadAuthzTest(t, db, "outsider-deleted-grp-001", []string{"member"}, "/scenarios")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenarios", nil)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "a deleted class must not break the catalogue; body=%s", w.Body.String())
+}
+
 // The list redactor has two pagination branches (offset and cursor); the
 // presence of a `cursor` query key selects the cursor one.
 func TestListScenarios_AsRegularMember_CursorPagination_StripsStepsAndQuestions(t *testing.T) {

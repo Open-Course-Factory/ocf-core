@@ -1,6 +1,7 @@
 package scenarioHooks
 
 import (
+	"errors"
 	"fmt"
 
 	"soli/formations/src/entityManagement/hooks"
@@ -47,13 +48,18 @@ func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 
 	// Group manager of any group the scenario is assigned to.
 	var groupIDs []uuid.UUID
+	// Table() bypasses the soft-delete scope: without the filter, assignments of
+	// a deleted class are walked and the group lookup below fails on them.
 	if err := db.Table("scenario_assignments").
-		Where("scenario_id = ? AND scope = ? AND group_id IS NOT NULL", scenario.ID, "group").
+		Where("scenario_id = ? AND scope = ? AND group_id IS NOT NULL AND deleted_at IS NULL", scenario.ID, "group").
 		Pluck("group_id", &groupIDs).Error; err != nil {
 		return false, fmt.Errorf("load scenario group assignments: %w", err)
 	}
 	for _, gid := range groupIDs {
 		canManage, err := groupSvc.CanUserManageGroup(gid, userID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue // the group is gone; nobody manages the scenario through it
+		}
 		if err != nil {
 			return false, fmt.Errorf("check group manage permission: %w", err)
 		}
