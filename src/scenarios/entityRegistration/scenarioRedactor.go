@@ -149,6 +149,7 @@ func scenarioAssignmentListScope(c *gin.Context, db *gorm.DB) ([]string, error) 
 }
 
 func stripScenarioDto(out *dto.ScenarioOutput) {
+	out.CanManage = false
 	out.Steps = nil
 	out.SetupScript = ""
 	out.SetupScriptID = nil

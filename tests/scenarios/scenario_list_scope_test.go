@@ -161,3 +161,29 @@ func TestListScenarios_NothingManageable_EmptyPage(t *testing.T) {
 	require.Empty(t, names)
 }
 
+
+// can_manage is the backend verdict the editor relies on for its edit
+// controls: true exactly where a write would pass the hooks.
+func TestListScenarios_CanManage_ReflectsTheWriteVerdict(t *testing.T) {
+	db := freshTestDB(t)
+	f := buildListScopeFixture(t, db)
+	router := setupScenarioReadAuthzTest(t, db, f.orgAManager, []string{"member"}, "/scenarios")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenarios", nil)
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var page struct {
+		Data []struct {
+			Name      string `json:"name"`
+			CanManage bool   `json:"can_manage"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
+	verdicts := map[string]bool{}
+	for _, s := range page.Data {
+		verdicts[s.Name] = s.CanManage
+	}
+	require.Equal(t, map[string]bool{"org-a-private": true, "platform-public": false, "org-b-public": false}, verdicts)
+}

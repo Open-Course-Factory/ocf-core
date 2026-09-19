@@ -238,6 +238,7 @@ func ScenarioToOutput(model *models.Scenario) dto.ScenarioOutput {
 		CreatedByID:    model.CreatedByID,
 		OrganizationID: model.OrganizationID,
 		IsPublic:       model.IsPublic,
+		CanManage:      true, // cleared by scenarioRedactor for non-managers
 		SetupScript:    model.SetupScript,
 		SetupScriptID:  model.SetupScriptID,
 		IntroFileID:    model.IntroFileID,
