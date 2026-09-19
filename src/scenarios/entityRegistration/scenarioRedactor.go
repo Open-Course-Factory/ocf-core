@@ -116,6 +116,16 @@ func redactUnlessManager[T any](
 //   - SetupScript: shell script that may contain secrets / cleanup commands
 //   - SetupScriptID, IntroFileID, FinishFileID: project-file UUIDs that
 //     enable enumeration of internal artifacts
+// scenarioListScope keeps GET /scenarios to what the caller may manage plus
+// public scenarios; a platform admin keeps the platform-wide list. The redactor
+// above still runs on every row it lets through.
+func scenarioListScope(c *gin.Context, db *gorm.DB) ([]string, error) {
+	if access.IsAdmin(readRoles(c)) {
+		return nil, nil
+	}
+	return scenarioHooks.ListableScenarioIDs(db, groupServices.NewGroupService(db), c.GetString("userId"))
+}
+
 func stripScenarioDto(out *dto.ScenarioOutput) {
 	out.Steps = nil
 	out.SetupScript = ""

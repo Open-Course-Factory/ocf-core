@@ -204,6 +204,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 	// Register the read-time redactor so the generic GET handlers strip
 	// step + question content from non-managers (issue #293).
 	service.RegisterDtoRedactor("Scenario", scenarioRedactor)
+	service.RegisterListScope("Scenario", scenarioListScope)
 }
 
 // ScenarioToOutput is the one Scenario -> ScenarioOutput mapper, shared by the

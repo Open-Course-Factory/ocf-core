@@ -140,6 +140,22 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		filters[filterStrategies.NotArchivedKey] = true
 	}
 
+	// Entity-specific list scope (see ems.ListScope): both pagination branches
+	// read the same filter map, so injecting the id list here scopes them alike.
+	if scope, ok := ems.GlobalEntityRegistrationService.GetListScope(entityName); ok {
+		ids, err := scope(ctx, genericController.db)
+		if errors.HandleError(http.StatusInternalServerError, err, ctx) {
+			return
+		}
+		if ids != nil {
+			if len(ids) == 0 {
+				respondEmptyPage(ctx)
+				return
+			}
+			filters["id"] = ids
+		}
+	}
+
 	// Use cursor pagination if cursor param is present (even if empty for first page)
 	if _, hasCursor := ctx.Request.URL.Query()["cursor"]; hasCursor {
 		limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", strconv.Itoa(DefaultCursorLimit)))

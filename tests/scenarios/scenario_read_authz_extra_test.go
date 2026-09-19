@@ -319,6 +319,9 @@ func TestListScenarios_AsRegularMember_StripsSetupScript(t *testing.T) {
 	creatorID := "creator-list-setup-001"
 	_, _, _ = buildLeakyScenarioWithSetupScript(t, db, "leak-list-setup-1", creatorID, nil)
 	_, _, _ = buildLeakyScenarioWithSetupScript(t, db, "leak-list-setup-2", creatorID, nil)
+	// Public so the list still returns them: since #294 a non-manager only
+	// lists public scenarios, and the strip is what this test is about.
+	require.NoError(t, db.Model(&models.Scenario{}).Where("1 = 1").Update("is_public", true).Error)
 
 	router := setupExtendedReadAuthzTest(t, db, "outsider-list-setup-001", []string{"member"})
 
