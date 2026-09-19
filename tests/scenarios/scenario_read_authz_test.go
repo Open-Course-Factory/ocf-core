@@ -390,9 +390,13 @@ func TestGetScenario_AsGroupManager_ReturnsFullContent(t *testing.T) {
 	db := freshTestDB(t)
 	creatorID := "creator-grp-001"
 	groupOwnerID := "group-owner-read-001"
+	// The class and the scenario share an organisation: that, not the
+	// assignment, is what makes the class manager a manager of it (2026-09-19).
+	orgID := makeOrgWithMember(t, db, "org-owner-"+groupOwnerID, "", orgModels.OrgRoleMember)
 	groupID := makeGroupWithOwner(t, db, groupOwnerID)
+	require.NoError(t, db.Model(&groupModels.ClassGroup{}).Where("id = ?", groupID).Update("organization_id", orgID).Error)
 
-	scenario := buildLeakyScenario(t, db, "leak-group-manager", creatorID, nil)
+	scenario := buildLeakyScenario(t, db, "leak-group-manager", creatorID, &orgID)
 
 	// Assign the scenario to the group so the group owner counts as manager
 	// per CanManageScenario's group-assignment branch.

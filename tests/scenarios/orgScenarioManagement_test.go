@@ -70,6 +70,7 @@ func setupOrgTestRouterWithUserAndRoles(t *testing.T, db *gorm.DB, userID string
 	groupScenarios := api.Group("/groups/:groupId/scenarios")
 	groupScenarios.GET("", managementController.ListGroupAvailableScenarios)
 	groupScenarios.POST("", managementController.GroupCreateScenario)
+	groupScenarios.POST("/:scenarioId/duplicate", managementController.GroupDuplicateScenario)
 
 	return r
 }

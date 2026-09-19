@@ -135,7 +135,11 @@ func TestScenarioStep_CreateAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) 
 	// Group owned by groupOwnerID
 	groupID, err := uuid.NewV7()
 	require.NoError(t, err)
+	// A class manager manages the scenarios of the class's organisation
+	// (org isolation, 2026-09-19); the assignment itself grants nothing.
+	orgID := createTestOrg(t, db, groupOwnerID)
 	group := &groupModels.ClassGroup{
+		OrganizationID: &orgID,
 		Name:        "Step Group Manager Allowed",
 		DisplayName: "Step Group Manager Allowed",
 		OwnerUserID: groupOwnerID,
@@ -149,8 +153,9 @@ func TestScenarioStep_CreateAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) 
 		InvitedBy: groupOwnerID, JoinedAt: time.Now(), IsActive: true,
 	}).Error)
 
-	// Scenario owned by someone else, not org-scoped, but assigned to the group.
+	// Scenario owned by someone else in the same organisation, assigned to the group.
 	scenario := &models.Scenario{
+		OrganizationID: &orgID,
 		Name:         "step-group-manager-assigned",
 		Title:        "Step Group Manager Assigned",
 		InstanceType: "ubuntu:22.04",
@@ -415,7 +420,11 @@ func TestScenarioStepQuestion_DeleteAsGroupManagerOfAssignedGroup_Allowed(t *tes
 
 	groupID, err := uuid.NewV7()
 	require.NoError(t, err)
+	// A class manager manages the scenarios of the class's organisation
+	// (org isolation, 2026-09-19); the assignment itself grants nothing.
+	orgID := createTestOrg(t, db, groupOwnerID)
 	group := &groupModels.ClassGroup{
+		OrganizationID: &orgID,
 		Name:        "StepQ Group Manager Allowed",
 		DisplayName: "StepQ Group Manager Allowed",
 		OwnerUserID: groupOwnerID,
@@ -430,6 +439,7 @@ func TestScenarioStepQuestion_DeleteAsGroupManagerOfAssignedGroup_Allowed(t *tes
 	}).Error)
 
 	scenario := &models.Scenario{
+		OrganizationID: &orgID,
 		Name:         "stepq-group-manager-assigned",
 		Title:        "StepQ Group Manager Assigned",
 		InstanceType: "ubuntu:22.04",

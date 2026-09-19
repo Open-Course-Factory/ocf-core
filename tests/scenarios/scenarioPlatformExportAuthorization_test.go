@@ -153,8 +153,9 @@ func TestPlatformExport_AsGroupManager_Allowed(t *testing.T) {
 	addGroupMember(t, db, groupID, ownerID, groupModels.GroupMemberRoleOwner)
 	addGroupMember(t, db, groupID, managerID, groupModels.GroupMemberRoleManager)
 
-	scenario := createPlatformScenario(t, db, "group-scenario", otherCreatorID, nil)
-	createScenarioAssignment(t, db, scenario.ID, &groupID, nil, "group")
+	// A class manager manages every scenario of their organisation, whether
+	// or not it is assigned to their class…
+	scenario := createPlatformScenario(t, db, "group-scenario", otherCreatorID, &orgID)
 
 	router := setupPlatformExportTestRouter(t, db, managerID, []string{"Member"})
 
@@ -163,12 +164,20 @@ func TestPlatformExport_AsGroupManager_Allowed(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code,
-		"group manager should be able to export scenarios assigned to their group "+
-			"via the platform endpoint")
+		"a class manager exports the scenarios of their organisation via the platform endpoint")
 
 	var response map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	assert.Equal(t, "Test: group-scenario", response["title"])
+
+	// …but an assignment grants nothing on a scenario from outside it: a
+	// private platform scenario assigned to the class stays the admins'.
+	assigned := createPlatformScenario(t, db, "assigned-platform-scenario", otherCreatorID, nil)
+	createScenarioAssignment(t, db, assigned.ID, &groupID, nil, "group")
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/v1/scenarios/"+assigned.ID.String()+"/export", nil)
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code, "being assigned a scenario is not managing it")
 }
 
 // TestPlatformExport_AsUnrelatedMember_Forbidden — a Member with no

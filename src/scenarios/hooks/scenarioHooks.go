@@ -8,6 +8,7 @@ import (
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/utils"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -38,7 +39,7 @@ func NewScenarioAuthorizationHook(db *gorm.DB) hooks.Hook {
 		BaseHook: hooks.BaseHook{
 			Name:       "scenario_authorization",
 			EntityName: "Scenario",
-			HookTypes:  []hooks.HookType{hooks.BeforeUpdate, hooks.BeforeDelete},
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
 			Enabled:    true,
 			Priority:   10,
 		},
@@ -46,7 +47,13 @@ func NewScenarioAuthorizationHook(db *gorm.DB) hooks.Hook {
 }
 
 func (h *ScenarioAuthorizationHook) Execute(ctx *hooks.HookContext) error {
-	// Admin bypasses all checks.
+	// The public flag is a platform notion (models.PublicCatalogue): on an org
+	// scenario it would promise a visibility the readers never grant, so it is
+	// refused for everyone, admins included.
+	if err := refusePublicOrgScenario(ctx); err != nil {
+		return err
+	}
+	// Admin bypasses the authorization checks.
 	if ctx.IsAdmin() {
 		return nil
 	}
@@ -71,6 +78,36 @@ func (h *ScenarioAuthorizationHook) checkExisting(ctx *hooks.HookContext, raw an
 	}
 	if !allowed {
 		return utils.PermissionDeniedError(action, entityLabel)
+	}
+	return nil
+}
+
+var errPublicOrgScenario = fmt.Errorf("an organisation's scenario cannot be public: only platform scenarios are")
+
+func refusePublicOrgScenario(ctx *hooks.HookContext) error {
+	switch ctx.HookType {
+	case hooks.BeforeCreate:
+		if s, ok := ctx.NewEntity.(*models.Scenario); ok && s.IsPublic && s.OrganizationID != nil {
+			return errPublicOrgScenario
+		}
+	case hooks.BeforeUpdate:
+		patch, ok := ctx.NewEntity.(map[string]any)
+		if !ok {
+			return nil
+		}
+		public, _ := patch["is_public"].(bool)
+		if !public {
+			return nil
+		}
+		if orgID, patched := patch["organization_id"].(uuid.UUID); patched {
+			if orgID != uuid.Nil {
+				return errPublicOrgScenario
+			}
+			return nil
+		}
+		if old, ok := ctx.OldEntity.(*models.Scenario); ok && old.OrganizationID != nil {
+			return errPublicOrgScenario
+		}
 	}
 	return nil
 }

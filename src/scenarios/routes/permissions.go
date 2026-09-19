@@ -170,6 +170,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Import a scenario from JSON into a group",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/groups/:groupId/scenarios/:scenarioId/duplicate", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "Copy a scenario the caller may see into the class's organisation and assign it to the class (manager+)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios/:scenarioId/export", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Export a scenario from a group",

@@ -87,6 +87,7 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	groupScenarioRoutes := router.Group("/groups/:groupId/scenarios")
 	groupScenarioRoutes.GET("", middleware.AuthManagement(), managementController.ListGroupAvailableScenarios)
 	groupScenarioRoutes.POST("", middleware.AuthManagement(), managementController.GroupCreateScenario)
+	groupScenarioRoutes.POST("/:scenarioId/duplicate", middleware.AuthManagement(), managementController.GroupDuplicateScenario)
 	groupScenarioRoutes.GET("/:scenarioId/export", middleware.AuthManagement(), managementController.GroupExportScenario)
 	groupScenarioRoutes.POST("/import-json", middleware.AuthManagement(), managementController.GroupImportJSON)
 	groupScenarioRoutes.POST("/upload", middleware.AuthManagement(), managementController.GroupUploadScenario)

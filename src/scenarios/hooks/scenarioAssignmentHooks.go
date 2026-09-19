@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"soli/formations/src/entityManagement/hooks"
+	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
@@ -53,10 +54,18 @@ func (h *ScenarioAssignmentAuthorizationHook) Execute(ctx *hooks.HookContext) er
 func (h *ScenarioAssignmentAuthorizationHook) handleBeforeCreate(ctx *hooks.HookContext) error {
 	// Admin bypasses all authorization checks
 	if ctx.IsAdmin() {
-		if assignment, ok := ctx.NewEntity.(*models.ScenarioAssignment); ok && ctx.UserID != "" {
+		assignment, ok := ctx.NewEntity.(*models.ScenarioAssignment)
+		if !ok {
+			return nil
+		}
+		if ctx.UserID != "" {
 			assignment.CreatedByID = ctx.UserID
 		}
-		return nil
+		scenario, err := loadScenarioByID(h.db, assignment.ScenarioID)
+		if err != nil {
+			return err
+		}
+		return refuseCrossOrgAssignment(h.db, scenario, assignment)
 	}
 
 	assignment, ok := ctx.NewEntity.(*models.ScenarioAssignment)
@@ -69,7 +78,28 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeCreate(ctx *hooks.Hook
 		assignment.CreatedByID = ctx.UserID
 	}
 
-	return h.deny(assignment, ctx.UserID, "assign scenarios to")
+	if err := h.deny(assignment, ctx.UserID, "assign scenarios to"); err != nil {
+		return err
+	}
+	return h.refuseInvisibleScenario(assignment, ctx.UserID)
+}
+
+// refuseInvisibleScenario keeps an assignment inside what the caller may see
+// (CanSeeScenario) and inside the scenario's organisation: a scenario id is
+// not a permission, and an org scenario never reaches another org's class.
+func (h *ScenarioAssignmentAuthorizationHook) refuseInvisibleScenario(assignment *models.ScenarioAssignment, userID string) error {
+	scenario, err := loadScenarioByID(h.db, assignment.ScenarioID)
+	if err != nil {
+		return err
+	}
+	visible, err := CanSeeScenario(h.db, h.groupService, scenario, userID)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
+	}
+	if !visible {
+		return utils.PermissionDeniedError("assign", "scenario")
+	}
+	return refuseCrossOrgAssignment(h.db, scenario, assignment)
 }
 
 func (h *ScenarioAssignmentAuthorizationHook) handleBeforeUpdate(ctx *hooks.HookContext) error {
@@ -252,4 +282,25 @@ func CanUserManageOrg(db *gorm.DB, orgID uuid.UUID, userID string) (bool, error)
 		return false, err
 	}
 	return orgMember.IsManager(), nil
+}
+
+// refuseCrossOrgAssignment: an org scenario is assignable only to that org's
+// classes (or to the org itself). Platform scenarios go anywhere. Applies to
+// admins too — there is no legitimate cross-org assignment.
+func refuseCrossOrgAssignment(db *gorm.DB, scenario *models.Scenario, assignment *models.ScenarioAssignment) error {
+	if scenario.OrganizationID == nil {
+		return nil
+	}
+	targetOrg := assignment.OrganizationID
+	if assignment.GroupID != nil {
+		var group groupModels.ClassGroup
+		if err := db.Select("organization_id").First(&group, "id = ?", *assignment.GroupID).Error; err != nil {
+			return fmt.Errorf("load group: %w", err)
+		}
+		targetOrg = group.OrganizationID
+	}
+	if targetOrg == nil || *targetOrg != *scenario.OrganizationID {
+		return utils.PermissionDeniedError("assign outside its organisation", "scenario")
+	}
+	return nil
 }

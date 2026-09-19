@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
 
@@ -76,12 +77,16 @@ func buildListScopeFixture(t *testing.T, db *gorm.DB) listScopeFixture {
 		JoinedAt: time.Now(), IsActive: true,
 	}).Error)
 	f.orgB = makeOrgWithMember(t, db, "org-b-owner", "", orgModels.OrgRoleMember)
+	// A class of org A whose manager is not an org member: a teacher.
 	f.groupG = makeGroupWithOwner(t, db, f.groupGManager)
+	require.NoError(t, db.Model(&groupModels.ClassGroup{}).Where("id = ?", f.groupG).Update("organization_id", f.orgA).Error)
 
 	makeScenario(t, db, "org-a-private", "org-a-owner", &f.orgA, false)
 	makeScenario(t, db, "org-b-private", "org-b-owner", &f.orgB, false)
 	makeScenario(t, db, "platform-private", "platform-admin", nil, false)
 	makeScenario(t, db, "platform-public", "platform-admin", nil, true)
+	// Two data anomalies the rule must ignore: a public flag on an org
+	// scenario, and an assignment of an org-B scenario to a class of org A.
 	makeScenario(t, db, "org-b-public", "org-b-owner", &f.orgB, true)
 	assigned := makeScenario(t, db, "org-b-assigned-to-g", "org-b-owner", &f.orgB, false)
 	require.NoError(t, db.Create(&models.ScenarioAssignment{
@@ -95,15 +100,15 @@ func TestListScenarios_OrgManager_SeesOwnOrgAndPublicOnly(t *testing.T) {
 	f := buildListScopeFixture(t, db)
 
 	names := listScenarioNames(t, db, f.orgAManager, []string{"member"}, "")
-	require.ElementsMatch(t, []string{"org-a-private", "platform-public", "org-b-public"}, names)
+	require.ElementsMatch(t, []string{"org-a-private", "platform-public"}, names)
 }
 
-func TestListScenarios_GroupManager_SeesAssignedAndPublicOnly(t *testing.T) {
+func TestListScenarios_ClassManager_SeesOwnOrgAndPublicOnly(t *testing.T) {
 	db := freshTestDB(t)
 	f := buildListScopeFixture(t, db)
 
 	names := listScenarioNames(t, db, f.groupGManager, []string{"member"}, "")
-	require.ElementsMatch(t, []string{"org-b-assigned-to-g", "platform-public", "org-b-public"}, names)
+	require.ElementsMatch(t, []string{"org-a-private", "platform-public"}, names)
 }
 
 func TestListScenarios_PlainOrgMember_SeesPublicOnly(t *testing.T) {
@@ -111,7 +116,7 @@ func TestListScenarios_PlainOrgMember_SeesPublicOnly(t *testing.T) {
 	f := buildListScopeFixture(t, db)
 
 	names := listScenarioNames(t, db, f.orgAPlainMember, []string{"member"}, "")
-	require.ElementsMatch(t, []string{"platform-public", "org-b-public"}, names)
+	require.ElementsMatch(t, []string{"platform-public"}, names)
 }
 
 func TestListScenarios_Creator_SeesOwnPrivateScenario(t *testing.T) {
@@ -119,7 +124,7 @@ func TestListScenarios_Creator_SeesOwnPrivateScenario(t *testing.T) {
 	buildListScopeFixture(t, db)
 
 	names := listScenarioNames(t, db, "platform-admin", []string{"member"}, "")
-	require.ElementsMatch(t, []string{"platform-private", "platform-public", "org-b-public"}, names)
+	require.ElementsMatch(t, []string{"platform-private", "platform-public"}, names)
 }
 
 func TestListScenarios_Admin_SeesEverything(t *testing.T) {
@@ -147,8 +152,8 @@ func TestListScenarios_CursorPagination_IsScopedToo(t *testing.T) {
 		Total int64                                  `json:"total"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
-	require.Len(t, page.Data, 2)
-	require.EqualValues(t, 2, page.Total)
+	require.Len(t, page.Data, 1)
+	require.EqualValues(t, 1, page.Total)
 }
 
 // A member with nothing to manage and no public scenario around gets an empty
@@ -185,5 +190,5 @@ func TestListScenarios_CanManage_ReflectsTheWriteVerdict(t *testing.T) {
 	for _, s := range page.Data {
 		verdicts[s.Name] = s.CanManage
 	}
-	require.Equal(t, map[string]bool{"org-a-private": true, "platform-public": false, "org-b-public": false}, verdicts)
+	require.Equal(t, map[string]bool{"org-a-private": true, "platform-public": false}, verdicts)
 }

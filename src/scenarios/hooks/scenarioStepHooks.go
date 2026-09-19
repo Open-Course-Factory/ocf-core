@@ -1,10 +1,10 @@
 package scenarioHooks
 
 import (
-	"errors"
 	"fmt"
 
 	"soli/formations/src/entityManagement/hooks"
+	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/utils"
@@ -13,62 +13,56 @@ import (
 	"gorm.io/gorm"
 )
 
-// CanManageScenario centralises the "can this user edit this scenario's
-// content (steps + questions)?" rule. The user is allowed if any of the
-// following holds:
+// CanManageScenario is the one owner of "may this user edit this scenario"
+// (the scenario itself, its steps, questions, translations, lexicon). The
+// user is allowed if any of the following holds:
 //
 //   - they are the scenario creator (CreatedByID),
-//   - they are a manager or owner of the scenario's organization (when
-//     the scenario is org-scoped),
-//   - they are a manager or owner of any group the scenario is assigned
-//     to (so group-scoped trainers can author their own labs).
+//   - they are a manager or owner of the scenario's organisation,
+//   - they manage a class of the scenario's organisation (a teacher works
+//     on every lab of their school, not only the ones assigned to them).
 //
-// Platform admin bypass is handled by callers via ctx.IsAdmin() (hooks)
-// or access.IsAdmin(roles) (controllers).
+// A scenario never leaves its organisation: being assigned to a class in
+// another organisation grants nothing, and a platform scenario (no org) is
+// managed by its creator and platform admins only. Admin bypass is handled
+// by callers via ctx.IsAdmin() (hooks) or access.IsAdmin(roles) (controllers).
 func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
 	if userID == "" {
 		return false, nil
 	}
-
-	// Creator can always manage.
 	if scenario.CreatedByID == userID {
 		return true, nil
 	}
-
-	// Org manager / owner can manage scenarios of their org.
-	if scenario.OrganizationID != nil {
-		canManage, err := CanUserManageOrg(db, *scenario.OrganizationID, userID)
-		if err != nil {
-			return false, fmt.Errorf("load org member: %w", err)
-		}
-		if canManage {
-			return true, nil
-		}
+	if scenario.OrganizationID == nil {
+		return false, nil
 	}
 
-	// Group manager of any group the scenario is assigned to.
-	var groupIDs []uuid.UUID
-	// Table() bypasses the soft-delete scope: without the filter, assignments of
-	// a deleted class are walked and the group lookup below fails on them.
-	if err := db.Table("scenario_assignments").
-		Where("scenario_id = ? AND scope = ? AND group_id IS NOT NULL AND deleted_at IS NULL", scenario.ID, "group").
-		Pluck("group_id", &groupIDs).Error; err != nil {
-		return false, fmt.Errorf("load scenario group assignments: %w", err)
+	canManage, err := CanUserManageOrg(db, *scenario.OrganizationID, userID)
+	if err != nil {
+		return false, fmt.Errorf("load org member: %w", err)
 	}
-	for _, gid := range groupIDs {
-		canManage, err := groupSvc.CanUserManageGroup(gid, userID)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			continue // the group is gone; nobody manages the scenario through it
-		}
-		if err != nil {
-			return false, fmt.Errorf("check group manage permission: %w", err)
-		}
-		if canManage {
-			return true, nil
-		}
+	if canManage {
+		return true, nil
 	}
 
-	return false, nil
+	var managedClasses int64
+	if err := db.Model(&groupModels.ClassGroup{}).
+		Scopes(groupModels.ManagedByScope(userID)).
+		Where("class_groups.organization_id = ?", *scenario.OrganizationID).
+		Count(&managedClasses).Error; err != nil {
+		return false, fmt.Errorf("count managed classes in org: %w", err)
+	}
+	return managedClasses > 0, nil
+}
+
+// CanSeeScenario is what assigning and copying require: the scenario is
+// manageable by the user, or it is in the public catalogue. Read-side
+// listing (ListableScenarioIDs) is the same rule applied to the whole table.
+func CanSeeScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
+	if scenario.InPublicCatalogue() {
+		return true, nil
+	}
+	return CanManageScenario(db, groupSvc, scenario, userID)
 }
 
 // ListableScenarioIDs is the list-side twin of CanManageScenario: every
@@ -81,21 +75,17 @@ func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 // org/group ids once and match in memory if the table grows past that.
 func ListableScenarioIDs(db *gorm.DB, groupSvc groupServices.GroupService, userID string) ([]string, error) {
 	var scenarios []models.Scenario
-	if err := db.Select("id", "created_by_id", "organization_id", "is_public").Find(&scenarios).Error; err != nil {
+	if err := db.Select("id", "created_by_id", "organization_id", "is_public", "archived_at").Find(&scenarios).Error; err != nil {
 		return nil, fmt.Errorf("load scenarios for scoping: %w", err)
 	}
 	ids := make([]string, 0, len(scenarios))
 	for i := range scenarios {
-		s := &scenarios[i]
-		listable := s.IsPublic
-		if !listable {
-			var err error
-			if listable, err = CanManageScenario(db, groupSvc, s, userID); err != nil {
-				return nil, err
-			}
+		listable, err := CanSeeScenario(db, groupSvc, &scenarios[i], userID)
+		if err != nil {
+			return nil, err
 		}
 		if listable {
-			ids = append(ids, s.ID.String())
+			ids = append(ids, scenarios[i].ID.String())
 		}
 	}
 	return ids, nil

@@ -43,6 +43,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
 
@@ -412,9 +413,13 @@ func TestGetScenarioStep_AsGroupManager_ReturnsFullContent(t *testing.T) {
 	db := freshTestDB(t)
 	creatorID := "creator-step-grp-001"
 	groupOwnerID := "group-owner-step-001"
+	// The class and the scenario share an organisation: that, not the
+	// assignment, is what makes the class manager a manager of it (2026-09-19).
+	orgID := makeOrgWithMember(t, db, "org-owner-"+groupOwnerID, "", orgModels.OrgRoleMember)
 	groupID := makeGroupWithOwner(t, db, groupOwnerID)
+	require.NoError(t, db.Model(&groupModels.ClassGroup{}).Where("id = ?", groupID).Update("organization_id", orgID).Error)
 
-	scenario, step, _ := buildLeakyScenarioWithSetupScript(t, db, "leak-step-group-manager", creatorID, nil)
+	scenario, step, _ := buildLeakyScenarioWithSetupScript(t, db, "leak-step-group-manager", creatorID, &orgID)
 
 	require.NoError(t, db.Create(&models.ScenarioAssignment{
 		ScenarioID:  scenario.ID,
@@ -588,9 +593,13 @@ func TestGetScenarioStepQuestion_AsGroupManager_ReturnsCorrectAnswerAndExplanati
 	db := freshTestDB(t)
 	creatorID := "creator-q-grp-001"
 	groupOwnerID := "group-owner-q-001"
+	// The class and the scenario share an organisation: that, not the
+	// assignment, is what makes the class manager a manager of it (2026-09-19).
+	orgID := makeOrgWithMember(t, db, "org-owner-"+groupOwnerID, "", orgModels.OrgRoleMember)
 	groupID := makeGroupWithOwner(t, db, groupOwnerID)
+	require.NoError(t, db.Model(&groupModels.ClassGroup{}).Where("id = ?", groupID).Update("organization_id", orgID).Error)
 
-	scenario, _, question := buildLeakyScenarioWithSetupScript(t, db, "leak-q-group-manager", creatorID, nil)
+	scenario, _, question := buildLeakyScenarioWithSetupScript(t, db, "leak-q-group-manager", creatorID, &orgID)
 
 	require.NoError(t, db.Create(&models.ScenarioAssignment{
 		ScenarioID:  scenario.ID,

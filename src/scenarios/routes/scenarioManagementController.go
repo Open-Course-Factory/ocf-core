@@ -396,6 +396,82 @@ func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, scenarioRegistration.ScenarioToOutput(scenario))
 }
 
+// GroupDuplicateScenario godoc
+// @Summary Copy a scenario for a class
+// @Description Deep-copy a scenario the caller may see (their organisation's, or a public catalogue one) into the class's organisation and assign it to the class
+// @Tags scenarios
+// @Produce json
+// @Param groupId path string true "Group ID"
+// @Param scenarioId path string true "Source Scenario ID"
+// @Success 201 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /groups/{groupId}/scenarios/{scenarioId}/duplicate [post]
+// @Security BearerAuth
+func (sc *scenarioManagementController) GroupDuplicateScenario(ctx *gin.Context) {
+	groupID, err := uuid.Parse(ctx.Param("groupId"))
+	if err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid group ID")
+		return
+	}
+	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
+	if err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid scenario ID")
+		return
+	}
+
+	var group groupModels.ClassGroup
+	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Group not found")
+		return
+	}
+
+	userID := ctx.GetString("userId")
+
+	// A source the caller cannot see is reported as absent, like the org route.
+	var source models.Scenario
+	if err := sc.db.First(&source, "id = ?", scenarioID).Error; err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
+		return
+	}
+	visible, err := scenarioHooks.CanSeeScenario(sc.db, sc.groupService, &source, userID)
+	if err != nil {
+		slog.Error("failed to check scenario visibility", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to duplicate scenario")
+		return
+	}
+	userRoles, _ := ctx.Get("userRoles")
+	roles, _ := userRoles.([]string)
+	if !visible && !access.IsAdmin(roles) {
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
+		return
+	}
+
+	// The copy lives where the class lives (path-derived org, like GroupCreateScenario).
+	newScenario, err := sc.duplicateService.DuplicateScenario(scenarioID, userID, group.OrganizationID)
+	if err != nil {
+		slog.Error("failed to duplicate scenario for group", "err", err, "group_id", groupID)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to duplicate scenario")
+		return
+	}
+
+	assignment := models.ScenarioAssignment{
+		ScenarioID:  newScenario.ID,
+		GroupID:     &groupID,
+		Scope:       "group",
+		CreatedByID: userID,
+		IsActive:    true,
+	}
+	if err := sc.db.Create(&assignment).Error; err != nil {
+		slog.Error("failed to assign duplicated scenario to group", "err", err, "group_id", groupID, "scenario_id", newScenario.ID)
+		// The copy exists; the teacher can still assign it by hand.
+	}
+
+	ctx.JSON(http.StatusCreated, scenarioRegistration.ScenarioToOutput(newScenario))
+}
+
 // OrgUploadScenario godoc
 // @Summary Upload a scenario archive for an organization
 // @Description Upload a .zip or .tar.gz archive containing a KillerCoda-compatible scenario for an organization

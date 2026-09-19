@@ -185,7 +185,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 
 		// Also include public scenarios
 		var publicScenarios []models.Scenario
-		sc.db.Scopes(models.NotArchived).Preload("CompatibleInstanceTypes").Where("is_public = ?", true).Find(&publicScenarios)
+		sc.db.Scopes(models.PublicCatalogue).Preload("CompatibleInstanceTypes").Find(&publicScenarios)
 		// Merge, avoiding duplicates
 		existingIDs := make(map[uuid.UUID]bool)
 		for _, s := range scenarios {
@@ -631,7 +631,7 @@ func (sc *scenarioLaunchController) openClassMembershipIDs(userID string) ([]uui
 func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioID uuid.UUID) (bool, error) {
 	// Public scenarios are accessible to everyone
 	var scenario models.Scenario
-	if err := sc.db.First(&scenario, "id = ?", scenarioID).Error; err == nil && scenario.IsPublic {
+	if err := sc.db.First(&scenario, "id = ?", scenarioID).Error; err == nil && scenario.InPublicCatalogue() {
 		return true, nil
 	}
 
