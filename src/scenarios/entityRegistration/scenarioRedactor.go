@@ -126,6 +126,28 @@ func scenarioListScope(c *gin.Context, db *gorm.DB) ([]string, error) {
 	return scenarioHooks.ListableScenarioIDs(db, groupServices.NewGroupService(db), c.GetString("userId"))
 }
 
+// scenarioStepListScope lists the steps of listable scenarios only; the step
+// redactor then decides what each row shows.
+func scenarioStepListScope(c *gin.Context, db *gorm.DB) ([]string, error) {
+	if access.IsAdmin(readRoles(c)) {
+		return nil, nil
+	}
+	scenarioIDs, err := scenarioHooks.ListableScenarioIDs(db, groupServices.NewGroupService(db), c.GetString("userId"))
+	if err != nil || len(scenarioIDs) == 0 {
+		return []string{}, err
+	}
+	var ids []string
+	err = db.Model(&models.ScenarioStep{}).Where("scenario_id IN ?", scenarioIDs).Pluck("id", &ids).Error
+	return ids, err
+}
+
+func scenarioAssignmentListScope(c *gin.Context, db *gorm.DB) ([]string, error) {
+	if access.IsAdmin(readRoles(c)) {
+		return nil, nil
+	}
+	return scenarioHooks.ListableAssignmentIDs(db, groupServices.NewGroupService(db), c.GetString("userId"))
+}
+
 func stripScenarioDto(out *dto.ScenarioOutput) {
 	out.Steps = nil
 	out.SetupScript = ""

@@ -120,4 +120,5 @@ func RegisterScenarioAssignment(service *ems.EntityRegistrationService) {
 			},
 		},
 	)
+	service.RegisterListScope("ScenarioAssignment", scenarioAssignmentListScope)
 }

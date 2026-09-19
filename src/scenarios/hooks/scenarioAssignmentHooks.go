@@ -69,29 +69,7 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeCreate(ctx *hooks.Hook
 		assignment.CreatedByID = ctx.UserID
 	}
 
-	// Check group-level authorization when assigning to a group
-	if assignment.GroupID != nil && ctx.UserID != "" {
-		canManage, err := h.groupService.CanUserManageGroup(*assignment.GroupID, ctx.UserID)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !canManage {
-			return utils.PermissionDeniedError("assign scenarios to", "group")
-		}
-	}
-
-	// Check org-level authorization when assigning to an organization
-	if assignment.OrganizationID != nil && ctx.UserID != "" {
-		canManage, err := CanUserManageOrg(h.db, *assignment.OrganizationID, ctx.UserID)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !canManage {
-			return utils.PermissionDeniedError("manage scenario assignments for", "organization")
-		}
-	}
-
-	return nil
+	return h.deny(assignment, ctx.UserID, "assign scenarios to")
 }
 
 func (h *ScenarioAssignmentAuthorizationHook) handleBeforeUpdate(ctx *hooks.HookContext) error {
@@ -106,29 +84,7 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeUpdate(ctx *hooks.Hook
 		return fmt.Errorf("expected *models.ScenarioAssignment in OldEntity, got %T", ctx.OldEntity)
 	}
 
-	// Check group-level authorization for group-scoped assignments
-	if assignment.GroupID != nil && ctx.UserID != "" {
-		canManage, err := h.groupService.CanUserManageGroup(*assignment.GroupID, ctx.UserID)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !canManage {
-			return utils.PermissionDeniedError("update scenario assignments for", "group")
-		}
-	}
-
-	// Check org-level authorization for org-scoped assignments
-	if assignment.OrganizationID != nil && ctx.UserID != "" {
-		canManage, err := CanUserManageOrg(h.db, *assignment.OrganizationID, ctx.UserID)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !canManage {
-			return utils.PermissionDeniedError("manage scenario assignments for", "organization")
-		}
-	}
-
-	return nil
+	return h.deny(assignment, ctx.UserID, "update scenario assignments for")
 }
 
 func (h *ScenarioAssignmentAuthorizationHook) handleBeforeDelete(ctx *hooks.HookContext) error {
@@ -142,29 +98,92 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeDelete(ctx *hooks.Hook
 		return fmt.Errorf("expected *models.ScenarioAssignment, got %T", ctx.NewEntity)
 	}
 
-	// Check group-level authorization when deleting a group assignment
-	if assignment.GroupID != nil && ctx.UserID != "" {
-		canManage, err := h.groupService.CanUserManageGroup(*assignment.GroupID, ctx.UserID)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !canManage {
-			return utils.PermissionDeniedError("remove scenario assignments from", "group")
-		}
-	}
+	return h.deny(assignment, ctx.UserID, "remove scenario assignments from")
+}
 
-	// Check org-level authorization when deleting an org-scoped assignment
-	if assignment.OrganizationID != nil && ctx.UserID != "" {
-		canManage, err := CanUserManageOrg(h.db, *assignment.OrganizationID, ctx.UserID)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !canManage {
-			return utils.PermissionDeniedError("manage scenario assignments for", "organization")
-		}
+// deny turns CanManageAssignment into the hook's verdict for one action.
+func (h *ScenarioAssignmentAuthorizationHook) deny(assignment *models.ScenarioAssignment, userID, action string) error {
+	allowed, err := CanManageAssignment(h.db, h.groupService, assignment, userID)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
 	}
-
+	if !allowed {
+		return utils.PermissionDeniedError(action, "group or organization")
+	}
 	return nil
+}
+
+// CanManageAssignment is the one owner of "may this user touch this
+// assignment": manager of the assigned group, and of the assigned
+// organization when the assignment names one. Shared by the write hooks and
+// by the GET /scenario-assignments scope, so they cannot drift.
+func CanManageAssignment(db *gorm.DB, groupSvc groupServices.GroupService, a *models.ScenarioAssignment, userID string) (bool, error) {
+	if userID == "" || (a.GroupID == nil && a.OrganizationID == nil) {
+		return false, nil
+	}
+	if a.GroupID != nil {
+		ok, err := groupSvc.CanUserManageGroup(*a.GroupID, userID)
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	if a.OrganizationID != nil {
+		ok, err := CanUserManageOrg(db, *a.OrganizationID, userID)
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// ListableAssignmentIDs scopes GET /scenario-assignments: the caller manages
+// the assignment's group / organization, or the assigned scenario itself
+// (a scenario's author sees where it is deployed). Same per-row cost profile
+// as ListableScenarioIDs; the scenario verdict is memoised per scenario.
+func ListableAssignmentIDs(db *gorm.DB, groupSvc groupServices.GroupService, userID string) ([]string, error) {
+	var assignments []models.ScenarioAssignment
+	if err := db.Select("id", "scenario_id", "group_id", "organization_id").Find(&assignments).Error; err != nil {
+		return nil, fmt.Errorf("load assignments for scoping: %w", err)
+	}
+	scenarioVerdicts := map[uuid.UUID]bool{}
+	ids := make([]string, 0, len(assignments))
+	for i := range assignments {
+		a := &assignments[i]
+		ok, err := CanManageAssignment(db, groupSvc, a, userID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			if ok, err = canManageScenarioByID(db, groupSvc, a.ScenarioID, userID, scenarioVerdicts); err != nil {
+				return nil, err
+			}
+		}
+		if ok {
+			ids = append(ids, a.ID.String())
+		}
+	}
+	return ids, nil
+}
+
+func canManageScenarioByID(db *gorm.DB, groupSvc groupServices.GroupService, scenarioID uuid.UUID, userID string, memo map[uuid.UUID]bool) (bool, error) {
+	if verdict, seen := memo[scenarioID]; seen {
+		return verdict, nil
+	}
+	var scenario models.Scenario
+	err := db.Select("id", "created_by_id", "organization_id").Where("id = ?", scenarioID).First(&scenario).Error
+	if err == gorm.ErrRecordNotFound {
+		memo[scenarioID] = false
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("load scenario %s: %w", scenarioID, err)
+	}
+	verdict, err := CanManageScenario(db, groupSvc, &scenario, userID)
+	if err != nil {
+		return false, err
+	}
+	memo[scenarioID] = verdict
+	return verdict, nil
 }
 
 func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookContext) error {

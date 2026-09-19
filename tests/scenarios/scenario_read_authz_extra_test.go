@@ -514,6 +514,9 @@ func TestListScenarioSteps_AsRegularMember_StripsSensitiveFields(t *testing.T) {
 	db := freshTestDB(t)
 	_, _, _ = buildLeakyScenarioWithSetupScript(t, db, "leak-list-step-1", "creator-list-step-001", nil)
 	_, _, _ = buildLeakyScenarioWithSetupScript(t, db, "leak-list-step-2", "creator-list-step-001", nil)
+	// Public so the steps are listed at all (steps of unlistable scenarios are
+	// not listed since #294); the strip is what this test is about.
+	require.NoError(t, db.Model(&models.Scenario{}).Where("1 = 1").Update("is_public", true).Error)
 
 	router := setupExtendedReadAuthzTest(t, db, "outsider-list-step-001", []string{"member"})
 

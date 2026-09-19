@@ -86,6 +86,7 @@ func RegisterScenarioStepTranslation(service *ems.EntityRegistrationService) {
 			},
 		},
 	)
+	service.RegisterDtoRedactor("ScenarioStepTranslation", scenarioStepTranslationRedactor)
 }
 
 func RegisterScenarioTranslation(service *ems.EntityRegistrationService) {
@@ -161,4 +162,5 @@ func RegisterScenarioTranslation(service *ems.EntityRegistrationService) {
 			},
 		},
 	)
+	service.RegisterDtoRedactor("ScenarioTranslation", scenarioTranslationRedactor)
 }

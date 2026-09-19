@@ -49,6 +49,7 @@ func scenarioOfStepOutput(db *gorm.DB, output *dto.ScenarioStepOutput) (*models.
 // here — otherwise the verify-script (i.e. the grading logic / answer key)
 // leaks to any authenticated learner.
 func stripScenarioStepDto(out *dto.ScenarioStepOutput) {
+	out.TextContent = ""
 	out.HintContent = ""
 	out.VerifyScript = ""
 	out.BackgroundScript = ""
