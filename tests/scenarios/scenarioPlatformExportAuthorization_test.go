@@ -170,14 +170,20 @@ func TestPlatformExport_AsGroupManager_Allowed(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	assert.Equal(t, "Test: group-scenario", response["title"])
 
-	// …but an assignment grants nothing on a scenario from outside it: a
-	// private platform scenario assigned to the class stays the admins'.
+	// …and a platform scenario assigned to the class is theirs to work on
+	// too (the shared catalogue), whereas one assigned to somebody else is not.
 	assigned := createPlatformScenario(t, db, "assigned-platform-scenario", otherCreatorID, nil)
 	createScenarioAssignment(t, db, assigned.ID, &groupID, nil, "group")
 	w = httptest.NewRecorder()
 	req, _ = http.NewRequest("GET", "/api/v1/scenarios/"+assigned.ID.String()+"/export", nil)
 	router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusForbidden, w.Code, "being assigned a scenario is not managing it")
+	assert.Equal(t, http.StatusOK, w.Code, "a platform scenario assigned to the class is manageable")
+
+	elsewhere := createPlatformScenario(t, db, "platform-scenario-assigned-elsewhere", otherCreatorID, nil)
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/v1/scenarios/"+elsewhere.ID.String()+"/export", nil)
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 // TestPlatformExport_AsUnrelatedMember_Forbidden — a Member with no

@@ -7,9 +7,11 @@ package scenarios_test
 //     Nothing of org B ever reaches a user of org A — not even when an
 //     assignment row says otherwise, and not through `is_public`, which is
 //     refused on an org scenario.
-//   - A platform scenario (no org) is managed by admins and its creator. When
-//     public, everybody sees it read-only and any teacher may assign it to a
-//     class or copy it into their organisation. When private, admins only.
+//   - A platform scenario (no org) is managed by admins, its creator, and the
+//     managers of the classes it is assigned to — the catalogue is shared on
+//     purpose; a teacher who wants to stop depending on it copies it into
+//     their organisation. When public, everybody sees it read-only and any
+//     teacher may assign it. When private, only admins assign it.
 //   - Assigning requires being allowed to see the scenario — a UUID is not
 //     a permission.
 
@@ -45,6 +47,7 @@ type orgIsolationFixture struct {
 	orgBAssignedToClassA *models.Scenario // data anomaly: cross-org assignment row
 	platformPublic       *models.Scenario
 	platformPrivate      *models.Scenario
+	platformAssignedToA  *models.Scenario // private platform scenario the admin assigned to class A
 }
 
 func buildOrgIsolationFixture(t *testing.T, db *gorm.DB) orgIsolationFixture {
@@ -64,6 +67,8 @@ func buildOrgIsolationFixture(t *testing.T, db *gorm.DB) orgIsolationFixture {
 	f.platformPublic = createTestScenarioNoOrg(t, db, "platform-public")
 	markScenarioPublic(t, db, f.platformPublic.ID)
 	f.platformPrivate = createTestScenarioNoOrg(t, db, "platform-private")
+	f.platformAssignedToA = createTestScenarioNoOrg(t, db, "platform-assigned-to-class-a")
+	createScenarioAssignment(t, db, f.platformAssignedToA.ID, &f.classA, nil, "group")
 	return f
 }
 
@@ -74,7 +79,7 @@ func TestOrgIsolation_TeacherListsOwnOrgAndPlatformPublicOnly(t *testing.T) {
 	f := buildOrgIsolationFixture(t, db)
 
 	names := listScenarioNames(t, db, f.teacherA, []string{"member"}, "")
-	require.ElementsMatch(t, []string{"org-a-private", "platform-public"}, names)
+	require.ElementsMatch(t, []string{"org-a-private", "platform-public", "platform-assigned-to-class-a"}, names)
 }
 
 func TestOrgIsolation_OrgManagerListsOwnOrgAndPlatformPublicOnly(t *testing.T) {
@@ -82,8 +87,9 @@ func TestOrgIsolation_OrgManagerListsOwnOrgAndPlatformPublicOnly(t *testing.T) {
 	f := buildOrgIsolationFixture(t, db)
 	addOrgMember(t, db, f.orgA, "org-a-manager", orgModels.OrgRoleManager)
 
+	// The org manager manages class A too, hence the platform scenario assigned to it.
 	names := listScenarioNames(t, db, "org-a-manager", []string{"member"}, "")
-	require.ElementsMatch(t, []string{"org-a-private", "platform-public"}, names)
+	require.ElementsMatch(t, []string{"org-a-private", "platform-public", "platform-assigned-to-class-a"}, names)
 }
 
 // --- the manage predicate itself -------------------------------------------
@@ -103,6 +109,8 @@ func TestOrgIsolation_CanManageScenario(t *testing.T) {
 		{"teacher does not manage other org scenario", f.teacherA, f.orgBPrivate, false},
 		{"cross-org assignment grants nothing", f.teacherA, f.orgBAssignedToClassA, false},
 		{"public platform scenario is read-only", f.teacherA, f.platformPublic, false},
+		{"platform scenario assigned to my class is mine to edit", f.teacherA, f.platformAssignedToA, true},
+		{"platform scenario assigned elsewhere is not", "org-b-owner", f.platformAssignedToA, false},
 		{"creator manages their scenario", "test-creator", f.orgBPrivate, true},
 	}
 	for _, c := range cases {

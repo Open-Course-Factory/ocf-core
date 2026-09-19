@@ -1,6 +1,7 @@
 package scenarioHooks
 
 import (
+	"errors"
 	"fmt"
 
 	"soli/formations/src/entityManagement/hooks"
@@ -18,14 +19,17 @@ import (
 // user is allowed if any of the following holds:
 //
 //   - they are the scenario creator (CreatedByID),
-//   - they are a manager or owner of the scenario's organisation,
-//   - they manage a class of the scenario's organisation (a teacher works
-//     on every lab of their school, not only the ones assigned to them).
+//   - org scenario: they are a manager or owner of that organisation, or
+//     they manage one of its classes (a teacher works on every lab of their
+//     school, not only the ones assigned to them),
+//   - platform scenario (no org): they manage a class it is assigned to.
+//     The platform catalogue is shared on purpose; a teacher who wants to
+//     stop depending on it copies the scenario into their organisation.
 //
-// A scenario never leaves its organisation: being assigned to a class in
-// another organisation grants nothing, and a platform scenario (no org) is
-// managed by its creator and platform admins only. Admin bypass is handled
-// by callers via ctx.IsAdmin() (hooks) or access.IsAdmin(roles) (controllers).
+// A scenario never leaves its organisation: an assignment of an org scenario
+// to another org's class grants nothing (and can no longer be created).
+// Admin bypass is handled by callers via ctx.IsAdmin() (hooks) or
+// access.IsAdmin(roles) (controllers).
 func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
 	if userID == "" {
 		return false, nil
@@ -34,7 +38,7 @@ func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 		return true, nil
 	}
 	if scenario.OrganizationID == nil {
-		return false, nil
+		return managesAnAssignedClass(db, groupSvc, scenario.ID, userID)
 	}
 
 	canManage, err := CanUserManageOrg(db, *scenario.OrganizationID, userID)
@@ -53,6 +57,32 @@ func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 		return false, fmt.Errorf("count managed classes in org: %w", err)
 	}
 	return managedClasses > 0, nil
+}
+
+// managesAnAssignedClass reports whether the user manages a class the
+// scenario is assigned to. Only consulted for platform scenarios.
+func managesAnAssignedClass(db *gorm.DB, groupSvc groupServices.GroupService, scenarioID uuid.UUID, userID string) (bool, error) {
+	var groupIDs []uuid.UUID
+	// Table() bypasses the soft-delete scope: without the filter, assignments of
+	// a deleted class are walked and the group lookup below fails on them.
+	if err := db.Table("scenario_assignments").
+		Where("scenario_id = ? AND scope = ? AND group_id IS NOT NULL AND deleted_at IS NULL", scenarioID, "group").
+		Pluck("group_id", &groupIDs).Error; err != nil {
+		return false, fmt.Errorf("load scenario group assignments: %w", err)
+	}
+	for _, gid := range groupIDs {
+		canManage, err := groupSvc.CanUserManageGroup(gid, userID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue // the group is gone; nobody manages the scenario through it
+		}
+		if err != nil {
+			return false, fmt.Errorf("check group manage permission: %w", err)
+		}
+		if canManage {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // CanSeeScenario is what assigning and copying require: the scenario is
