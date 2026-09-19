@@ -84,19 +84,24 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeCreate(ctx *hooks.Hook
 	return h.refuseInvisibleScenario(assignment, ctx.UserID)
 }
 
-// refuseInvisibleScenario keeps an assignment inside what the caller may see
-// (CanSeeScenario) and inside the scenario's organisation: a scenario id is
-// not a permission, and an org scenario never reaches another org's class.
+// refuseInvisibleScenario keeps an assignment to scenarios the caller may
+// assign and inside the scenario's organisation: a scenario id is not a
+// permission, and an org scenario never reaches another org's class.
 func (h *ScenarioAssignmentAuthorizationHook) refuseInvisibleScenario(assignment *models.ScenarioAssignment, userID string) error {
 	scenario, err := loadScenarioByID(h.db, assignment.ScenarioID)
 	if err != nil {
 		return err
 	}
-	visible, err := CanSeeScenario(h.db, h.groupService, scenario, userID)
-	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
+	// Assignable = public catalogue, or manageable. Seeing is not enough:
+	// a private catalogue scenario is assigned by admins only, so a class
+	// it was assigned to cannot pass it on to another.
+	allowed := scenario.InPublicCatalogue()
+	if !allowed {
+		if allowed, err = CanManageScenario(h.db, h.groupService, scenario, userID); err != nil {
+			return fmt.Errorf("permission check failed: %w", err)
+		}
 	}
-	if !visible {
+	if !allowed {
 		return utils.PermissionDeniedError("assign", "scenario")
 	}
 	return refuseCrossOrgAssignment(h.db, scenario, assignment)

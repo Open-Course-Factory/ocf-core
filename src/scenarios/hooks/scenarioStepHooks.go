@@ -19,17 +19,16 @@ import (
 // user is allowed if any of the following holds:
 //
 //   - they are the scenario creator (CreatedByID),
-//   - org scenario: they are a manager or owner of that organisation, or
-//     they manage one of its classes (a teacher works on every lab of their
-//     school, not only the ones assigned to them),
-//   - platform scenario (no org): they manage a class it is assigned to.
-//     The platform catalogue is shared on purpose; a teacher who wants to
-//     stop depending on it copies the scenario into their organisation.
+//   - they are a manager or owner of the scenario's organisation,
+//   - they manage a class of the scenario's organisation (a teacher works
+//     on every lab of their school, not only the ones assigned to them).
 //
-// A scenario never leaves its organisation: an assignment of an org scenario
-// to another org's class grants nothing (and can no longer be created).
-// Admin bypass is handled by callers via ctx.IsAdmin() (hooks) or
-// access.IsAdmin(roles) (controllers).
+// A scenario never leaves its organisation: being assigned to a class in
+// another organisation grants nothing (and can no longer happen). A platform
+// scenario (no org) is the catalogue: its creator and platform admins edit
+// it, everyone else copies it into their organisation and edits the copy —
+// see CanSeeScenario for who may look at it. Admin bypass is handled by
+// callers via ctx.IsAdmin() (hooks) or access.IsAdmin(roles) (controllers).
 func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
 	if userID == "" {
 		return false, nil
@@ -38,7 +37,7 @@ func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 		return true, nil
 	}
 	if scenario.OrganizationID == nil {
-		return managesAnAssignedClass(db, groupSvc, scenario.ID, userID)
+		return false, nil
 	}
 
 	canManage, err := CanUserManageOrg(db, *scenario.OrganizationID, userID)
@@ -60,7 +59,9 @@ func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 }
 
 // managesAnAssignedClass reports whether the user manages a class the
-// scenario is assigned to. Only consulted for platform scenarios.
+// scenario is assigned to. Only consulted for platform scenarios, and only
+// for seeing them: a private catalogue scenario assigned to a class is shown
+// to that class's managers so they can copy it.
 func managesAnAssignedClass(db *gorm.DB, groupSvc groupServices.GroupService, scenarioID uuid.UUID, userID string) (bool, error) {
 	var groupIDs []uuid.UUID
 	// Table() bypasses the soft-delete scope: without the filter, assignments of
@@ -85,14 +86,22 @@ func managesAnAssignedClass(db *gorm.DB, groupSvc groupServices.GroupService, sc
 	return false, nil
 }
 
-// CanSeeScenario is what assigning and copying require: the scenario is
-// manageable by the user, or it is in the public catalogue. Read-side
-// listing (ListableScenarioIDs) is the same rule applied to the whole table.
+// CanSeeScenario is what assigning and copying require, and what the editor
+// lists (ListableScenarioIDs applies it to the whole table): the scenario is
+// manageable by the user, or it is in the public catalogue, or it is a
+// platform scenario assigned to a class the user manages (read-only, to be
+// copied).
 func CanSeeScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
 	if scenario.InPublicCatalogue() {
 		return true, nil
 	}
-	return CanManageScenario(db, groupSvc, scenario, userID)
+	if ok, err := CanManageScenario(db, groupSvc, scenario, userID); ok || err != nil {
+		return ok, err
+	}
+	if scenario.OrganizationID == nil && userID != "" {
+		return managesAnAssignedClass(db, groupSvc, scenario.ID, userID)
+	}
+	return false, nil
 }
 
 // ListableScenarioIDs is the list-side twin of CanManageScenario: every

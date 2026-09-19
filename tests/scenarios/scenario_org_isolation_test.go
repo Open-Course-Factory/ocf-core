@@ -7,11 +7,11 @@ package scenarios_test
 //     Nothing of org B ever reaches a user of org A — not even when an
 //     assignment row says otherwise, and not through `is_public`, which is
 //     refused on an org scenario.
-//   - A platform scenario (no org) is managed by admins, its creator, and the
-//     managers of the classes it is assigned to — the catalogue is shared on
-//     purpose; a teacher who wants to stop depending on it copies it into
-//     their organisation. When public, everybody sees it read-only and any
-//     teacher may assign it. When private, only admins assign it.
+//   - A platform scenario (no org) is the catalogue: admins and its creator
+//     edit it, nobody else does — a teacher copies it into their organisation
+//     and edits the copy. When public, everybody sees it; when private, only
+//     the managers of the classes it is assigned to see it (to copy it), and
+//     only admins assign it.
 //   - Assigning requires being allowed to see the scenario — a UUID is not
 //     a permission.
 
@@ -87,7 +87,7 @@ func TestOrgIsolation_OrgManagerListsOwnOrgAndPlatformPublicOnly(t *testing.T) {
 	f := buildOrgIsolationFixture(t, db)
 	addOrgMember(t, db, f.orgA, "org-a-manager", orgModels.OrgRoleManager)
 
-	// The org manager manages class A too, hence the platform scenario assigned to it.
+	// The org manager manages class A too, hence sees the platform scenario assigned to it.
 	names := listScenarioNames(t, db, "org-a-manager", []string{"member"}, "")
 	require.ElementsMatch(t, []string{"org-a-private", "platform-public", "platform-assigned-to-class-a"}, names)
 }
@@ -109,8 +109,7 @@ func TestOrgIsolation_CanManageScenario(t *testing.T) {
 		{"teacher does not manage other org scenario", f.teacherA, f.orgBPrivate, false},
 		{"cross-org assignment grants nothing", f.teacherA, f.orgBAssignedToClassA, false},
 		{"public platform scenario is read-only", f.teacherA, f.platformPublic, false},
-		{"platform scenario assigned to my class is mine to edit", f.teacherA, f.platformAssignedToA, true},
-		{"platform scenario assigned elsewhere is not", "org-b-owner", f.platformAssignedToA, false},
+		{"platform scenario assigned to my class is read-only: copy it", f.teacherA, f.platformAssignedToA, false},
 		{"creator manages their scenario", "test-creator", f.orgBPrivate, true},
 	}
 	for _, c := range cases {
@@ -186,6 +185,12 @@ func TestOrgIsolation_AssignmentCreateRequiresVisibleScenario(t *testing.T) {
 	require.Error(t, assign(f.teacherA, member, f.orgBPrivate), "another org's scenario")
 	require.Error(t, assign(f.teacherA, member, f.orgBPublic), "another org's scenario, whatever its flag says")
 	require.Error(t, assign(f.teacherA, member, f.platformPrivate), "private platform scenario")
+	otherClass := createTestGroupInOrg(t, db, f.orgA, f.teacherA)
+	require.Error(t, hook.Execute(&hooks.HookContext{
+		EntityName: "ScenarioAssignment", HookType: hooks.BeforeCreate,
+		NewEntity: &models.ScenarioAssignment{ScenarioID: f.platformAssignedToA.ID, GroupID: &otherClass, Scope: "group"},
+		UserID:    f.teacherA, UserRoles: member,
+	}), "seeing a private catalogue scenario through one class does not let a teacher assign it to another")
 	require.NoError(t, assign("ops", []string{"administrator"}, f.platformPrivate), "admins curate the platform catalogue")
 	require.Error(t, assign("ops", []string{"administrator"}, f.orgBPrivate), "an org scenario never leaves its org, even by admin hand")
 }
@@ -215,6 +220,7 @@ func TestOrgIsolation_TeacherCopiesPublicScenarioIntoTheirClass(t *testing.T) {
 	assert.EqualValues(t, 1, assignments, "the copy is assigned to the class it was copied for")
 
 	assert.Equal(t, http.StatusCreated, post(f.orgAPrivate.ID).Code, "own org scenarios can be copied too")
+	assert.Equal(t, http.StatusCreated, post(f.platformAssignedToA.ID).Code, "a private platform scenario assigned to the class can be copied — that is how a teacher makes it theirs")
 	assert.Equal(t, http.StatusNotFound, post(f.orgBPrivate.ID).Code, "another org's scenario is not copyable")
 	assert.Equal(t, http.StatusNotFound, post(f.orgBPublic.ID).Code)
 	assert.Equal(t, http.StatusNotFound, post(f.platformPrivate.ID).Code)
