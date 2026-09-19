@@ -71,6 +71,36 @@ func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 	return false, nil
 }
 
+// ListableScenarioIDs is the list-side twin of CanManageScenario: every
+// scenario the caller may manage, plus the public ones (already visible in the
+// learner catalogue). GET /scenarios and the write hooks share one predicate
+// so they can never disagree on who sees what (issue #294).
+//
+// ponytail: one CanManageScenario call per non-public scenario, a handful of
+// queries each. Fine at hundreds of scenarios; resolve the caller's managed
+// org/group ids once and match in memory if the table grows past that.
+func ListableScenarioIDs(db *gorm.DB, groupSvc groupServices.GroupService, userID string) ([]string, error) {
+	var scenarios []models.Scenario
+	if err := db.Select("id", "created_by_id", "organization_id", "is_public").Find(&scenarios).Error; err != nil {
+		return nil, fmt.Errorf("load scenarios for scoping: %w", err)
+	}
+	ids := make([]string, 0, len(scenarios))
+	for i := range scenarios {
+		s := &scenarios[i]
+		listable := s.IsPublic
+		if !listable {
+			var err error
+			if listable, err = CanManageScenario(db, groupSvc, s, userID); err != nil {
+				return nil, err
+			}
+		}
+		if listable {
+			ids = append(ids, s.ID.String())
+		}
+	}
+	return ids, nil
+}
+
 // loadScenarioByID fetches a scenario by its ID. Returns a friendly error
 // if the scenario does not exist.
 func loadScenarioByID(db *gorm.DB, scenarioID uuid.UUID) (*models.Scenario, error) {

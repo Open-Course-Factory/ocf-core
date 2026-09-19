@@ -33,6 +33,12 @@ import (
 // redactor does not depend on a stringly-typed gin.Context key.
 type DtoRedactor func(c *gin.Context, dto any, db *gorm.DB) error
 
+// ListScope narrows the generic list handlers to the rows the caller may see
+// when the rule is neither one owner column (OwnershipConfig) nor one boolean
+// flag (VisibilityScopeConfig). It returns the allowed row ids; nil means
+// "unscoped" (typically a platform admin), an empty slice means "nothing".
+type ListScope func(c *gin.Context, db *gorm.DB) ([]string, error)
+
 type EntityRegistrationService struct {
 	registry            map[string]any
 	subEntities         map[string][]any
@@ -45,6 +51,7 @@ type EntityRegistrationService struct {
 	typedOps            map[string]entityManagementInterfaces.EntityOperations
 	entityRoles         map[string]entityManagementInterfaces.EntityRoles
 	dtoRedactors        map[string]DtoRedactor
+	listScopes          map[string]ListScope
 	entityActions       map[string][]entityManagementInterfaces.ActionConfig
 	archivable          map[string]bool
 }
@@ -62,6 +69,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		typedOps:            make(map[string]entityManagementInterfaces.EntityOperations),
 		entityRoles:         make(map[string]entityManagementInterfaces.EntityRoles),
 		dtoRedactors:        make(map[string]DtoRedactor),
+		listScopes:          make(map[string]ListScope),
 		entityActions:       make(map[string][]entityManagementInterfaces.ActionConfig),
 		archivable:          make(map[string]bool),
 	}
@@ -81,6 +89,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.typedOps = make(map[string]entityManagementInterfaces.EntityOperations)
 	s.entityRoles = make(map[string]entityManagementInterfaces.EntityRoles)
 	s.dtoRedactors = make(map[string]DtoRedactor)
+	s.listScopes = make(map[string]ListScope)
 	s.entityActions = make(map[string][]entityManagementInterfaces.ActionConfig)
 	s.archivable = make(map[string]bool)
 }
@@ -99,6 +108,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.typedOps, name)
 	delete(s.entityRoles, name)
 	delete(s.dtoRedactors, name)
+	delete(s.listScopes, name)
 	delete(s.entityActions, name)
 	delete(s.archivable, name)
 }
@@ -467,6 +477,23 @@ func (s *EntityRegistrationService) RegisterDtoRedactor(name string, r DtoRedact
 func (s *EntityRegistrationService) GetDtoRedactor(name string) (DtoRedactor, bool) {
 	r, ok := s.dtoRedactors[name]
 	return r, ok
+}
+
+// RegisterListScope registers the id filter the generic list handlers apply
+// before querying. Pair it with a DtoRedactor when single-row reads must also
+// be narrowed: the scope decides which rows exist, the redactor what they show.
+func (s *EntityRegistrationService) RegisterListScope(name string, scope ListScope) {
+	if scope == nil {
+		return
+	}
+	s.listScopes[name] = scope
+	appUtils.Debug("List scope registered for entity: %s", name)
+}
+
+// GetListScope returns the list scope for the named entity, if any.
+func (s *EntityRegistrationService) GetListScope(name string) (ListScope, bool) {
+	scope, ok := s.listScopes[name]
+	return scope, ok
 }
 
 // RegisterTypedEntity registers an entity using type-safe generics.

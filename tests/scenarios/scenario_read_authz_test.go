@@ -482,6 +482,9 @@ func TestListScenarios_AsRegularMember_StripsStepsAndQuestions(t *testing.T) {
 	creatorID := "creator-list-001"
 	_ = buildLeakyScenario(t, db, "leak-list-1", creatorID, nil)
 	_ = buildLeakyScenario(t, db, "leak-list-2", creatorID, nil)
+	// Public so the list still returns them: since #294 a non-manager only
+	// lists public scenarios, and the strip is what this test is about.
+	require.NoError(t, db.Model(&models.Scenario{}).Where("1 = 1").Update("is_public", true).Error)
 
 	router := setupScenarioReadAuthzTest(t, db, "outsider-list-001", []string{"member"}, "/scenarios")
 
@@ -541,6 +544,9 @@ func TestListScenarios_AsRegularMember_CursorPagination_StripsStepsAndQuestions(
 	creatorID := "creator-list-cursor-001"
 	_ = buildLeakyScenario(t, db, "leak-list-cursor-1", creatorID, nil)
 	_ = buildLeakyScenario(t, db, "leak-list-cursor-2", creatorID, nil)
+	// Public so the list still returns them: since #294 a non-manager only
+	// lists public scenarios, and the strip is what this test is about.
+	require.NoError(t, db.Model(&models.Scenario{}).Where("1 = 1").Update("is_public", true).Error)
 
 	router := setupScenarioReadAuthzTest(t, db, "outsider-list-cursor-001", []string{"member"}, "/scenarios")
 
