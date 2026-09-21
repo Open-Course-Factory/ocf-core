@@ -10,6 +10,7 @@ import (
 	"soli/formations/src/auth/mocks"
 	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
+	brandingRoutes "soli/formations/src/configuration/routes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	organizationRoutes "soli/formations/src/organizations/routes"
 	paymentController "soli/formations/src/payment/routes"
@@ -20,6 +21,17 @@ import (
 // policySet collects all policies added by a Setup function for easy assertion.
 type policySet struct {
 	policies []policy
+}
+
+func TestBrandingWriteRequiresAdministrator(t *testing.T) {
+	mock := mocks.NewMockEnforcer()
+	brandingRoutes.RegisterBrandingPermissions(mock)
+	ps := collectPolicies(mock)
+	assert.True(t, ps.has(access.RoleAdministrator, "/api/v1/branding", "PUT"))
+	assert.False(t, ps.has("member", "/api/v1/branding", "PUT"))
+	permission, found := access.RouteRegistry.Lookup("PUT", "/api/v1/branding")
+	assert.True(t, found)
+	assert.Equal(t, access.AdminOnly, permission.Access.Type)
 }
 
 type policy struct {

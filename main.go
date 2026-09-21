@@ -13,6 +13,7 @@ import (
 	cors "github.com/rs/cors/wrapper/gin"
 
 	config "soli/formations/src/configuration"
+	brandingRoutes "soli/formations/src/configuration/routes"
 	generator "soli/formations/src/generationEngine"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
 	"soli/formations/src/payment"
@@ -142,6 +143,7 @@ func main() {
 	impersonationController.RegisterImpersonationPermissions(casdoor.Enforcer)
 	adminUsersController.RegisterPermissions(casdoor.Enforcer)
 	observabilityController.RegisterPermissions(casdoor.Enforcer)
+	brandingRoutes.RegisterBrandingPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Register Layer 2 enforcement handlers (business logic authorization)
@@ -259,6 +261,7 @@ func main() {
 	// Version endpoint (no auth required)
 	versionCtrl := versionController.NewVersionController()
 	apiGroup.GET("/version", versionCtrl.GetVersion)
+	brandingRoutes.BrandingRoutes(apiGroup, sqldb.DB)
 
 	// Register module routes
 	courseController.CoursesRoutes(apiGroup, sqldb.DB)

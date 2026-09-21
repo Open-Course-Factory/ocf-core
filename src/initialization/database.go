@@ -230,6 +230,7 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Configuration entities
 	db.AutoMigrate(&configModels.Feature{})
+	db.AutoMigrate(&configModels.Branding{})
 
 	// Audit logging entities (compliance & security)
 	db.AutoMigrate(&auditModels.AuditLog{})
