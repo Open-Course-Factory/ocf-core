@@ -97,7 +97,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.10.9
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/rs/cors/wrapper/gin v0.0.0-20240830163046-1084d89a1692
+	github.com/rs/cors/wrapper/gin v0.0.0-20260604061346-2f30c9cf7731
 	github.com/stretchr/testify v1.10.0
 	github.com/stripe/stripe-go/v85 v85.2.0
 	github.com/swaggo/files v1.0.1
