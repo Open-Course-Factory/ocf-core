@@ -124,9 +124,28 @@ func (scow *SlidevCourseWriter) SetToc() string {
 	tocBuilder.WriteString(frontMatter)
 	tocBuilder.WriteString("# Thèmes abordés dans le cours\n\n")
 
-	totalChapterNumber := len(scow.Course.Chapters)
+	themeName := ""
+	if scow.Course.Theme != nil {
+		themeName = scow.Course.Theme.Name
+	}
+	layout := loadTocLayout(themeName)
 
-	for _, chapter := range scow.Course.Chapters {
+	chapters := scow.Course.Chapters
+	usedLines := 0
+	for index, chapter := range chapters {
+		entryLines := layout.chapterLines(chapter)
+		// Keep one line for the "..." marker unless this is the last chapter
+		available := layout.LinesPerPage
+		if index < len(chapters)-1 {
+			available--
+		}
+		// Start a new page when the chapter does not fit
+		if layout.LinesPerPage > 0 && usedLines > 0 && usedLines+entryLines > available {
+			tocBuilder.WriteString("- **...**")
+			tocBuilder.WriteString(frontMatter)
+			tocBuilder.WriteString("# Thèmes abordés dans le cours - Suite\n\n")
+			usedLines = 0
+		}
 		tocBuilder.WriteString("- Chapitre **")
 		tocBuilder.WriteString(strconv.Itoa(chapter.Number))
 		tocBuilder.WriteString("** : ")
@@ -134,14 +153,7 @@ func (scow *SlidevCourseWriter) SetToc() string {
 		tocBuilder.WriteString("\n  - ")
 		tocBuilder.WriteString(chapter.Introduction)
 		tocBuilder.WriteString("\n")
-		if !strings.Contains(scow.Course.Theme.Name, "A4") {
-			if totalChapterNumber > 9 && chapter.Number == 6 {
-				tocBuilder.WriteString("- **...**")
-				tocBuilder.WriteString(frontMatter)
-				tocBuilder.WriteString("# Thèmes abordés dans le cours - Suite\n\n")
-			}
-		}
-
+		usedLines += entryLines
 	}
 
 	tocBuilder.WriteString("\n")
