@@ -97,42 +97,59 @@ func TestSyncUserSessions_TTBackendUnreachable_DeletesNothing(t *testing.T) {
 	assertStatesUnchanged(t, ids)
 }
 
-// The user has terminals of two instance types, so the sync lists two paths.
-// The default one answers and lists its own sessions; the other fails. The
-// terminals of the failed type are missing from the combined listing only
-// because their listing failed, not because tt-backend reaped them.
-func TestSyncUserSessions_PartialInstanceTypeFailure_DeletesNothing(t *testing.T) {
+// tt-backend lists a user's sessions by API key, so one unprefixed listing is
+// complete. Listing once per instance type in the user's history bought
+// nothing, and broke the sync for good once a distribution was retired: its
+// prefix 404s, and a failed listing must fail the sync. The retired row is
+// then just a row tt-backend no longer lists — handled like any other.
+func TestSyncUserSessions_UnknownDistributionInHistory_StillSyncs(t *testing.T) {
 	freshTestDB(t)
-	userID := "sync-err-partial-" + uuid.New().String()
-	ids := seedSyncErrorTerminals(t, userID, "", "ubuntu")
-	defaultIDs, ubuntuIDs := ids[:2], ids[2:]
+	userID := "sync-retired-" + uuid.New().String()
+	userKey, err := createTestUserKey(sharedTestDB, userID)
+	require.NoError(t, err)
+
+	liveID := "sync-retired-live-" + uuid.New().String()
+	retiredID := "sync-retired-old-" + uuid.New().String()
+	for _, terminal := range []models.Terminal{
+		{SessionID: liveID, InstanceType: "", State: models.StateRunning},
+		{SessionID: retiredID, InstanceType: "retired-distro", State: models.StateStopped},
+	} {
+		terminal.UserID = userID
+		terminal.Name = terminal.SessionID
+		terminal.PersistenceMode = "persistent"
+		terminal.ExpiresAt = time.Now().Add(time.Hour)
+		terminal.MachineSize = "S"
+		terminal.UserTerminalKeyID = userKey.ID
+		require.NoError(t, sharedTestDB.Create(&terminal).Error)
+	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/1.0/sessions":
-			sessions := make([]map[string]any, 0, len(defaultIDs))
-			for _, id := range defaultIDs {
-				sessions = append(sessions, map[string]any{
-					"id": id, "session_id": id, "name": id,
-					"status": 0, "state": "running", "persistence_mode": "persistent",
-					"expires_at": time.Now().Add(time.Hour).Unix(),
-				})
-			}
+		if r.Method == http.MethodGet && r.URL.Path == "/1.0/sessions" {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"sessions": sessions, "count": len(sessions), "include_expired": true, "limit": 1000,
+				"sessions": []map[string]any{{
+					"id": liveID, "session_id": liveID, "name": liveID,
+					"status": 0, "state": "running", "persistence_mode": "persistent",
+					"expires_at": time.Now().Add(time.Hour).Unix(),
+				}},
+				"count": 1, "include_expired": true, "limit": 1000,
 			})
-		case r.Method == http.MethodGet && r.URL.Path == "/1.0/ubuntu/sessions":
-			http.Error(w, "this backend is down", http.StatusBadGateway)
-		default:
-			http.Error(w, "unexpected: "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+			return
 		}
+		// /1.0/retired-distro/sessions and anything else: tt-backend has no
+		// such distribution any more.
+		http.Error(w, "unknown distribution", http.StatusNotFound)
 	}))
 	defer srv.Close()
 	configureTTServer(t, srv.URL)
 
-	_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
+	_, err = services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
+	require.NoError(t, err, "a retired distribution in the user's history must not fail their sync")
 
-	assert.Error(t, err, "a sync whose listing is incomplete must say so rather than act on it")
-	assertStatesUnchanged(t, ubuntuIDs)
+	var live, retired models.Terminal
+	require.NoError(t, sharedTestDB.Where("session_id = ?", liveID).First(&live).Error)
+	require.NoError(t, sharedTestDB.Where("session_id = ?", retiredID).First(&retired).Error)
+	assert.Equal(t, models.StateRunning, live.State, "the listed terminal stays running")
+	assert.Equal(t, models.StateDeleted, retired.State,
+		"a row a complete listing no longer returns is marked deleted, whatever its distribution")
 }
