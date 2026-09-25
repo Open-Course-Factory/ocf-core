@@ -607,3 +607,108 @@ func TestCleanupZombieScenarioSessions_SyncKeepsRunWhoseContainerIsStillKept(t *
 			"a run whose container tt-backend still keeps is paused, not dead")
 	}
 }
+
+// A sync that could not reach tt-backend knows nothing, so it must change
+// nothing. When it treated the failed listing as an empty one, every terminal
+// of every synced owner was marked deleted — the stale one AND the live one —
+// and the sweep that followed abandoned both runs: one outage ended every
+// learner's scenario.
+func TestCleanupZombieScenarioSessions_TTBackendDown_AbandonsNothing(t *testing.T) {
+	db := freshTestDB(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "tt-backend is down", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	configureTTServerForPersistence(t, srv.URL)
+
+	owner := "owner-during-outage"
+	seedPersistenceUserKey(t, db, owner)
+	staleRun, _ := seedOpenRunWithTerminal(t, db, owner, "terminal-outage-stale",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
+	liveRun, _ := seedOpenRunWithTerminal(t, db, owner+"-2", "terminal-outage-live",
+		terminalModels.StateRunning, time.Hour, "persistent", "active")
+	// seedOpenRunWithTerminal names the scenario after its user id; the live
+	// run belongs to the same learner as the stale one.
+	require.NoError(t, db.Model(&terminalModels.Terminal{}).Where("session_id = ?", "terminal-outage-live").
+		Update("user_id", owner).Error)
+	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", liveRun.ID).
+		Update("user_id", owner).Error)
+
+	svc := terminalServices.NewTerminalTrainerService(db)
+	var synced []string
+	_, err := services.CleanupZombieScenarioSessions(db, func(userIDs []string) {
+		synced = append(synced, userIDs...)
+		for _, id := range userIDs {
+			_, _ = svc.SyncUserSessions(id) // the cron logs a failed sync and carries on
+		}
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{owner}, synced, "the stale terminal's owner is synced — the outage is what this test is about")
+
+	for _, id := range []string{"terminal-outage-stale", "terminal-outage-live"} {
+		var terminal terminalModels.Terminal
+		require.NoError(t, db.Where("session_id = ?", id).First(&terminal).Error)
+		assert.Equal(t, terminalModels.StateRunning, terminal.State,
+			"tt-backend could not be asked about %s; its row must not change", id)
+	}
+	assert.Equal(t, "active", sessionStatus(t, db, staleRun.ID), "the stale run must wait for a sync that succeeds")
+	assert.Equal(t, "active", sessionStatus(t, db, liveRun.ID), "the live run must survive a tt-backend outage")
+}
+
+// syncedOwners runs the sweep with a recording sync and returns who it asked for.
+func syncedOwners(t *testing.T, db *gorm.DB) []string {
+	t.Helper()
+	var synced []string
+	_, err := services.CleanupZombieScenarioSessions(db, func(userIDs []string) {
+		synced = append(synced, userIDs...)
+	})
+	require.NoError(t, err)
+	return synced
+}
+
+// SyncUserSessions refuses an owner without an active terminal key, so asking
+// for them only produces an error per sweep, every five minutes, forever. Such
+// owners are not synced; their runs are left as the sweep found them.
+func TestCleanupZombieScenarioSessions_SkipsOwnersWithoutActiveKey(t *testing.T) {
+	db := freshTestDB(t)
+
+	seedPersistenceUserKey(t, db, "owner-with-key")
+	seedOpenRunWithTerminal(t, db, "owner-with-key", "terminal-with-key",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
+
+	noKeyRun, _ := seedOpenRunWithTerminal(t, db, "owner-no-key", "terminal-no-key",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
+
+	seedPersistenceUserKey(t, db, "owner-inactive-key")
+	// is_active carries gorm:"default:true", so false is written by an update.
+	require.NoError(t, db.Model(&terminalModels.UserTerminalKey{}).
+		Where("user_id = ?", "owner-inactive-key").Update("is_active", false).Error)
+	inactiveKeyRun, _ := seedOpenRunWithTerminal(t, db, "owner-inactive-key", "terminal-inactive-key",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
+
+	synced := syncedOwners(t, db)
+
+	assert.Equal(t, []string{"owner-with-key"}, synced,
+		"only owners with an active terminal key can be synced")
+	assert.Equal(t, "active", sessionStatus(t, db, noKeyRun.ID))
+	assert.Equal(t, "in_progress", sessionStatus(t, db, inactiveKeyRun.ID))
+}
+
+// A soft-deleted run is not a run: the sweep's own UPDATE never sees it, so it
+// must not make its owner eligible for a sync either.
+func TestCleanupZombieScenarioSessions_SkipsOwnersOfSoftDeletedRuns(t *testing.T) {
+	db := freshTestDB(t)
+
+	seedPersistenceUserKey(t, db, "owner-open-run")
+	seedOpenRunWithTerminal(t, db, "owner-open-run", "terminal-open-run",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
+
+	seedPersistenceUserKey(t, db, "owner-deleted-run")
+	deletedRun, _ := seedOpenRunWithTerminal(t, db, "owner-deleted-run", "terminal-deleted-run",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
+	require.NoError(t, db.Delete(&deletedRun).Error)
+
+	assert.Equal(t, []string{"owner-open-run"}, syncedOwners(t, db),
+		"a soft-deleted run must not make its owner eligible for a sync")
+}
