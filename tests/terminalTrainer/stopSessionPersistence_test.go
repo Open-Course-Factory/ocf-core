@@ -393,3 +393,48 @@ func TestSyncUserSessions_StoppedSession_StillInAPI_KeptStopped(t *testing.T) {
 	assert.Equal(t, models.StateStopped, reloaded.State,
 		"stopped local row that tt-backend still acknowledges must stay stopped")
 }
+
+// ---------------------------------------------------------------------------
+// A row deleted while tt-backend is stopping it stays deleted.
+// ---------------------------------------------------------------------------
+
+// TestStopSession_RowDeletedDuringStop_StaysDeleted pins that StopSession never
+// resurrects a row someone else deleted while the stop call was in flight — a
+// crash-trap permadeath or an admin delete. StopSession loads the row before
+// calling tt-backend; saving that stale copy back wholesale would turn the
+// tombstone into a "stopped" row that holds budget until the reaper runs.
+func TestStopSession_RowDeletedDuringStop_StaysDeleted(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "owner-stop-race-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+
+	terminal, err := createTestTerminal(db, userID, "running", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	terminal.PersistenceMode = "persistent"
+	require.NoError(t, db.Save(terminal).Error)
+
+	idleUntil := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop") {
+			// The row is deleted while tt-backend is still answering the stop.
+			require.NoError(t, db.Model(&models.Terminal{}).
+				Where("session_id = ?", terminal.SessionID).
+				Update("state", models.StateDeleted).Error)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"idle_until": idleUntil.Format(time.RFC3339)})
+			return
+		}
+		http.Error(w, "unexpected request: "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+	}))
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	svc := services.NewTerminalTrainerService(db)
+	_ = svc.StopSession(terminal.SessionID)
+
+	var reloaded models.Terminal
+	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
+	assert.Equal(t, models.StateDeleted, reloaded.State,
+		"a row deleted during the stop must stay deleted — overwriting it with "+
+			"the stale copy as stopped would hold budget for a dead container")
+}
