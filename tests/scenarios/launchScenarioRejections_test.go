@@ -333,3 +333,61 @@ func TestAbandonSession_StillRefusedForFinishedSessions(t *testing.T) {
 			"sentinel the controller answers 409 with — as a 500 it made an abandon "+
 			"that had already succeeded look like one to retry")
 }
+
+// launchWithOpenRun seeds a learner who already has an open run of the
+// scenario, bound to a terminal in the given state, and launches it again.
+// It returns the response, what the fake tt-backend recorded, and the DB.
+func launchWithOpenRun(t *testing.T, name string, state terminalModels.TerminalState) (*httptest.ResponseRecorder, *persistenceRecorder, *gorm.DB, string) {
+	t.Helper()
+	db := freshTestDB(t)
+	userID := name + "-" + uuid.New().String()
+
+	seedPersistencePlan(t, db, userID, true)
+	seedPersistenceUserKey(t, db, userID)
+	scenario := seedPersistenceScenario(t, db, userID, false)
+
+	terminalID := "open-run-terminal-" + uuid.New().String()
+	require.NoError(t, db.Create(&terminalModels.Terminal{
+		SessionID:       terminalID,
+		UserID:          userID,
+		State:           state,
+		PersistenceMode: "persistent",
+		ExpiresAt:       time.Now().Add(30 * time.Minute),
+	}).Error)
+	svc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	_, err := svc.StartScenario(userID, scenario.ID, terminalID, "")
+	require.NoError(t, err)
+
+	ttSrv, rec := newPersistenceTTBackend(t)
+	configureTTServerForPersistence(t, ttSrv.URL)
+
+	router := setupPersistenceRouter(t, db, userID)
+	return launchScenarioForTest(t, router, scenario.ID), rec, db, userID
+}
+
+func assertConflictWithoutNewTerminal(t *testing.T, w *httptest.ResponseRecorder, rec *persistenceRecorder, db *gorm.DB, userID string) {
+	t.Helper()
+	require.Equal(t, http.StatusConflict, w.Code,
+		"a launch over an open run must be the session_exists conflict. Got %d. Body: %s",
+		w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"reason":"session_exists"`)
+	assert.Equal(t, 0, rec.calls,
+		"the conflict must be detected BEFORE a terminal is created — the terminal "+
+			"created and then left behind by the 409 is an orphan holding the learner's budget")
+
+	var terminals int64
+	require.NoError(t, db.Model(&terminalModels.Terminal{}).Where("user_id = ?", userID).Count(&terminals).Error)
+	assert.Equal(t, int64(1), terminals, "no terminal row may be created for a refused launch")
+}
+
+func TestLaunchScenario_OpenRunExists_Returns409WithoutCreatingTerminal(t *testing.T) {
+	w, rec, db, userID := launchWithOpenRun(t, "launch-open-run", terminalModels.StateRunning)
+	assertConflictWithoutNewTerminal(t, w, rec, db, userID)
+}
+
+// The same holds for a paused run: it is resumed in place, never replaced by
+// a second launch.
+func TestLaunchScenario_PausedRunExists_Returns409WithoutCreatingTerminal(t *testing.T) {
+	w, rec, db, userID := launchWithOpenRun(t, "launch-paused-run", terminalModels.StateStopped)
+	assertConflictWithoutNewTerminal(t, w, rec, db, userID)
+}

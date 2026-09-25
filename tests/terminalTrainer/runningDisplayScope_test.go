@@ -315,3 +315,83 @@ func TestIsLiveMatchesRunningDisplayScope(t *testing.T) {
 			"IsLive and RunningDisplayScope disagree about %s", row.SessionID)
 	}
 }
+
+// TestHoldsContainerMatchesContainerHeldScope pins the second one-rule pair:
+// "does this terminal still hold a container the learner can come back to?".
+// That is wider than IsLive — a paused terminal (stopped, inside its reap
+// window) holds its container, and so does a persistent terminal tt-backend
+// auto-stopped at its TTL before any sync moved its state off "running". The
+// scenario run behind either must stay open, so the zombie cron (SQL) and the
+// resume rule (Go) have to agree on exactly these rows.
+func TestHoldsContainerMatchesContainerHeldScope(t *testing.T) {
+	db := freshTestDB(t)
+
+	userKey, err := createTestUserKey(db, "user-holds")
+	require.NoError(t, err)
+
+	cases := []struct {
+		name        string
+		state       models.TerminalState
+		expires     time.Duration
+		persistence string
+		softDeleted bool
+		wantHeld    bool
+	}{
+		{"running future ephemeral", models.StateRunning, time.Hour, "ephemeral", false, true},
+		{"running future persistent", models.StateRunning, time.Hour, "persistent", false, true},
+		{"running past ephemeral", models.StateRunning, -time.Hour, "ephemeral", false, false},
+		{"running past persistent", models.StateRunning, -time.Hour, "persistent", false, true},
+		{"stopped future ephemeral", models.StateStopped, time.Hour, "ephemeral", false, true},
+		{"stopped future persistent", models.StateStopped, time.Hour, "persistent", false, true},
+		{"stopped past ephemeral", models.StateStopped, -time.Hour, "ephemeral", false, false},
+		{"stopped past persistent", models.StateStopped, -time.Hour, "persistent", false, false},
+		{"deleted future persistent", models.StateDeleted, time.Hour, "persistent", false, false},
+		{"starting future persistent", models.StateStarting, time.Hour, "persistent", false, false},
+		{"revoked future persistent", models.StateRevoked, time.Hour, "persistent", false, false},
+		{"soft-deleted running future persistent", models.StateRunning, time.Hour, "persistent", true, false},
+		{"soft-deleted running past persistent", models.StateRunning, -time.Hour, "persistent", true, false},
+		{"soft-deleted stopped future", models.StateStopped, time.Hour, "persistent", true, false},
+	}
+
+	wantBySessionID := make(map[string]bool, len(cases))
+	for _, c := range cases {
+		terminal := &models.Terminal{
+			SessionID:         "holds-" + c.name,
+			UserID:            "user-holds",
+			State:             c.state,
+			PersistenceMode:   c.persistence,
+			ExpiresAt:         time.Now().Add(c.expires),
+			InstanceType:      "ubuntu:22.04",
+			UserTerminalKeyID: userKey.ID,
+		}
+		require.NoError(t, db.Create(terminal).Error)
+		if c.softDeleted {
+			require.NoError(t, db.Delete(terminal).Error)
+		}
+		wantBySessionID[terminal.SessionID] = c.wantHeld
+	}
+
+	var held []models.Terminal
+	require.NoError(t, db.Table("terminals").Scopes(models.ContainerHeldScope).
+		Where("terminals.user_id = ?", "user-holds").Find(&held).Error)
+
+	heldBySessionID := make(map[string]bool, len(held))
+	for i := range held {
+		heldBySessionID[held[i].SessionID] = true
+	}
+
+	var all []models.Terminal
+	require.NoError(t, db.Unscoped().Where("user_id = ?", "user-holds").Find(&all).Error)
+	require.Len(t, all, len(cases))
+
+	for i := range all {
+		row := &all[i]
+		want := wantBySessionID[row.SessionID]
+		assert.Equal(t, want, row.HoldsContainer(),
+			"HoldsContainer is wrong for %s", row.SessionID)
+		assert.Equal(t, want, heldBySessionID[row.SessionID],
+			"ContainerHeldScope is wrong for %s", row.SessionID)
+		assert.Equal(t, heldBySessionID[row.SessionID], row.HoldsContainer(),
+			"HoldsContainer and ContainerHeldScope disagree about %s", row.SessionID)
+	}
+}

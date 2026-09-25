@@ -393,3 +393,89 @@ func TestSyncUserSessions_StoppedSession_StillInAPI_KeptStopped(t *testing.T) {
 	assert.Equal(t, models.StateStopped, reloaded.State,
 		"stopped local row that tt-backend still acknowledges must stay stopped")
 }
+
+// ---------------------------------------------------------------------------
+// (g) StopSession never decides the fate of the scenario run on the terminal.
+// ---------------------------------------------------------------------------
+
+// linkedScenarioRun gives the terminal a scenario run to be judged by. This
+// package does not migrate the scenarios models, so the table is created with
+// just the columns StopSession has ever touched; that is enough to observe
+// whether it writes to it.
+func linkedScenarioRun(t *testing.T, db *gorm.DB, terminalSessionID string) string {
+	t.Helper()
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS scenario_sessions (
+		id TEXT PRIMARY KEY,
+		terminal_session_id TEXT,
+		status TEXT
+	)`).Error)
+	require.NoError(t, db.Exec(`DELETE FROM scenario_sessions`).Error)
+
+	runID := uuid.New().String()
+	require.NoError(t, db.Exec(
+		`INSERT INTO scenario_sessions (id, terminal_session_id, status) VALUES (?, ?, ?)`,
+		runID, terminalSessionID, "active").Error)
+	return runID
+}
+
+func linkedScenarioRunStatus(t *testing.T, db *gorm.DB, runID string) string {
+	t.Helper()
+	var status string
+	require.NoError(t, db.Raw(`SELECT status FROM scenario_sessions WHERE id = ?`, runID).
+		Scan(&status).Error)
+	return status
+}
+
+// Pausing a persistent terminal is a pause, not an end: the container and its
+// disk are kept, so the learner comes back to the same step. Abandoning the run
+// here made the Pause button a silent "quit the scenario".
+func TestStopSession_Persistent_KeepsLinkedScenarioRunOpen(t *testing.T) {
+	idleUntil := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
+	srv := stopOnlyTTServer(t, idleUntil.Format(time.RFC3339))
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	userID := "owner-stop-keeps-run-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+
+	terminal, err := createTestTerminal(db, userID, "running", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	terminal.PersistenceMode = "persistent"
+	require.NoError(t, db.Save(terminal).Error)
+
+	runID := linkedScenarioRun(t, db, terminal.SessionID)
+
+	svc := services.NewTerminalTrainerService(db)
+	require.NoError(t, svc.StopSession(terminal.SessionID))
+
+	assert.Equal(t, "active", linkedScenarioRunStatus(t, db, runID),
+		"pausing a persistent terminal must leave its scenario run open — the container is kept and the learner resumes at the same step")
+}
+
+// An ephemeral stop does destroy the container, but whether the run is over is
+// the resume rule's call (and the zombie cron's), not StopSession's. Deciding
+// it here as well is a second definition of "is this run over?" that the rest
+// of the system cannot see.
+func TestStopSession_Ephemeral_DoesNotAbandonRunDirectly(t *testing.T) {
+	srv := stopOnlyTTServer(t, "")
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	userID := "owner-stop-ephemeral-run-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+
+	terminal, err := createTestTerminal(db, userID, "running", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	terminal.PersistenceMode = "ephemeral"
+	require.NoError(t, db.Save(terminal).Error)
+
+	runID := linkedScenarioRun(t, db, terminal.SessionID)
+
+	svc := services.NewTerminalTrainerService(db)
+	require.NoError(t, svc.StopSession(terminal.SessionID))
+
+	assert.Equal(t, "active", linkedScenarioRunStatus(t, db, runID),
+		"StopSession must not write to scenario_sessions; RunResumeMode and the zombie cron decide whether the run is over")
+}

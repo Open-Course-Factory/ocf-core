@@ -1,6 +1,9 @@
 package scenarios_test
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -113,4 +116,92 @@ func TestMySessionsReportsExpiredRunAsNotResumable(t *testing.T) {
 	require.Len(t, sessions, 1)
 	require.False(t, sessions[0].Resumable,
 		"the launcher offers Resume from this flag; a dead terminal must not set it")
+}
+
+// A paused run is a run. Pausing a persistent terminal stops the container but
+// keeps it (and its disk) until the reap deadline, which the stop moved
+// forward; the learner resumes it at the step they left. The launch path, the
+// catalogue card and the learner's session list must all see it as the run to
+// resume — and say which kind of resume it is, because "Resume" on a paused
+// run first has to start the container.
+func startScenarioThenPauseItsTerminal(t *testing.T, name string) (*gorm.DB, *services.ScenarioSessionService, models.Scenario, string) {
+	t.Helper()
+	db, svc, scenario, userID := startScenarioWithLiveTerminal(t, name)
+
+	require.NoError(t, db.Model(&terminalModels.Terminal{}).
+		Where("session_id = ?", "live-terminal").
+		Updates(map[string]any{
+			"state":            terminalModels.StateStopped,
+			"persistence_mode": "persistent",
+			"expires_at":       time.Now().Add(30 * time.Minute),
+		}).Error)
+
+	return db, svc, scenario, userID
+}
+
+func TestStartScenarioWithPausedRunReturnsTypedConflict(t *testing.T) {
+	db, svc, scenario, userID := startScenarioThenPauseItsTerminal(t, "paused-launch-conflict")
+
+	_, err := svc.StartScenario(userID, scenario.ID, "", "")
+
+	require.ErrorIs(t, err, services.ErrActiveSessionExists,
+		"a paused run is resumable in place; launching again must be the typed conflict, not a silent abandon of the paused run")
+
+	var open int64
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("user_id = ? AND scenario_id = ? AND status = ?", userID, scenario.ID, "active").
+		Count(&open).Error)
+	require.Equal(t, int64(1), open, "the paused run must still be the learner's open run")
+}
+
+func TestResumableSessionsReportPausedRunWithMode(t *testing.T) {
+	db, svc, scenario, userID := startScenarioThenPauseItsTerminal(t, "paused-listing")
+
+	resumable, err := svc.GetResumableSessions(userID, []uuid.UUID{scenario.ID})
+	require.NoError(t, err)
+	paused := resumable[scenario.ID]
+	require.NotNil(t, paused, "the listing must report the paused run the launch path refuses for")
+
+	var terminal terminalModels.Terminal
+	require.NoError(t, db.Where("session_id = ?", "live-terminal").First(&terminal).Error)
+	require.Equal(t, services.ResumeModePaused, services.RunResumeMode(paused, &terminal, false))
+
+	// The catalogue card is where the learner meets it: it must name the run
+	// and say it is paused, from the same evaluation.
+	router := setupAvailableRouter(db, userID, []string{"admin"})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/scenario-sessions/available", nil)
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var cards []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &cards))
+	var card map[string]any
+	for _, c := range cards {
+		if c["id"] == scenario.ID.String() {
+			card = c
+		}
+	}
+	require.NotNil(t, card, "the scenario must be listed")
+	require.Equal(t, paused.ID.String(), card["active_session_id"])
+	require.Equal(t, "paused", card["active_session_resume_mode"],
+		"the card must say the run is paused so it can offer 'resume at step N' rather than a plain relaunch")
+}
+
+func TestMySessionsReportsPausedRunResumeMode(t *testing.T) {
+	_, svc, _, userID := startScenarioThenPauseItsTerminal(t, "my-sessions-paused")
+
+	sessions, err := svc.GetMySessions(userID)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+
+	raw, err := json.Marshal(sessions[0])
+	require.NoError(t, err)
+	var wire map[string]any
+	require.NoError(t, json.Unmarshal(raw, &wire))
+
+	require.Equal(t, "paused", wire["resume_mode"],
+		"the learner's session list must say the run is paused")
+	require.Equal(t, true, wire["resumable"],
+		"resumable stays true for any resume mode, for clients that read only the flag")
 }

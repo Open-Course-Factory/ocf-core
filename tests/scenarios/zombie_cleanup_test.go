@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
@@ -353,4 +354,145 @@ func TestCleanupZombieScenarioSessions_AbandonsRunOnExpiredButRunningTerminal(t 
 	require.NoError(t, db.First(&reloaded, "id = ?", session.ID).Error)
 	assert.Equal(t, "abandoned", reloaded.Status,
 		"a run whose terminal is past its TTL is not a run the learner can return to")
+}
+
+// seedOpenRunWithTerminal creates an open run of a fresh one-step scenario bound to
+// terminalSessionID, plus the terminal row itself unless state is empty (a run
+// whose terminal row has vanished).
+func seedOpenRunWithTerminal(t *testing.T, db *gorm.DB, userID, terminalSessionID string, state terminalModels.TerminalState, expires time.Duration, persistence string, status string) (models.ScenarioSession, *terminalModels.Terminal) {
+	t.Helper()
+
+	scenario := models.Scenario{
+		Name:         "run-" + userID,
+		Title:        "Run " + userID,
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Step 1",
+	}).Error)
+
+	var terminal *terminalModels.Terminal
+	if state != "" {
+		terminal = &terminalModels.Terminal{
+			SessionID:       terminalSessionID,
+			UserID:          userID,
+			State:           state,
+			PersistenceMode: persistence,
+			ExpiresAt:       time.Now().Add(expires),
+			InstanceType:    "ubuntu:22.04",
+		}
+		require.NoError(t, db.Create(terminal).Error)
+	}
+
+	terminalID := terminalSessionID
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: userID,
+		TerminalSessionID: &terminalID,
+		CurrentStep:       0, Status: status, StartedAt: time.Now().Add(-2 * time.Hour),
+	}
+	require.NoError(t, db.Create(&session).Error)
+	return session, terminal
+}
+
+// A paused terminal is stopped with its container kept until the reap
+// deadline (expires_at moved forward by the stop). The run behind it is the
+// one the learner will resume — abandoning it every five minutes made Pause
+// end the scenario.
+func TestCleanupZombieScenarioSessions_SparesPausedRun(t *testing.T) {
+	db := freshTestDB(t)
+
+	session, _ := seedOpenRunWithTerminal(t, db, "student-paused", "terminal-paused",
+		terminalModels.StateStopped, time.Hour, "persistent", "active")
+
+	count, err := services.CleanupZombieScenarioSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+	assert.Equal(t, "active", sessionStatus(t, db, session.ID),
+		"a paused run still holds its container and must stay open")
+}
+
+// tt-backend auto-stops a persistent terminal at its TTL, but nothing moves the
+// local row off "running" until the next user-triggered sync. The container is
+// kept (it is persistent), so the run is paused, not dead — the cron must not
+// get there before the sync does.
+func TestCleanupZombieScenarioSessions_SparesTTLStoppedPersistentRun(t *testing.T) {
+	db := freshTestDB(t)
+
+	session, _ := seedOpenRunWithTerminal(t, db, "student-ttl-persistent", "terminal-ttl-persistent",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
+
+	count, err := services.CleanupZombieScenarioSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+	assert.Equal(t, "in_progress", sessionStatus(t, db, session.ID),
+		"a persistent terminal auto-stopped at its TTL still holds its container; its run must stay open")
+}
+
+// TestZombieCleanupAgreesWithRunResumeMode pins the cron to the resume rule:
+// for every open run it sweeps, it abandons exactly the ones RunResumeMode
+// says cannot be resumed. They are two forms of one rule (SQL and Go), so this
+// runs both over the same rows and fails if they ever disagree.
+func TestZombieCleanupAgreesWithRunResumeMode(t *testing.T) {
+	db := freshTestDB(t)
+
+	type terminalCase struct {
+		name        string
+		state       terminalModels.TerminalState // "" = terminal row missing
+		expires     time.Duration
+		persistence string
+	}
+	terminalCases := []terminalCase{
+		{"running-future-ephemeral", terminalModels.StateRunning, time.Hour, "ephemeral"},
+		{"running-future-persistent", terminalModels.StateRunning, time.Hour, "persistent"},
+		{"running-past-ephemeral", terminalModels.StateRunning, -time.Hour, "ephemeral"},
+		{"running-past-persistent", terminalModels.StateRunning, -time.Hour, "persistent"},
+		{"stopped-future-ephemeral", terminalModels.StateStopped, time.Hour, "ephemeral"},
+		{"stopped-future-persistent", terminalModels.StateStopped, time.Hour, "persistent"},
+		{"stopped-past-persistent", terminalModels.StateStopped, -time.Hour, "persistent"},
+		{"deleted-future-persistent", terminalModels.StateDeleted, time.Hour, "persistent"},
+		{"revoked-future-persistent", terminalModels.StateRevoked, time.Hour, "persistent"},
+		{"starting-future-persistent", terminalModels.StateStarting, time.Hour, "persistent"},
+		{"missing-row", "", 0, ""},
+	}
+	statuses := []string{"active", "in_progress"}
+
+	type seeded struct {
+		session  models.ScenarioSession
+		terminal *terminalModels.Terminal
+	}
+	var all []seeded
+	for _, tc := range terminalCases {
+		for _, status := range statuses {
+			key := tc.name + "-" + status
+			session, terminal := seedOpenRunWithTerminal(t, db, "student-agree-"+key, "terminal-agree-"+key,
+				tc.state, tc.expires, tc.persistence, status)
+			all = append(all, seeded{session, terminal})
+		}
+	}
+
+	// Judge every run before the cron rewrites any status.
+	wantAbandoned := make(map[string]bool, len(all))
+	paused := 0
+	for i := range all {
+		mode := services.RunResumeMode(&all[i].session, all[i].terminal, false)
+		wantAbandoned[all[i].session.ID.String()] = mode == services.ResumeModeNone
+		if mode == services.ResumeModePaused {
+			paused++
+		}
+	}
+	// stopped-future ×2 persistence + running-past-persistent, each × 2 statuses.
+	// Without paused rows the matrix would only re-check the live rule.
+	require.Equal(t, 6, paused, "RunResumeMode must report the paused rows of the matrix as paused")
+
+	_, err := services.CleanupZombieScenarioSessions(db)
+	require.NoError(t, err)
+
+	for i := range all {
+		id := all[i].session.ID.String()
+		abandoned := sessionStatus(t, db, all[i].session.ID) == "abandoned"
+		assert.Equal(t, wantAbandoned[id], abandoned,
+			"cron and RunResumeMode disagree about the run on %s", *all[i].session.TerminalSessionID)
+	}
 }
