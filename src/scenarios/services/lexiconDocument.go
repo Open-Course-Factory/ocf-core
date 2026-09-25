@@ -246,6 +246,7 @@ func findScriptLiterals(db *gorm.DB, scenarioID uuid.UUID) ([]string, error) {
 		report(label+" verify", step.VerifyScript)
 		report(label+" background", step.BackgroundScript)
 		report(label+" foreground", step.ForegroundScript)
+		report(label+" catch-up", step.CatchupScript)
 	}
 	return found, nil
 }

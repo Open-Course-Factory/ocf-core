@@ -16,8 +16,8 @@ import (
 // Sensitive step fields (issue #293):
 //   - HintContent — may include flag-revealing hints
 //   - FlagPath, FlagLevel — CTF flag metadata
-//   - VerifyScriptID, BackgroundScriptID, ForegroundScriptID — script UUIDs
-//     enable enumeration of solution scripts
+//   - VerifyScriptID, BackgroundScriptID, ForegroundScriptID, CatchupScriptID —
+//     script UUIDs enable enumeration of solution scripts
 //   - TextFileID, HintFileID — project-file UUIDs
 //   - Questions slice — contains CorrectAnswer + Explanation
 //
@@ -41,7 +41,7 @@ func scenarioOfStepOutput(db *gorm.DB, output *dto.ScenarioStepOutput) (*models.
 // nil slices, so the redacted fields disappear entirely from the response.
 //
 // Note: although models.ScenarioStep tags VerifyScript/BackgroundScript/
-// ForegroundScript with `json:"-"`, the response is marshalled from
+// ForegroundScript/CatchupScript with `json:"-"`, the response is marshalled from
 // dto.ScenarioStepOutput, which redeclares those fields with
 // `json:"verify_script,omitempty"` (etc.) and the converter in
 // scenarioStepRegistration.go explicitly copies the raw script bodies into
@@ -54,11 +54,13 @@ func stripScenarioStepDto(out *dto.ScenarioStepOutput) {
 	out.VerifyScript = ""
 	out.BackgroundScript = ""
 	out.ForegroundScript = ""
+	out.CatchupScript = ""
 	out.FlagPath = ""
 	out.FlagLevel = 0
 	out.VerifyScriptID = nil
 	out.BackgroundScriptID = nil
 	out.ForegroundScriptID = nil
+	out.CatchupScriptID = nil
 	out.TextFileID = nil
 	out.HintFileID = nil
 	// Drop the Questions slice entirely so embedded CorrectAnswer +

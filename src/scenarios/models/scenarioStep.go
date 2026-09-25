@@ -28,6 +28,16 @@ type ScenarioStep struct {
 	// not opened their terminal simply misses it; the level itself is already
 	// provisioned by the time this runs, so nothing is left unsolvable.
 	ForegroundScript string `gorm:"type:text" json:"-"`
+	// CatchupScript applies the step's expected learner result — what a learner
+	// who solved the step by hand would have left behind. It is the step's
+	// solution, so it is redacted for learners like the verify script.
+	//
+	// It runs only when a run is rebuilt on a new container (#515): the
+	// catch-up scripts of the steps already passed are replayed, each after
+	// that step's background script. It must therefore be idempotent: safe to
+	// run on the state the background script just left, even if part of the
+	// result already exists. Normal play never runs it.
+	CatchupScript string `gorm:"type:text" json:"-"`
 	// Intro/outro banners. The trainer picks an effect by name and types a
 	// line; the engine turns that into an ocf-banner call in the container, so
 	// nobody has to write shell to get one. Empty effect or empty text means no
@@ -55,6 +65,7 @@ type ScenarioStep struct {
 	VerifyScriptID     *uuid.UUID             `gorm:"type:uuid;index" json:"verify_script_id,omitempty" mapstructure:"verify_script_id"`
 	BackgroundScriptID *uuid.UUID             `gorm:"type:uuid;index" json:"background_script_id,omitempty" mapstructure:"background_script_id"`
 	ForegroundScriptID *uuid.UUID             `gorm:"type:uuid;index" json:"foreground_script_id,omitempty" mapstructure:"foreground_script_id"`
+	CatchupScriptID    *uuid.UUID             `gorm:"type:uuid;index" json:"catchup_script_id,omitempty" mapstructure:"catchup_script_id"`
 	TextFileID         *uuid.UUID             `gorm:"type:uuid;index" json:"text_file_id,omitempty" mapstructure:"text_file_id"`
 	HintFileID         *uuid.UUID             `gorm:"type:uuid;index" json:"hint_file_id,omitempty" mapstructure:"hint_file_id"`
 	Hints              []ScenarioStepHint     `gorm:"foreignKey:StepID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"hints,omitempty"`

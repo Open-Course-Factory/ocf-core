@@ -246,6 +246,7 @@ type SeedStepInput struct {
 	VerifyScript             string              `json:"verify_script"`
 	BackgroundScript         string              `json:"background_script"`
 	ForegroundScript         string              `json:"foreground_script"`
+	CatchupScript            string              `json:"catchup_script"`
 	IntroEffect              string              `json:"intro_effect,omitempty"`
 	IntroText                string              `json:"intro_text,omitempty" binding:"max=500"`
 	OutroEffect              string              `json:"outro_effect,omitempty"`
@@ -279,6 +280,7 @@ type ScenarioExportStepOutput struct {
 	VerifyScript             string                             `json:"verify_script,omitempty"`
 	BackgroundScript         string                             `json:"background_script,omitempty"`
 	ForegroundScript         string                             `json:"foreground_script,omitempty"`
+	CatchupScript            string                             `json:"catchup_script,omitempty"`
 	IntroEffect              string                             `json:"intro_effect,omitempty"`
 	IntroText                string                             `json:"intro_text,omitempty"`
 	OutroEffect              string                             `json:"outro_effect,omitempty"`

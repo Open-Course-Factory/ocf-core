@@ -30,6 +30,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						VerifyScript:       model.VerifyScript,
 						BackgroundScript:   model.BackgroundScript,
 						ForegroundScript:   model.ForegroundScript,
+						CatchupScript:      model.CatchupScript,
 						IntroEffect:        model.IntroEffect,
 						IntroText:          model.IntroText,
 						OutroEffect:        model.OutroEffect,
@@ -42,6 +43,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						VerifyScriptID:     model.VerifyScriptID,
 						BackgroundScriptID: model.BackgroundScriptID,
 						ForegroundScriptID: model.ForegroundScriptID,
+						CatchupScriptID:    model.CatchupScriptID,
 						TextFileID:         model.TextFileID,
 						HintFileID:         model.HintFileID,
 						CreatedAt:          model.CreatedAt,
@@ -92,6 +94,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						VerifyScript:       input.VerifyScript,
 						BackgroundScript:   input.BackgroundScript,
 						ForegroundScript:   input.ForegroundScript,
+						CatchupScript:      input.CatchupScript,
 						IntroEffect:        input.IntroEffect,
 						IntroText:          input.IntroText,
 						OutroEffect:        input.OutroEffect,
@@ -104,6 +107,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						VerifyScriptID:     input.VerifyScriptID,
 						BackgroundScriptID: input.BackgroundScriptID,
 						ForegroundScriptID: input.ForegroundScriptID,
+						CatchupScriptID:    input.CatchupScriptID,
 						TextFileID:         input.TextFileID,
 						HintFileID:         input.HintFileID,
 					}
@@ -136,6 +140,9 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.ForegroundScript != nil {
 						updates["foreground_script"] = *input.ForegroundScript
+					}
+					if input.CatchupScript != nil {
+						updates["catchup_script"] = *input.CatchupScript
 					}
 					if input.IntroEffect != nil {
 						updates["intro_effect"] = *input.IntroEffect
@@ -172,6 +179,9 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.ForegroundScriptID != nil {
 						updates["foreground_script_id"] = *input.ForegroundScriptID
+					}
+					if input.CatchupScriptID != nil {
+						updates["catchup_script_id"] = *input.CatchupScriptID
 					}
 					if input.TextFileID != nil {
 						updates["text_file_id"] = *input.TextFileID

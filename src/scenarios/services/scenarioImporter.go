@@ -72,6 +72,7 @@ type KillerCodaStep struct {
 	Verify     string `json:"verify"`     // path to verify.sh
 	Background string `json:"background"` // path to background.sh
 	Foreground string `json:"foreground"` // path to foreground.sh — imported and re-exported, never executed (see ScenarioStep.ForegroundScript)
+	Catchup    string `json:"catchup,omitempty"` // OCF extension: path to catchup.sh — run only to rebuild a run on a new container (see ScenarioStep.CatchupScript)
 	Hint       string `json:"hint"`       // OCF extension: path to hint.md
 	HasFlag    *bool  `json:"has_flag"`   // OCF extension: per-step flag override (nil = use scenario default)
 	FlagPath   string `json:"flag_path"`  // OCF extension: where to place flag in container
@@ -419,6 +420,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			VerifyScript:     readFileContent(dirPath, kcStep.Verify),
 			BackgroundScript: readFileContent(dirPath, kcStep.Background),
 			ForegroundScript: readFileContent(dirPath, kcStep.Foreground),
+			CatchupScript:    readFileContent(dirPath, kcStep.Catchup),
 			IntroEffect:      kcStep.IntroEffect,
 			IntroText:        kcStep.IntroText,
 			OutroEffect:      kcStep.OutroEffect,
@@ -511,7 +513,7 @@ type stepExtensionsQuestion struct {
 // and had their sidecars silently read from the neighbouring step's directory.
 // The index-derived name stays as the fallback for steps that declare no paths.
 func stepDirFor(kcStep KillerCodaStep, index int) string {
-	for _, declared := range []string{kcStep.Text, kcStep.Verify, kcStep.Background, kcStep.Foreground, kcStep.Hint} {
+	for _, declared := range []string{kcStep.Text, kcStep.Verify, kcStep.Background, kcStep.Foreground, kcStep.Catchup, kcStep.Hint} {
 		if declared == "" {
 			continue
 		}
@@ -565,6 +567,7 @@ type stepRelPathInfo struct {
 	Verify     string
 	Background string
 	Foreground string
+	Catchup    string
 	Text       string
 	Hint       string
 }
@@ -579,6 +582,7 @@ func buildStepRelPaths(index *KillerCodaIndex) []stepRelPathInfo {
 			Verify:     defaultRelPath(kcStep.Verify, stepDir+"/verify.sh"),
 			Background: defaultRelPath(kcStep.Background, stepDir+"/background.sh"),
 			Foreground: defaultRelPath(kcStep.Foreground, stepDir+"/foreground.sh"),
+			Catchup:    defaultRelPath(kcStep.Catchup, stepDir+"/catchup.sh"),
 			Text:       defaultRelPath(kcStep.Text, stepDir+"/text.md"),
 			Hint:       defaultRelPath(kcStep.Hint, stepDir+"/hint.md"),
 		}
@@ -614,7 +618,7 @@ func collectProjectFileIDs(tx *gorm.DB, scenarioID uuid.UUID) []uuid.UUID {
 
 	// Step-level FKs
 	var steps []models.ScenarioStep
-	tx.Select("verify_script_id, background_script_id, foreground_script_id, text_file_id, hint_file_id").
+	tx.Select("verify_script_id, background_script_id, foreground_script_id, catchup_script_id, text_file_id, hint_file_id").
 		Where("scenario_id = ?", scenarioID).Find(&steps)
 	for _, step := range steps {
 		if step.VerifyScriptID != nil {
@@ -625,6 +629,9 @@ func collectProjectFileIDs(tx *gorm.DB, scenarioID uuid.UUID) []uuid.UUID {
 		}
 		if step.ForegroundScriptID != nil {
 			ids = append(ids, *step.ForegroundScriptID)
+		}
+		if step.CatchupScriptID != nil {
+			ids = append(ids, *step.CatchupScriptID)
 		}
 		if step.TextFileID != nil {
 			ids = append(ids, *step.TextFileID)
@@ -728,6 +735,7 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 				Verify:     stepDir + "/verify.sh",
 				Background: stepDir + "/background.sh",
 				Foreground: stepDir + "/foreground.sh",
+				Catchup:    stepDir + "/catchup.sh",
 				Text:       stepDir + "/text.md",
 				Hint:       stepDir + "/hint.md",
 			}
@@ -781,6 +789,23 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 			}
 			if err := tx.Model(&dbStep).Update("foreground_script_id", file.ID).Error; err != nil {
 				return fmt.Errorf("failed to update foreground_script_id: %w", err)
+			}
+		}
+
+		if srcStep.CatchupScript != "" {
+			file := models.ProjectFile{
+				Name:        "catchup.sh",
+				RelPath:     relPaths.Catchup,
+				ContentType: "script",
+				Content:     srcStep.CatchupScript,
+				StorageType: "database",
+				SizeBytes:   int64(len(srcStep.CatchupScript)),
+			}
+			if err := tx.Create(&file).Error; err != nil {
+				return fmt.Errorf("failed to create catchup ProjectFile: %w", err)
+			}
+			if err := tx.Model(&dbStep).Update("catchup_script_id", file.ID).Error; err != nil {
+				return fmt.Errorf("failed to update catchup_script_id: %w", err)
 			}
 		}
 

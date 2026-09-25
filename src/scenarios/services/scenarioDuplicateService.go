@@ -189,6 +189,7 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 				VerifyScript:             srcStep.VerifyScript,
 				BackgroundScript:         srcStep.BackgroundScript,
 				ForegroundScript:         srcStep.ForegroundScript,
+				CatchupScript:            srcStep.CatchupScript,
 				BackgroundTimeoutSeconds: srcStep.BackgroundTimeoutSeconds,
 				BackgroundAsync:          srcStep.BackgroundAsync,
 				IntroEffect:              srcStep.IntroEffect,
@@ -214,6 +215,11 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			if srcStep.ForegroundScriptID != nil {
 				if newID, ok := fileIDMap[*srcStep.ForegroundScriptID]; ok {
 					newStep.ForegroundScriptID = &newID
+				}
+			}
+			if srcStep.CatchupScriptID != nil {
+				if newID, ok := fileIDMap[*srcStep.CatchupScriptID]; ok {
+					newStep.CatchupScriptID = &newID
 				}
 			}
 			if srcStep.TextFileID != nil {
@@ -322,6 +328,9 @@ func collectReferencedFileIDs(scenario *models.Scenario) []uuid.UUID {
 		}
 		if step.ForegroundScriptID != nil {
 			ids = append(ids, *step.ForegroundScriptID)
+		}
+		if step.CatchupScriptID != nil {
+			ids = append(ids, *step.CatchupScriptID)
 		}
 		if step.TextFileID != nil {
 			ids = append(ids, *step.TextFileID)

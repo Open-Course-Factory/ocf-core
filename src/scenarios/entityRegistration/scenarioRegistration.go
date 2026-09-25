@@ -266,6 +266,7 @@ func ScenarioToOutput(model *models.Scenario) dto.ScenarioOutput {
 				VerifyScriptID:     step.VerifyScriptID,
 				BackgroundScriptID: step.BackgroundScriptID,
 				ForegroundScriptID: step.ForegroundScriptID,
+				CatchupScriptID:    step.CatchupScriptID,
 				TextFileID:         step.TextFileID,
 				HintFileID:         step.HintFileID,
 				CreatedAt:          step.CreatedAt,

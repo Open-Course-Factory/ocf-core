@@ -21,7 +21,7 @@ import (
 // Sensitive fields exposed by the leak (issue #293):
 //   - Scenario.SetupScript, SetupScriptID, IntroFileID, FinishFileID
 //   - Step.HintContent, FlagPath, FlagLevel
-//   - Step.VerifyScriptID, BackgroundScriptID, ForegroundScriptID
+//   - Step.VerifyScriptID, BackgroundScriptID, ForegroundScriptID, CatchupScriptID
 //   - Step.TextFileID, HintFileID
 //   - Question.CorrectAnswer, Explanation (entire Questions slice)
 //

@@ -18,6 +18,7 @@ type CreateScenarioStepInput struct {
 	VerifyScript       string     `json:"verify_script,omitempty" mapstructure:"verify_script"`
 	BackgroundScript   string     `json:"background_script,omitempty" mapstructure:"background_script"`
 	ForegroundScript   string     `json:"foreground_script,omitempty" mapstructure:"foreground_script"`
+	CatchupScript      string     `json:"catchup_script,omitempty" mapstructure:"catchup_script"`
 	IntroEffect        string     `json:"intro_effect,omitempty" mapstructure:"intro_effect"`
 	IntroText          string     `json:"intro_text,omitempty" mapstructure:"intro_text" binding:"max=500"`
 	OutroEffect        string     `json:"outro_effect,omitempty" mapstructure:"outro_effect"`
@@ -30,6 +31,7 @@ type CreateScenarioStepInput struct {
 	VerifyScriptID     *uuid.UUID `json:"verify_script_id,omitempty" mapstructure:"verify_script_id"`
 	BackgroundScriptID *uuid.UUID `json:"background_script_id,omitempty" mapstructure:"background_script_id"`
 	ForegroundScriptID *uuid.UUID `json:"foreground_script_id,omitempty" mapstructure:"foreground_script_id"`
+	CatchupScriptID    *uuid.UUID `json:"catchup_script_id,omitempty" mapstructure:"catchup_script_id"`
 	TextFileID         *uuid.UUID `json:"text_file_id,omitempty" mapstructure:"text_file_id"`
 	HintFileID         *uuid.UUID `json:"hint_file_id,omitempty" mapstructure:"hint_file_id"`
 }
@@ -45,6 +47,7 @@ type EditScenarioStepInput struct {
 	VerifyScript       *string    `json:"verify_script,omitempty" mapstructure:"verify_script"`
 	BackgroundScript   *string    `json:"background_script,omitempty" mapstructure:"background_script"`
 	ForegroundScript   *string    `json:"foreground_script,omitempty" mapstructure:"foreground_script"`
+	CatchupScript      *string    `json:"catchup_script,omitempty" mapstructure:"catchup_script"`
 	IntroEffect        *string    `json:"intro_effect,omitempty" mapstructure:"intro_effect"`
 	IntroText          *string    `json:"intro_text,omitempty" mapstructure:"intro_text" binding:"omitempty,max=500"`
 	OutroEffect        *string    `json:"outro_effect,omitempty" mapstructure:"outro_effect"`
@@ -57,6 +60,7 @@ type EditScenarioStepInput struct {
 	VerifyScriptID     *uuid.UUID `json:"verify_script_id,omitempty" mapstructure:"verify_script_id"`
 	BackgroundScriptID *uuid.UUID `json:"background_script_id,omitempty" mapstructure:"background_script_id"`
 	ForegroundScriptID *uuid.UUID `json:"foreground_script_id,omitempty" mapstructure:"foreground_script_id"`
+	CatchupScriptID    *uuid.UUID `json:"catchup_script_id,omitempty" mapstructure:"catchup_script_id"`
 	TextFileID         *uuid.UUID `json:"text_file_id,omitempty" mapstructure:"text_file_id"`
 	HintFileID         *uuid.UUID `json:"hint_file_id,omitempty" mapstructure:"hint_file_id"`
 }
@@ -75,6 +79,7 @@ type ScenarioStepOutput struct {
 	VerifyScript       string     `json:"verify_script,omitempty"`
 	BackgroundScript   string     `json:"background_script,omitempty"`
 	ForegroundScript   string     `json:"foreground_script,omitempty"`
+	CatchupScript      string     `json:"catchup_script,omitempty"`
 	IntroEffect        string     `json:"intro_effect,omitempty"`
 	IntroText          string     `json:"intro_text,omitempty"`
 	OutroEffect        string     `json:"outro_effect,omitempty"`
@@ -87,6 +92,7 @@ type ScenarioStepOutput struct {
 	VerifyScriptID     *uuid.UUID `json:"verify_script_id,omitempty"`
 	BackgroundScriptID *uuid.UUID `json:"background_script_id,omitempty"`
 	ForegroundScriptID *uuid.UUID `json:"foreground_script_id,omitempty"`
+	CatchupScriptID    *uuid.UUID `json:"catchup_script_id,omitempty"`
 	TextFileID         *uuid.UUID `json:"text_file_id,omitempty"`
 	HintFileID         *uuid.UUID `json:"hint_file_id,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`

@@ -1091,6 +1091,7 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 		"(verify_script != '' AND verify_script IS NOT NULL AND verify_script_id IS NULL) OR "+
 			"(background_script != '' AND background_script IS NOT NULL AND background_script_id IS NULL) OR "+
 			"(foreground_script != '' AND foreground_script IS NOT NULL AND foreground_script_id IS NULL) OR "+
+			"(catchup_script != '' AND catchup_script IS NOT NULL AND catchup_script_id IS NULL) OR "+
 			"(text_content != '' AND text_content IS NOT NULL AND text_file_id IS NULL) OR "+
 			"(hint_content != '' AND hint_content IS NOT NULL AND hint_file_id IS NULL)",
 	).Find(&steps)
@@ -1156,6 +1157,23 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 						}
 						if err := tx.Model(&step).Update("foreground_script_id", file.ID).Error; err != nil {
 							return fmt.Errorf("failed to update foreground_script_id for step %s: %w", step.ID, err)
+						}
+					}
+
+					if step.CatchupScript != "" && step.CatchupScriptID == nil {
+						file := scenarioModels.ProjectFile{
+							Name:        "catchup.sh",
+							RelPath:     stepDir + "/catchup.sh",
+							ContentType: "script",
+							Content:     step.CatchupScript,
+							StorageType: "database",
+							SizeBytes:   int64(len(step.CatchupScript)),
+						}
+						if err := tx.Create(&file).Error; err != nil {
+							return fmt.Errorf("failed to create catchup ProjectFile for step %s: %w", step.ID, err)
+						}
+						if err := tx.Model(&step).Update("catchup_script_id", file.ID).Error; err != nil {
+							return fmt.Errorf("failed to update catchup_script_id for step %s: %w", step.ID, err)
 						}
 					}
 

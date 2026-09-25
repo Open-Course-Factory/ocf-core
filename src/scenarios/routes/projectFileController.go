@@ -144,6 +144,9 @@ func (c *projectFileController) GetByScenario(ctx *gin.Context) {
 		if step.ForegroundScriptID != nil {
 			refs = append(refs, fileRef{*step.ForegroundScriptID, prefix + " — foreground_script"})
 		}
+		if step.CatchupScriptID != nil {
+			refs = append(refs, fileRef{*step.CatchupScriptID, prefix + " — catchup_script"})
+		}
 		if step.TextFileID != nil {
 			refs = append(refs, fileRef{*step.TextFileID, prefix + " — text"})
 		}
@@ -277,8 +280,8 @@ func (c *projectFileController) GetUsage(ctx *gin.Context) {
 	c.db.Table("scenario_steps").
 		Select("scenario_steps.*, scenarios.name as scenario_name").
 		Joins("JOIN scenarios ON scenarios.id = scenario_steps.scenario_id").
-		Where("scenario_steps.verify_script_id = ? OR scenario_steps.background_script_id = ? OR scenario_steps.foreground_script_id = ? OR scenario_steps.text_file_id = ? OR scenario_steps.hint_file_id = ?",
-			fileID, fileID, fileID, fileID, fileID).
+		Where("scenario_steps.verify_script_id = ? OR scenario_steps.background_script_id = ? OR scenario_steps.foreground_script_id = ? OR scenario_steps.catchup_script_id = ? OR scenario_steps.text_file_id = ? OR scenario_steps.hint_file_id = ?",
+			fileID, fileID, fileID, fileID, fileID, fileID).
 		Find(&steps)
 
 	for _, s := range steps {
@@ -291,6 +294,9 @@ func (c *projectFileController) GetUsage(ctx *gin.Context) {
 		}
 		if s.ForegroundScriptID != nil && *s.ForegroundScriptID == fileID {
 			refs = append(refs, usageRef{ScenarioID: s.ScenarioID, ScenarioName: s.ScenarioName, StepID: &stepID, StepTitle: s.Title, Field: "foreground_script"})
+		}
+		if s.CatchupScriptID != nil && *s.CatchupScriptID == fileID {
+			refs = append(refs, usageRef{ScenarioID: s.ScenarioID, ScenarioName: s.ScenarioName, StepID: &stepID, StepTitle: s.Title, Field: "catchup_script"})
 		}
 		if s.TextFileID != nil && *s.TextFileID == fileID {
 			refs = append(refs, usageRef{ScenarioID: s.ScenarioID, ScenarioName: s.ScenarioName, StepID: &stepID, StepTitle: s.Title, Field: "text"})

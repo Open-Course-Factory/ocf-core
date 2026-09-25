@@ -124,6 +124,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 			VerifyScript:          ResolveScriptContent(s.db, step.VerifyScriptID, step.VerifyScript),
 			BackgroundScript:      ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript),
 			ForegroundScript:      ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript),
+			CatchupScript:         ResolveScriptContent(s.db, step.CatchupScriptID, step.CatchupScript),
 			IntroEffect:           step.IntroEffect,
 			IntroText:             step.IntroText,
 			OutroEffect:           step.OutroEffect,
@@ -235,6 +236,12 @@ func (s *ScenarioExportService) buildArchive(scenario *models.Scenario) ([]byte,
 				return nil, err
 			}
 		}
+		catchupScript := ResolveScriptContent(s.db, step.CatchupScriptID, step.CatchupScript)
+		if catchupScript != "" {
+			if err := addFileToZip(w, stepDir+"/catchup.sh", []byte(catchupScript)); err != nil {
+				return nil, err
+			}
+		}
 
 		// Write OCF-specific extension data as a sidecar file so KillerCoda
 		// compatibility (index.json schema) is preserved. Only write when
@@ -307,6 +314,10 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		fgScript := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript)
 		if fgScript != "" {
 			kcStep.Foreground = resolveRelPath(s.db, step.ForegroundScriptID, stepDir+"/foreground.sh")
+		}
+		catchupScript := ResolveScriptContent(s.db, step.CatchupScriptID, step.CatchupScript)
+		if catchupScript != "" {
+			kcStep.Catchup = resolveRelPath(s.db, step.CatchupScriptID, stepDir+"/catchup.sh")
 		}
 
 		kcStep.IntroEffect = step.IntroEffect
