@@ -2313,8 +2313,11 @@ const (
 )
 
 // RunResumeMode is the rule itself, expressed once over data every caller
-// already holds. setup_failed is never resumable because the environment it
-// describes is broken, and a session with no terminal — or one whose terminal
+// already holds. Only an open run can be resumed: a completed or abandoned run
+// is over whatever state its terminal is in, and some callers (the learner's
+// session list) hand it every run they have. setup_failed is open but never
+// resumable because the environment it describes is broken, and a session with
+// no terminal — or one whose terminal
 // is gone — has nothing left to return to. Otherwise the terminal decides:
 // alive right now (Terminal.IsLive) is a live resume; still holding its
 // container (Terminal.HoldsContainer — paused, or auto-stopped at its TTL and
@@ -2333,7 +2336,8 @@ const (
 // CleanupZombieScenarioSessions is the SQL complement of this rule for open
 // runs; TestZombieCleanupAgreesWithRunResumeMode keeps the two in step.
 func RunResumeMode(session *models.ScenarioSession, terminal *terminalModels.Terminal, crashTraps bool) ResumeMode {
-	if session.Status == "setup_failed" || session.TerminalSessionID == nil || terminal == nil {
+	if !slices.Contains(models.OpenSessionStatuses, session.Status) ||
+		session.Status == "setup_failed" || session.TerminalSessionID == nil || terminal == nil {
 		return ResumeModeNone
 	}
 	if terminal.IsLive() {
