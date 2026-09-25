@@ -137,6 +137,29 @@ func TestBulkStartScenario_BuildsTheContainerTheScenarioAsked(t *testing.T) {
 			"like the same learner's own launch — an empty mode resolves to ephemeral")
 }
 
+// TestBulkStartScenario_CrashTrapsFollowPlanPersistence verifies that a class
+// launch of a crash-trap scenario follows the plan's persistence like any other
+// scenario, so learners can pause it. Permadeath deletes the container itself
+// when a trap fires; it no longer needs an ephemeral one.
+func TestBulkStartScenario_CrashTrapsFollowPlanPersistence(t *testing.T) {
+	dashSvc, ttMock, scenario, groupID := bulkStartFixture(t, "crashtraps", map[string][]string{
+		"member": {"crashtraps-learner"},
+	})
+	require.NoError(t, sharedTestDB.Model(&models.Scenario{}).
+		Where("id = ?", scenario.ID).Update("crash_traps", true).Error)
+
+	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{
+		Distribution: "Debian", Size: "xs",
+	}, 0, "trainer")
+	require.NoError(t, err)
+	require.Empty(t, result.Errors)
+	require.Len(t, ttMock.capturedInputs, 1)
+
+	assert.Equal(t, "persistent", ttMock.capturedInputs[0].PersistenceMode,
+		"crash_traps must not force ephemeral on a class launch: the plan allows "+
+			"persistence, so the learner's crash-trap run must be pausable")
+}
+
 // TestBulkStartScenario_ClosesTheProvisioningWindow verifies that a class launch
 // gives the build-time features back once setup is done.
 //

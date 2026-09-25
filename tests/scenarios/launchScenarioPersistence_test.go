@@ -328,3 +328,36 @@ func TestLaunchScenario_CrashTrapsFollowPlanPersistence(t *testing.T) {
 		"crash_traps=true must follow the plan: a persistence plan launches "+
 			"persistent so the run can be paused; body=%v", rec.gotBody)
 }
+
+// TestPreviewScenario_CrashTrapsFollowPlanPersistence pins the preview path to
+// the same rule as LaunchScenario: a crash-trap scenario previewed on a plan
+// with DataPersistenceEnabled builds a persistent container. Preview resolves
+// its plan by hand (no InjectEffectivePlan), so it is a separate caller of
+// ResolveScenarioPersistenceMode and needs its own witness.
+func TestPreviewScenario_CrashTrapsFollowPlanPersistence(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "preview-pers-crash-" + uuid.New().String()
+
+	seedPersistencePlan(t, db, userID, true /* DataPersistenceEnabled */)
+	seedPersistenceUserKey(t, db, userID)
+	scenario := seedPersistenceScenario(t, db, userID, true /* crash_traps */)
+
+	ttSrv, rec := newPersistenceTTBackend(t)
+	configureTTServerForPersistence(t, ttSrv.URL)
+
+	router := setupPreviewRouterWithAdminStub(t, db, userID)
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/scenarios/"+scenario.ID.String()+"/preview", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code,
+		"preview of a crash_traps scenario must succeed; got %d. Body: %s",
+		w.Code, w.Body.String())
+	require.Equal(t, 1, rec.calls,
+		"tt-backend /1.0/sessions must be reached exactly once")
+	assert.Equal(t, "persistent", rec.gotBody["persistence_mode"],
+		"a preview of a crash_traps scenario must follow the plan like a "+
+			"launch does; body=%v", rec.gotBody)
+}
