@@ -417,7 +417,7 @@ func TestStopSession_RowDeletedDuringStop_StaysDeleted(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop") {
 			// The row is deleted while tt-backend is still answering the stop.
-			require.NoError(t, db.Model(&models.Terminal{}).
+			assert.NoError(t, db.Model(&models.Terminal{}).
 				Where("session_id = ?", terminal.SessionID).
 				Update("state", models.StateDeleted).Error)
 			w.Header().Set("Content-Type", "application/json")
@@ -430,7 +430,7 @@ func TestStopSession_RowDeletedDuringStop_StaysDeleted(t *testing.T) {
 	configureTTServer(t, srv.URL)
 
 	svc := services.NewTerminalTrainerService(db)
-	_ = svc.StopSession(terminal.SessionID)
+	require.NoError(t, svc.StopSession(terminal.SessionID))
 
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
