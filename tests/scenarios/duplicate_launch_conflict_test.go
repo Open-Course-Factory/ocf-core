@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -270,4 +274,132 @@ func TestMySessionsDoesNotOfferResumeForCompletedRun(t *testing.T) {
 		"a completed run has nothing to resume, even while its terminal is paused")
 	require.Equal(t, false, sessions[0]["resumable"],
 		"the launcher offers Resume from this flag; a completed run must not set it")
+}
+
+// The launch path refuses a resumable run twice: once up front, before any
+// terminal exists, and again inside StartScenario's transaction for the race
+// where a concurrent launch commits in between. When the second refusal fires
+// the terminal was already created for a run that will never exist; left
+// behind, it would hold the learner's budget with nothing attached. The
+// controller must delete it and answer the same typed 409 as the up-front
+// check — and must leave the winning run, here a paused one, untouched.
+func TestLaunchScenario_ConcurrentRunWinsRace_DeletesTheNewTerminal(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "launch-race-" + uuid.New().String()
+	seedPersistencePlan(t, db, userID, true)
+	seedPersistenceUserKey(t, db, userID)
+	scenario := seedPersistenceScenario(t, db, userID, false)
+
+	catalog, _ := newPersistenceTTBackend(t)
+	catalogURL, err := url.Parse(catalog.URL)
+	require.NoError(t, err)
+	forward := httputil.NewSingleHostReverseProxy(catalogURL)
+
+	var (
+		mu         sync.Mutex
+		created    string
+		deleted    []string
+		winnerID   uuid.UUID
+		winnerTerm = "concurrent-winner-terminal"
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/1.0/sessions":
+			// The concurrent launch commits while this one waits on tt-backend:
+			// by the time StartScenario runs, a paused run holds the slot.
+			require.NoError(t, db.Create(&terminalModels.Terminal{
+				SessionID:       winnerTerm,
+				UserID:          userID,
+				State:           terminalModels.StateStopped,
+				PersistenceMode: terminalModels.PersistenceModePersistent,
+				ExpiresAt:       time.Now().Add(30 * time.Minute),
+			}).Error)
+			winner := models.ScenarioSession{
+				ScenarioID:        scenario.ID,
+				UserID:            userID,
+				Status:            "active",
+				StartedAt:         time.Now(),
+				TerminalSessionID: &winnerTerm,
+			}
+			require.NoError(t, db.Create(&winner).Error)
+
+			mu.Lock()
+			winnerID = winner.ID
+			created = "race-loser-" + uuid.New().String()
+			id := created
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			// tt-backend names the new session "id" on the wire.
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":         id,
+				"expires_at": time.Now().Add(time.Hour).Unix(),
+				"backend":    "local",
+				"status":     0,
+			})
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/1.0/sessions/"):
+			mu.Lock()
+			deleted = append(deleted, strings.TrimPrefix(r.URL.Path, "/1.0/sessions/"))
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			forward.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	configureTTServerForPersistence(t, srv.URL)
+
+	router := setupPersistenceRouter(t, db, userID)
+	w := launchScenarioForTest(t, router, scenario.ID)
+
+	require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Equal(t, "session_exists", body["reason"],
+		"the race must answer the same typed conflict as the up-front check")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, created, "the launch must have reached terminal creation for the race to exist")
+	require.Equal(t, []string{created}, deleted,
+		"the terminal created for the refused launch must be deleted in tt-backend, and only that one")
+
+	var loser terminalModels.Terminal
+	require.NoError(t, db.Where("session_id = ?", created).First(&loser).Error)
+	require.Equal(t, terminalModels.StateDeleted, loser.State,
+		"the orphan terminal must leave the budget scope locally too")
+
+	var winner models.ScenarioSession
+	require.NoError(t, db.First(&winner, "id = ?", winnerID).Error)
+	require.Equal(t, "active", winner.Status, "the winning paused run must stay the learner's open run")
+	var runs int64
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("user_id = ? AND scenario_id = ?", userID, scenario.ID).Count(&runs).Error)
+	require.Equal(t, int64(1), runs, "the refused launch must not leave a second run")
+}
+
+// The card's two resume modes are one field; a paused run must not be the only
+// value it has ever been seen to carry. A live run reads "live", so the
+// launcher reattaches instead of first starting a container.
+func TestAvailableScenariosReportLiveRunWithMode(t *testing.T) {
+	db, _, scenario, userID := startScenarioWithLiveTerminal(t, "live-listing")
+
+	router := setupAvailableRouter(db, userID, []string{"admin"})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/scenario-sessions/available", nil)
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var cards []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &cards))
+	var card map[string]any
+	for _, c := range cards {
+		if c["id"] == scenario.ID.String() {
+			card = c
+		}
+	}
+	require.NotNil(t, card, "the scenario must be listed")
+	require.NotEmpty(t, card["active_session_id"])
+	require.Equal(t, "live", card["active_session_resume_mode"])
+	require.Equal(t, "live-terminal", card["active_terminal_session_id"])
 }
