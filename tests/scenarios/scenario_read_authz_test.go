@@ -66,9 +66,11 @@ var stepSensitiveFields = []string{
 	"verify_script",
 	"background_script",
 	"foreground_script",
+	"catchup_script",
 	"verify_script_id",
 	"background_script_id",
 	"foreground_script_id",
+	"catchup_script_id",
 	"text_file_id",
 	"hint_file_id",
 }
@@ -128,6 +130,7 @@ func buildLeakyScenario(t *testing.T, db *gorm.DB, name, creatorID string, orgID
 	verifyScriptID := uuid.New()
 	bgScriptID := uuid.New()
 	fgScriptID := uuid.New()
+	catchupScriptID := uuid.New()
 	textFileID := uuid.New()
 	hintFileID := uuid.New()
 
@@ -155,6 +158,7 @@ func buildLeakyScenario(t *testing.T, db *gorm.DB, name, creatorID string, orgID
 		VerifyScriptID:     &verifyScriptID,
 		BackgroundScriptID: &bgScriptID,
 		ForegroundScriptID: &fgScriptID,
+		CatchupScriptID:    &catchupScriptID,
 		TextFileID:         &textFileID,
 		HintFileID:         &hintFileID,
 	}
@@ -245,7 +249,7 @@ func assertStepHasFullContent(t *testing.T, step map[string]any) {
 	} else {
 		t.Errorf("manager must receive flag_level on step")
 	}
-	for _, f := range []string{"verify_script_id", "background_script_id", "foreground_script_id", "text_file_id", "hint_file_id"} {
+	for _, f := range []string{"verify_script_id", "background_script_id", "foreground_script_id", "catchup_script_id", "text_file_id", "hint_file_id"} {
 		assert.NotNil(t, step[f], "manager must see %s (script/file id)", f)
 	}
 	questions, ok := step["questions"].([]any)

@@ -59,6 +59,7 @@ const (
 	leakVerifyScript     = "SECRET-VERIFY-script: test -f /tmp/flag && grep -q 'OCF{leak}' /tmp/flag"
 	leakBackgroundScript = "SECRET-BG-script-do-not-leak"
 	leakForegroundScript = "SECRET-FG-script-do-not-leak"
+	leakStepCatchup      = "SECRET-CATCHUP-script-do-not-leak"
 )
 
 // setupExtendedReadAuthzTest mounts the scenario route plus its two sibling
@@ -80,6 +81,7 @@ func buildLeakyScenarioWithSetupScript(t *testing.T, db *gorm.DB, name, creatorI
 	verifyScriptID := uuid.New()
 	bgScriptID := uuid.New()
 	fgScriptID := uuid.New()
+	catchupScriptID := uuid.New()
 	textFileID := uuid.New()
 	hintFileID := uuid.New()
 
@@ -108,12 +110,14 @@ func buildLeakyScenarioWithSetupScript(t *testing.T, db *gorm.DB, name, creatorI
 		VerifyScript:       leakVerifyScript,
 		BackgroundScript:   leakBackgroundScript,
 		ForegroundScript:   leakForegroundScript,
+		CatchupScript:      leakStepCatchup,
 		HasFlag:            true,
 		FlagPath:           "/etc/secret/flag.txt",
 		FlagLevel:          3,
 		VerifyScriptID:     &verifyScriptID,
 		BackgroundScriptID: &bgScriptID,
 		ForegroundScriptID: &fgScriptID,
+		CatchupScriptID:    &catchupScriptID,
 		TextFileID:         &textFileID,
 		HintFileID:         &hintFileID,
 	}
@@ -153,6 +157,8 @@ func assertStepBodyHasFullContent(t *testing.T, step map[string]any) {
 		"manager must see background_script body")
 	assert.Equal(t, leakForegroundScript, step["foreground_script"],
 		"manager must see foreground_script body")
+	assert.Equal(t, leakStepCatchup, step["catchup_script"],
+		"manager must see catchup_script body")
 	assert.Equal(t, "/etc/secret/flag.txt", step["flag_path"],
 		"manager must see flag_path")
 	if v, ok := step["flag_level"]; ok {
@@ -164,6 +170,7 @@ func assertStepBodyHasFullContent(t *testing.T, step map[string]any) {
 		"verify_script_id",
 		"background_script_id",
 		"foreground_script_id",
+		"catchup_script_id",
 		"text_file_id",
 		"hint_file_id",
 	} {
