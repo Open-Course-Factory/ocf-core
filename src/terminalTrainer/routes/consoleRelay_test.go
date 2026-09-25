@@ -172,7 +172,11 @@ func assertCloseNotReported(t *testing.T, closeCode int, terminalSessionID, why 
 }
 
 func TestConsoleRelay_DoesNotReportContainerStopSIGTERM(t *testing.T) {
-	// A pause (incus stop) first sends SIGTERM: exit 143 → close code 4143.
+	// Defensive: a learner or a script SIGTERMing the shell gives exit 143 →
+	// close code 4143. A pause does not produce it — Incus's graceful stop
+	// signals init (SIGPWR/halt), not the shell. The realistic pause codes
+	// are 4129 (hang-up) or 4137 (force-kill after the 5 s window), and 4300
+	// once tt-backend closes stopped sessions explicitly (tt#145).
 	assertCloseNotReported(t, 4143, "terminal-pause-sigterm",
 		"(SIGTERM from a container stop) must never be reported as a kill — "+
 			"pausing a crash-trap run would delete it")
@@ -182,4 +186,41 @@ func TestConsoleRelay_DoesNotReportSIGHUP(t *testing.T) {
 	// A dropped console hangs the shell up: exit 129 → close code 4129.
 	assertCloseNotReported(t, 4129, "terminal-hangup-sighup",
 		"(SIGHUP from a hang-up) must never be reported as a kill")
+}
+
+func TestConsoleRelay_DoesNotReportSessionStoppedCode(t *testing.T) {
+	// tt-backend closes the console with 4300 "session_stopped" whenever the
+	// platform stops or deletes the session (tt#145). That is a pause or a
+	// teardown, never a crash: it must reach the browser unchanged so the
+	// front can tell them apart, and it must never end a crash-trap run.
+	reported := make(chan string, 1)
+	services.SetConsoleShellKilledObserver(func(terminalSessionID string) {
+		reported <- terminalSessionID
+	})
+	defer services.SetConsoleShellKilledObserver(nil)
+
+	ttServer := newFakeTerminalTrainer(t, services.ConsoleSessionStoppedCloseCode, "session_stopped")
+	defer ttServer.Close()
+
+	err := runConsoleProxy(t, ttServer, "terminal-session-stopped")
+
+	closeErr, ok := err.(*websocket.CloseError)
+	require.True(t, ok, "expected a close frame, got %v", err)
+	assert.Equal(t, 4300, closeErr.Code)
+	assert.Equal(t, "session_stopped", closeErr.Text)
+
+	select {
+	case got := <-reported:
+		t.Fatalf("close code 4300 (the platform stopped the session) must never be "+
+			"reported as a kill — pausing a crash-trap run would delete it. "+
+			"Got a report for %q", got)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestIsShellKilledCloseCode_SessionStoppedIsNotAKill(t *testing.T) {
+	assert.Equal(t, 4300, services.ConsoleSessionStoppedCloseCode,
+		"must match tt-backend's session_stopped close code (tt#145)")
+	assert.False(t, services.IsShellKilledCloseCode(services.ConsoleSessionStoppedCloseCode),
+		"a platform stop is not a SIGKILLed shell")
 }
