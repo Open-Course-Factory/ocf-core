@@ -620,7 +620,10 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	if startErr != nil {
 		// Whatever refused the run — a concurrent launch that won the race
 		// after the check above, or any other failure — the terminal just
-		// created has no run and would only hold budget.
+		// created has no run and would only hold budget. DeleteSession also
+		// abandons any open run on it, so a run whose transaction committed
+		// before a later step failed is abandoned too — intended: no
+		// half-provisioned run is left resumable.
 		if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
 			slog.Warn("failed to delete the terminal of a failed scenario launch",
 				"terminal_session_id", terminalResp.SessionID, "err", delErr)

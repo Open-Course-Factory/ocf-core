@@ -122,7 +122,7 @@ func isActiveSessionUniqueViolation(err error) bool {
 	if errors.As(err, &pgErr) {
 		return pgErr.Code == pgUniqueViolation && pgErr.ConstraintName == models.UniqueActiveSessionIndex
 	}
-	return strings.Contains(err.Error(), sqliteActiveSessionUniqueViolation)
+	return strings.HasSuffix(err.Error(), sqliteActiveSessionUniqueViolation)
 }
 
 // pgUniqueViolation is PostgreSQL's SQLSTATE for unique_violation.

@@ -16,7 +16,11 @@ import (
 // their setup goroutine died. Runs every 5 minutes.
 func StartScenarioSessionCleanupJob(db *gorm.DB) {
 	terminalService := terminalServices.NewTerminalTrainerService(db)
-	startJob("Scenario session cleanup", 5*time.Minute, func() { sweepScenarioSessions(db, terminalService) })
+	// Started on its own goroutine, unlike the other jobs: its first pass
+	// syncs terminals over HTTP, and startJob runs that pass before returning
+	// — at boot, before the server listens — so a slow tt-backend would hold
+	// the whole API down.
+	go startJob("Scenario session cleanup", 5*time.Minute, func() { sweepScenarioSessions(db, terminalService) })
 }
 
 func sweepScenarioSessions(db *gorm.DB, terminalService terminalServices.TerminalTrainerService) {

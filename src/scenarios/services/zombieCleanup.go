@@ -29,7 +29,8 @@ import (
 // tt-backend, and nothing tells ocf-core unless its owner comes back and
 // triggers a sync. Left alone, its run stayed open forever and held the
 // one-run slot. So before sweeping, syncOwners (when non-nil) is called once
-// with the owners of those terminals; the sync records the pause or the
+// with the owners of those terminals (behind a non-deleted open run, and only
+// owners with an active terminal key — the only ones a sync can serve); the sync records the pause or the
 // deletion, and the sweep below reads the result.
 //
 // Using the live-only rule (RunningDisplayScope) here made Pause end the
@@ -45,7 +46,10 @@ func CleanupZombieScenarioSessions(db *gorm.DB, syncOwners func(userIDs []string
 		var owners []string
 		if err := db.Model(&terminalModels.Terminal{}).
 			Distinct("terminals.user_id").
-			Joins("JOIN scenario_sessions ON scenario_sessions.terminal_session_id = terminals.session_id").
+			Joins("JOIN scenario_sessions ON scenario_sessions.terminal_session_id = terminals.session_id AND scenario_sessions.deleted_at IS NULL").
+			// SyncUserSessions refuses an owner without an active key; asking
+			// anyway would only log the same error every sweep.
+			Joins("JOIN user_terminal_keys ON user_terminal_keys.user_id = terminals.user_id AND user_terminal_keys.is_active = ? AND user_terminal_keys.deleted_at IS NULL", true).
 			Where("scenario_sessions.status IN ?", sweptStatuses).
 			Where("terminals.state = ? AND terminals.persistence_mode = ? AND terminals.expires_at < ?",
 				terminalModels.StateRunning, terminalModels.PersistenceModePersistent, now).
