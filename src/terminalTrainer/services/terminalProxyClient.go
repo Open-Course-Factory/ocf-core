@@ -133,9 +133,15 @@ func (p *terminalProxyClient) deleteSessionInAPI(sessionID, userAPIKey string) e
 	return err
 }
 
-// GetAllSessionsFromAPI récupère toutes les sessions depuis l'API Terminal Trainer
+// GetAllSessionsFromAPI récupère toutes les sessions de la clé depuis l'API
+// Terminal Trainer, en un seul appel : tt-backend liste par clé API, quel que
+// soit le type d'instance du chemin. Interroger un chemin par type d'instance
+// de l'historique échouait (404) dès qu'une distribution était retirée.
+//
+// La liste est complète ou c'est une erreur, jamais une liste partielle :
+// SyncUserSessions la traite comme la vérité sur les conteneurs existants et
+// marque deleted toute ligne locale absente.
 func (p *terminalProxyClient) GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error) {
-	// Utiliser le type d'instance par défaut configuré pour récupérer toutes les sessions
 	path := p.buildAPIPath("/sessions", "")
 	url := fmt.Sprintf("%s%s?include_expired=true&limit=1000", p.baseURL, path)
 
@@ -177,72 +183,6 @@ func (p *terminalProxyClient) GetSessionInfoFromAPI(sessionID string) (*dto.Term
 	}
 
 	return &sessionInfo, nil
-}
-
-// getAllSessionsFromAllInstanceTypes récupère les sessions de tous les types d'instances utilisés par l'utilisateur.
-//
-// La liste renvoyée est complète ou c'est une erreur, jamais une liste
-// partielle : SyncUserSessions la traite comme la vérité sur les conteneurs
-// existants et marque deleted toute ligne locale absente. Une liste amputée
-// d'un type d'instance injoignable (ou de tous, tt-backend en panne)
-// supprimait donc des terminaux vivants et, par le cron zombie, abandonnait
-// leurs runs de scénario.
-func (p *terminalProxyClient) getAllSessionsFromAllInstanceTypes(userAPIKey, userID string) (*dto.TerminalTrainerSessionsResponse, error) {
-	// 1. Récupérer toutes les sessions locales de l'utilisateur pour connaître les types d'instances utilisés.
-	// Sans elles, on ne saurait pas quels types interroger : la liste serait partielle.
-	localSessions, err := p.repository.GetTerminalSessionsByUserID(userID, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list local sessions to know which instance types to query: %w", err)
-	}
-
-	// 2. Créer un set des types d'instances utilisés (incluant le type par défaut)
-	instanceTypesUsed := make(map[string]bool)
-	instanceTypesUsed[""] = true // Toujours inclure le type par défaut
-
-	for _, session := range *localSessions {
-		if session.InstanceType != "" {
-			instanceTypesUsed[session.InstanceType] = true
-		}
-	}
-
-	// 3. Récupérer les sessions depuis chaque type d'instance utilisé
-	allSessions := make([]dto.TerminalTrainerSession, 0, len(instanceTypesUsed)*10)
-	totalCount := 0
-
-	for instanceType := range instanceTypesUsed {
-		apiResponse, err := p.getSessionsFromInstanceType(userAPIKey, instanceType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get sessions from instance type '%s': %w", instanceType, err)
-		}
-		allSessions = append(allSessions, apiResponse.Sessions...)
-		totalCount += apiResponse.Count
-	}
-
-	// 4. Retourner une réponse combinée
-	return &dto.TerminalTrainerSessionsResponse{
-		Sessions:       allSessions,
-		Count:          totalCount,
-		APIKeyID:       0, // Valeur par défaut car on combine plusieurs réponses
-		IncludeExpired: true,
-		Limit:          1000,
-	}, nil
-}
-
-// getSessionsFromInstanceType récupère les sessions d'un type d'instance spécifique
-func (p *terminalProxyClient) getSessionsFromInstanceType(userAPIKey, instanceType string) (*dto.TerminalTrainerSessionsResponse, error) {
-	path := p.buildAPIPath("/sessions", instanceType)
-	url := fmt.Sprintf("%s%s?include_expired=true&limit=1000", p.baseURL, path)
-
-	var sessionsResp dto.TerminalTrainerSessionsResponse
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionsResp, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return &sessionsResp, nil
 }
 
 // GetServerMetrics récupère les métriques du serveur Terminal Trainer

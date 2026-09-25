@@ -133,8 +133,10 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 		return nil, fmt.Errorf("user terminal trainer key is disabled")
 	}
 
-	// 2. Récupérer TOUTES les sessions depuis l'API Terminal Trainer pour tous les types d'instances
-	apiSessions, err := s.proxy.getAllSessionsFromAllInstanceTypes(userKey.APIKey, userID)
+	// 2. Récupérer TOUTES les sessions de la clé depuis l'API Terminal Trainer.
+	// En cas d'erreur on s'arrête ici : une liste qu'on n'a pas pu obtenir ne
+	// prouve rien sur les lignes locales, qui ne doivent pas être marquées deleted.
+	apiSessions, err := s.proxy.GetAllSessionsFromAPI(userKey.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sessions from Terminal Trainer API: %w", err)
 	}
