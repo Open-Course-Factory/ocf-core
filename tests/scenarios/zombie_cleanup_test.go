@@ -102,7 +102,7 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 	require.NoError(t, db.Create(&sessionActive).Error)
 
 	// Run cleanup
-	count, err := services.CleanupZombieScenarioSessions(db, nil)
+	count, err := services.CleanupZombieScenarioSessions(db)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count, "should abandon exactly 2 zombie sessions")
 
@@ -160,7 +160,7 @@ func TestCleanupZombieScenarioSessions_HandlesInProgressStatus(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&sessionIP).Error)
 
-	count, err := services.CleanupZombieScenarioSessions(db, nil)
+	count, err := services.CleanupZombieScenarioSessions(db)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "should abandon in_progress session with expired terminal")
 
@@ -212,7 +212,7 @@ func TestCleanupZombieScenarioSessions_IgnoresCompletedSessions(t *testing.T) {
 	require.NoError(t, db.Create(&completedSession).Error)
 
 	// Run cleanup
-	count, err := services.CleanupZombieScenarioSessions(db, nil)
+	count, err := services.CleanupZombieScenarioSessions(db)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count, "should not touch completed sessions")
 
@@ -351,7 +351,7 @@ func TestCleanupZombieScenarioSessions_AbandonsRunOnExpiredButRunningTerminal(t 
 	}
 	require.NoError(t, db.Create(&session).Error)
 
-	count, err := services.CleanupZombieScenarioSessions(db, nil)
+	count, err := services.CleanupZombieScenarioSessions(db)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 
@@ -368,8 +368,8 @@ func seedOpenRunWithTerminal(t *testing.T, db *gorm.DB, userID, terminalSessionI
 	t.Helper()
 
 	scenario := models.Scenario{
-		Name:         "run-" + userID,
-		Title:        "Run " + userID,
+		Name:         "run-" + terminalSessionID,
+		Title:        "Run " + terminalSessionID,
 		InstanceType: "ubuntu:22.04",
 		CreatedByID:  "creator-1",
 	}
@@ -411,7 +411,7 @@ func TestCleanupZombieScenarioSessions_SparesPausedRun(t *testing.T) {
 	session, _ := seedOpenRunWithTerminal(t, db, "student-paused", "terminal-paused",
 		terminalModels.StateStopped, time.Hour, "persistent", "active")
 
-	count, err := services.CleanupZombieScenarioSessions(db, nil)
+	count, err := services.CleanupZombieScenarioSessions(db)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Equal(t, "active", sessionStatus(t, db, session.ID),
@@ -428,7 +428,7 @@ func TestCleanupZombieScenarioSessions_SparesTTLStoppedPersistentRun(t *testing.
 	session, _ := seedOpenRunWithTerminal(t, db, "student-ttl-persistent", "terminal-ttl-persistent",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
 
-	count, err := services.CleanupZombieScenarioSessions(db, nil)
+	count, err := services.CleanupZombieScenarioSessions(db)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Equal(t, "in_progress", sessionStatus(t, db, session.ID),
@@ -482,7 +482,7 @@ func TestZombieCleanupAgreesWithRunResumeMode(t *testing.T) {
 	wantAbandoned := make(map[string]bool, len(all))
 	paused := 0
 	for i := range all {
-		mode := services.RunResumeMode(&all[i].session, all[i].terminal, false)
+		mode := services.RunResumeMode(&all[i].session, all[i].terminal)
 		wantAbandoned[all[i].session.ID.String()] = mode == services.ResumeModeNone
 		if mode == services.ResumeModePaused {
 			paused++
@@ -492,7 +492,7 @@ func TestZombieCleanupAgreesWithRunResumeMode(t *testing.T) {
 	// Without paused rows the matrix would only re-check the live rule.
 	require.Equal(t, 6, paused, "RunResumeMode must report the paused rows of the matrix as paused")
 
-	_, err := services.CleanupZombieScenarioSessions(db, nil)
+	_, err := services.CleanupZombieScenarioSessions(db)
 	require.NoError(t, err)
 
 	for i := range all {
@@ -509,11 +509,10 @@ func TestZombieCleanupAgreesWithRunResumeMode(t *testing.T) {
 // and nothing tells ocf-core unless the learner comes back and triggers a
 // sync — so the run stayed open forever, holding the one-run slot.
 //
-// The cron therefore syncs the owners of exactly those terminals, through
-// the one sync there is (SyncUserSessions), before it sweeps. The seam is the
-// syncOwners argument: CleanupZombieScenarioSessions(db, syncOwners), called
-// once with the owners to sync; nil syncs nobody.
-func runZombieCleanupAfterSync(t *testing.T, reportTargetsAs string) (*gorm.DB, []string, map[string]models.ScenarioSession) {
+// The cron therefore asks OwnersToSyncBeforeSweep for the owners of exactly
+// those terminals, syncs each through the one sync there is
+// (SyncUserSessions), then sweeps. syncThenSweep does the same.
+func runZombieCleanupAfterSync(t *testing.T, reportTargetsAs string) (*gorm.DB, map[string]models.ScenarioSession) {
 	t.Helper()
 	db := freshTestDB(t)
 
@@ -564,23 +563,32 @@ func runZombieCleanupAfterSync(t *testing.T, reportTargetsAs string) (*gorm.DB, 
 	seed("owner-ephemeral-dead", "terminal-ephemeral-dead", terminalModels.StateRunning, -30*time.Minute, "ephemeral", "active")
 
 	svc := terminalServices.NewTerminalTrainerService(db)
-	var synced []string
-	_, err := services.CleanupZombieScenarioSessions(db, func(userIDs []string) {
-		synced = append(synced, userIDs...)
-		for _, id := range userIDs {
-			_, syncErr := svc.SyncUserSessions(id)
-			assert.NoError(t, syncErr, "sync of %s", id)
-		}
+	synced := syncThenSweep(t, db, func(userID string) {
+		_, syncErr := svc.SyncUserSessions(userID)
+		assert.NoError(t, syncErr, "sync of %s", userID)
 	})
-	require.NoError(t, err)
 
 	assert.ElementsMatch(t, []string{"owner-ttl-active", "owner-ttl-in-progress"}, synced,
 		"only owners of running+persistent+past-expiry terminals behind active/in_progress runs are synced, each once")
-	return db, synced, runs
+	return db, runs
+}
+
+// syncThenSweep is the cron's pass: the owners OwnersToSyncBeforeSweep names
+// are synced one by one, then the sweep runs. It returns those owners.
+func syncThenSweep(t *testing.T, db *gorm.DB, sync func(userID string)) []string {
+	t.Helper()
+	owners, err := services.OwnersToSyncBeforeSweep(db)
+	require.NoError(t, err)
+	for _, userID := range owners {
+		sync(userID)
+	}
+	_, err = services.CleanupZombieScenarioSessions(db)
+	require.NoError(t, err)
+	return owners
 }
 
 func TestCleanupZombieScenarioSessions_SyncsStaleTTLStoppedTerminalsFirst(t *testing.T) {
-	db, _, runs := runZombieCleanupAfterSync(t, "gone")
+	db, runs := runZombieCleanupAfterSync(t, "gone")
 
 	for _, terminalID := range []string{"terminal-ttl-active", "terminal-ttl-in-progress"} {
 		var terminal terminalModels.Terminal
@@ -596,7 +604,7 @@ func TestCleanupZombieScenarioSessions_SyncsStaleTTLStoppedTerminalsFirst(t *tes
 }
 
 func TestCleanupZombieScenarioSessions_SyncKeepsRunWhoseContainerIsStillKept(t *testing.T) {
-	db, _, runs := runZombieCleanupAfterSync(t, "stopped")
+	db, runs := runZombieCleanupAfterSync(t, "stopped")
 
 	for _, terminalID := range []string{"terminal-ttl-active", "terminal-ttl-in-progress"} {
 		var terminal terminalModels.Terminal
@@ -626,24 +634,13 @@ func TestCleanupZombieScenarioSessions_TTBackendDown_AbandonsNothing(t *testing.
 	seedPersistenceUserKey(t, db, owner)
 	staleRun, _ := seedOpenRunWithTerminal(t, db, owner, "terminal-outage-stale",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
-	liveRun, _ := seedOpenRunWithTerminal(t, db, owner+"-2", "terminal-outage-live",
+	liveRun, _ := seedOpenRunWithTerminal(t, db, owner, "terminal-outage-live",
 		terminalModels.StateRunning, time.Hour, "persistent", "active")
-	// seedOpenRunWithTerminal names the scenario after its user id; the live
-	// run belongs to the same learner as the stale one.
-	require.NoError(t, db.Model(&terminalModels.Terminal{}).Where("session_id = ?", "terminal-outage-live").
-		Update("user_id", owner).Error)
-	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", liveRun.ID).
-		Update("user_id", owner).Error)
 
 	svc := terminalServices.NewTerminalTrainerService(db)
-	var synced []string
-	_, err := services.CleanupZombieScenarioSessions(db, func(userIDs []string) {
-		synced = append(synced, userIDs...)
-		for _, id := range userIDs {
-			_, _ = svc.SyncUserSessions(id) // the cron logs a failed sync and carries on
-		}
+	synced := syncThenSweep(t, db, func(userID string) {
+		_, _ = svc.SyncUserSessions(userID) // the cron logs a failed sync and carries on
 	})
-	require.NoError(t, err)
 	require.Equal(t, []string{owner}, synced, "the stale terminal's owner is synced — the outage is what this test is about")
 
 	for _, id := range []string{"terminal-outage-stale", "terminal-outage-live"} {
@@ -654,17 +651,6 @@ func TestCleanupZombieScenarioSessions_TTBackendDown_AbandonsNothing(t *testing.
 	}
 	assert.Equal(t, "active", sessionStatus(t, db, staleRun.ID), "the stale run must wait for a sync that succeeds")
 	assert.Equal(t, "active", sessionStatus(t, db, liveRun.ID), "the live run must survive a tt-backend outage")
-}
-
-// syncedOwners runs the sweep with a recording sync and returns who it asked for.
-func syncedOwners(t *testing.T, db *gorm.DB) []string {
-	t.Helper()
-	var synced []string
-	_, err := services.CleanupZombieScenarioSessions(db, func(userIDs []string) {
-		synced = append(synced, userIDs...)
-	})
-	require.NoError(t, err)
-	return synced
 }
 
 // SyncUserSessions refuses an owner without an active terminal key, so asking
@@ -687,7 +673,7 @@ func TestCleanupZombieScenarioSessions_SkipsOwnersWithoutActiveKey(t *testing.T)
 	inactiveKeyRun, _ := seedOpenRunWithTerminal(t, db, "owner-inactive-key", "terminal-inactive-key",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
 
-	synced := syncedOwners(t, db)
+	synced := syncThenSweep(t, db, func(string) {})
 
 	assert.Equal(t, []string{"owner-with-key"}, synced,
 		"only owners with an active terminal key can be synced")
@@ -709,6 +695,8 @@ func TestCleanupZombieScenarioSessions_SkipsOwnersOfSoftDeletedRuns(t *testing.T
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
 	require.NoError(t, db.Delete(&deletedRun).Error)
 
-	assert.Equal(t, []string{"owner-open-run"}, syncedOwners(t, db),
+	owners, err := services.OwnersToSyncBeforeSweep(db)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"owner-open-run"}, owners,
 		"a soft-deleted run must not make its owner eligible for a sync")
 }

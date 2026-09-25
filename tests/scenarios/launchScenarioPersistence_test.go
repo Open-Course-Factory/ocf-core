@@ -30,6 +30,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,16 +52,25 @@ import (
 
 // persistenceRecorder captures the JSON body of the POST /1.0/sessions
 // request so the test can assert on the persistence_mode field
-// LaunchScenario forwarded downstream.
+// LaunchScenario forwarded downstream, plus the session it created and every
+// session deleted, so a test can check a refused launch leaves no terminal.
+//
+// onCreate, when set, runs as POST /1.0/sessions arrives — the moment a
+// concurrent launch can slip in — and may return the session id to hand back
+// ("" for a fresh one). It runs on the server goroutine: assert, not require.
 type persistenceRecorder struct {
-	gotBody map[string]any
-	calls   int
+	mu       sync.Mutex
+	gotBody  map[string]any
+	calls    int
+	onCreate func() string
+	created  string
+	deleted  []string
 }
 
 // newPersistenceTTBackend stands up a fake tt-backend wired for the full
 // LaunchScenario flow: distributions/sizes/features for resolution,
-// /terms for the terms call, /metrics for capacity, and /sessions to
-// record the persistence_mode the controller posted.
+// /terms for the terms call, /metrics for capacity, POST /sessions to
+// record the persistence_mode the controller posted, and DELETE /sessions/{id}.
 func newPersistenceTTBackend(t *testing.T) (*httptest.Server, *persistenceRecorder) {
 	t.Helper()
 	rec := &persistenceRecorder{}
@@ -101,18 +112,36 @@ func newPersistenceTTBackend(t *testing.T) (*httptest.Server, *persistenceRecord
 				"hash":  "deadbeef",
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/1.0/sessions":
-			rec.calls++
 			body, _ := io.ReadAll(r.Body)
 			parsed := map[string]any{}
 			_ = json.Unmarshal(body, &parsed)
+			rec.mu.Lock()
+			rec.calls++
 			rec.gotBody = parsed
+			id := ""
+			if rec.onCreate != nil {
+				id = rec.onCreate()
+			}
+			if id == "" {
+				id = "fake-sess-" + uuid.New().String()
+			}
+			rec.created = id
+			rec.mu.Unlock()
+			// tt-backend returns the new session as "id" (api_compose_session.go),
+			// which is what TerminalTrainerSessionResponse.SessionID reads.
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"session_id": "fake-sess-" + uuid.New().String(),
+				"id":         id,
 				"expires_at": time.Now().Add(time.Hour).Unix(),
 				"backend":    "local",
 				"status":     0,
 			})
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/1.0/sessions/"):
+			rec.mu.Lock()
+			rec.deleted = append(rec.deleted, strings.TrimPrefix(r.URL.Path, "/1.0/sessions/"))
+			rec.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
 		default:
 			http.Error(w, "unexpected: "+r.Method+" "+r.URL.Path, http.StatusNotFound)
 		}

@@ -168,21 +168,7 @@ func TestResumableSessionsReportPausedRunWithMode(t *testing.T) {
 
 	// The catalogue card is where the learner meets it: it must name the run
 	// and say it is paused, from the same evaluation.
-	router := setupAvailableRouter(db, userID, []string{"admin"})
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/api/v1/scenario-sessions/available", nil)
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-
-	var cards []map[string]any
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &cards))
-	var card map[string]any
-	for _, c := range cards {
-		if c["id"] == scenario.ID.String() {
-			card = c
-		}
-	}
-	require.NotNil(t, card, "the scenario must be listed")
+	card := availableCard(t, db, userID, scenario.ID)
 	require.Equal(t, paused.ID.String(), card["active_session_id"])
 	require.Equal(t, "paused", card["active_session_resume_mode"],
 		"the card must say the run is paused so it can offer 'resume at step N' rather than a plain relaunch")
@@ -230,7 +216,7 @@ func TestRunResumeMode_FinishedRunIsNeverResumable(t *testing.T) {
 		for name, terminal := range terminals {
 			t.Run(status+"/"+name, func(t *testing.T) {
 				session := &models.ScenarioSession{Status: status, TerminalSessionID: &terminalSessionID}
-				require.Equal(t, services.ResumeModeNone, services.RunResumeMode(session, terminal, false),
+				require.Equal(t, services.ResumeModeNone, services.RunResumeMode(session, terminal),
 					"a run with status %s is over; its %s terminal must not make it resumable", status, name)
 			})
 		}
@@ -243,7 +229,7 @@ func TestRunResumeMode_FinishedRunIsNeverResumable(t *testing.T) {
 	for _, status := range []string{"active", "in_progress", "provisioning"} {
 		t.Run(status+"/paused", func(t *testing.T) {
 			session := &models.ScenarioSession{Status: status, TerminalSessionID: &terminalSessionID}
-			require.Equal(t, services.ResumeModePaused, services.RunResumeMode(session, paused, false))
+			require.Equal(t, services.ResumeModePaused, services.RunResumeMode(session, paused))
 		})
 	}
 }
@@ -283,7 +269,9 @@ func TestLaunchScenario_ConcurrentRunWinsRace_DeletesTheNewTerminal(t *testing.T
 	db, userID, scenario := seedLaunchableScenario(t, "launch-race")
 
 	winnerTerm := "concurrent-winner-terminal"
-	tt := newCleanupTTBackend(t, func() string {
+	ttSrv, rec := newPersistenceTTBackend(t)
+	configureTTServerForPersistence(t, ttSrv.URL)
+	rec.onCreate = func() string {
 		// The concurrent launch commits while this one waits on tt-backend:
 		// by the time StartScenario runs, a paused run holds the slot.
 		assert.NoError(t, db.Create(&terminalModels.Terminal{
@@ -302,7 +290,7 @@ func TestLaunchScenario_ConcurrentRunWinsRace_DeletesTheNewTerminal(t *testing.T
 		}
 		assert.NoError(t, db.Create(&winner).Error)
 		return ""
-	})
+	}
 
 	w := launchScenarioForTest(t, setupPersistenceRouter(t, db, userID), scenario.ID)
 
@@ -311,7 +299,7 @@ func TestLaunchScenario_ConcurrentRunWinsRace_DeletesTheNewTerminal(t *testing.T
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Equal(t, "session_exists", body["reason"],
 		"the race must answer the same typed conflict as the up-front check")
-	tt.assertNewTerminalDeleted(t, db)
+	rec.assertNewTerminalDeleted(t, db)
 
 	var winner models.ScenarioSession
 	require.NoError(t, db.First(&winner, "terminal_session_id = ?", winnerTerm).Error)
@@ -328,6 +316,16 @@ func TestLaunchScenario_ConcurrentRunWinsRace_DeletesTheNewTerminal(t *testing.T
 func TestAvailableScenariosReportLiveRunWithMode(t *testing.T) {
 	db, _, scenario, userID := startScenarioWithLiveTerminal(t, "live-listing")
 
+	card := availableCard(t, db, userID, scenario.ID)
+	require.NotEmpty(t, card["active_session_id"])
+	require.Equal(t, "live", card["active_session_resume_mode"])
+	require.Equal(t, "live-terminal", card["active_terminal_session_id"])
+}
+
+// availableCard fetches the launcher's catalogue as userID and returns the
+// card for scenarioID.
+func availableCard(t *testing.T, db *gorm.DB, userID string, scenarioID uuid.UUID) map[string]any {
+	t.Helper()
 	router := setupAvailableRouter(db, userID, []string{"admin"})
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/api/v1/scenario-sessions/available", nil)
@@ -336,14 +334,11 @@ func TestAvailableScenariosReportLiveRunWithMode(t *testing.T) {
 
 	var cards []map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &cards))
-	var card map[string]any
 	for _, c := range cards {
-		if c["id"] == scenario.ID.String() {
-			card = c
+		if c["id"] == scenarioID.String() {
+			return c
 		}
 	}
-	require.NotNil(t, card, "the scenario must be listed")
-	require.NotEmpty(t, card["active_session_id"])
-	require.Equal(t, "live", card["active_session_resume_mode"])
-	require.Equal(t, "live-terminal", card["active_terminal_session_id"])
+	require.FailNow(t, "the scenario must be listed")
+	return nil
 }
