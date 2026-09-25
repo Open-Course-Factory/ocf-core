@@ -93,8 +93,9 @@ func emptySessionsListTTServer(t *testing.T) *httptest.Server {
 
 // sessionListContainingTTServer returns a /sessions response that includes
 // the given session (so SyncUserSessions sees the local row mirrored in the API).
-// It accepts both /1.0/sessions and /1.0/{instance_type}/sessions paths
-// because getAllSessionsFromAllInstanceTypes iterates every type seen locally.
+// The sync makes a single listing call (GetAllSessionsFromAPI) on
+// /1.0/sessions; matching any path ending in /sessions also accepts the
+// /1.0/{type}/sessions form that path takes when TERMINAL_TRAINER_TYPE is set.
 func sessionListContainingTTServer(t *testing.T, sessionID, apiState string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
