@@ -21,6 +21,10 @@ const ConsoleShellKilledCloseCode = 4137
 // idle timeout, container stop) 4143. Widening this to `code >= 4000` — or
 // adding SIGTERM because it looks like a sibling — would end a learner's run
 // every time they exit their own shell or their session simply times out.
+//
+// Even 4137 is not proof of a crash trap: a container stop that outlasts its
+// 5 s graceful window is force-killed and ends the shell the same way. The
+// observer tells the two apart (see EndCrashTrapRun).
 func IsShellKilledCloseCode(closeCode int) bool {
 	return closeCode == ConsoleShellKilledCloseCode
 }

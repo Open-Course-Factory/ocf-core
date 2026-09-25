@@ -129,6 +129,15 @@ func requireActiveSession(session *models.ScenarioSession) error {
 // TerminalStopFunc is a callback to stop a terminal session (injected from controller layer)
 type TerminalStopFunc func(terminalSessionID string) error
 
+// TerminalDeleteFunc is a callback to delete a terminal session and its
+// container (injected from the controller layer, same reason as
+// TerminalStopFunc: no import cycle).
+type TerminalDeleteFunc func(terminalSessionID string) error
+
+// TerminalInstanceRunningFunc asks tt-backend whether a terminal's container is
+// actually running. An error means the answer is unknown.
+type TerminalInstanceRunningFunc func(terminalSessionID string) (bool, error)
+
 // TerminalBuildCompleteFunc is a callback that ends a session's provisioning
 // window, removing the features it held only to be built (injected from the
 // controller layer, same reason as TerminalStopFunc: no import cycle).
@@ -140,6 +149,8 @@ type ScenarioSessionService struct {
 	flagService         FlagServiceInterface
 	verificationService VerificationServiceInterface
 	stopTerminal        TerminalStopFunc
+	deleteTerminal      TerminalDeleteFunc
+	instanceRunning     TerminalInstanceRunningFunc
 	buildComplete       TerminalBuildCompleteFunc
 }
 
@@ -155,6 +166,18 @@ func NewScenarioSessionService(db *gorm.DB, flagService FlagServiceInterface, ve
 // SetTerminalStopFunc sets the callback used to stop terminal sessions on failure
 func (s *ScenarioSessionService) SetTerminalStopFunc(fn TerminalStopFunc) {
 	s.stopTerminal = fn
+}
+
+// SetTerminalDeleteFunc sets the callback used to delete a terminal's container
+// when a crash trap ends the run.
+func (s *ScenarioSessionService) SetTerminalDeleteFunc(fn TerminalDeleteFunc) {
+	s.deleteTerminal = fn
+}
+
+// SetTerminalInstanceRunningFunc sets the callback permadeath uses to confirm
+// the container is still running before it ends a run.
+func (s *ScenarioSessionService) SetTerminalInstanceRunningFunc(fn TerminalInstanceRunningFunc) {
+	s.instanceRunning = fn
 }
 
 // SetTerminalBuildCompleteFunc sets the callback that takes away the features a
@@ -1788,7 +1811,20 @@ func (s *ScenarioSessionService) FindSessionByTerminal(terminalSessionID string)
 
 // EndCrashTrapRun applies permadeath: the learner's shell was SIGKILLed, so if
 // it was running a crash_traps scenario the run is over — the session is
-// abandoned and the container stopped.
+// abandoned and the container deleted.
+//
+// A SIGKILL is not always a crash trap. Crash-trap runs follow the plan's
+// persistence, so they can be paused, and tt-backend's stop tries a graceful
+// shutdown for 5 s and then force-kills: the console shell then exits with 137
+// too (close code 4137). The two are told apart by the container itself — a
+// real trap (`kill -9 -1`) spares PID 1 and leaves the container running, a
+// stop does not. So the run only ends when tt-backend confirms the container is
+// running; a stopped instance, an unknown answer or an unwired check all keep
+// the run open, because deleting is irreversible and a false permadeath would
+// destroy the learner's work for good.
+//
+// The container is deleted rather than stopped: a stopped persistent container
+// is resumable, which would bring a dead run back.
 //
 // Only crash_traps scenarios arm this. Anywhere else (an ordinary scenario, or
 // a terminal with no scenario session at all) a killed shell stays the
@@ -1818,6 +1854,10 @@ func (s *ScenarioSessionService) EndCrashTrapRun(terminalSessionID string) {
 		return
 	}
 
+	if !s.confirmInstanceRunning(terminalSessionID, session.ID) {
+		return
+	}
+
 	if err := s.AbandonSession(session.ID); err != nil {
 		// AbandonSession only matches active/provisioning rows, so this is the
 		// ordinary outcome for a run that had already ended.
@@ -1825,10 +1865,46 @@ func (s *ScenarioSessionService) EndCrashTrapRun(terminalSessionID string) {
 			"session_id", session.ID, "status", session.Status)
 		return
 	}
-	s.tryStopTerminal(terminalSessionID, session.ID)
+	s.tryDeleteTerminal(terminalSessionID, session.ID)
 	slog.Info("crash trap ended the run: the learner's shell was killed",
 		"session_id", session.ID, "scenario_id", session.ScenarioID,
 		"terminal_session_id", terminalSessionID)
+}
+
+// confirmInstanceRunning reports whether tt-backend confirms the terminal's
+// container is running. Anything short of a confirmed yes is logged and
+// treated as no.
+func (s *ScenarioSessionService) confirmInstanceRunning(terminalSessionID string, sessionID uuid.UUID) bool {
+	if s.instanceRunning == nil {
+		slog.Warn("crash-trap kill ignored: no liveness check wired",
+			"session_id", sessionID, "terminal_session_id", terminalSessionID)
+		return false
+	}
+	running, err := s.instanceRunning(terminalSessionID)
+	if err != nil {
+		slog.Warn("crash-trap kill ignored: could not confirm the container is running",
+			"session_id", sessionID, "terminal_session_id", terminalSessionID, "err", err)
+		return false
+	}
+	if !running {
+		slog.Info("crash-trap kill ignored: the container is not running, so this was a stop",
+			"session_id", sessionID, "terminal_session_id", terminalSessionID)
+		return false
+	}
+	return true
+}
+
+// tryDeleteTerminal deletes the linked terminal session (best-effort, logs on failure)
+func (s *ScenarioSessionService) tryDeleteTerminal(terminalSessionID string, sessionID uuid.UUID) {
+	if s.deleteTerminal == nil {
+		slog.Error("crash trap ended the run but no delete callback is wired — container left running",
+			"terminal_session_id", terminalSessionID, "session_id", sessionID)
+		return
+	}
+	if err := s.deleteTerminal(terminalSessionID); err != nil {
+		slog.Error("failed to delete terminal after a crash trap — container may be orphaned",
+			"terminal_session_id", terminalSessionID, "session_id", sessionID, "err", err)
+	}
 }
 
 // RevealHint reveals a progressive hint for a given step in a session.

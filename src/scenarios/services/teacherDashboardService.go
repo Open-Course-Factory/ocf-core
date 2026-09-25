@@ -687,9 +687,8 @@ func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID st
 		// RecordingEnabled: recording is always on (RGPD Art. 6.1.f — legitimate interest)
 		RecordingEnabled: 1,
 		// Persistence: SSOT lives in ResolveScenarioPersistenceMode, shared
-		// with the single-learner launch (crash_traps → ephemeral, otherwise
-		// whatever the plan allows).
-		PersistenceMode: ttServices.ResolveScenarioPersistenceMode(run.scenario.CrashTraps, planResult.Plan),
+		// with the single-learner launch (whatever the plan allows).
+		PersistenceMode: ttServices.ResolveScenarioPersistenceMode(planResult.Plan),
 	}
 
 	terminalResp, termErr := s.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)

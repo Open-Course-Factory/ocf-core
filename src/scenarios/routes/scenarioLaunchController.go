@@ -572,9 +572,9 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	if orgID != nil {
 		composedInput.OrganizationID = orgID.String()
 	}
-	// Persistence: SSOT lives in ResolveScenarioPersistenceMode (crash_traps →
-	// ephemeral; plan-allows-persistence → persistent; else empty default).
-	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(scenario.CrashTraps, plan)
+	// Persistence: SSOT lives in ResolveScenarioPersistenceMode
+	// (plan-allows-persistence → persistent; else empty default).
+	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(plan)
 
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, plan)
 	if termErr != nil {
@@ -805,7 +805,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		composedInput.OrganizationID = scenario.OrganizationID.String()
 	}
 	// Persistence: SSOT lives in ResolveScenarioPersistenceMode (shared with LaunchScenario).
-	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(scenario.CrashTraps, planResult.Plan)
+	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(planResult.Plan)
 
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
 	if termErr != nil {

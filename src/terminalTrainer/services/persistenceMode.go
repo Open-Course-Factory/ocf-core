@@ -52,33 +52,22 @@ func resolvePersistenceMode(requested string, plan *paymentModels.SubscriptionPl
 	}
 }
 
-// ScenarioForcesEphemeral reports whether a scenario must run in ephemeral
-// mode regardless of the user's request. Currently any scenario with the
-// crash_traps mechanic forces ephemeral, because the trap design relies on
-// container destruction (persistence would defeat it). Exported so callers
-// (e.g. scenario controller, teacher dashboard) can apply the override
-// uniformly before invoking StartComposedSession.
-func ScenarioForcesEphemeral(crashTraps bool) bool {
-	return crashTraps
-}
-
 // ResolveScenarioPersistenceMode is the SSOT for the persistence_mode an
 // auto-provisioned scenario session should carry into StartComposedSession.
 //
-//   - crash_traps scenarios → "ephemeral" (forced — trap mechanics rely on
-//     container destruction; persistence would defeat the design)
-//   - otherwise + plan.DataPersistenceEnabled → "persistent" (learners can
-//     pause/resume across sessions)
+//   - plan.DataPersistenceEnabled → "persistent" (learners can pause/resume
+//     across sessions)
 //   - otherwise → "" (let resolvePersistenceMode's empty-default → ephemeral
 //     kick in, no silent downgrade for users who didn't opt into persistence)
 //
-// Callers: LaunchScenario (POST /scenario-sessions/launch) and the scenario
-// preview path. Both must go through here — see SSOT discipline note in
-// CLAUDE.md.
-func ResolveScenarioPersistenceMode(crashTraps bool, plan *paymentModels.SubscriptionPlan) string {
-	if ScenarioForcesEphemeral(crashTraps) {
-		return PersistenceModeEphemeral
-	}
+// Crash-trap scenarios follow the plan like any other: permadeath deletes
+// the container itself (EndCrashTrapRun), so persistence cannot keep a dead
+// run alive.
+//
+// Callers: LaunchScenario (POST /scenario-sessions/launch), the scenario
+// preview path and the teacher bulk start. All must go through here — see
+// SSOT discipline note in CLAUDE.md.
+func ResolveScenarioPersistenceMode(plan *paymentModels.SubscriptionPlan) string {
 	if plan != nil && plan.DataPersistenceEnabled {
 		return PersistenceModePersistent
 	}
