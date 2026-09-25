@@ -462,7 +462,18 @@ func TestAdvance_NeverRunsCatchupScript(t *testing.T) {
 		require.True(t, result.Passed)
 	}
 
-	require.NotEmpty(t, verifySvc.execCalls, "sanity: the background scripts did run")
+	// Prove both steps were actually provisioned, so the negatives below cannot
+	// pass just because nothing ran.
+	var execs []string
+	for _, c := range verifySvc.execCalls {
+		execs = append(execs, strings.Join(c.command, " "))
+	}
+	allExecs := strings.Join(execs, "\n")
+	require.Contains(t, allExecs, "echo bg-1", "step 1's background script must have run")
+	require.Contains(t, allExecs, "echo bg-2", "step 2's background script must have run")
+	require.Len(t, verifySvc.consoleWrites, 1, "step 2's foreground script must have run")
+	require.Equal(t, "echo fg-2", verifySvc.consoleWrites[0].text)
+
 	for _, c := range verifySvc.execCalls {
 		assert.NotContains(t, strings.Join(c.command, " "), "CATCHUP-MARKER", "exec must never carry the catch-up script")
 	}
