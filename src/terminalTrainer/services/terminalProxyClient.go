@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"soli/formations/src/terminalTrainer/dto"
-	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
 	"soli/formations/src/utils"
 
@@ -180,12 +179,20 @@ func (p *terminalProxyClient) GetSessionInfoFromAPI(sessionID string) (*dto.Term
 	return &sessionInfo, nil
 }
 
-// getAllSessionsFromAllInstanceTypes récupère les sessions de tous les types d'instances utilisés par l'utilisateur
+// getAllSessionsFromAllInstanceTypes récupère les sessions de tous les types d'instances utilisés par l'utilisateur.
+//
+// La liste renvoyée est complète ou c'est une erreur, jamais une liste
+// partielle : SyncUserSessions la traite comme la vérité sur les conteneurs
+// existants et marque deleted toute ligne locale absente. Une liste amputée
+// d'un type d'instance injoignable (ou de tous, tt-backend en panne)
+// supprimait donc des terminaux vivants et, par le cron zombie, abandonnait
+// leurs runs de scénario.
 func (p *terminalProxyClient) getAllSessionsFromAllInstanceTypes(userAPIKey, userID string) (*dto.TerminalTrainerSessionsResponse, error) {
-	// 1. Récupérer toutes les sessions locales de l'utilisateur pour connaître les types d'instances utilisés
+	// 1. Récupérer toutes les sessions locales de l'utilisateur pour connaître les types d'instances utilisés.
+	// Sans elles, on ne saurait pas quels types interroger : la liste serait partielle.
 	localSessions, err := p.repository.GetTerminalSessionsByUserID(userID, false)
 	if err != nil {
-		localSessions = &[]models.Terminal{} // Traiter comme liste vide si erreur
+		return nil, fmt.Errorf("failed to list local sessions to know which instance types to query: %w", err)
 	}
 
 	// 2. Créer un set des types d'instances utilisés (incluant le type par défaut)
@@ -205,9 +212,7 @@ func (p *terminalProxyClient) getAllSessionsFromAllInstanceTypes(userAPIKey, use
 	for instanceType := range instanceTypesUsed {
 		apiResponse, err := p.getSessionsFromInstanceType(userAPIKey, instanceType)
 		if err != nil {
-			// Log l'erreur mais continuer avec les autres types d'instances
-			utils.Warn("failed to get sessions from instance type '%s': %v", instanceType, err)
-			continue
+			return nil, fmt.Errorf("failed to get sessions from instance type '%s': %w", instanceType, err)
 		}
 		allSessions = append(allSessions, apiResponse.Sessions...)
 		totalCount += apiResponse.Count
