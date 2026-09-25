@@ -11,15 +11,13 @@
 // simply reconnected to the same container with every flag and step still
 // theirs, and the mechanic did nothing at all.
 //
-// A crash-trap run may now be persistent (pausable), and a pause's force-kill
-// can also end the shell with 137. So permadeath only fires when tt-backend
-// confirms the container is still running — `kill -9 -1` leaves it up, a stop
-// does not — and it deletes the container rather than stopping it, since a
-// stopped persistent container would be resumable.
+// A crash-trap run may now be persistent (pausable), so permadeath deletes the
+// container rather than stopping it: a stopped persistent container would be
+// resumable. A platform stop closes the console with 4300, not 4137 (tt#145),
+// so it never reaches this path.
 package scenarios_test
 
 import (
-	"errors"
 	"testing"
 	"time"
 
@@ -59,18 +57,12 @@ func seedRunOnTerminal(t *testing.T, db *gorm.DB, name string, crashTraps bool, 
 	return session
 }
 
-// instanceRunning returns a liveness callback with a fixed answer.
-func instanceRunning(running bool, err error) services.TerminalInstanceRunningFunc {
-	return func(string) (bool, error) { return running, err }
-}
-
-// wireCrashTrapTerminal gives a session service the three terminal callbacks
-// permadeath uses, and returns the stop and delete trackers.
-func wireCrashTrapTerminal(sessionSvc *services.ScenarioSessionService, liveness services.TerminalInstanceRunningFunc) (stopped, deleted *terminalStopTracker) {
-	stopped, deleted = &terminalStopTracker{}, &terminalStopTracker{}
+// wireCrashTrapTerminal gives a session service the stop and delete callbacks
+// permadeath uses, and returns a tracker for each.
+func wireCrashTrapTerminal(sessionSvc *services.ScenarioSessionService) (stopped, deleted *terminalCallTracker) {
+	stopped, deleted = &terminalCallTracker{}, &terminalCallTracker{}
 	sessionSvc.SetTerminalStopFunc(stopped.StopFunc())
 	sessionSvc.SetTerminalDeleteFunc(deleted.DeleteFunc())
-	sessionSvc.SetTerminalInstanceRunningFunc(liveness)
 	return stopped, deleted
 }
 
@@ -86,7 +78,7 @@ func TestEndCrashTrapRun_AbandonsTheRunAndDeletesTheTerminal(t *testing.T) {
 	session := seedRunOnTerminal(t, db, "permadeath-armed", true, "terminal-permadeath-armed")
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	stopped, deleted := wireCrashTrapTerminal(sessionSvc, instanceRunning(true, nil))
+	stopped, deleted := wireCrashTrapTerminal(sessionSvc)
 
 	sessionSvc.EndCrashTrapRun("terminal-permadeath-armed")
 
@@ -99,67 +91,12 @@ func TestEndCrashTrapRun_AbandonsTheRunAndDeletesTheTerminal(t *testing.T) {
 		"a stopped persistent container is resumable — permadeath must delete, never stop")
 }
 
-func TestEndCrashTrapRun_InstanceNotRunning_KeepsRunOpen(t *testing.T) {
-	// A 137 while the container is stopping or stopped is a pause's
-	// force-kill, not a crash trap: `kill -9 -1` spares PID 1, so a real trap
-	// leaves the container running.
-	db := freshTestDB(t)
-	session := seedRunOnTerminal(t, db, "permadeath-paused", true, "terminal-permadeath-paused")
-
-	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	stopped, deleted := wireCrashTrapTerminal(sessionSvc, instanceRunning(false, nil))
-
-	sessionSvc.EndCrashTrapRun("terminal-permadeath-paused")
-
-	assert.Equal(t, "active", sessionStatus(t, db, session.ID),
-		"a killed shell on a container that is not running is a pause, and "+
-			"pausing must not end the run")
-	assert.Zero(t, deleted.CallCount(),
-		"a paused container must never be deleted by the permadeath path")
-	assert.Zero(t, stopped.CallCount())
-}
-
-func TestEndCrashTrapRun_LivenessUnknown_KeepsRunOpen(t *testing.T) {
-	// Deleting is irreversible, so when tt-backend cannot say whether the
-	// container is running, permadeath must not fire.
-	db := freshTestDB(t)
-	session := seedRunOnTerminal(t, db, "permadeath-unknown", true, "terminal-permadeath-unknown")
-
-	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	stopped, deleted := wireCrashTrapTerminal(sessionSvc, instanceRunning(true, errors.New("tt-backend unreachable")))
-
-	sessionSvc.EndCrashTrapRun("terminal-permadeath-unknown")
-
-	assert.Equal(t, "active", sessionStatus(t, db, session.ID),
-		"an unknown liveness must keep the run open — a false permadeath "+
-			"would destroy the learner's work for good")
-	assert.Zero(t, deleted.CallCount(),
-		"nothing may be deleted when liveness is unknown")
-	assert.Zero(t, stopped.CallCount())
-}
-
-func TestEndCrashTrapRun_NoLivenessCheckWired_KeepsRunOpen(t *testing.T) {
-	// An unwired liveness callback is the same as an unknown answer.
-	db := freshTestDB(t)
-	session := seedRunOnTerminal(t, db, "permadeath-unwired", true, "terminal-permadeath-unwired")
-
-	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	stopped, deleted := wireCrashTrapTerminal(sessionSvc, nil)
-
-	sessionSvc.EndCrashTrapRun("terminal-permadeath-unwired")
-
-	assert.Equal(t, "active", sessionStatus(t, db, session.ID),
-		"without a liveness check permadeath must not fire")
-	assert.Zero(t, deleted.CallCount())
-	assert.Zero(t, stopped.CallCount())
-}
-
 func TestEndCrashTrapRun_LeavesOrdinaryScenarioUntouched(t *testing.T) {
 	db := freshTestDB(t)
 	session := seedRunOnTerminal(t, db, "permadeath-disarmed", false, "terminal-permadeath-disarmed")
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	stopped, deleted := wireCrashTrapTerminal(sessionSvc, instanceRunning(true, nil))
+	stopped, deleted := wireCrashTrapTerminal(sessionSvc)
 
 	sessionSvc.EndCrashTrapRun("terminal-permadeath-disarmed")
 
@@ -175,7 +112,7 @@ func TestEndCrashTrapRun_LeavesPlainTerminalUntouched(t *testing.T) {
 	// A terminal with no scenario session at all — the ordinary "open a
 	// terminal from the dashboard" case.
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	stopped, deleted := wireCrashTrapTerminal(sessionSvc, instanceRunning(true, nil))
+	stopped, deleted := wireCrashTrapTerminal(sessionSvc)
 
 	require.NotPanics(t, func() {
 		sessionSvc.EndCrashTrapRun("terminal-with-no-scenario")
@@ -195,7 +132,7 @@ func TestEndCrashTrapRun_LeavesFinishedRunUntouched(t *testing.T) {
 		Where("id = ?", session.ID).Update("status", "completed").Error)
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	stopped, deleted := wireCrashTrapTerminal(sessionSvc, instanceRunning(true, nil))
+	stopped, deleted := wireCrashTrapTerminal(sessionSvc)
 
 	sessionSvc.EndCrashTrapRun("terminal-permadeath-finished")
 
@@ -214,7 +151,7 @@ func TestEndCrashTrapRun_RefusesLearnerActionsAfterPermadeath(t *testing.T) {
 	session := seedRunOnTerminal(t, db, "permadeath-resume", true, "terminal-permadeath-resume")
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	wireCrashTrapTerminal(sessionSvc, instanceRunning(true, nil))
+	wireCrashTrapTerminal(sessionSvc)
 	sessionSvc.EndCrashTrapRun("terminal-permadeath-resume")
 	require.Equal(t, "abandoned", sessionStatus(t, db, session.ID))
 
