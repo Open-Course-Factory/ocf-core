@@ -316,6 +316,9 @@ func TestIsLiveMatchesRunningDisplayScope(t *testing.T) {
 	}
 }
 
+// nullPersistence marks a matrix row whose persistence_mode is written as SQL NULL.
+const nullPersistence = "<NULL>"
+
 // TestHoldsContainerMatchesContainerHeldScope pins the second one-rule pair:
 // "does this terminal still hold a container the learner can come back to?".
 // That is wider than IsLive — a paused terminal (stopped, inside its reap
@@ -323,9 +326,6 @@ func TestIsLiveMatchesRunningDisplayScope(t *testing.T) {
 // auto-stopped at its TTL before any sync moved its state off "running". The
 // scenario run behind either must stay open, so the zombie cron (SQL) and the
 // resume rule (Go) have to agree on exactly these rows.
-// nullPersistence marks a matrix row whose persistence_mode is written as SQL NULL.
-const nullPersistence = "<NULL>"
-
 func TestHoldsContainerMatchesContainerHeldScope(t *testing.T) {
 	db := freshTestDB(t)
 

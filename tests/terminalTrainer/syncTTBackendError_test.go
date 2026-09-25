@@ -1,13 +1,7 @@
 package terminalTrainer_tests
 
-// SyncUserSessions treats tt-backend's listing as the truth about which
-// containers exist: a local row absent from it is marked deleted. That is only
-// sound when the listing is complete. A listing that failed — tt-backend down,
-// a 500, one instance type out of several unreachable — says nothing about the
-// rows it did not return, yet the per-instance-type fetch logged the error and
-// carried on, handing the sync an empty (or partial) listing with no error.
-// Every terminal of the user was then marked deleted, and the scenario zombie
-// sweep abandoned their runs: one tt-backend outage ended every learner's run.
+// A failed tt-backend listing proves nothing about which containers exist,
+// so a sync that could not list must change nothing and say it failed.
 
 import (
 	"encoding/json"
@@ -25,76 +19,57 @@ import (
 )
 
 // seedSyncErrorTerminals gives userID a live terminal and a paused persistent
-// one, both of the given instance type, and returns their session ids.
-func seedSyncErrorTerminals(t *testing.T, userID string, instanceTypes ...string) []string {
+// one, and returns their session ids.
+func seedSyncErrorTerminals(t *testing.T, userID string) []string {
 	t.Helper()
 	userKey, err := createTestUserKey(sharedTestDB, userID)
 	require.NoError(t, err)
 
 	var ids []string
-	for _, instanceType := range instanceTypes {
-		for _, state := range []models.TerminalState{models.StateRunning, models.StateStopped} {
-			id := "sync-err-" + string(state) + "-" + uuid.New().String()
-			require.NoError(t, sharedTestDB.Create(&models.Terminal{
-				SessionID:         id,
-				UserID:            userID,
-				Name:              id,
-				State:             state,
-				PersistenceMode:   "persistent",
-				ExpiresAt:         time.Now().Add(time.Hour),
-				InstanceType:      instanceType,
-				MachineSize:       "S",
-				UserTerminalKeyID: userKey.ID,
-			}).Error)
-			ids = append(ids, id)
-		}
+	for _, state := range []models.TerminalState{models.StateRunning, models.StateStopped} {
+		id := "sync-err-" + string(state) + "-" + uuid.New().String()
+		require.NoError(t, sharedTestDB.Create(&models.Terminal{
+			SessionID:         id,
+			UserID:            userID,
+			Name:              id,
+			State:             state,
+			PersistenceMode:   "persistent",
+			ExpiresAt:         time.Now().Add(time.Hour),
+			MachineSize:       "S",
+			UserTerminalKeyID: userKey.ID,
+		}).Error)
+		ids = append(ids, id)
 	}
 	return ids
 }
 
-// assertStatesUnchanged checks that no terminal left the state it was seeded in.
-func assertStatesUnchanged(t *testing.T, ids []string) {
-	t.Helper()
-	for _, id := range ids {
-		var terminal models.Terminal
-		require.NoError(t, sharedTestDB.Where("session_id = ?", id).First(&terminal).Error)
-		assert.NotEqual(t, models.StateDeleted, terminal.State,
-			"%s must keep its state: a failed listing proves nothing about it", id)
-	}
-}
-
-func TestSyncUserSessions_TTBackendError_DeletesNothing(t *testing.T) {
-	freshTestDB(t)
-	userID := "sync-err-500-" + uuid.New().String()
-	ids := seedSyncErrorTerminals(t, userID, "")
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestSyncUserSessions_FailedListing_DeletesNothing(t *testing.T) {
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tt-backend is down", http.StatusInternalServerError)
 	}))
-	defer srv.Close()
-	configureTTServer(t, srv.URL)
-
-	_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
-
-	assert.Error(t, err, "a sync that could not list the sessions must say so")
-	assertStatesUnchanged(t, ids)
-}
-
-func TestSyncUserSessions_TTBackendUnreachable_DeletesNothing(t *testing.T) {
-	freshTestDB(t)
-	userID := "sync-err-refused-" + uuid.New().String()
-	ids := seedSyncErrorTerminals(t, userID, "")
-
+	defer failing.Close()
 	// A server that is gone: the port refuses connections.
-	srv := httptest.NewServer(http.NotFoundHandler())
-	url := srv.URL
-	srv.Close()
-	configureTTServer(t, url)
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
 
-	_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
+	for name, url := range map[string]string{"500": failing.URL, "unreachable": gone.URL} {
+		t.Run(name, func(t *testing.T) {
+			freshTestDB(t)
+			userID := "sync-err-" + name + "-" + uuid.New().String()
+			ids := seedSyncErrorTerminals(t, userID)
+			configureTTServer(t, url)
 
-	assert.Error(t, err, "a sync that could not reach tt-backend must say so")
-	assertStatesUnchanged(t, ids)
+			_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
+
+			assert.Error(t, err, "a sync that could not list the sessions must say so")
+			for _, id := range ids {
+				var terminal models.Terminal
+				require.NoError(t, sharedTestDB.Where("session_id = ?", id).First(&terminal).Error)
+				assert.NotEqual(t, models.StateDeleted, terminal.State,
+					"%s must keep its state: a failed listing proves nothing about it", id)
+			}
+		})
+	}
 }
 
 // tt-backend lists a user's sessions by API key, so one unprefixed listing is
