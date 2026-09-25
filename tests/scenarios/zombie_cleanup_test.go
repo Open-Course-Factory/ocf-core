@@ -1,6 +1,10 @@
 package scenarios_test
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +15,7 @@ import (
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 )
 
 // --- Fix 2: Cron cleanup job ---
@@ -50,7 +55,7 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 	sessionExpired := models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-cleanup-1",
 		TerminalSessionID: &expiredTerminalID,
-		CurrentStep: 0, Status: "active", StartedAt: time.Now().Add(-3 * time.Hour),
+		CurrentStep:       0, Status: "active", StartedAt: time.Now().Add(-3 * time.Hour),
 	}
 	require.NoError(t, db.Create(&sessionExpired).Error)
 
@@ -71,7 +76,7 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 	sessionStopped := models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-cleanup-2",
 		TerminalSessionID: &stoppedTerminalID,
-		CurrentStep: 0, Status: "active", StartedAt: time.Now().Add(-2 * time.Hour),
+		CurrentStep:       0, Status: "active", StartedAt: time.Now().Add(-2 * time.Hour),
 	}
 	require.NoError(t, db.Create(&sessionStopped).Error)
 
@@ -92,12 +97,12 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 	sessionActive := models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-cleanup-3",
 		TerminalSessionID: &activeTerminalID,
-		CurrentStep: 0, Status: "active", StartedAt: time.Now().Add(-30 * time.Minute),
+		CurrentStep:       0, Status: "active", StartedAt: time.Now().Add(-30 * time.Minute),
 	}
 	require.NoError(t, db.Create(&sessionActive).Error)
 
 	// Run cleanup
-	count, err := services.CleanupZombieScenarioSessions(db)
+	count, err := services.CleanupZombieScenarioSessions(db, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count, "should abandon exactly 2 zombie sessions")
 
@@ -151,11 +156,11 @@ func TestCleanupZombieScenarioSessions_HandlesInProgressStatus(t *testing.T) {
 	sessionIP := models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-cleanup-ip",
 		TerminalSessionID: &termID,
-		CurrentStep: 0, Status: "in_progress", StartedAt: time.Now().Add(-1 * time.Hour),
+		CurrentStep:       0, Status: "in_progress", StartedAt: time.Now().Add(-1 * time.Hour),
 	}
 	require.NoError(t, db.Create(&sessionIP).Error)
 
-	count, err := services.CleanupZombieScenarioSessions(db)
+	count, err := services.CleanupZombieScenarioSessions(db, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "should abandon in_progress session with expired terminal")
 
@@ -201,13 +206,13 @@ func TestCleanupZombieScenarioSessions_IgnoresCompletedSessions(t *testing.T) {
 	completedSession := models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-cleanup-done",
 		TerminalSessionID: &termID,
-		CurrentStep: 0, Status: "completed",
+		CurrentStep:       0, Status: "completed",
 		StartedAt: time.Now().Add(-3 * time.Hour), CompletedAt: &completedAt, Grade: &grade,
 	}
 	require.NoError(t, db.Create(&completedSession).Error)
 
 	// Run cleanup
-	count, err := services.CleanupZombieScenarioSessions(db)
+	count, err := services.CleanupZombieScenarioSessions(db, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count, "should not touch completed sessions")
 
@@ -346,7 +351,7 @@ func TestCleanupZombieScenarioSessions_AbandonsRunOnExpiredButRunningTerminal(t 
 	}
 	require.NoError(t, db.Create(&session).Error)
 
-	count, err := services.CleanupZombieScenarioSessions(db)
+	count, err := services.CleanupZombieScenarioSessions(db, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 
@@ -406,7 +411,7 @@ func TestCleanupZombieScenarioSessions_SparesPausedRun(t *testing.T) {
 	session, _ := seedOpenRunWithTerminal(t, db, "student-paused", "terminal-paused",
 		terminalModels.StateStopped, time.Hour, "persistent", "active")
 
-	count, err := services.CleanupZombieScenarioSessions(db)
+	count, err := services.CleanupZombieScenarioSessions(db, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Equal(t, "active", sessionStatus(t, db, session.ID),
@@ -423,7 +428,7 @@ func TestCleanupZombieScenarioSessions_SparesTTLStoppedPersistentRun(t *testing.
 	session, _ := seedOpenRunWithTerminal(t, db, "student-ttl-persistent", "terminal-ttl-persistent",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
 
-	count, err := services.CleanupZombieScenarioSessions(db)
+	count, err := services.CleanupZombieScenarioSessions(db, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Equal(t, "in_progress", sessionStatus(t, db, session.ID),
@@ -487,7 +492,7 @@ func TestZombieCleanupAgreesWithRunResumeMode(t *testing.T) {
 	// Without paused rows the matrix would only re-check the live rule.
 	require.Equal(t, 6, paused, "RunResumeMode must report the paused rows of the matrix as paused")
 
-	_, err := services.CleanupZombieScenarioSessions(db)
+	_, err := services.CleanupZombieScenarioSessions(db, nil)
 	require.NoError(t, err)
 
 	for i := range all {
@@ -495,5 +500,110 @@ func TestZombieCleanupAgreesWithRunResumeMode(t *testing.T) {
 		abandoned := sessionStatus(t, db, all[i].session.ID) == "abandoned"
 		assert.Equal(t, wantAbandoned[id], abandoned,
 			"cron and RunResumeMode disagree about the run on %s", *all[i].session.TerminalSessionID)
+	}
+}
+
+// A persistent terminal tt-backend auto-stopped at its TTL still reads
+// "running" locally, and ContainerHeldScope spares its run because the
+// container is normally kept. But tt-backend eventually reaps that container,
+// and nothing tells ocf-core unless the learner comes back and triggers a
+// sync — so the run stayed open forever, holding the one-run slot.
+//
+// The cron therefore syncs the owners of exactly those terminals, through
+// the one sync there is (SyncUserSessions), before it sweeps. The seam is the
+// syncOwners argument: CleanupZombieScenarioSessions(db, syncOwners), called
+// once with the owners to sync; nil syncs nobody.
+func runZombieCleanupAfterSync(t *testing.T, reportTargetsAs string) (*gorm.DB, []string, map[string]models.ScenarioSession) {
+	t.Helper()
+	db := freshTestDB(t)
+
+	// tt-backend's answer for the two target terminals: "gone" leaves them out
+	// of the listing (reaped); "stopped" lists them as stopped with a fresh
+	// idle deadline (the container is still kept).
+	targets := []string{"terminal-ttl-active", "terminal-ttl-in-progress"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/sessions") {
+			http.Error(w, "unexpected: "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		sessions := []map[string]any{}
+		if reportTargetsAs == "stopped" {
+			for _, id := range targets {
+				sessions = append(sessions, map[string]any{
+					"id": id, "session_id": id, "name": id,
+					"status":           1,
+					"state":            "stopped",
+					"persistence_mode": "persistent",
+					"expires_at":       time.Now().Add(-30 * time.Minute).Unix(),
+					"idle_until":       time.Now().Add(time.Hour).Unix(),
+					"created_at":       time.Now().Add(-2 * time.Hour).Unix(),
+				})
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"sessions": sessions, "count": len(sessions), "include_expired": true, "limit": 1000,
+		})
+	}))
+	t.Cleanup(srv.Close)
+	configureTTServerForPersistence(t, srv.URL)
+
+	runs := map[string]models.ScenarioSession{}
+	seed := func(userID, terminalID string, state terminalModels.TerminalState, expires time.Duration, persistence, status string) {
+		seedPersistenceUserKey(t, db, userID)
+		run, _ := seedOpenRunWithTerminal(t, db, userID, terminalID, state, expires, persistence, status)
+		runs[terminalID] = run
+	}
+	// Targets: open runs on running + persistent + past-expiry terminals.
+	seed("owner-ttl-active", "terminal-ttl-active", terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
+	seed("owner-ttl-in-progress", "terminal-ttl-in-progress", terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
+	// Not targets: nothing about these runs is stale in a way a sync resolves.
+	seed("owner-paused", "terminal-paused", terminalModels.StateStopped, time.Hour, "persistent", "active")
+	seed("owner-live", "terminal-live", terminalModels.StateRunning, time.Hour, "persistent", "in_progress")
+	seed("owner-finished", "terminal-finished", terminalModels.StateRunning, -30*time.Minute, "persistent", "completed")
+	seed("owner-ephemeral-dead", "terminal-ephemeral-dead", terminalModels.StateRunning, -30*time.Minute, "ephemeral", "active")
+
+	svc := terminalServices.NewTerminalTrainerService(db)
+	var synced []string
+	_, err := services.CleanupZombieScenarioSessions(db, func(userIDs []string) {
+		synced = append(synced, userIDs...)
+		for _, id := range userIDs {
+			_, syncErr := svc.SyncUserSessions(id)
+			assert.NoError(t, syncErr, "sync of %s", id)
+		}
+	})
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []string{"owner-ttl-active", "owner-ttl-in-progress"}, synced,
+		"only owners of running+persistent+past-expiry terminals behind active/in_progress runs are synced, each once")
+	return db, synced, runs
+}
+
+func TestCleanupZombieScenarioSessions_SyncsStaleTTLStoppedTerminalsFirst(t *testing.T) {
+	db, _, runs := runZombieCleanupAfterSync(t, "gone")
+
+	for _, terminalID := range []string{"terminal-ttl-active", "terminal-ttl-in-progress"} {
+		var terminal terminalModels.Terminal
+		require.NoError(t, db.Where("session_id = ?", terminalID).First(&terminal).Error)
+		assert.Equal(t, terminalModels.StateDeleted, terminal.State,
+			"tt-backend no longer lists %s: the sync must mark it deleted", terminalID)
+		assert.Equal(t, "abandoned", sessionStatus(t, db, runs[terminalID].ID),
+			"the run on reaped %s must be abandoned in the same sweep, not left open until the learner returns", terminalID)
+	}
+	assert.Equal(t, "active", sessionStatus(t, db, runs["terminal-paused"].ID))
+	assert.Equal(t, "in_progress", sessionStatus(t, db, runs["terminal-live"].ID))
+	assert.Equal(t, "completed", sessionStatus(t, db, runs["terminal-finished"].ID))
+}
+
+func TestCleanupZombieScenarioSessions_SyncKeepsRunWhoseContainerIsStillKept(t *testing.T) {
+	db, _, runs := runZombieCleanupAfterSync(t, "stopped")
+
+	for _, terminalID := range []string{"terminal-ttl-active", "terminal-ttl-in-progress"} {
+		var terminal terminalModels.Terminal
+		require.NoError(t, db.Where("session_id = ?", terminalID).First(&terminal).Error)
+		assert.Equal(t, terminalModels.StateStopped, terminal.State,
+			"tt-backend reports %s stopped with its container kept: the sync must record the pause", terminalID)
+		assert.Equal(t, runs[terminalID].Status, sessionStatus(t, db, runs[terminalID].ID),
+			"a run whose container tt-backend still keeps is paused, not dead")
 	}
 }
