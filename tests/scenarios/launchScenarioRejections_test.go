@@ -25,6 +25,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -390,4 +395,160 @@ func TestLaunchScenario_OpenRunExists_Returns409WithoutCreatingTerminal(t *testi
 func TestLaunchScenario_PausedRunExists_Returns409WithoutCreatingTerminal(t *testing.T) {
 	w, rec, db, userID := launchWithOpenRun(t, "launch-paused-run", terminalModels.StateStopped)
 	assertConflictWithoutNewTerminal(t, w, rec, db, userID)
+}
+
+// seedLaunchableScenario is the minimal learner a launch can go all the way
+// through for: a plan, a terminal key and a public one-step scenario.
+func seedLaunchableScenario(t *testing.T, name string) (*gorm.DB, string, *models.Scenario) {
+	t.Helper()
+	db := freshTestDB(t)
+	userID := name + "-" + uuid.New().String()
+	seedPersistencePlan(t, db, userID, true)
+	seedPersistenceUserKey(t, db, userID)
+	return db, userID, seedPersistenceScenario(t, db, userID, false)
+}
+
+// cleanupTTBackend is a fake tt-backend for launches that fail after the
+// terminal is created. It serves the catalogue through newPersistenceTTBackend
+// and records the session it creates and every session deleted, so a test can
+// check that a refused launch leaves no terminal behind.
+type cleanupTTBackend struct {
+	mu      sync.Mutex
+	created string
+	deleted []string
+}
+
+// newCleanupTTBackend points the terminal service at the fake. onCreate runs
+// when POST /1.0/sessions arrives — the moment a concurrent launch can slip in
+// — and may return the session id to hand back ("" for a fresh one). It runs
+// on the server goroutine, so it must use assert, not require.
+func newCleanupTTBackend(t *testing.T, onCreate func() string) *cleanupTTBackend {
+	t.Helper()
+	catalog, _ := newPersistenceTTBackend(t)
+	catalogURL, err := url.Parse(catalog.URL)
+	require.NoError(t, err)
+	forward := httputil.NewSingleHostReverseProxy(catalogURL)
+
+	tt := &cleanupTTBackend{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/1.0/sessions":
+			tt.mu.Lock()
+			id := ""
+			if onCreate != nil {
+				id = onCreate()
+			}
+			if id == "" {
+				id = "launch-" + uuid.New().String()
+			}
+			tt.created = id
+			tt.mu.Unlock()
+			// tt-backend names the new session "id" on the wire.
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":         id,
+				"expires_at": time.Now().Add(time.Hour).Unix(),
+				"backend":    "local",
+				"status":     0,
+			})
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/1.0/sessions/"):
+			tt.mu.Lock()
+			tt.deleted = append(tt.deleted, strings.TrimPrefix(r.URL.Path, "/1.0/sessions/"))
+			tt.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			forward.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	configureTTServerForPersistence(t, srv.URL)
+	return tt
+}
+
+// assertNewTerminalDeleted checks that the terminal this launch created was
+// deleted in tt-backend — and only it — and left the budget scope locally.
+func (tt *cleanupTTBackend) assertNewTerminalDeleted(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	tt.mu.Lock()
+	created, deleted := tt.created, append([]string(nil), tt.deleted...)
+	tt.mu.Unlock()
+
+	require.NotEmpty(t, created, "the launch must have reached terminal creation")
+	assert.Equal(t, []string{created}, deleted,
+		"the terminal created for the failed launch must be deleted in tt-backend, and only that one")
+
+	var terminal terminalModels.Terminal
+	require.NoError(t, db.Where("session_id = ?", created).First(&terminal).Error)
+	assert.Equal(t, terminalModels.StateDeleted, terminal.State,
+		"the orphan terminal must leave the budget scope locally too")
+}
+
+// Every StartScenario failure after the terminal exists leaves that terminal
+// with no run, not only the typed conflict. Here tt-backend hands back a
+// session id a finished run is already bound to — StartScenario refuses to
+// bind a second run to it — and the launch must still clean up.
+func TestLaunchScenario_StartScenarioFails_DeletesTheNewTerminal(t *testing.T) {
+	db, userID, scenario := seedLaunchableScenario(t, "launch-start-fails")
+
+	bound := "already-bound-" + uuid.New().String()
+	other := seedPersistenceScenario(t, db, userID, false)
+	now := time.Now()
+	require.NoError(t, db.Create(&models.ScenarioSession{
+		ScenarioID:        other.ID,
+		UserID:            userID,
+		Status:            "completed",
+		StartedAt:         now.Add(-time.Hour),
+		CompletedAt:       &now,
+		TerminalSessionID: &bound,
+	}).Error)
+
+	tt := newCleanupTTBackend(t, func() string { return bound })
+
+	w := launchScenarioForTest(t, setupPersistenceRouter(t, db, userID), scenario.ID)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code,
+		"a failure that is not a conflict stays a 500; body=%s", w.Body.String())
+	tt.assertNewTerminalDeleted(t, db)
+}
+
+// The unique partial index on (user_id, scenario_id) is the last line against
+// two concurrent launches: when the competing run commits after StartScenario's
+// in-transaction check but before its insert, the insert violates the index.
+// That is the same conflict as ErrActiveSessionExists and must be answered the
+// same way — 409 session_exists, new terminal deleted — not as a 500.
+//
+// The competing insert is injected with a one-shot create callback so it
+// lands exactly between the check and the insert, inside the same transaction.
+func TestLaunchScenario_UniqueIndexRace_Returns409AndDeletesTerminal(t *testing.T) {
+	db, userID, scenario := seedLaunchableScenario(t, "launch-unique-race")
+	require.True(t, db.Migrator().HasIndex(&models.ScenarioSession{}, "idx_unique_active_session"),
+		"the test DB must carry the unique partial index this test exercises")
+
+	var armed atomic.Bool
+	armed.Store(true)
+	const callback = "test:insert-competing-run"
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+		if tx.Statement.Table != "scenario_sessions" || !armed.CompareAndSwap(true, false) {
+			return
+		}
+		competing := models.ScenarioSession{
+			ScenarioID: scenario.ID,
+			UserID:     userID,
+			Status:     "active",
+			StartedAt:  time.Now(),
+		}
+		assert.NoError(t, tx.Session(&gorm.Session{NewDB: true}).Create(&competing).Error)
+	}))
+	t.Cleanup(func() { _ = db.Callback().Create().Remove(callback) })
+
+	tt := newCleanupTTBackend(t, nil)
+
+	w := launchScenarioForTest(t, setupPersistenceRouter(t, db, userID), scenario.ID)
+
+	require.False(t, armed.Load(), "the competing insert must have fired")
+	require.Equal(t, http.StatusConflict, w.Code,
+		"a unique-index violation is the session_exists conflict; body=%s", w.Body.String())
+	assert.Contains(t, w.Body.String(), `"reason":"session_exists"`)
+	tt.assertNewTerminalDeleted(t, db)
 }
