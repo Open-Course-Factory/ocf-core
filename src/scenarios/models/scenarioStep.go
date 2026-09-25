@@ -32,11 +32,12 @@ type ScenarioStep struct {
 	// who solved the step by hand would have left behind. It is the step's
 	// solution, so it is redacted for learners like the verify script.
 	//
-	// It runs only when a run is rebuilt on a new container (#515): the
-	// catch-up scripts of the steps already passed are replayed, each after
-	// that step's background script. It must therefore be idempotent: safe to
+	// Nothing runs it yet. It is meant to be run only when a run is rebuilt on
+	// a new container (#515), which will replay the catch-up scripts of the
+	// steps already passed, each after that step's background script; it is
+	// never run during normal play. It must therefore be idempotent: safe to
 	// run on the state the background script just left, even if part of the
-	// result already exists. Normal play never runs it.
+	// result already exists.
 	CatchupScript string `gorm:"type:text" json:"-"`
 	// Intro/outro banners. The trainer picks an effect by name and types a
 	// line; the engine turns that into an ocf-banner call in the container, so
