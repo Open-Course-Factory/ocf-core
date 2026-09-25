@@ -29,16 +29,20 @@ func sweepScenarioSessions(db *gorm.DB, terminalService terminalServices.Termina
 }
 
 func cleanupZombieScenarioSessions(db *gorm.DB, terminalService terminalServices.TerminalTrainerService) {
-	// Owners of auto-stopped persistent terminals are synced first, so the
-	// sweep sees whether tt-backend still keeps their container.
-	syncOwners := func(userIDs []string) {
-		for _, userID := range userIDs {
-			if _, err := terminalService.SyncUserSessions(userID); err != nil {
-				log.Printf("❌ [SCENARIO CLEANUP] Failed to sync terminals of user %s: %v", userID, err)
-			}
+	// Sync first, so the sweep sees whether tt-backend still keeps the
+	// container of each auto-stopped persistent terminal.
+	owners, err := services.OwnersToSyncBeforeSweep(db)
+	if err != nil {
+		// Not fatal: the sweep still spares these runs until a pass can sync.
+		log.Printf("❌ [SCENARIO CLEANUP] Failed to list owners to sync: %v", err)
+	}
+	for _, userID := range owners {
+		if _, err := terminalService.SyncUserSessions(userID); err != nil {
+			log.Printf("❌ [SCENARIO CLEANUP] Failed to sync terminals of user %s: %v", userID, err)
 		}
 	}
-	count, err := services.CleanupZombieScenarioSessions(db, syncOwners)
+
+	count, err := services.CleanupZombieScenarioSessions(db)
 	if err != nil {
 		log.Printf("❌ [SCENARIO CLEANUP] Failed to cleanup zombie sessions: %v", err)
 		return

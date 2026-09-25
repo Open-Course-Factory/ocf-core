@@ -288,8 +288,8 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		}
 
 		// One rule, evaluated in the transaction so a concurrent launch cannot
-		// slip past it. GetResumableSession answers the same question read-only
-		// for the availability endpoint.
+		// slip past it. HasResumableRun answers the same question read-only
+		// before a terminal is created.
 		existingSession, mode, findErr := findExistingSession(tx, userID, scenarioID)
 		if findErr != nil {
 			return findErr
@@ -1718,7 +1718,7 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionResponse, error) {
 	var sessions []models.ScenarioSession
 	if err := s.db.Preload("Scenario", func(db *gorm.DB) *gorm.DB {
-		return db.Select("id, title, crash_traps")
+		return db.Select("id, title")
 	}).Preload("StepProgress").
 		Where("user_id = ?", userID).
 		Order("started_at DESC").
@@ -1741,7 +1741,7 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			}
 		}
 
-		mode := RunResumeMode(&session, terminalFor(terminals, &session), session.Scenario.CrashTraps)
+		mode := RunResumeMode(&session, terminalFor(terminals, &session))
 		resp := dto.MySessionResponse{
 			ID:                session.ID,
 			ScenarioID:        session.ScenarioID,
@@ -2255,12 +2255,12 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 //
 // This is the single definition of that rule. The launch path evaluates it inside
 // its transaction and acts on it; the availability endpoint evaluates it read-only
-// through GetResumableSession, so the button and the card cannot disagree.
+// through HasResumableRun and GetResumableRuns, so the button and the card
+// cannot disagree.
 func findExistingSession(db *gorm.DB, userID string, scenarioID uuid.UUID) (*models.ScenarioSession, ResumeMode, error) {
 	var existing models.ScenarioSession
-	err := db.Preload("Scenario", selectCrashTraps).
-		Where("user_id = ? AND scenario_id = ? AND status IN ?",
-			userID, scenarioID, models.OpenSessionStatuses).First(&existing).Error
+	err := db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
+		userID, scenarioID, models.OpenSessionStatuses).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ResumeModeNone, nil
 	}
@@ -2275,12 +2275,7 @@ func findExistingSession(db *gorm.DB, userID string, scenarioID uuid.UUID) (*mod
 			terminal = &t
 		}
 	}
-	return &existing, RunResumeMode(&existing, terminal, existing.Scenario.CrashTraps), nil
-}
-
-// selectCrashTraps preloads only what RunResumeMode reads from a scenario.
-func selectCrashTraps(db *gorm.DB) *gorm.DB {
-	return db.Select("id, crash_traps")
+	return &existing, RunResumeMode(&existing, terminal), nil
 }
 
 // terminalsForSessions loads the terminals backing a set of sessions, keyed by
@@ -2337,34 +2332,21 @@ const (
 
 // RunResumeMode is the rule itself, expressed once over data every caller
 // already holds. Only an open run can be resumed: a completed or abandoned run
-// is over whatever state its terminal is in, and some callers (the learner's
-// session list) hand it every run they have. setup_failed is open but never
-// resumable because the environment it describes is broken, and a session with
-// no terminal — or one whose terminal
-// is gone — has nothing left to return to. Otherwise the terminal decides:
-// alive right now (Terminal.IsLive) is a live resume; still holding its
-// container (Terminal.HoldsContainer — paused, or auto-stopped at its TTL and
-// not yet synced) is a paused one.
+// is over whatever state its terminal is in. setup_failed is open but never
+// resumable because its environment is broken, and a session with no terminal
+// — or one whose terminal is gone — has nothing left to return to. Otherwise
+// the terminal decides: alive right now (Terminal.IsLive) is a live resume;
+// still holding its container (Terminal.HoldsContainer) is a paused one.
 //
-// "Alive" is IsLive, not `State == StateRunning`: nothing moves the state
-// column off "running" when a terminal merely reaches its TTL, so the shortcut
-// kept a learner's run resumable months after its container had gone, blocking
-// every relaunch of that scenario with "a run is already in progress".
-//
-// crashTraps is not read yet: rebuilding a run whose container is gone on a new
-// one (#515) must not apply to crash-trap scenarios, where losing the container
-// is the end of the run. Callers already pass the scenario's flag so that rule
-// lands here alone.
-//
-// For active/in_progress runs bound to a terminal (and only those — it never
-// touches provisioning or setup_failed runs), CleanupZombieScenarioSessions is
-// the SQL complement of this rule; TestZombieCleanupAgreesWithRunResumeMode
+// For active/in_progress runs bound to a terminal, CleanupZombieScenarioSessions
+// is the SQL complement of this rule; TestZombieCleanupAgreesWithRunResumeMode
 // keeps the two in step.
-func RunResumeMode(session *models.ScenarioSession, terminal *terminalModels.Terminal, crashTraps bool) ResumeMode {
+func RunResumeMode(session *models.ScenarioSession, terminal *terminalModels.Terminal) ResumeMode {
 	if !slices.Contains(models.OpenSessionStatuses, session.Status) ||
-		session.Status == "setup_failed" || session.TerminalSessionID == nil || terminal == nil {
+		session.Status == "setup_failed" || session.TerminalSessionID == nil {
 		return ResumeModeNone
 	}
+	// Both predicates are nil-safe: a missing terminal row is no resume.
 	if terminal.IsLive() {
 		return ResumeModeLive
 	}
@@ -2374,15 +2356,12 @@ func RunResumeMode(session *models.ScenarioSession, terminal *terminalModels.Ter
 	return ResumeModeNone
 }
 
-// GetResumableSession returns the run of this scenario the learner can resume
-// (live or paused), or nil. Read-only: unlike the launch path it never abandons
-// a zombie, because a listing must not mutate the sessions it is describing.
-func (s *ScenarioSessionService) GetResumableSession(userID string, scenarioID uuid.UUID) (*models.ScenarioSession, error) {
-	existing, mode, err := findExistingSession(s.db, userID, scenarioID)
-	if err != nil || mode == ResumeModeNone {
-		return nil, err
-	}
-	return existing, nil
+// HasResumableRun reports whether the learner has a run of this scenario they
+// can resume (live or paused). Read-only: unlike the launch path it never
+// abandons a zombie.
+func (s *ScenarioSessionService) HasResumableRun(userID string, scenarioID uuid.UUID) (bool, error) {
+	_, mode, err := findExistingSession(s.db, userID, scenarioID)
+	return mode != ResumeModeNone, err
 }
 
 // ResumableRun is a run the learner can resume, and how.
@@ -2391,8 +2370,8 @@ type ResumableRun struct {
 	Mode    ResumeMode
 }
 
-// GetResumableRuns answers GetResumableSession for many scenarios at once, in
-// three queries, keyed by scenario. The availability endpoint lists every
+// GetResumableRuns returns the resumable run of each scenario, if any, in
+// two queries, keyed by scenario. The availability endpoint lists every
 // scenario a learner can see, so asking per scenario would reproduce the
 // per-row lookup that made the class analytics page slow.
 func (s *ScenarioSessionService) GetResumableRuns(userID string, scenarioIDs []uuid.UUID) (map[uuid.UUID]ResumableRun, error) {
@@ -2402,9 +2381,8 @@ func (s *ScenarioSessionService) GetResumableRuns(userID string, scenarioIDs []u
 	}
 
 	var sessions []models.ScenarioSession
-	if err := s.db.Preload("Scenario", selectCrashTraps).
-		Where("user_id = ? AND scenario_id IN ? AND status IN ?",
-			userID, scenarioIDs, models.OpenSessionStatuses).Find(&sessions).Error; err != nil {
+	if err := s.db.Where("user_id = ? AND scenario_id IN ? AND status IN ?",
+		userID, scenarioIDs, models.OpenSessionStatuses).Find(&sessions).Error; err != nil {
 		return nil, fmt.Errorf("failed to list existing sessions: %w", err)
 	}
 	if len(sessions) == 0 {
@@ -2418,7 +2396,7 @@ func (s *ScenarioSessionService) GetResumableRuns(userID string, scenarioIDs []u
 
 	for i := range sessions {
 		session := &sessions[i]
-		mode := RunResumeMode(session, terminalFor(terminalsByID, session), session.Scenario.CrashTraps)
+		mode := RunResumeMode(session, terminalFor(terminalsByID, session))
 		if mode != ResumeModeNone {
 			runs[session.ScenarioID] = ResumableRun{Session: session, Mode: mode}
 		}

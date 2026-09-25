@@ -10,57 +10,42 @@ import (
 	"gorm.io/gorm"
 )
 
+// sweptStatuses are the run statuses the zombie sweep judges.
+var sweptStatuses = []string{"active", "in_progress"}
+
+// OwnersToSyncBeforeSweep returns the users whose terminals the sweep cannot
+// judge from the database alone: a persistent terminal tt-backend auto-stopped
+// at its TTL still reads "running", and its container is kept for a while and
+// then reaped without ocf-core being told. Syncing these owners first lets the
+// sweep see which it is. Only owners of a non-deleted active/in_progress run
+// and with an active terminal key are returned — SyncUserSessions refuses the
+// others, so asking would only log the same error every pass.
+func OwnersToSyncBeforeSweep(db *gorm.DB) ([]string, error) {
+	var owners []string
+	err := db.Model(&terminalModels.Terminal{}).
+		Distinct("terminals.user_id").
+		Joins("JOIN scenario_sessions ON scenario_sessions.terminal_session_id = terminals.session_id"+
+			" AND scenario_sessions.deleted_at IS NULL").
+		Joins("JOIN user_terminal_keys ON user_terminal_keys.user_id = terminals.user_id"+
+			" AND user_terminal_keys.is_active = ? AND user_terminal_keys.deleted_at IS NULL", true).
+		Where("scenario_sessions.status IN ?", sweptStatuses).
+		Where("terminals.state = ? AND terminals.persistence_mode = ? AND terminals.expires_at < ?",
+			terminalModels.StateRunning, terminalModels.PersistenceModePersistent, time.Now()).
+		Pluck("terminals.user_id", &owners).Error
+	return owners, err
+}
+
 // CleanupZombieScenarioSessions abandons runs whose environment is gone, and
 // returns how many it abandoned.
 //
 // For active/in_progress runs bound to a terminal — the only rows it sweeps —
-// it is the complement of RunResumeMode: it abandons exactly the runs that rule
-// reports as not resumable. Both defer to the same terminal rule —
-// models.ContainerHeldScope, the SQL form of Terminal.HoldsContainer — so a
-// paused run (terminal stopped with its container kept until the reap
-// deadline, or a persistent terminal tt-backend auto-stopped before any sync
-// moved its row off "running") is spared; TestZombieCleanupAgreesWithRunResumeMode
-// pins the two together. Selecting the terminals that still hold a container
-// and abandoning every session outside that set also covers the session whose
-// terminal row has vanished entirely, without a second subquery.
-//
-// The auto-stopped persistent terminal is the one row that rule cannot judge
-// from the database alone: its container is kept for a while, then reaped by
-// tt-backend, and nothing tells ocf-core unless its owner comes back and
-// triggers a sync. Left alone, its run stayed open forever and held the
-// one-run slot. So before sweeping, syncOwners (when non-nil) is called once
-// with the owners of those terminals (behind a non-deleted open run, and only
-// owners with an active terminal key — the only ones a sync can serve); the sync records the pause or the
-// deletion, and the sweep below reads the result.
-//
-// Using the live-only rule (RunningDisplayScope) here made Pause end the
-// scenario: the next sweep abandoned every paused run. Enumerating dead states
-// instead (deleted / stopped / revoked) missed the most common corpse of all:
-// an ephemeral terminal past its TTL whose state column still reads "running",
-// because nothing moves that column when a session simply reaches its deadline.
-func CleanupZombieScenarioSessions(db *gorm.DB, syncOwners func(userIDs []string)) (int64, error) {
+// it is the complement of RunResumeMode: it abandons exactly the runs whose
+// terminal is outside models.ContainerHeldScope, the SQL form of
+// Terminal.HoldsContainer. TestZombieCleanupAgreesWithRunResumeMode pins the
+// two together. A run whose terminal row has vanished is outside the set too.
+// Callers sync the owners OwnersToSyncBeforeSweep names first.
+func CleanupZombieScenarioSessions(db *gorm.DB) (int64, error) {
 	now := time.Now()
-	sweptStatuses := []string{"active", "in_progress"}
-
-	if syncOwners != nil {
-		var owners []string
-		if err := db.Model(&terminalModels.Terminal{}).
-			Distinct("terminals.user_id").
-			Joins("JOIN scenario_sessions ON scenario_sessions.terminal_session_id = terminals.session_id AND scenario_sessions.deleted_at IS NULL").
-			// SyncUserSessions refuses an owner without an active key; asking
-			// anyway would only log the same error every sweep.
-			Joins("JOIN user_terminal_keys ON user_terminal_keys.user_id = terminals.user_id AND user_terminal_keys.is_active = ? AND user_terminal_keys.deleted_at IS NULL", true).
-			Where("scenario_sessions.status IN ?", sweptStatuses).
-			Where("terminals.state = ? AND terminals.persistence_mode = ? AND terminals.expires_at < ?",
-				terminalModels.StateRunning, terminalModels.PersistenceModePersistent, now).
-			Pluck("terminals.user_id", &owners).Error; err != nil {
-			// Not fatal: the sweep still spares these runs, it just cannot
-			// learn that their container was reaped until the next pass.
-			slog.Warn("failed to list owners of auto-stopped persistent terminals", "err", err)
-		} else if len(owners) > 0 {
-			syncOwners(owners)
-		}
-	}
 
 	// Subquery: the terminals a learner could still come back to.
 	heldTerminals := db.Model(&terminalModels.Terminal{}).

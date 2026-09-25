@@ -217,27 +217,21 @@ const PersistenceModePersistent = "persistent"
 
 // ContainerHeldScope filters terminals that still hold a container the learner
 // can come back to — the "is there anything left to resume?" predicate. It is
-// wider than RunningDisplayScope:
-//
-//	deleted_at IS NULL AND (
-//	    (state IN ('running', 'stopped') AND expires_at > NOW())
-//	    -- live, or paused: stopped with the container kept until the reap
-//	    -- deadline, which the stop moved into expires_at
-//	 OR (state = 'running' AND persistence_mode = 'persistent')
-//	    -- tt-backend auto-stopped it at its TTL or idle timeout and kept the
-//	    -- container, but no sync has moved the row off "running" yet
-//	)
-//
-// A scenario run on such a terminal is paused, not over: the zombie cron must
-// spare it and the launch path must offer to resume it. A stopped row past its
-// expiry has been (or is about to be) reaped, so it holds nothing.
+// wider than RunningDisplayScope: a non-deleted terminal holds its container
+// when it is running or stopped inside its expiry (live, or paused with the
+// container kept until the reap deadline the stop moved into expires_at), or
+// when it is running and persistent past its expiry (tt-backend auto-stopped
+// it and kept the container, but no sync has moved the row off "running").
+// A stopped row past its expiry has been, or is about to be, reaped.
 //
 // Same parameter binding and column qualification as RunningDisplayScope.
 // HoldsContainer is this rule for a row in memory;
 // TestHoldsContainerMatchesContainerHeldScope pins the two together.
 func ContainerHeldScope(tx *gorm.DB) *gorm.DB {
 	return tx.Where(
-		"terminals.deleted_at IS NULL AND ((terminals.state IN ? AND terminals.expires_at > ?) OR (terminals.state = ? AND terminals.persistence_mode = ?))",
+		"terminals.deleted_at IS NULL AND ("+
+			"(terminals.state IN ? AND terminals.expires_at > ?) OR "+
+			"(terminals.state = ? AND terminals.persistence_mode = ?))",
 		[]TerminalState{StateRunning, StateStopped},
 		time.Now(),
 		StateRunning,

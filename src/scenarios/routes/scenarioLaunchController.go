@@ -387,6 +387,23 @@ const (
 	blockReasonSessionExists        = "session_exists"
 )
 
+// rejectIfRunInProgress answers the request and reports true when the learner
+// already has a run of this scenario to resume, live or paused. It runs before
+// a terminal exists, so a refused launch leaves nothing behind;
+// StartScenario re-checks inside its transaction for the race.
+func (sc *scenarioLaunchController) rejectIfRunInProgress(ctx *gin.Context, userID string, scenarioID uuid.UUID) bool {
+	exists, err := sc.sessionService.HasResumableRun(userID, scenarioID)
+	if err != nil {
+		slog.Error("failed to check for an existing scenario run", "userID", userID, "scenarioID", scenarioID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start scenario session. Please try again or contact support.")
+		return true
+	}
+	if exists {
+		respondSessionExists(ctx)
+	}
+	return exists
+}
+
 // respondSessionExists refuses a launch because the learner already has a run
 // of this scenario to resume; the launcher offers Resume on this reason.
 func respondSessionExists(ctx *gin.Context) {
@@ -500,18 +517,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		}
 	}
 
-	// A run the learner can resume — live or paused — is refused here, before a
-	// terminal exists. Refusing only from StartScenario, after the terminal was
-	// created, left that terminal behind as an orphan holding the learner's
-	// budget. StartScenario still re-checks inside its transaction for the race.
-	existingRun, existingErr := sc.sessionService.GetResumableSession(userID, scenarioID)
-	if existingErr != nil {
-		slog.Error("failed to check for an existing scenario run", "userID", userID, "scenarioID", scenarioID, "err", existingErr)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start scenario session. Please try again or contact support.")
-		return
-	}
-	if existingRun != nil {
-		respondSessionExists(ctx)
+	if sc.rejectIfRunInProgress(ctx, userID, scenarioID) {
 		return
 	}
 
@@ -618,12 +624,8 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	// Create scenario session
 	session, startErr := sc.sessionService.StartScenario(userID, scenarioID, terminalResp.SessionID, input.Locale)
 	if startErr != nil {
-		// Whatever refused the run — a concurrent launch that won the race
-		// after the check above, or any other failure — the terminal just
-		// created has no run and would only hold budget. DeleteSession also
-		// abandons any open run on it, so a run whose transaction committed
-		// before a later step failed is abandoned too — intended: no
-		// half-provisioned run is left resumable.
+		// The new terminal has no usable run and would only hold budget; deleting
+		// it also abandons any half-provisioned run already bound to it.
 		if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
 			slog.Warn("failed to delete the terminal of a failed scenario launch",
 				"terminal_session_id", terminalResp.SessionID, "err", delErr)
