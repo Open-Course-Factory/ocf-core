@@ -198,11 +198,6 @@ type TerminalTrainerSessionInfo struct {
 	// is present but stopped from one that is running — Status merely says
 	// whether the instance record still exists.
 	//
-	// It is false only when tt-backend has a settled answer that the
-	// container is stopped or absent. A container that is mid-stop, or whose
-	// state tt-backend cannot read, reports true — so true means "not known to
-	// be down", not "confirmed up".
-	//
 	// A nil pointer means a tt-backend that predates the field and therefore
 	// has no opinion, which is NOT the same as false: ocf-core and tt-backend
 	// deploy independently.

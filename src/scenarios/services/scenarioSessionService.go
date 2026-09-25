@@ -130,13 +130,8 @@ func requireActiveSession(session *models.ScenarioSession) error {
 type TerminalStopFunc func(terminalSessionID string) error
 
 // TerminalDeleteFunc is a callback to delete a terminal session and its
-// container (injected from the controller layer, same reason as
-// TerminalStopFunc: no import cycle).
+// container (injected from the controller layer).
 type TerminalDeleteFunc func(terminalSessionID string) error
-
-// TerminalInstanceRunningFunc asks tt-backend whether a terminal's container is
-// actually running. An error means the answer is unknown.
-type TerminalInstanceRunningFunc func(terminalSessionID string) (bool, error)
 
 // TerminalBuildCompleteFunc is a callback that ends a session's provisioning
 // window, removing the features it held only to be built (injected from the
@@ -150,7 +145,6 @@ type ScenarioSessionService struct {
 	verificationService VerificationServiceInterface
 	stopTerminal        TerminalStopFunc
 	deleteTerminal      TerminalDeleteFunc
-	instanceRunning     TerminalInstanceRunningFunc
 	buildComplete       TerminalBuildCompleteFunc
 }
 
@@ -172,12 +166,6 @@ func (s *ScenarioSessionService) SetTerminalStopFunc(fn TerminalStopFunc) {
 // when a crash trap ends the run.
 func (s *ScenarioSessionService) SetTerminalDeleteFunc(fn TerminalDeleteFunc) {
 	s.deleteTerminal = fn
-}
-
-// SetTerminalInstanceRunningFunc sets the callback permadeath uses to confirm
-// the container is still running before it ends a run.
-func (s *ScenarioSessionService) SetTerminalInstanceRunningFunc(fn TerminalInstanceRunningFunc) {
-	s.instanceRunning = fn
 }
 
 // SetTerminalBuildCompleteFunc sets the callback that takes away the features a
@@ -1809,35 +1797,14 @@ func (s *ScenarioSessionService) FindSessionByTerminal(terminalSessionID string)
 	return &session, nil
 }
 
-// EndCrashTrapRun applies permadeath: the learner's shell was SIGKILLed, so if
-// it was running a crash_traps scenario the run is over — the session is
-// abandoned and the container deleted.
-//
-// A SIGKILL is not always a crash trap. Crash-trap runs follow the plan's
-// persistence, so they can be paused, and tt-backend's stop tries a graceful
-// shutdown for 5 s and then force-kills, which would end the console shell
-// with 137 too. What keeps a pause from reading as a crash is tt-backend
-// closing the console of any session it stops with 4300 session_stopped
-// (tt#145, ConsoleSessionStoppedCloseCode) rather than 4137.
-//
-// The liveness check here is only a second guard. A real trap (`kill -9 -1`)
-// spares PID 1 and leaves the container running, so the run ends only when
-// tt-backend confirms it is running; a stopped instance, an error or an unwired
-// check keep the run open, because deleting is irreversible. It cannot catch a
-// pause on its own: tt-backend reports a container that is mid-stop (or whose
-// state it cannot read) as running. Known gap, accepted: a trap that halts or
-// powers off the container reads as not running and leaves the run open — this
-// errs toward keeping the learner's work.
-//
-// Second known gap: stops tt-backend does not initiate are not marked — an
-// Incus cluster evacuate or host reboot, an operator's `incus stop`, the OOM
-// killer taking the container's init. A shell killed during such a stop still
-// closes with 4137, and since a mid-stop container reads as running, the
-// liveness check can let it end the crash-trap run. The mitigation is
-// operational: drain tt-backend sessions before Incus maintenance.
-//
-// The container is deleted rather than stopped: a stopped persistent container
-// is resumable, which would bring a dead run back.
+// EndCrashTrapRun applies permadeath: the learner's shell was SIGKILLed (close
+// code 4137) in a crash_traps run, so the run is abandoned and the container
+// deleted — deleted, not stopped, because a stopped persistent container is
+// resumable. Platform stops close the console with 4300 (tt#145) and never
+// reach here. Known gaps: stops Incus makes on its own (cluster evacuate,
+// `incus stop`, OOM) still close with 4137, so drain sessions before Incus
+// maintenance; a trap that halts or powers off the container ends the run only
+// if init's teardown SIGKILLs the shell (a SIGTERM or SIGHUP leaves it open).
 //
 // Only crash_traps scenarios arm this. Anywhere else (an ordinary scenario, or
 // a terminal with no scenario session at all) a killed shell stays the
@@ -1867,10 +1834,6 @@ func (s *ScenarioSessionService) EndCrashTrapRun(terminalSessionID string) {
 		return
 	}
 
-	if !s.confirmInstanceRunning(terminalSessionID, session.ID) {
-		return
-	}
-
 	if err := s.AbandonSession(session.ID); err != nil {
 		// AbandonSession only matches active/provisioning rows, so this is the
 		// ordinary outcome for a run that had already ended.
@@ -1882,29 +1845,6 @@ func (s *ScenarioSessionService) EndCrashTrapRun(terminalSessionID string) {
 	slog.Info("crash trap ended the run: the learner's shell was killed",
 		"session_id", session.ID, "scenario_id", session.ScenarioID,
 		"terminal_session_id", terminalSessionID)
-}
-
-// confirmInstanceRunning reports whether tt-backend confirms the terminal's
-// container is running. Anything short of a confirmed yes is logged and
-// treated as no.
-func (s *ScenarioSessionService) confirmInstanceRunning(terminalSessionID string, sessionID uuid.UUID) bool {
-	if s.instanceRunning == nil {
-		slog.Warn("crash-trap kill ignored: no liveness check wired",
-			"session_id", sessionID, "terminal_session_id", terminalSessionID)
-		return false
-	}
-	running, err := s.instanceRunning(terminalSessionID)
-	if err != nil {
-		slog.Warn("crash-trap kill ignored: could not confirm the container is running",
-			"session_id", sessionID, "terminal_session_id", terminalSessionID, "err", err)
-		return false
-	}
-	if !running {
-		slog.Info("crash-trap kill ignored: the container is not running, so this was a stop",
-			"session_id", sessionID, "terminal_session_id", terminalSessionID)
-		return false
-	}
-	return true
 }
 
 // tryDeleteTerminal deletes the linked terminal session (best-effort, logs on failure)

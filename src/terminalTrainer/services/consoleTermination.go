@@ -29,12 +29,6 @@ const ConsoleSessionStoppedCloseCode = 4300
 // idle timeout, container stop) 4143. Widening this to `code >= 4000` — or
 // adding SIGTERM because it looks like a sibling — would end a learner's run
 // every time they exit their own shell or their session simply times out.
-//
-// A container stop that outlasts its 5 s graceful window is force-killed and
-// would end the shell with 137 too. tt-backend closes consoles of sessions it
-// stops with ConsoleSessionStoppedCloseCode instead (tt#145), so 4137 only
-// means a kill the platform did not cause; EndCrashTrapRun's liveness check is
-// a second guard, not the thing that tells the two apart.
 func IsShellKilledCloseCode(closeCode int) bool {
 	return closeCode == ConsoleShellKilledCloseCode
 }

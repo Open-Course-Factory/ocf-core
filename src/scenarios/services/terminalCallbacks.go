@@ -1,8 +1,6 @@
 package services
 
 import (
-	"fmt"
-
 	ttServices "soli/formations/src/terminalTrainer/services"
 )
 
@@ -15,8 +13,8 @@ import (
 // a caller that forgets the wiring gets no error, no warning, and a container
 // that keeps its build-time features for the whole session — which is how
 // bulk-start shipped: two controllers wired the pair by hand and the third
-// never did. The same holds for permadeath: without the delete and liveness
-// callbacks EndCrashTrapRun silently does nothing, disarming crash traps.
+// never did. The same holds for permadeath: without the delete callback
+// EndCrashTrapRun ends the run but leaves the container running.
 //
 // One function, called by everyone who builds a session service that will
 // provision containers, so the wiring cannot drift again.
@@ -27,14 +25,4 @@ func WireTerminalCallbacks(sessionService *ScenarioSessionService, terminalServi
 	sessionService.SetTerminalStopFunc(terminalService.StopSession)
 	sessionService.SetTerminalBuildCompleteFunc(terminalService.BuildComplete)
 	sessionService.SetTerminalDeleteFunc(terminalService.DeleteSession)
-	sessionService.SetTerminalInstanceRunningFunc(func(terminalSessionID string) (bool, error) {
-		info, err := terminalService.GetSessionInfoFromAPI(terminalSessionID)
-		if err != nil {
-			return false, err
-		}
-		if info == nil || info.InstanceRunning == nil {
-			return false, fmt.Errorf("tt-backend did not report whether terminal %s is running", terminalSessionID)
-		}
-		return *info.InstanceRunning, nil
-	})
 }

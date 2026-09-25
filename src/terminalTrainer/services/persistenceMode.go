@@ -60,10 +60,6 @@ func resolvePersistenceMode(requested string, plan *paymentModels.SubscriptionPl
 //   - otherwise → "" (let resolvePersistenceMode's empty-default → ephemeral
 //     kick in, no silent downgrade for users who didn't opt into persistence)
 //
-// Crash-trap scenarios follow the plan like any other: permadeath deletes
-// the container itself (EndCrashTrapRun), so persistence cannot keep a dead
-// run alive.
-//
 // Callers: LaunchScenario (POST /scenario-sessions/launch), the scenario
 // preview path and the teacher bulk start. All must go through here — see
 // SSOT discipline note in CLAUDE.md.

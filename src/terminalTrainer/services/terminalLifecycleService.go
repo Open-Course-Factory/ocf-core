@@ -115,26 +115,29 @@ func (l *terminalLifecycleService) StopSession(sessionID string) error {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	// 2. Brancher sur le mode de persistance.
+	// 2. Brancher sur le mode de persistance. Une ligne déjà deleted n'a rien
+	// à écrire.
 	if terminal.State == models.StateDeleted {
 		utils.Debug("Session %s was deleted while stopping — leaving it deleted", sessionID)
-	} else if terminal.PersistenceMode == "persistent" {
-		// Persistent : markSessionStopped est la SSOT — même chemin que la
-		// propagation depuis sync (étape 5a) quand tt-backend signale stop.
-		l.sync.markSessionStopped(terminal, idleUntil)
 	} else {
-		// Ephemeral (ou mode vide / inconnu) : le conteneur n'existe plus
-		// côté tt-backend, la ligne locale doit le refléter directement —
-		// pas de transition StateStopped intermédiaire. ExpiresAt/IdleUntil
-		// sont laissés tels quels : la ligne est une pierre tombale, les
-		// filtres aval (OccupiesSlotScope) la sortent dès le state=StateDeleted.
-		utils.Debug("Marking ephemeral session %s as deleted (container destroyed by tt-backend)", sessionID)
-		terminal.State = models.StateDeleted
-	}
+		if terminal.PersistenceMode == "persistent" {
+			// Persistent : markSessionStopped est la SSOT — même chemin que la
+			// propagation depuis sync (étape 5a) quand tt-backend signale stop.
+			l.sync.markSessionStopped(terminal, idleUntil)
+		} else {
+			// Ephemeral (ou mode vide / inconnu) : le conteneur n'existe plus
+			// côté tt-backend, la ligne locale doit le refléter directement —
+			// pas de transition StateStopped intermédiaire. ExpiresAt/IdleUntil
+			// sont laissés tels quels : la ligne est une pierre tombale, les
+			// filtres aval (OccupiesSlotScope) la sortent dès le state=StateDeleted.
+			utils.Debug("Marking ephemeral session %s as deleted (container destroyed by tt-backend)", sessionID)
+			terminal.State = models.StateDeleted
+		}
 
-	if err := l.repository.UpdateTerminalSession(terminal); err != nil {
-		utils.Error("Failed to update session %s state: %v", sessionID, err)
-		return err
+		if err := l.repository.UpdateTerminalSession(terminal); err != nil {
+			utils.Error("Failed to update session %s state: %v", sessionID, err)
+			return err
+		}
 	}
 
 	// A stopped/resumable session may come back with a different container
