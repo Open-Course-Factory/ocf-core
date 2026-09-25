@@ -1829,6 +1829,13 @@ func (s *ScenarioSessionService) FindSessionByTerminal(terminalSessionID string)
 // powers off the container reads as not running and leaves the run open — this
 // errs toward keeping the learner's work.
 //
+// Second known gap: stops tt-backend does not initiate are not marked — an
+// Incus cluster evacuate or host reboot, an operator's `incus stop`, the OOM
+// killer taking the container's init. A shell killed during such a stop still
+// closes with 4137, and since a mid-stop container reads as running, the
+// liveness check can let it end the crash-trap run. The mitigation is
+// operational: drain tt-backend sessions before Incus maintenance.
+//
 // The container is deleted rather than stopped: a stopped persistent container
 // is resumable, which would bring a dead run back.
 //
