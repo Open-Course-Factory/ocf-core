@@ -323,6 +323,9 @@ func TestIsLiveMatchesRunningDisplayScope(t *testing.T) {
 // auto-stopped at its TTL before any sync moved its state off "running". The
 // scenario run behind either must stay open, so the zombie cron (SQL) and the
 // resume rule (Go) have to agree on exactly these rows.
+// nullPersistence marks a matrix row whose persistence_mode is written as SQL NULL.
+const nullPersistence = "<NULL>"
+
 func TestHoldsContainerMatchesContainerHeldScope(t *testing.T) {
 	db := freshTestDB(t)
 
@@ -351,6 +354,12 @@ func TestHoldsContainerMatchesContainerHeldScope(t *testing.T) {
 		{"soft-deleted running future persistent", models.StateRunning, time.Hour, "persistent", true, false},
 		{"soft-deleted running past persistent", models.StateRunning, -time.Hour, "persistent", true, false},
 		{"soft-deleted stopped future", models.StateStopped, time.Hour, "persistent", true, false},
+		// Rows written before persistence_mode existed carry NULL, not "":
+		// NULL = 'persistent' is unknown in SQL, never true, so both forms
+		// must read such a row as ephemeral.
+		{"running future null-persistence", models.StateRunning, time.Hour, nullPersistence, false, true},
+		{"running past null-persistence", models.StateRunning, -time.Hour, nullPersistence, false, false},
+		{"stopped future null-persistence", models.StateStopped, time.Hour, nullPersistence, false, true},
 	}
 
 	wantBySessionID := make(map[string]bool, len(cases))
@@ -365,6 +374,10 @@ func TestHoldsContainerMatchesContainerHeldScope(t *testing.T) {
 			UserTerminalKeyID: userKey.ID,
 		}
 		require.NoError(t, db.Create(terminal).Error)
+		if c.persistence == nullPersistence {
+			require.NoError(t, db.Exec("UPDATE terminals SET persistence_mode = NULL WHERE session_id = ?",
+				terminal.SessionID).Error)
+		}
 		if c.softDeleted {
 			require.NoError(t, db.Delete(terminal).Error)
 		}

@@ -450,6 +450,7 @@ func TestZombieCleanupAgreesWithRunResumeMode(t *testing.T) {
 		{"running-past-persistent", terminalModels.StateRunning, -time.Hour, "persistent"},
 		{"stopped-future-ephemeral", terminalModels.StateStopped, time.Hour, "ephemeral"},
 		{"stopped-future-persistent", terminalModels.StateStopped, time.Hour, "persistent"},
+		{"stopped-past-ephemeral", terminalModels.StateStopped, -time.Hour, "ephemeral"},
 		{"stopped-past-persistent", terminalModels.StateStopped, -time.Hour, "persistent"},
 		{"deleted-future-persistent", terminalModels.StateDeleted, time.Hour, "persistent"},
 		{"revoked-future-persistent", terminalModels.StateRevoked, time.Hour, "persistent"},
