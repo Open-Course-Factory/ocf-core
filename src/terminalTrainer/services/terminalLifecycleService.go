@@ -106,8 +106,19 @@ func (l *terminalLifecycleService) StopSession(sessionID string) error {
 		utils.Warn("failed to stop session in Terminal Trainer API: %v", err)
 	}
 
+	// Relire la ligne : pendant l'appel /stop, quelqu'un d'autre (permadeath
+	// d'un crash trap, suppression admin) a pu la passer à deleted. Réécrire
+	// la copie lue avant l'appel ressusciterait la pierre tombale en
+	// "stopped", qui occuperait le budget jusqu'au reaper.
+	terminal, err = l.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
 	// 2. Brancher sur le mode de persistance.
-	if terminal.PersistenceMode == "persistent" {
+	if terminal.State == models.StateDeleted {
+		utils.Debug("Session %s was deleted while stopping — leaving it deleted", sessionID)
+	} else if terminal.PersistenceMode == "persistent" {
 		// Persistent : markSessionStopped est la SSOT — même chemin que la
 		// propagation depuis sync (étape 5a) quand tt-backend signale stop.
 		l.sync.markSessionStopped(terminal, idleUntil)

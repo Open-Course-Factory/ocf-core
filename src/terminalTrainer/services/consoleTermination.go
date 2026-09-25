@@ -12,6 +12,14 @@ import "sync"
 // code 4000+N (backend/api_session_console.go), giving 4137.
 const ConsoleShellKilledCloseCode = 4137
 
+// ConsoleSessionStoppedCloseCode is the close code tt-backend sends when the
+// platform itself stops or deletes a session (pause, expiry, idle stop,
+// teardown — tt#145). It is outside the 4000+exit-code band on purpose, so a
+// platform stop is never mistaken for a killed shell: tt-backend sends it
+// instead of whatever the shell's exit code would have been, and 4137 is left
+// meaning a real kill.
+const ConsoleSessionStoppedCloseCode = 4300
+
 // IsShellKilledCloseCode reports whether a console close code means the
 // learner's shell was SIGKILLed — the signal a crash-trap payload sends.
 //
@@ -22,9 +30,11 @@ const ConsoleShellKilledCloseCode = 4137
 // adding SIGTERM because it looks like a sibling — would end a learner's run
 // every time they exit their own shell or their session simply times out.
 //
-// Even 4137 is not proof of a crash trap: a container stop that outlasts its
-// 5 s graceful window is force-killed and ends the shell the same way. The
-// observer tells the two apart (see EndCrashTrapRun).
+// A container stop that outlasts its 5 s graceful window is force-killed and
+// would end the shell with 137 too. tt-backend closes consoles of sessions it
+// stops with ConsoleSessionStoppedCloseCode instead (tt#145), so 4137 only
+// means a kill the platform did not cause; EndCrashTrapRun's liveness check is
+// a second guard, not the thing that tells the two apart.
 func IsShellKilledCloseCode(closeCode int) bool {
 	return closeCode == ConsoleShellKilledCloseCode
 }

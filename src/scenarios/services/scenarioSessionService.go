@@ -1815,13 +1815,19 @@ func (s *ScenarioSessionService) FindSessionByTerminal(terminalSessionID string)
 //
 // A SIGKILL is not always a crash trap. Crash-trap runs follow the plan's
 // persistence, so they can be paused, and tt-backend's stop tries a graceful
-// shutdown for 5 s and then force-kills: the console shell then exits with 137
-// too (close code 4137). The two are told apart by the container itself — a
-// real trap (`kill -9 -1`) spares PID 1 and leaves the container running, a
-// stop does not. So the run only ends when tt-backend confirms the container is
-// running; a stopped instance, an unknown answer or an unwired check all keep
-// the run open, because deleting is irreversible and a false permadeath would
-// destroy the learner's work for good.
+// shutdown for 5 s and then force-kills, which would end the console shell
+// with 137 too. What keeps a pause from reading as a crash is tt-backend
+// closing the console of any session it stops with 4300 session_stopped
+// (tt#145, ConsoleSessionStoppedCloseCode) rather than 4137.
+//
+// The liveness check here is only a second guard. A real trap (`kill -9 -1`)
+// spares PID 1 and leaves the container running, so the run ends only when
+// tt-backend confirms it is running; a stopped instance, an error or an unwired
+// check keep the run open, because deleting is irreversible. It cannot catch a
+// pause on its own: tt-backend reports a container that is mid-stop (or whose
+// state it cannot read) as running. Known gap, accepted: a trap that halts or
+// powers off the container reads as not running and leaves the run open — this
+// errs toward keeping the learner's work.
 //
 // The container is deleted rather than stopped: a stopped persistent container
 // is resumable, which would bring a dead run back.
