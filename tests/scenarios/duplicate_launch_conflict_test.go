@@ -205,3 +205,69 @@ func TestMySessionsReportsPausedRunResumeMode(t *testing.T) {
 	require.Equal(t, true, wire["resumable"],
 		"resumable stays true for any resume mode, for clients that read only the flag")
 }
+
+// A finished run is never resumable, whatever its terminal still looks like.
+// Completing or abandoning a run does not stop its terminal, so a learner who
+// finishes a scenario and walks away leaves a live — or, once paused, a
+// stopped-but-held — terminal behind. The status is what says the run is
+// over; reading only the terminal offered "Resume" on a run already graded.
+func TestRunResumeMode_FinishedRunIsNeverResumable(t *testing.T) {
+	terminalSessionID := "t-1"
+	live := &terminalModels.Terminal{
+		SessionID: terminalSessionID,
+		State:     terminalModels.StateRunning,
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	paused := &terminalModels.Terminal{
+		SessionID:       terminalSessionID,
+		State:           terminalModels.StateStopped,
+		PersistenceMode: terminalModels.PersistenceModePersistent,
+		ExpiresAt:       time.Now().Add(30 * time.Minute),
+	}
+	terminals := map[string]*terminalModels.Terminal{"live": live, "paused": paused}
+
+	for _, status := range []string{"completed", "abandoned", "setup_failed"} {
+		for name, terminal := range terminals {
+			t.Run(status+"/"+name, func(t *testing.T) {
+				session := &models.ScenarioSession{Status: status, TerminalSessionID: &terminalSessionID}
+				require.Equal(t, services.ResumeModeNone, services.RunResumeMode(session, terminal, false),
+					"a run with status %s is over; its %s terminal must not make it resumable", status, name)
+			})
+		}
+	}
+
+	// Every other open status on a paused terminal is still the learner's run.
+	// provisioning included: it is in OpenSessionStatuses (it occupies the
+	// one-run slot), and a run mid-setup whose terminal holds its container is
+	// one the learner gets back to, not one to relaunch over.
+	for _, status := range []string{"active", "in_progress", "provisioning"} {
+		t.Run(status+"/paused", func(t *testing.T) {
+			session := &models.ScenarioSession{Status: status, TerminalSessionID: &terminalSessionID}
+			require.Equal(t, services.ResumeModePaused, services.RunResumeMode(session, paused, false))
+		})
+	}
+}
+
+func TestMySessionsDoesNotOfferResumeForCompletedRun(t *testing.T) {
+	db, _, scenario, userID := startScenarioThenPauseItsTerminal(t, "my-sessions-completed-paused")
+
+	now := time.Now()
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("user_id = ? AND scenario_id = ?", userID, scenario.ID).
+		Updates(map[string]any{"status": "completed", "completed_at": now}).Error)
+
+	router := setupMySessionsRouter(db, userID)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/scenario-sessions/my", nil)
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var sessions []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &sessions))
+	require.Len(t, sessions, 1)
+	require.Equal(t, "completed", sessions[0]["status"])
+	require.NotContains(t, sessions[0], "resume_mode",
+		"a completed run has nothing to resume, even while its terminal is paused")
+	require.Equal(t, false, sessions[0]["resumable"],
+		"the launcher offers Resume from this flag; a completed run must not set it")
+}
