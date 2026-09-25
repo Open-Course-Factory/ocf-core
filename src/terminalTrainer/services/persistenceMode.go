@@ -6,12 +6,13 @@ import (
 
 	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
+	"soli/formations/src/terminalTrainer/models"
 )
 
 // PersistenceMode constants forwarded to tt-backend.
 const (
 	PersistenceModeEphemeral  = "ephemeral"
-	PersistenceModePersistent = "persistent"
+	PersistenceModePersistent = models.PersistenceModePersistent
 )
 
 // ErrPersistenceForbidden is returned when a user requests a persistent

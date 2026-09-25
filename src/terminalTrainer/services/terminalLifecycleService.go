@@ -82,6 +82,13 @@ func (l *terminalLifecycleService) GetActiveUserSessions(userID string) (*[]mode
 //     StateStopped : ce serait un état fantôme (aucun conteneur à reprendre).
 //     OccupiesSlotScope sort la ligne dès la transition deleted.
 //
+// Le sort d'un run de scénario lié à ce terminal n'est PAS décidé ici : un
+// stop persistant est une pause (le run reste ouvert, reprise à la même
+// étape), et pour un stop éphémère c'est la règle de reprise
+// (scenarios/services.RunResumeMode via Terminal.HoldsContainer) et le cron
+// zombie qui concluent que le run est terminé. Une seconde définition ici
+// transformait le bouton Pause en « abandonner le scénario ».
+//
 // Aucune métrique de quota n'est mise à jour ici : la capacité terminale
 // est exclusivement régie par le moteur de budget CPU/RAM
 // (QuotaService.CheckBudget via OccupiesSlotScope), qui lit en direct.
@@ -135,16 +142,6 @@ func (l *terminalLifecycleService) StopSession(sessionID string) error {
 	// resumes to running.
 	if err := l.repository.DeleteExposedPortsBySessionID(sessionID); err != nil {
 		utils.Warn("failed to clear exposed ports for stopped session %s: %v", sessionID, err)
-	}
-
-	// 3. Auto-abandon any active scenario sessions linked to this terminal
-	result := l.db.Model(&struct{}{}).Table("scenario_sessions").
-		Where("terminal_session_id = ? AND status IN ?", sessionID, []string{"active", "provisioning", "in_progress"}).
-		Update("status", "abandoned")
-	if result.Error != nil {
-		utils.Warn("failed to abandon scenario sessions for terminal %s: %v", sessionID, result.Error)
-	} else if result.RowsAffected > 0 {
-		utils.Debug("Auto-abandoned %d scenario session(s) for stopped terminal %s", result.RowsAffected, sessionID)
 	}
 
 	return nil
@@ -383,16 +380,18 @@ func (l *terminalLifecycleService) ValidateSessionAccess(sessionID string, check
 	// hasn't caught up yet — tt-backend's auto-stop will land on the next
 	// poll. The handling diverges by PersistenceMode:
 	//
-	//   - persistent: the session is resumable. Report StateStopped so the
-	//     lifecycle middleware's allowStopped branch lets Resume / Delete
-	//     pass through during tt-backend's graceful auto-stop window.
-	//     Otherwise the user gets a 410 when clicking Resume on a session
-	//     that still exists and is about to (or has just) auto-stopped.
+	//   - persistent: the container is kept, so the terminal still holds it
+	//     (Terminal.HoldsContainer — the same rule that keeps its scenario
+	//     run open). Report StateStopped so the lifecycle middleware's
+	//     allowStopped branch lets Resume / Delete pass through during
+	//     tt-backend's graceful auto-stop window. Otherwise the user gets a
+	//     410 when clicking Resume on a session that still exists and is
+	//     about to (or has just) auto-stopped.
 	//
 	//   - ephemeral (default): the container is being destroyed; "expired"
 	//     is correct — there is nothing to resume.
 	if time.Now().After(terminal.ExpiresAt) {
-		if terminal.PersistenceMode == "persistent" {
+		if terminal.HoldsContainer() {
 			return false, string(models.StateStopped), nil
 		}
 		return false, "expired", nil

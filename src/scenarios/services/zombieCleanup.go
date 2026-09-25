@@ -13,30 +13,33 @@ import (
 // CleanupZombieScenarioSessions abandons runs whose environment is gone, and
 // returns how many it abandoned.
 //
-// It asks the complement of the question sessionIsResumable asks — "is this
-// session's terminal still alive?" — so the two must agree, and both defer to
-// the same rule: models.RunningDisplayScope, the SQL form of Terminal.IsLive.
-// Selecting the live terminals and abandoning every session outside that set
-// also covers the session whose terminal row has vanished entirely, without a
-// second subquery.
+// It is the complement of RunResumeMode for open runs: it abandons exactly the
+// runs that rule reports as not resumable. Both defer to the same terminal
+// rule — models.ContainerHeldScope, the SQL form of Terminal.HoldsContainer —
+// so a paused run (terminal stopped with its container kept until the reap
+// deadline, or a persistent terminal tt-backend auto-stopped before any sync
+// moved its row off "running") is spared; TestZombieCleanupAgreesWithRunResumeMode
+// pins the two together. Selecting the terminals that still hold a container
+// and abandoning every session outside that set also covers the session whose
+// terminal row has vanished entirely, without a second subquery.
 //
-// The previous version enumerated dead states instead (deleted / stopped /
-// revoked). That missed the most common corpse of all: a terminal past its TTL
-// whose state column still reads "running", because nothing moves that column
-// when a session simply reaches its deadline. Such sessions stayed "active"
-// indefinitely and blocked every relaunch of their scenario.
+// Using the live-only rule (RunningDisplayScope) here made Pause end the
+// scenario: the next sweep abandoned every paused run. Enumerating dead states
+// instead (deleted / stopped / revoked) missed the most common corpse of all:
+// an ephemeral terminal past its TTL whose state column still reads "running",
+// because nothing moves that column when a session simply reaches its deadline.
 func CleanupZombieScenarioSessions(db *gorm.DB) (int64, error) {
 	now := time.Now()
 
-	// Subquery: the terminals a learner could still be attached to.
-	liveTerminals := db.Model(&terminalModels.Terminal{}).
+	// Subquery: the terminals a learner could still come back to.
+	heldTerminals := db.Model(&terminalModels.Terminal{}).
 		Select("session_id").
-		Scopes(terminalModels.RunningDisplayScope)
+		Scopes(terminalModels.ContainerHeldScope)
 
 	result := db.Model(&models.ScenarioSession{}).
 		Where("status IN ?", []string{"active", "in_progress"}).
 		Where("terminal_session_id IS NOT NULL").
-		Where("terminal_session_id NOT IN (?)", liveTerminals).
+		Where("terminal_session_id NOT IN (?)", heldTerminals).
 		Updates(map[string]any{
 			"status":     "abandoned",
 			"updated_at": now,

@@ -250,13 +250,13 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 
 	// A run the learner already has is the other thing that stops a launch, and
 	// it is evaluated by the same rule the launch path applies — see
-	// ScenarioSessionService.GetResumableSessions. Reported here so the card can
+	// ScenarioSessionService.GetResumableRuns. Reported here so the card can
 	// offer Resume rather than a Launch that would come back 409.
 	scenarioIDs := make([]uuid.UUID, 0, len(scenarios))
 	for _, s := range scenarios {
 		scenarioIDs = append(scenarioIDs, s.ID)
 	}
-	resumableSessions, resumableErr := sc.sessionService.GetResumableSessions(userID, scenarioIDs)
+	resumableRuns, resumableErr := sc.sessionService.GetResumableRuns(userID, scenarioIDs)
 	if resumableErr != nil {
 		// Not fatal: without this the card falls back to offering a launch, and
 		// the launch itself still refuses with 409. Losing the whole listing
@@ -352,12 +352,13 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			}
 		}
 
-		if existing := resumableSessions[s.ID]; existing != nil {
+		if run, ok := resumableRuns[s.ID]; ok {
 			item.Launchable = false
 			item.BlockReason = blockReasonSessionExists
-			item.ActiveSessionID = existing.ID.String()
-			if existing.TerminalSessionID != nil {
-				item.ActiveTerminalSessionID = *existing.TerminalSessionID
+			item.ActiveSessionID = run.Session.ID.String()
+			item.ActiveSessionResumeMode = string(run.Mode)
+			if run.Session.TerminalSessionID != nil {
+				item.ActiveTerminalSessionID = *run.Session.TerminalSessionID
 			}
 		}
 
@@ -385,6 +386,16 @@ const (
 	blockReasonSizeOverPlan         = "size_over_plan"
 	blockReasonSessionExists        = "session_exists"
 )
+
+// respondSessionExists refuses a launch because the learner already has a run
+// of this scenario to resume; the launcher offers Resume on this reason.
+func respondSessionExists(ctx *gin.Context) {
+	ctx.JSON(http.StatusConflict, gin.H{
+		"error_code":    http.StatusConflict,
+		"error_message": "A run of this scenario is already in progress.",
+		"reason":        blockReasonSessionExists,
+	})
+}
 
 // respondProvisioningFailure turns a failed resolution into the right refusal.
 //
@@ -487,6 +498,21 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 			errors.Respond(ctx, http.StatusForbidden, "No access to this scenario")
 			return
 		}
+	}
+
+	// A run the learner can resume — live or paused — is refused here, before a
+	// terminal exists. Refusing only from StartScenario, after the terminal was
+	// created, left that terminal behind as an orphan holding the learner's
+	// budget. StartScenario still re-checks inside its transaction for the race.
+	existingRun, existingErr := sc.sessionService.GetResumableSession(userID, scenarioID)
+	if existingErr != nil {
+		slog.Error("failed to check for an existing scenario run", "userID", userID, "scenarioID", scenarioID, "err", existingErr)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start scenario session. Please try again or contact support.")
+		return
+	}
+	if existingRun != nil {
+		respondSessionExists(ctx)
+		return
 	}
 
 	// Read org context from middleware (set by InjectOrgContext)
@@ -593,11 +619,13 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	session, startErr := sc.sessionService.StartScenario(userID, scenarioID, terminalResp.SessionID, input.Locale)
 	if startErr != nil {
 		if stderrors.Is(startErr, services.ErrActiveSessionExists) {
-			ctx.JSON(http.StatusConflict, gin.H{
-				"error_code":    http.StatusConflict,
-				"error_message": "A run of this scenario is already in progress.",
-				"reason":        blockReasonSessionExists,
-			})
+			// A concurrent launch won the race after the check above: the
+			// terminal just created has no run and would only hold budget.
+			if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
+				slog.Warn("failed to delete the terminal of a refused scenario launch",
+					"terminal_session_id", terminalResp.SessionID, "err", delErr)
+			}
+			respondSessionExists(ctx)
 			return
 		}
 		slog.Error("failed to start scenario session", "userID", userID, "scenarioID", scenarioID, "err", startErr)

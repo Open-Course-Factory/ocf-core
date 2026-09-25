@@ -364,6 +364,9 @@ type AvailableScenarioOutput struct {
 	// list that may be older than the page.
 	ActiveSessionID         string `json:"active_session_id,omitempty"`
 	ActiveTerminalSessionID string `json:"active_terminal_session_id,omitempty"`
+	// ActiveSessionResumeMode says how that run is resumed: "live" or
+	// "paused" (its terminal must be started again first).
+	ActiveSessionResumeMode string `json:"active_session_resume_mode,omitempty"`
 	// ResolvedDistribution and ResolvedSize are what a launch would actually
 	// use, after image matching and size fallback. InstanceType above is only
 	// what the scenario asked for, and the two diverge routinely — an unknown
@@ -432,5 +435,10 @@ type MySessionResponse struct {
 	// terminal is gone — and a client re-deriving it from Status offered a
 	// Resume button into a container deleted the day before, with no way to
 	// start a fresh run. Computed with the same rule the launch path enforces.
-	Resumable         bool       `json:"resumable"`
+	// True for any non-empty ResumeMode.
+	Resumable bool `json:"resumable"`
+	// ResumeMode says how the run is resumed: "live" (reattach to the running
+	// terminal) or "paused" (start the stopped terminal again, back at the
+	// same step). Empty when the run cannot be resumed.
+	ResumeMode string `json:"resume_mode,omitempty"`
 }

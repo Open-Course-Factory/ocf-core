@@ -211,6 +211,52 @@ func (t *Terminal) IsLive() bool {
 		t.ExpiresAt.After(time.Now())
 }
 
+// PersistenceModePersistent marks a terminal whose container (and disk)
+// tt-backend keeps across a stop, until the reap deadline.
+const PersistenceModePersistent = "persistent"
+
+// ContainerHeldScope filters terminals that still hold a container the learner
+// can come back to — the "is there anything left to resume?" predicate. It is
+// wider than RunningDisplayScope:
+//
+//	deleted_at IS NULL AND (
+//	    (state IN ('running', 'stopped') AND expires_at > NOW())
+//	    -- live, or paused: stopped with the container kept until the reap
+//	    -- deadline, which the stop moved into expires_at
+//	 OR (state = 'running' AND persistence_mode = 'persistent')
+//	    -- tt-backend auto-stopped it at its TTL or idle timeout and kept the
+//	    -- container, but no sync has moved the row off "running" yet
+//	)
+//
+// A scenario run on such a terminal is paused, not over: the zombie cron must
+// spare it and the launch path must offer to resume it. A stopped row past its
+// expiry has been (or is about to be) reaped, so it holds nothing.
+//
+// Same parameter binding and column qualification as RunningDisplayScope.
+// HoldsContainer is this rule for a row in memory;
+// TestHoldsContainerMatchesContainerHeldScope pins the two together.
+func ContainerHeldScope(tx *gorm.DB) *gorm.DB {
+	return tx.Where(
+		"terminals.deleted_at IS NULL AND ((terminals.state IN ? AND terminals.expires_at > ?) OR (terminals.state = ? AND terminals.persistence_mode = ?))",
+		[]TerminalState{StateRunning, StateStopped},
+		time.Now(),
+		StateRunning,
+		PersistenceModePersistent,
+	)
+}
+
+// HoldsContainer is ContainerHeldScope applied to a row already in memory.
+func (t *Terminal) HoldsContainer() bool {
+	if t == nil || t.DeletedAt.Valid {
+		return false
+	}
+	withinWindow := (t.State == StateRunning || t.State == StateStopped) &&
+		t.ExpiresAt.After(time.Now())
+	autoStoppedPersistent := t.State == StateRunning &&
+		t.PersistenceMode == PersistenceModePersistent
+	return withinWindow || autoStoppedPersistent
+}
+
 // SupervisableByGroupOrgScope is the SINGLE home of the org-context supervision
 // visibility rule on the terminals table: a session is supervisable by a
 // class-group ONLY when the terminal's organization_id is NON-NULL and equals the
