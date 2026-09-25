@@ -76,10 +76,14 @@ func (ScenarioSession) TableName() string {
 	return "scenario_sessions"
 }
 
+// UniqueActiveSessionIndex is the partial unique index on (user_id,
+// scenario_id) over active/provisioning runs.
+const UniqueActiveSessionIndex = "idx_unique_active_session"
+
 // MigrateUniqueActiveSessionIndex creates a partial unique index to prevent
 // duplicate active/provisioning sessions for the same user+scenario.
 func MigrateUniqueActiveSessionIndex(db *gorm.DB) {
-	indexName := "idx_unique_active_session"
+	indexName := UniqueActiveSessionIndex
 
 	// Check if index already exists (idempotent)
 	if db.Migrator().HasIndex(&ScenarioSession{}, indexName) {

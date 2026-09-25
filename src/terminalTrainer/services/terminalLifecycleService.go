@@ -114,7 +114,7 @@ func (l *terminalLifecycleService) StopSession(sessionID string) error {
 	}
 
 	// 2. Brancher sur le mode de persistance.
-	if terminal.PersistenceMode == "persistent" {
+	if terminal.PersistenceMode == models.PersistenceModePersistent {
 		// Persistent : markSessionStopped est la SSOT — même chemin que la
 		// propagation depuis sync (étape 5a) quand tt-backend signale stop.
 		l.sync.markSessionStopped(terminal, idleUntil)

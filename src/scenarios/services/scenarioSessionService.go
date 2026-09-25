@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
 	"soli/formations/src/observability"
@@ -108,6 +109,24 @@ var ErrSessionNotActive = errors.New("session is not active")
 // an opaque server error reads as "the scenario is broken" and sends the learner
 // back to relaunch, which fails again for the same reason.
 var ErrActiveSessionExists = errors.New("active session already exists for this scenario")
+
+// sqliteActiveSessionUniqueViolation is how SQLite (the test database) reports
+// models.UniqueActiveSessionIndex refusing an insert: it names the columns,
+// not the index.
+const sqliteActiveSessionUniqueViolation = "UNIQUE constraint failed: scenario_sessions.user_id, scenario_sessions.scenario_id"
+
+// isActiveSessionUniqueViolation reports whether err is the unique index on
+// open runs refusing a second one — a concurrent launch that won the race.
+func isActiveSessionUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == pgUniqueViolation && pgErr.ConstraintName == models.UniqueActiveSessionIndex
+	}
+	return strings.Contains(err.Error(), sqliteActiveSessionUniqueViolation)
+}
+
+// pgUniqueViolation is PostgreSQL's SQLSTATE for unique_violation.
+const pgUniqueViolation = "23505"
 
 // requireActiveSession is the single owner of "may the learner act on this
 // session right now". Provisioning is the case that matters: step setup can now
@@ -289,8 +308,12 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 			}
 		}
 
-		// Create session
+		// Create session. A concurrent launch that committed after the check
+		// above is caught here by the unique index, and is the same conflict.
 		if err := tx.Create(session).Error; err != nil {
+			if isActiveSessionUniqueViolation(err) {
+				return fmt.Errorf("%w (%v)", ErrActiveSessionExists, err)
+			}
 			return fmt.Errorf("failed to create session: %w", err)
 		}
 
@@ -2333,8 +2356,10 @@ const (
 // is the end of the run. Callers already pass the scenario's flag so that rule
 // lands here alone.
 //
-// CleanupZombieScenarioSessions is the SQL complement of this rule for open
-// runs; TestZombieCleanupAgreesWithRunResumeMode keeps the two in step.
+// For active/in_progress runs bound to a terminal (and only those — it never
+// touches provisioning or setup_failed runs), CleanupZombieScenarioSessions is
+// the SQL complement of this rule; TestZombieCleanupAgreesWithRunResumeMode
+// keeps the two in step.
 func RunResumeMode(session *models.ScenarioSession, terminal *terminalModels.Terminal, crashTraps bool) ResumeMode {
 	if !slices.Contains(models.OpenSessionStatuses, session.Status) ||
 		session.Status == "setup_failed" || session.TerminalSessionID == nil || terminal == nil {
@@ -2399,17 +2424,4 @@ func (s *ScenarioSessionService) GetResumableRuns(userID string, scenarioIDs []u
 		}
 	}
 	return runs, nil
-}
-
-// GetResumableSessions is GetResumableRuns without the mode.
-func (s *ScenarioSessionService) GetResumableSessions(userID string, scenarioIDs []uuid.UUID) (map[uuid.UUID]*models.ScenarioSession, error) {
-	runs, err := s.GetResumableRuns(userID, scenarioIDs)
-	if err != nil {
-		return nil, err
-	}
-	sessions := make(map[uuid.UUID]*models.ScenarioSession, len(runs))
-	for id, run := range runs {
-		sessions[id] = run.Session
-	}
-	return sessions, nil
 }

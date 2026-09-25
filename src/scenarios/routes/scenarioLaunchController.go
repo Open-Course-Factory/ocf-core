@@ -618,13 +618,14 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	// Create scenario session
 	session, startErr := sc.sessionService.StartScenario(userID, scenarioID, terminalResp.SessionID, input.Locale)
 	if startErr != nil {
+		// Whatever refused the run — a concurrent launch that won the race
+		// after the check above, or any other failure — the terminal just
+		// created has no run and would only hold budget.
+		if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
+			slog.Warn("failed to delete the terminal of a failed scenario launch",
+				"terminal_session_id", terminalResp.SessionID, "err", delErr)
+		}
 		if stderrors.Is(startErr, services.ErrActiveSessionExists) {
-			// A concurrent launch won the race after the check above: the
-			// terminal just created has no run and would only hold budget.
-			if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
-				slog.Warn("failed to delete the terminal of a refused scenario launch",
-					"terminal_session_id", terminalResp.SessionID, "err", delErr)
-			}
 			respondSessionExists(ctx)
 			return
 		}
