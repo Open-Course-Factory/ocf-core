@@ -1801,10 +1801,11 @@ func (s *ScenarioSessionService) FindSessionByTerminal(terminalSessionID string)
 // code 4137) in a crash_traps run, so the run is abandoned and the container
 // deleted — deleted, not stopped, because a stopped persistent container is
 // resumable. Platform stops close the console with 4300 (tt#145) and never
-// reach here. Known gaps: stops Incus makes on its own (cluster evacuate,
-// `incus stop`, OOM) still close with 4137, so drain sessions before Incus
-// maintenance; a trap that halts or powers off the container ends the run only
-// if init's teardown SIGKILLs the shell (a SIGTERM or SIGHUP leaves it open).
+// reach here. Known gaps: stops tt-backend did not start (cluster evacuate,
+// an operator's `incus stop`, OOM) still close with 4137, so drain sessions
+// before Incus maintenance; a trap that halts or powers off the container ends
+// the run only if init's teardown SIGKILLs the shell (a SIGTERM or SIGHUP
+// leaves it open).
 //
 // Only crash_traps scenarios arm this. Anywhere else (an ordinary scenario, or
 // a terminal with no scenario session at all) a killed shell stays the
