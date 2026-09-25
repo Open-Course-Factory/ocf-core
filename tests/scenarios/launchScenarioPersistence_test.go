@@ -14,9 +14,10 @@
 //     "ephemeral" downstream. The wire body posted to tt-backend MUST carry
 //     persistence_mode=ephemeral.
 //
-//  3. CRASH_TRAPS OVERRIDE — when scenario.CrashTraps=true, ephemeral is
-//     forced regardless of plan capability. The trap mechanics depend on
-//     container destruction; persisting state would defeat the design.
+//  3. CRASH_TRAPS FOLLOW THE PLAN — scenario.CrashTraps no longer forces
+//     ephemeral. A crash-trap run on a persistence plan can be paused like
+//     any other; permadeath deletes the container itself (EndCrashTrapRun),
+//     so persistence cannot keep a dead run alive.
 //
 // Witness: assertions read persistence_mode from the JSON body the
 // controller's StartComposedSession POSTs to the fake tt-backend's
@@ -299,16 +300,15 @@ func TestLaunchScenario_EphemeralWhenPlanForbidsPersistence(t *testing.T) {
 			"plan permission; body=%v", rec.gotBody)
 }
 
-// TestLaunchScenario_EphemeralForcedByCrashTrapsRegardlessOfPlan pins
-// the override semantics: even on a paid plan, scenarios with
-// CrashTraps=true must run ephemeral because the trap mechanics rely on
-// container destruction. ScenarioForcesEphemeral wins over the plan's
-// persistence capability.
-func TestLaunchScenario_EphemeralForcedByCrashTrapsRegardlessOfPlan(t *testing.T) {
+// TestLaunchScenario_CrashTrapsFollowPlanPersistence pins that a crash-trap
+// scenario gets the same persistence as any other scenario: on a plan with
+// DataPersistenceEnabled it runs persistent, so the learner can pause it.
+// Permadeath no longer relies on an ephemeral container — EndCrashTrapRun
+// deletes the container when the trap fires.
+func TestLaunchScenario_CrashTrapsFollowPlanPersistence(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "launch-pers-crash-" + uuid.New().String()
 
-	// Paid plan that WOULD allow persistent if not for crash_traps.
 	seedPersistencePlan(t, db, userID, true /* DataPersistenceEnabled */)
 	seedPersistenceUserKey(t, db, userID)
 	scenario := seedPersistenceScenario(t, db, userID, true /* crash_traps */)
@@ -320,12 +320,11 @@ func TestLaunchScenario_EphemeralForcedByCrashTrapsRegardlessOfPlan(t *testing.T
 	w := launchScenarioForTest(t, router, scenario.ID)
 
 	require.Equal(t, http.StatusOK, w.Code,
-		"launch on a crash_traps scenario must succeed (forced ephemeral); "+
-			"got %d. Body: %s", w.Code, w.Body.String())
+		"launch on a crash_traps scenario must succeed; got %d. Body: %s",
+		w.Code, w.Body.String())
 	require.Equal(t, 1, rec.calls,
 		"tt-backend /1.0/sessions must be reached exactly once")
-	assert.Equal(t, "ephemeral", rec.gotBody["persistence_mode"],
-		"crash_traps=true must force persistence_mode=ephemeral on the wire "+
-			"even when the plan permits persistent; trap mechanics rely on "+
-			"container destruction; body=%v", rec.gotBody)
+	assert.Equal(t, "persistent", rec.gotBody["persistence_mode"],
+		"crash_traps=true must follow the plan: a persistence plan launches "+
+			"persistent so the run can be paused; body=%v", rec.gotBody)
 }

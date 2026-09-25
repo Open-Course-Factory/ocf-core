@@ -148,3 +148,38 @@ func TestConsoleRelay_DoesNotReportLearnerInitiatedExit(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
+// assertCloseNotReported relays a console that closes with closeCode and fails
+// if the shell-killed observer hears about it.
+func assertCloseNotReported(t *testing.T, closeCode int, terminalSessionID, why string) {
+	t.Helper()
+	reported := make(chan string, 1)
+	services.SetConsoleShellKilledObserver(func(terminalSessionID string) {
+		reported <- terminalSessionID
+	})
+	defer services.SetConsoleShellKilledObserver(nil)
+
+	ttServer := newFakeTerminalTrainer(t, closeCode, "exec_failed")
+	defer ttServer.Close()
+
+	_ = runConsoleProxy(t, ttServer, terminalSessionID)
+
+	select {
+	case got := <-reported:
+		t.Fatalf("close code %d %s. Got a report for %q", closeCode, why, got)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestConsoleRelay_DoesNotReportContainerStopSIGTERM(t *testing.T) {
+	// A pause (incus stop) first sends SIGTERM: exit 143 → close code 4143.
+	assertCloseNotReported(t, 4143, "terminal-pause-sigterm",
+		"(SIGTERM from a container stop) must never be reported as a kill — "+
+			"pausing a crash-trap run would delete it")
+}
+
+func TestConsoleRelay_DoesNotReportSIGHUP(t *testing.T) {
+	// A dropped console hangs the shell up: exit 129 → close code 4129.
+	assertCloseNotReported(t, 4129, "terminal-hangup-sighup",
+		"(SIGHUP from a hang-up) must never be reported as a kill")
+}

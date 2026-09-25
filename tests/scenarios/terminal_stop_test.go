@@ -15,6 +15,7 @@ import (
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
+	ttDto "soli/formations/src/terminalTrainer/dto"
 )
 
 // terminalStopTracker records calls to the stop function
@@ -31,6 +32,12 @@ func (t *terminalStopTracker) StopFunc() services.TerminalStopFunc {
 		t.calls = append(t.calls, terminalSessionID)
 		return t.returnErr
 	}
+}
+
+// DeleteFunc records calls the same way, for the delete callback. Use a
+// separate tracker per callback to tell a stop from a delete.
+func (t *terminalStopTracker) DeleteFunc() services.TerminalDeleteFunc {
+	return services.TerminalDeleteFunc(t.StopFunc())
 }
 
 func (t *terminalStopTracker) CallCount() int {
@@ -266,4 +273,64 @@ func TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) 
 		"runStep0Setup must call tryStopTerminal after recovering from a panic")
 	assert.Contains(t, tracker.CalledWith(), terminalID,
 		"tryStopTerminal must be invoked with the linked terminal session ID")
+}
+
+// livenessTTService is a mockTTService whose GetSessionInfoFromAPI reports a
+// fixed instance_running answer, so a test can drive the liveness callback
+// WireTerminalCallbacks builds from it.
+type livenessTTService struct {
+	*mockTTService
+	instanceRunning *bool
+	infoErr         error
+}
+
+func (m *livenessTTService) GetSessionInfoFromAPI(sessionID string) (*ttDto.TerminalTrainerSessionInfo, error) {
+	if m.infoErr != nil {
+		return nil, m.infoErr
+	}
+	return &ttDto.TerminalTrainerSessionInfo{SessionID: sessionID, Status: 1, InstanceRunning: m.instanceRunning}, nil
+}
+
+// TestWireTerminalCallbacks_WiresDeleteAndLiveness pins that the one wiring
+// function every session-service builder calls also gives permadeath its
+// delete and liveness callbacks. Both default to nil, and a nil liveness makes
+// EndCrashTrapRun a silent no-op, so a missing wire would disarm crash traps
+// without any error.
+func TestWireTerminalCallbacks_WiresDeleteAndLiveness(t *testing.T) {
+	running, stopped := true, false
+
+	cases := []struct {
+		name        string
+		tt          *livenessTTService
+		wantDeleted bool
+	}{
+		{"instance running -> deleted", &livenessTTService{mockTTService: newMockTTService(), instanceRunning: &running}, true},
+		{"instance stopped -> kept", &livenessTTService{mockTTService: newMockTTService(), instanceRunning: &stopped}, false},
+		{"tt-backend has no opinion -> kept", &livenessTTService{mockTTService: newMockTTService()}, false},
+		{"tt-backend error -> kept", &livenessTTService{mockTTService: newMockTTService(), infoErr: assert.AnError}, false},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := freshTestDB(t)
+			terminalID := fmt.Sprintf("terminal-wire-%d", i)
+			session := seedRunOnTerminal(t, db, fmt.Sprintf("wire-liveness-%d", i), true, terminalID)
+
+			sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+			services.WireTerminalCallbacks(sessionSvc, tc.tt)
+
+			sessionSvc.EndCrashTrapRun(terminalID)
+
+			assert.Empty(t, tc.tt.StoppedSessions(),
+				"permadeath must never merely stop the container")
+			if tc.wantDeleted {
+				assert.Equal(t, []string{terminalID}, tc.tt.DeletedSessions(),
+					"WireTerminalCallbacks must wire DeleteSession as the delete callback")
+				assert.Equal(t, "abandoned", sessionStatus(t, db, session.ID))
+			} else {
+				assert.Empty(t, tc.tt.DeletedSessions(),
+					"only a confirmed-running instance may be deleted")
+				assert.Equal(t, "active", sessionStatus(t, db, session.ID))
+			}
+		})
+	}
 }
