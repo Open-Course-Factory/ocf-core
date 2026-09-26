@@ -60,6 +60,9 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	sessionRoutes.POST("/:id/steps/:stepOrder/hints/:level/reveal", middleware.AuthManagement(), progressController.RevealHint)
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), progressController.AbandonSession)
 	sessionRoutes.POST("/:id/reprovision-step", middleware.AuthManagement(), rateLimiter, progressController.ReprovisionStep)
+	// No plan chain: the plan is resolved in the handler for the run's own
+	// organization, never the one the request claims.
+	sessionRoutes.POST("/:id/resume", middleware.AuthManagement(), launchController.ResumeScenario)
 	// Budget enforcement is performed inside LaunchScenario via
 	// QuotaService.CheckBudget; no middleware-level slot counter is needed.
 	//

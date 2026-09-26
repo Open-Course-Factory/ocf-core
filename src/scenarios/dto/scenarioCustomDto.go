@@ -334,12 +334,15 @@ type LaunchScenarioInput struct {
 	Locale string `json:"locale,omitempty"`
 }
 
-// LaunchScenarioResponse - DTO for launch scenario result
+// LaunchScenarioResponse - DTO for launch, preview and resume results
 type LaunchScenarioResponse struct {
 	TerminalSessionID string `json:"terminal_session_id"`
 	ScenarioSessionID string `json:"scenario_session_id"`
 	Status            string `json:"status"`
 	ProvisioningPhase string `json:"provisioning_phase,omitempty"`
+	// ProvisioningTimeoutSeconds is how long the build may take, set only
+	// while Status is "provisioning": the client's poll deadline.
+	ProvisioningTimeoutSeconds int `json:"provisioning_timeout_seconds,omitempty"`
 }
 
 // AvailableScenarioOutput - enriched scenario with launchability info
