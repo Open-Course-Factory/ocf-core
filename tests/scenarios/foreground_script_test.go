@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
@@ -133,4 +134,103 @@ func TestForegroundScript_SkippedWhenTheBackgroundScriptFailed(t *testing.T) {
 
 	assert.Empty(t, verifySvc.consoleWrites,
 		"nothing should be typed into a shell whose level was never provisioned")
+}
+
+// The first step's foreground script at launch.
+//
+// A launch builds the level before anyone can have a console open, so the
+// live-console path above always finds nobody attached and the demonstration
+// would be lost. Instead the build leaves it pending on the run, and it is typed
+// when the learner first opens their console — once, and only while the run is
+// still on the step it belongs to.
+
+// launchWithFirstStepForeground launches a two-step scenario whose first step
+// has a background and a foreground script, waits for the build, and returns
+// the running session.
+func launchWithFirstStepForeground(t *testing.T, name string) (*models.ScenarioSession, *bgTrackingVerificationService, *services.ScenarioSessionService, *gorm.DB) {
+	t.Helper()
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{Name: name, Title: name, InstanceType: "ubuntu:22.04", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Step 1",
+		BackgroundScript: "mkdir -p /opt/lab",
+		ForegroundScript: "cd /opt/lab && ls",
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Step 2"}).Error)
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-"+name, scenario.ID, "terminal-"+name, "")
+	require.NoError(t, err)
+	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
+
+	return session, verifySvc, sessionSvc, db
+}
+
+func pendingForegroundOrder(t *testing.T, db *gorm.DB, sessionID any) *int {
+	t.Helper()
+	var session models.ScenarioSession
+	require.NoError(t, db.First(&session, "id = ?", sessionID).Error)
+	return session.PendingForegroundOrder
+}
+
+func TestForeground_PendingAfterProvisioning_TypedOnFirstLearnerAttach(t *testing.T) {
+	session, verifySvc, sessionSvc, db := launchWithFirstStepForeground(t, "fg-pending-attach")
+
+	assert.Empty(t, verifySvc.consoleWrites,
+		"nothing is typed while the level is built: no console can be attached yet")
+	pending := pendingForegroundOrder(t, db, session.ID)
+	require.NotNil(t, pending, "the build must leave the first step's foreground pending on the run")
+	assert.Equal(t, 0, *pending)
+
+	sessionSvc.DeliverPendingForeground("terminal-fg-pending-attach")
+
+	require.Len(t, verifySvc.consoleWrites, 1, "the learner's first attach types the pending script")
+	assert.Equal(t, "cd /opt/lab && ls", verifySvc.consoleWrites[0].text)
+	assert.Equal(t, "terminal-fg-pending-attach", verifySvc.consoleWrites[0].sessionID)
+	assert.Nil(t, pendingForegroundOrder(t, db, session.ID),
+		"a delivered foreground is no longer pending")
+}
+
+// Reopening the console — a page reload, a second tab — is not a new step. The
+// demonstration has already played in that shell, and whatever it did to it (a
+// cd, an export) is still true; typing it again is noise at best.
+func TestForeground_SecondAttach_DoesNotRetype(t *testing.T) {
+	_, verifySvc, sessionSvc, _ := launchWithFirstStepForeground(t, "fg-second-attach")
+
+	sessionSvc.DeliverPendingForeground("terminal-fg-second-attach")
+	sessionSvc.DeliverPendingForeground("terminal-fg-second-attach")
+
+	assert.Len(t, verifySvc.consoleWrites, 1, "the pending script is typed once, on the first attach only")
+}
+
+// A learner can solve a step without ever opening the console (a flag submitted
+// from elsewhere, a check that passes on the built world). The pending
+// demonstration belongs to the step they have left, so it must never be typed
+// into the shell of the step they are on now.
+//
+// Pinned: nothing is typed, on this attach or any later one. The column itself
+// is left unasserted on purpose — the guarded clear (`WHERE current_step = ?`)
+// leaves a stale order behind, and that is harmless because a run's current
+// step never moves back to it; clearing it on advance would be an extra write
+// for no observable difference.
+func TestForeground_StepAdvancedMeanwhile_PendingDropped(t *testing.T) {
+	session, verifySvc, sessionSvc, db := launchWithFirstStepForeground(t, "fg-advanced")
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+	require.True(t, result.Passed)
+	var advanced models.ScenarioSession
+	require.NoError(t, db.First(&advanced, "id = ?", session.ID).Error)
+	require.Equal(t, 1, advanced.CurrentStep, "precondition: the run moved on to the second step")
+	require.Empty(t, verifySvc.consoleWrites, "precondition: the second step has no foreground of its own")
+
+	sessionSvc.DeliverPendingForeground("terminal-fg-advanced")
+	sessionSvc.DeliverPendingForeground("terminal-fg-advanced")
+
+	assert.Empty(t, verifySvc.consoleWrites,
+		"a foreground left pending by a step the learner has already left must never be typed")
 }

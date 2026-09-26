@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"soli/formations/src/terminalTrainer/models"
 	services "soli/formations/src/terminalTrainer/services"
 )
 
@@ -197,4 +198,124 @@ func TestIsShellKilledCloseCode(t *testing.T) {
 			assert.Equal(t, tc.want, services.IsShellKilledCloseCode(tc.code))
 		})
 	}
+}
+
+// A step's foreground script is typed into the learner's live shell, so it can
+// only be delivered once that shell has a console attached — which never
+// happens while a run is provisioning. The learner's console attach is
+// therefore published, the same inversion as the shell-killed report above,
+// and the scenarios module types the pending script on it.
+//
+// Only the learner's own attach counts. A supervisor watching the terminal, or a
+// teacher or admin opening it through the console route, is not the learner
+// sitting down at their shell: typing the demonstration then would play it to
+// the wrong audience and use it up before the learner ever saw it.
+
+// newChattyTerminalTrainer serves one console connection that sends a line of
+// output and then closes normally, so the relay under test has frames to pump.
+func newChattyTerminalTrainer(t *testing.T) *httptest.Server {
+	t.Helper()
+	upgrader := websocket.Upgrader{}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.WriteMessage(websocket.TextMessage, []byte("learner@lab:~$ "))
+		_ = conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+			time.Now().Add(time.Second))
+	}))
+}
+
+// observeConsoleAttach registers an attach observer for the test and returns
+// the channel it reports on.
+func observeConsoleAttach(t *testing.T) chan string {
+	t.Helper()
+	attached := make(chan string, 4)
+	services.SetConsoleAttachedObserver(func(terminalSessionID string) {
+		attached <- terminalSessionID
+	})
+	t.Cleanup(func() { services.SetConsoleAttachedObserver(nil) })
+	return attached
+}
+
+func assertNoAttachReported(t *testing.T, attached chan string, why string) {
+	t.Helper()
+	select {
+	case got := <-attached:
+		t.Fatalf("%s. Got an attach report for %q", why, got)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestConsoleRelay_ReportsLearnerAttach(t *testing.T) {
+	attached := observeConsoleAttach(t)
+	terminal := &models.Terminal{SessionID: "terminal-learner-attach", UserID: "learner-1"}
+
+	reportLearnerAttach(terminal, "learner-1")
+
+	select {
+	case terminalSessionID := <-attached:
+		// The tt-backend session id, like ReportConsoleClose: it is what a
+		// scenario run records and what the console input is addressed to.
+		assert.Equal(t, "terminal-learner-attach", terminalSessionID)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the learner opening their own console must be reported, " +
+			"otherwise a step's foreground script is never typed")
+	}
+	assertNoAttachReported(t, attached, "one attach must be reported once")
+}
+
+// A teacher or an admin may open a learner's terminal through the console route
+// itself (hasTerminalAccess lets group owners and admins in). That is still not
+// the learner's attach.
+func TestConsoleRelay_TeacherConsoleAttachIsNotReported(t *testing.T) {
+	attached := observeConsoleAttach(t)
+	terminal := &models.Terminal{SessionID: "terminal-teacher-attach", UserID: "learner-1"}
+
+	reportLearnerAttach(terminal, "teacher-1")
+
+	assertNoAttachReported(t, attached,
+		"a console opened by someone other than the terminal's owner must not "+
+			"be reported as the learner's attach")
+}
+
+func TestConsoleRelay_SupervisionAttachIsNotReported(t *testing.T) {
+	attached := observeConsoleAttach(t)
+
+	ttServer := newChattyTerminalTrainer(t)
+	defer ttServer.Close()
+
+	upgrader := websocket.Upgrader{}
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clientConn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		upstream, dialErr := dialSupervisionUpstream(
+			"ws"+strings.TrimPrefix(ttServer.URL, "http"), "owner-key")
+		if dialErr != nil {
+			clientConn.Close()
+			return
+		}
+		broker := &superviseBroker{clientConn: clientConn, upstream: upstream, ttSessionID: "terminal-supervised"}
+		broker.teardown = func() { clientConn.Close(); upstream.Close() }
+		broker.pumpUpstream()
+	}))
+	defer proxy.Close()
+
+	browserConn, _, err := websocket.DefaultDialer.Dial(
+		"ws"+strings.TrimPrefix(proxy.URL, "http"), nil)
+	require.NoError(t, err)
+	defer browserConn.Close()
+	_ = browserConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, data, err := browserConn.ReadMessage()
+	require.NoError(t, err, "the supervisor must still see the learner's output")
+	assert.Equal(t, "learner@lab:~$ ", string(data))
+
+	assertNoAttachReported(t, attached,
+		"a supervisor observing the terminal must never be reported as the "+
+			"learner's attach")
 }
