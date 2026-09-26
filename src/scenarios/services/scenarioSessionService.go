@@ -685,9 +685,10 @@ func (s *ScenarioSessionService) buildStep(job buildJob, step *models.ScenarioSt
 		// The intro cannot be drawn now — no console has attached yet — so it
 		// is staged as the MOTD and rendered when the learner's shell starts.
 		s.stageIntroForLogin(job.terminalID, step, job.sessionID)
-		// The foreground script cannot be typed now either, for the same
-		// reason; it waits for the learner's console (DeliverPendingForeground).
+		// The foreground script waits for the learner's console, which is
+		// usually not open yet; when it already is, it is typed right away.
 		s.leaveForegroundPending(job.sessionID, step)
+		s.DeliverPendingForeground(job.terminalID)
 	}
 	return nil
 }
@@ -1023,9 +1024,10 @@ func (s *ScenarioSessionService) runForegroundScript(terminalSessionID string, s
 }
 
 // DeliverPendingForeground types the foreground script a build left pending
-// (leaveForegroundPending) once the learner's console has attached to the
-// terminal. It is the console-attach observer, so like EndCrashTrapRun it has
-// nobody to answer and reports through logs.
+// (leaveForegroundPending) into the learner's console. The build calls it once
+// at its end, for a console already open, and it is the console-attach
+// observer for one opened later; like EndCrashTrapRun it has nobody to answer
+// and reports through logs.
 //
 // The pending order is claimed before anything is typed, so of two attaches
 // racing (a reload, a second tab) exactly one types it. The claim also requires
@@ -1065,8 +1067,13 @@ func (s *ScenarioSessionService) DeliverPendingForeground(terminalSessionID stri
 		s.db.Model(&models.ScenarioSession{}).
 			Where("id = ? AND pending_foreground_order IS NULL AND current_step = ?", session.ID, order).
 			Update("pending_foreground_order", order)
-		slog.Warn("failed to type the pending foreground script; left pending for the next attach",
-			"session_id", session.ID, "step_order", order, "err", err)
+		if errors.Is(err, ErrNoLiveConsole) {
+			// The ordinary case at the end of a build: nobody has attached yet.
+			slog.Info("foreground script left pending: no console attached", "session_id", session.ID, "step_order", order)
+		} else {
+			slog.Warn("failed to type the pending foreground script; left pending for the next attach",
+				"session_id", session.ID, "step_order", order, "err", err)
+		}
 		return
 	}
 	slog.Info("pending foreground script sent to console", "session_id", session.ID, "step_order", order)
