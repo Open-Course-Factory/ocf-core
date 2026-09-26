@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -390,6 +391,7 @@ const (
 	// Resume refusals.
 	reasonRunOver          = "run_over"
 	reasonResumeInProgress = "resume_in_progress"
+	reasonResumeRetry      = "resume_retry"
 )
 
 // rejectIfRunInProgress answers the request and reports true when the learner
@@ -971,6 +973,15 @@ func (sc *scenarioLaunchController) ResumeScenario(ctx *gin.Context) {
 	switch mode {
 	case services.ResumeModeLive:
 		ctx.JSON(http.StatusOK, sc.launchResponse(&run))
+	case services.ResumeModePaused:
+		// Only after a lost container whose deleted state could not be saved:
+		// neither a rebuild nor the end of the run is known, so nothing is
+		// created on a guess and the learner tries again.
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{
+			"error_code":    http.StatusServiceUnavailable,
+			"error_message": "Your environment could not be resumed right now. Please try again.",
+			"reason":        reasonResumeRetry,
+		})
 	case services.ResumeModeRebuild:
 		sc.rebuildRun(ctx, &run)
 	default:
@@ -1056,12 +1067,7 @@ func (sc *scenarioLaunchController) rebuildRun(ctx *gin.Context, run *models.Sce
 				"terminal_session_id", terminalResp.SessionID, "err", delErr)
 		}
 		if stderrors.Is(err, services.ErrRunNotRebuildable) {
-			// Another resume got there first: the client follows that one.
-			ctx.JSON(http.StatusConflict, gin.H{
-				"error_code":    http.StatusConflict,
-				"error_message": "This run is already being resumed.",
-				"reason":        reasonResumeInProgress,
-			})
+			sc.respondRunChangedUnderResume(ctx, run.ID)
 			return
 		}
 		slog.Error("failed to rebuild a scenario run", "session_id", run.ID, "err", err)
@@ -1070,6 +1076,26 @@ func (sc *scenarioLaunchController) rebuildRun(ctx *gin.Context, run *models.Sce
 	}
 	ctx.JSON(http.StatusOK, sc.launchResponse(rebuilding))
 }
+
+// respondRunChangedUnderResume answers a rebuild whose run changed between
+// being judged and being reattached: it ended — the client must not wait for
+// a winner — or another resume reattached it first, which the client follows.
+func (sc *scenarioLaunchController) respondRunChangedUnderResume(ctx *gin.Context, runID uuid.UUID) {
+	var run models.ScenarioSession
+	if err := sc.db.Select("status").First(&run, "id = ?", runID).Error; err != nil ||
+		slices.Contains(closedRunStatuses, run.Status) {
+		respondRunOver(ctx)
+		return
+	}
+	ctx.JSON(http.StatusConflict, gin.H{
+		"error_code":    http.StatusConflict,
+		"error_message": "This run is already being resumed.",
+		"reason":        reasonResumeInProgress,
+	})
+}
+
+// closedRunStatuses are the statuses no resume can bring a run back from.
+var closedRunStatuses = []string{"abandoned", "completed", "setup_failed"}
 
 // runOrganization is the organization a run lives in: the one its terminal
 // was filed under, whose trainers supervise it (supervision keys on
