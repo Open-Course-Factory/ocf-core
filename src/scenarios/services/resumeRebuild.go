@@ -10,7 +10,20 @@ import (
 
 	"soli/formations/src/observability"
 	"soli/formations/src/scenarios/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 )
+
+// RunOrganization is the organization a run lives in: the one its terminal was
+// filed under, whose trainers supervise it (supervision keys on
+// terminals.organization_id) and whose plan pays for it. When the run has no
+// terminal row, or it was filed under none, the scenario's own organization
+// stands in: a scenario never leaves its org. terminal may be nil.
+func RunOrganization(terminal *terminalModels.Terminal, scenario *models.Scenario) *uuid.UUID {
+	if terminal != nil && terminal.OrganizationID != nil {
+		return terminal.OrganizationID
+	}
+	return scenario.OrganizationID
+}
 
 // ErrRunNotRebuildable refuses a rebuild because the run is no longer the
 // rebuildable run the caller judged: another resume reattached it first, or it

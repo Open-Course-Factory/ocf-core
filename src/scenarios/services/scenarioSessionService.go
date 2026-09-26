@@ -2007,7 +2007,7 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionResponse, error) {
 	var sessions []models.ScenarioSession
 	if err := s.db.Preload("Scenario", func(db *gorm.DB) *gorm.DB {
-		return db.Select("id, title, crash_traps")
+		return db.Select("id, title, crash_traps, organization_id")
 	}).Preload("StepProgress").
 		Where("user_id = ?", userID).
 		Order("started_at DESC").
@@ -2030,7 +2030,8 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			}
 		}
 
-		mode := RunResumeMode(&session, terminalFor(terminals, &session), session.Scenario.CrashTraps)
+		terminal := terminalFor(terminals, &session)
+		mode := RunResumeMode(&session, terminal, session.Scenario.CrashTraps)
 		resp := dto.MySessionResponse{
 			ID:                session.ID,
 			ScenarioID:        session.ScenarioID,
@@ -2047,6 +2048,8 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			TerminalSessionID: session.TerminalSessionID,
 			Resumable:         mode != ResumeModeNone,
 			ResumeMode:        string(mode),
+			OrganizationID:    RunOrganization(terminal, &session.Scenario),
+			Locale:            session.Locale,
 		}
 		result = append(result, resp)
 	}

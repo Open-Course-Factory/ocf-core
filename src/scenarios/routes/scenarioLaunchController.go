@@ -1110,18 +1110,16 @@ func (sc *scenarioLaunchController) respondRunChangedUnderResume(ctx *gin.Contex
 // closedRunStatuses are the statuses no resume can bring a run back from.
 var closedRunStatuses = []string{"abandoned", "completed", "setup_failed"}
 
-// runOrganization is the organization a run lives in: the one its terminal
-// was filed under, whose trainers supervise it (supervision keys on
-// terminals.organization_id). Never the organization the request claims —
-// that would let a learner rebuild into their personal space and drop out of
-// supervision. When the terminal row is gone, an org scenario's own
-// organization stands in: a scenario never leaves its org.
+// runOrganization is the organization the run being rebuilt lives in (see
+// services.RunOrganization). Never the organization the request claims — that
+// would let a learner rebuild into their personal space and drop out of
+// supervision.
 func (sc *scenarioLaunchController) runOrganization(run *models.ScenarioSession, scenario *models.Scenario) *uuid.UUID {
 	terminal, err := sc.terminalService.GetSessionInfo(*run.TerminalSessionID)
-	if err == nil && terminal.OrganizationID != nil {
-		return terminal.OrganizationID
+	if err != nil {
+		terminal = nil
 	}
-	return scenario.OrganizationID
+	return services.RunOrganization(terminal, scenario)
 }
 
 // resolveTerminalPlan resolves the plan that pays for a new terminal — the

@@ -449,4 +449,10 @@ type MySessionResponse struct {
 	// same step) or "rebuild" (the container is gone: a new one is built as
 	// the learner left it). Empty when the run cannot be resumed.
 	ResumeMode string `json:"resume_mode,omitempty"`
+	// OrganizationID and Locale are where and in which language the run is
+	// played, so "Start over" relaunches it there: the organization its
+	// terminal was filed under (else its scenario's), and the locale it was
+	// started in. Empty for none.
+	OrganizationID *uuid.UUID `json:"organization_id,omitempty"`
+	Locale         string     `json:"locale,omitempty"`
 }
