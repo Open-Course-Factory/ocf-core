@@ -794,10 +794,16 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 			previewOrgID = &parsed
 		}
 	}
+	// A platform admin outside that org has no plan of it: they preview on
+	// their own plan, on a terminal of no org.
+	isAdmin := access.IsAdmin(ctx.GetStringSlice("userRoles"))
+	if isAdmin && previewOrgID != nil && !sc.isActiveOrgMember(userID, *previewOrgID) {
+		previewOrgID = nil
+	}
 
 	// Build preview options
 	var previewOpts []services.PreviewOption
-	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+	if isAdmin {
 		previewOpts = append(previewOpts, services.WithAdminBypass())
 	}
 	// Inject org manager check
@@ -1070,4 +1076,14 @@ func (sc *scenarioLaunchController) resolveTerminalPlan(ctx *gin.Context, userID
 		return nil, false
 	}
 	return planResult, true
+}
+
+// isActiveOrgMember reports whether userID is an active member of orgID, in
+// any role.
+func (sc *scenarioLaunchController) isActiveOrgMember(userID string, orgID uuid.UUID) bool {
+	var count int64
+	sc.db.Model(&orgModels.OrganizationMember{}).
+		Where("user_id = ? AND organization_id = ? AND is_active = true", userID, orgID).
+		Count(&count)
+	return count > 0
 }
