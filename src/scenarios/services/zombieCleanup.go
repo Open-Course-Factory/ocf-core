@@ -78,13 +78,13 @@ func CleanupZombieScenarioSessions(db *gorm.DB) (int64, error) {
 // "provisioning", which the reaper has already cleared, so the success is
 // discarded silently and the session stays setup_failed forever.
 //
-// The longest legitimate run is the larger of the step-0 budget and the
+// The longest legitimate run is the larger of the initial-setup budget and the
 // per-step ceiling; the margin covers the gap between a script's own timeout
 // firing and the goroutine finishing its cleanup.
 const stuckProvisioningReapMargin = 2 * time.Minute
 
 var stuckProvisioningTimeout = time.Duration(
-	max(bgScriptTimeoutStep0, MaxBackgroundTimeoutSeconds),
+	max(bgScriptTimeoutInitial, MaxBackgroundTimeoutSeconds),
 )*time.Second + stuckProvisioningReapMargin
 
 // CleanupStuckProvisioningSessions marks long-stalled provisioning sessions as

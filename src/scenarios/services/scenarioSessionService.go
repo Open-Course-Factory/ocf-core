@@ -384,22 +384,23 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 			}
 		}
 
-		// Build the world for the first step: scenario setup script first
-		// (global env prep), then the first step's background script.
-		first := &scenario.Steps[0]
+		// Build the world for the first step: vocabulary and scenario setup
+		// script first (global env prep), then the first step's background
+		// script.
 		job := buildJob{
-			sessionID:    session.ID,
-			terminalID:   *session.TerminalSessionID,
-			scenario:     &scenario,
-			flags:        session.Flags,
+			sessionID:  session.ID,
+			terminalID: *session.TerminalSessionID,
+			scenario:   &scenario,
+			// A copy: the build adopts script-chosen answers into its flags, in
+			// the background, while the caller still holds the session.
+			flags:        slices.Clone(session.Flags),
 			locale:       session.Locale,
-			throughOrder: first.Order,
+			throughOrder: scenario.Steps[0].Order,
 			phase:        "step_setup",
 		}
-		setupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
-		bgScript := ResolveScriptContent(s.db, first.BackgroundScriptID, first.BackgroundScript)
-		slog.Info("StartScenario scripts", "session_id", session.ID, "setup_len", len(setupScript), "bg_len", len(bgScript))
-		if setupScript != "" || bgScript != "" {
+		runsScripts := s.buildRunsScripts(job)
+		slog.Info("StartScenario build", "session_id", session.ID, "runs_scripts", runsScripts)
+		if runsScripts {
 			// Set session to provisioning — frontend will poll until active
 			s.db.Model(session).Updates(map[string]any{
 				"status":             "provisioning",
@@ -408,16 +409,14 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 			session.Status = "provisioning"
 			session.ProvisioningPhase = "setup_script"
 
-			go s.runStep0Setup(job)
+			go s.runLaunchBuild(job)
 		} else {
-			// No scripts: nothing to wait for, so the rest of the build — flag,
-			// intro banner — happens inline and the run stays active. Going
-			// through buildWorld all the same keeps one rule for what the first
-			// step gets. A failure is best-effort here: the helpers log, and
+			// Nothing to run: the build is only the flag and the intro banner,
+			// so it happens inline and the run stays active. Going through
+			// buildWorld all the same keeps one rule for what the first step
+			// gets. Both are best-effort and log their own failures;
 			// reprovision-step is the retry.
-			if err := s.buildWorld(job); err != nil {
-				slog.Error("scenario setup failed", "session_id", session.ID, "err", err)
-			}
+			_ = s.buildWorld(job)
 			// Nothing ran, but the container was still created with the
 			// build features attached — a scenario can declare them and
 			// have no scripts. Close the window here too.
@@ -491,10 +490,10 @@ func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.
 	return session, nil
 }
 
-// runStep0Setup builds the world for the first step asynchronously and
+// runLaunchBuild builds the world for the first step asynchronously and
 // transitions the session from "provisioning" to "active" once it is built, or
 // to "setup_failed" if a script fails.
-func (s *ScenarioSessionService) runStep0Setup(job buildJob) {
+func (s *ScenarioSessionService) runLaunchBuild(job buildJob) {
 	// Deferred rather than placed at the end: this function returns from
 	// several points — setup failures, an abandoned session, a recovered panic —
 	// and every one of them leaves a container still holding the network its
@@ -504,7 +503,7 @@ func (s *ScenarioSessionService) runStep0Setup(job buildJob) {
 	defer func() {
 		if r := recover(); r != nil {
 			observability.Metrics.ScenarioSetupPanic.Add(1)
-			slog.Error("runStep0Setup panic recovered",
+			slog.Error("launch build panic recovered",
 				"session_id", job.sessionID,
 				"panic", r,
 				"stack", string(debug.Stack()))
@@ -601,6 +600,29 @@ func (s *ScenarioSessionService) buildWorld(job buildJob) error {
 	return nil
 }
 
+// buildRunsScripts reports whether buildWorld(job) would run anything in the
+// container: the vocabulary, the scenario's setup script, or the background
+// script of any step it builds. Only such a build is worth taking off the
+// request; the rest is a flag and a banner.
+//
+// A vocabulary that cannot be generated counts as work, so the build that
+// meets the same error reports it the way any failed setup is reported.
+func (s *ScenarioSessionService) buildRunsScripts(job buildJob) bool {
+	if install, err := s.lexiconInstall(job.scenario.ID, job.locale); err != nil || install != "" {
+		return true
+	}
+	if ResolveScriptContent(s.db, job.scenario.SetupScriptID, job.scenario.SetupScript) != "" {
+		return true
+	}
+	for i := range job.scenario.Steps {
+		step := &job.scenario.Steps[i]
+		if step.Order <= job.throughOrder && ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // runScenarioSetup installs the world's vocabulary and runs the scenario-level
 // setup script, which prepare the environment before any step does.
 func (s *ScenarioSessionService) runScenarioSetup(job buildJob) error {
@@ -625,7 +647,7 @@ func (s *ScenarioSessionService) runScenarioSetup(job buildJob) error {
 	}
 	// The scenario-level setup script is not a step and has no "current"
 	// flag; crash_traps scenarios hand it the whole set through config.json.
-	if _, err := s.executeBackgroundScript(job.terminalID, setupStep, provisioningEnv(job.scenario, job.locale)); err != nil {
+	if _, err := s.executeBackgroundScript(job.terminalID, job.scenario, setupStep, provisioningEnv(job.scenario, job.locale)); err != nil {
 		return fmt.Errorf("scenario setup script: %w", err)
 	}
 	return nil
@@ -643,7 +665,7 @@ func (s *ScenarioSessionService) buildStep(job buildJob, step *models.ScenarioSt
 		if !s.heartbeat(job.sessionID, job.phase) {
 			return errBuildAbandoned
 		}
-		stdout, err := s.executeBackgroundScript(job.terminalID, step, stepProvisioningEnv(job.scenario, job.flags, step.Order, job.locale))
+		stdout, err := s.executeBackgroundScript(job.terminalID, job.scenario, step, stepProvisioningEnv(job.scenario, job.flags, step.Order, job.locale))
 		if err != nil {
 			return fmt.Errorf("step %d setup: %w", step.Order, err)
 		}
@@ -752,7 +774,7 @@ func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSessi
 		}
 		return dto.StepProvisioningStatus{
 			NextStepProvisioning:       true,
-			ProvisioningTimeoutSeconds: effectiveTimeout(step),
+			ProvisioningTimeoutSeconds: effectiveTimeout(session.Scenario.Steps, step),
 		}
 	}
 
@@ -933,7 +955,7 @@ func (s *ScenarioSessionService) adoptScriptChosenAnswer(stdout string, flags []
 //
 // The foreground script runs last, after the environment it acts on exists.
 func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep, locale string) error {
-	stdout, scriptErr := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order, locale))
+	stdout, scriptErr := s.executeBackgroundScript(terminalSessionID, scenario, step, stepProvisioningEnv(scenario, flags, step.Order, locale))
 	s.adoptScriptChosenAnswer(stdout, flags, step)
 	flagErr := s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, step.Order)
 	if scriptErr != nil {
@@ -1015,7 +1037,7 @@ func (s *ScenarioSessionService) startAsyncStepProvisioning(session *models.Scen
 }
 
 // runAsyncStepProvisioning is the goroutine body behind
-// startAsyncStepProvisioning. It mirrors runStep0Setup's safety pattern — panic
+// startAsyncStepProvisioning. It mirrors runLaunchBuild's safety pattern — panic
 // recovery, every status write guarded on the session still being in
 // "provisioning" — with one deliberate difference: a mid-scenario failure
 // leaves the terminal running. The learner already has a working shell, and
@@ -1069,7 +1091,7 @@ func (s *ScenarioSessionService) runAsyncStepProvisioning(sessionID uuid.UUID, t
 }
 
 // failStepProvisioning records a mid-scenario provisioning failure. The
-// terminal is intentionally left running, unlike the step 0 failure path.
+// terminal is intentionally left running, unlike the launch build's failure path.
 //
 // A failure to record the failure is logged rather than dropped: this is the
 // path that gets the session out of "provisioning", so if it silently does
@@ -1195,12 +1217,15 @@ func (s *ScenarioSessionService) CurrentStepProvisioningTimeout(session *models.
 	if session.Status != "provisioning" {
 		return 0
 	}
-	var step models.ScenarioStep
-	if err := s.db.Where("scenario_id = ? AND \"order\" = ?", session.ScenarioID, session.CurrentStep).
-		First(&step).Error; err != nil {
+	var steps []models.ScenarioStep
+	if err := s.db.Where("scenario_id = ?", session.ScenarioID).Find(&steps).Error; err != nil {
 		return 0
 	}
-	return effectiveTimeout(&step)
+	step := findStepByOrder(steps, session.CurrentStep)
+	if step == nil {
+		return 0
+	}
+	return effectiveTimeout(steps, step)
 }
 
 // GetCurrentStep returns the current step content for a session.
@@ -2227,10 +2252,10 @@ func (s *ScenarioSessionService) deployChallengeConfig(terminalSessionID string,
 const maxInlineScriptSize = 4000
 
 // Background script execution timeouts, in seconds.
-// Step 0 gets a longer timeout because it typically runs the full environment
-// setup (user creation, service provisioning, package installs, etc.).
+// The initial setup gets a longer timeout because it typically runs the full
+// environment setup (user creation, service provisioning, package installs, etc.).
 const (
-	bgScriptTimeoutStep0   = 300 // 5 minutes for initial setup
+	bgScriptTimeoutInitial = 300 // 5 minutes for initial setup
 	bgScriptTimeoutDefault = 30  // subsequent steps, unless the step overrides it
 
 	// MaxBackgroundTimeoutSeconds is the ceiling on what a step may declare.
@@ -2251,22 +2276,31 @@ const (
 )
 
 // effectiveTimeout resolves how long a step's background script may run.
-// An explicit per-step value always wins; otherwise the initial setup (step 0,
-// and the order=-1 sentinel used for the scenario-level setup script) gets the
+// An explicit per-step value always wins; otherwise the initial setup gets the
 // long budget and later steps the default.
 //
 // The clamp is here, at the single point every caller reads the value through,
 // rather than only at the API boundary: BackgroundTimeoutSeconds also arrives
 // by import, by seed and by duplication, and none of those pass through the
 // entity DTOs. Clamping on read is the one place none of them can bypass.
-func effectiveTimeout(step *models.ScenarioStep) int {
+//
+// steps are the scenario's, which is what says whether this one is its first.
+func effectiveTimeout(steps []models.ScenarioStep, step *models.ScenarioStep) int {
 	if step.BackgroundTimeoutSeconds > 0 {
 		return min(step.BackgroundTimeoutSeconds, MaxBackgroundTimeoutSeconds)
 	}
-	if step.Order <= 0 {
-		return bgScriptTimeoutStep0
+	if isInitialSetup(steps, step) {
+		return bgScriptTimeoutInitial
 	}
 	return bgScriptTimeoutDefault
+}
+
+// isInitialSetup reports whether a script builds from a bare container: no step
+// of the scenario comes before it. That is the scenario's first step whatever
+// its number — editor-made scenarios start at 1, seeded ones at 0 — and the
+// order=-1 sentinel used for the scenario-level setup script.
+func isInitialSetup(steps []models.ScenarioStep, step *models.ScenarioStep) bool {
+	return !slices.ContainsFunc(steps, func(other models.ScenarioStep) bool { return other.Order < step.Order })
 }
 
 // executeBackgroundScript runs a step's background script in the student's container.
@@ -2275,7 +2309,7 @@ func effectiveTimeout(step *models.ScenarioStep) int {
 // Small scripts (<=4000 bytes) are passed inline via /bin/sh -c.
 // Large scripts are pushed as temp files via PushFile, then executed from disk
 // and cleaned up afterward, to avoid tt-backend's 4KB exec argument limit.
-func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep, env map[string]string) (string, error) {
+func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, scenario *models.Scenario, step *models.ScenarioStep, env map[string]string) (string, error) {
 	// Resolve background script from ProjectFile if available
 	bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
 	if bgScript == "" {
@@ -2285,7 +2319,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		return "", fmt.Errorf("verification service not available")
 	}
 
-	timeout := effectiveTimeout(step)
+	timeout := effectiveTimeout(scenario.Steps, step)
 
 	var exitCode int
 	var stderr string
