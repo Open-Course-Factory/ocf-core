@@ -58,10 +58,10 @@ func isFlagPathAllowed(flagPath string, allowedPrefixes []string) bool {
 	return slices.ContainsFunc(allowedPrefixes, func(prefix string) bool { return strings.HasPrefix(flagPath, prefix) })
 }
 
-// findStepByOrder returns the step whose Order matches, or nil. Step orders are
+// FindStepByOrder returns the step whose Order matches, or nil. Step orders are
 // data-driven (0- or 1-based depending on the authoring path), so every lookup
 // goes through the Order field rather than through slice indexing.
-func findStepByOrder(steps []models.ScenarioStep, order int) *models.ScenarioStep {
+func FindStepByOrder(steps []models.ScenarioStep, order int) *models.ScenarioStep {
 	if i := slices.IndexFunc(steps, func(s models.ScenarioStep) bool { return s.Order == order }); i >= 0 {
 		return &steps[i]
 	}
@@ -256,7 +256,7 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 	// Editor-created scenarios use 1-based ordering; legacy seeded ones may
 	// use 0-based. Either way, GetCurrentStep looks up the step whose Order
 	// matches CurrentStep, so seed it from data.
-	return s.startRun(userID, scenario, terminalSessionID, locale, scenario.Steps[0].Order)
+	return s.startRun(userID, scenario, terminalSessionID, locale, scenario.Steps[0].Order, false)
 }
 
 // loadScenarioWithSteps loads a scenario and its steps in order, refusing one
@@ -277,8 +277,9 @@ func (s *ScenarioSessionService) loadScenarioWithSteps(scenarioID uuid.UUID) (*m
 // startRun creates a run of the scenario on the step whose Order is
 // startOrder: the steps before it read as completed, the ones after it as
 // locked, and the container is built through it, as a learner arriving there
-// would find it.
-func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenario, terminalSessionID string, locale string, startOrder int) (*models.ScenarioSession, error) {
+// would find it. A preview run is one from its first write, so nothing that
+// reads the run while it builds can take it for a learner's.
+func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenario, terminalSessionID string, locale string, startOrder int, isPreview bool) (*models.ScenarioSession, error) {
 	scenarioID := scenario.ID
 
 	// A language the scenario cannot actually deliver is refused rather than
@@ -288,7 +289,7 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 	if err := s.assertLocaleLaunchable(scenarioID, locale); err != nil {
 		return nil, err
 	}
-	if findStepByOrder(scenario.Steps, startOrder) == nil {
+	if FindStepByOrder(scenario.Steps, startOrder) == nil {
 		return nil, fmt.Errorf("scenario has no step %d", startOrder)
 	}
 
@@ -301,6 +302,7 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 		Status:            "active",
 		StartedAt:         now,
 		Locale:            locale,
+		IsPreview:         isPreview,
 	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -527,18 +529,7 @@ func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.
 
 	// Preview runs in the scenario's own language: there is no learner here to
 	// have chosen one.
-	session, err := s.startRun(userID, scenario, terminalSessionID, "", startOrder)
-	if err != nil {
-		return nil, err
-	}
-
-	// Mark as preview
-	if err := s.db.Model(session).Update("is_preview", true).Error; err != nil {
-		return nil, fmt.Errorf("failed to set preview flag: %w", err)
-	}
-	session.IsPreview = true
-
-	return session, nil
+	return s.startRun(userID, scenario, terminalSessionID, "", startOrder, true)
 }
 
 // ReplacePreviewRun makes way for a new preview of the scenario by userID: it
@@ -829,7 +820,7 @@ func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSessi
 	if session.TerminalSessionID == nil {
 		return dto.StepProvisioningStatus{}
 	}
-	step := findStepByOrder(session.Scenario.Steps, nextStepOrder)
+	step := FindStepByOrder(session.Scenario.Steps, nextStepOrder)
 	if step == nil {
 		return dto.StepProvisioningStatus{}
 	}
@@ -1203,7 +1194,7 @@ func (s *ScenarioSessionService) ReprovisionCurrentStep(sessionID uuid.UUID, for
 		return nil, err
 	}
 
-	step := findStepByOrder(session.Scenario.Steps, session.CurrentStep)
+	step := FindStepByOrder(session.Scenario.Steps, session.CurrentStep)
 	if step == nil {
 		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
 	}
@@ -1301,7 +1292,7 @@ func (s *ScenarioSessionService) CurrentStepProvisioningTimeout(session *models.
 	if err := s.db.Where("scenario_id = ?", session.ScenarioID).Find(&steps).Error; err != nil {
 		return 0
 	}
-	step := findStepByOrder(steps, session.CurrentStep)
+	step := FindStepByOrder(steps, session.CurrentStep)
 	if step == nil {
 		return 0
 	}
@@ -1690,7 +1681,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 	}
 
 	// Find the current step
-	currentStep := findStepByOrder(session.Scenario.Steps, session.CurrentStep)
+	currentStep := FindStepByOrder(session.Scenario.Steps, session.CurrentStep)
 	if currentStep == nil {
 		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
 	}
@@ -2247,7 +2238,7 @@ func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID s
 	}
 
 	// The step definition carries FlagPath
-	step := findStepByOrder(scenario.Steps, stepOrder)
+	step := FindStepByOrder(scenario.Steps, stepOrder)
 	if step == nil {
 		return nil
 	}

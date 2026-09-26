@@ -738,8 +738,9 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	// The body is optional: an empty one previews from the first step on the
 	// default backend.
 	var body struct {
-		Backend       string `json:"backend"`
-		FromStepOrder *int   `json:"from_step_order"`
+		Backend        string `json:"backend"`
+		FromStepOrder  *int   `json:"from_step_order"`
+		OrganizationID string `json:"organization_id"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil && !stderrors.Is(err, io.EOF) {
 		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body")
@@ -748,6 +749,26 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	backend := ctx.Query("backend")
 	if backend == "" {
 		backend = body.Backend
+	}
+
+	// The organization the preview runs in — its plan pays for the terminal,
+	// its backends host it, and the terminal is its. An org scenario never
+	// leaves its org; a platform scenario runs in the org the caller is
+	// working in, named by the query or the body.
+	previewOrgID := scenario.OrganizationID
+	if previewOrgID == nil {
+		requestOrg := ctx.Query("organization_id")
+		if requestOrg == "" {
+			requestOrg = body.OrganizationID
+		}
+		if requestOrg != "" {
+			parsed, parseErr := uuid.Parse(requestOrg)
+			if parseErr != nil {
+				errors.Respond(ctx, http.StatusBadRequest, "Invalid organization_id")
+				return
+			}
+			previewOrgID = &parsed
+		}
 	}
 
 	// Build preview options
@@ -776,7 +797,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	}
 
 	if body.FromStepOrder != nil {
-		if !hasStep(scenario.Steps, *body.FromStepOrder) {
+		if services.FindStepByOrder(scenario.Steps, *body.FromStepOrder) == nil {
 			errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Scenario has no step %d", *body.FromStepOrder))
 			return
 		}
@@ -785,7 +806,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 
 	// A preview builds the same machine the learners will get, so it asks the
 	// same question of the same owner rather than composing one of its own.
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, scenario.OrganizationID, backend)
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, previewOrgID, backend)
 	if distErr != nil {
 		respondProvisioningFailure(ctx, scenario.Name, distErr)
 		return
@@ -816,19 +837,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 
 	// Get user's effective plan for limit enforcement (org-context-aware)
 	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
-	var orgIDForPlan *uuid.UUID
-	if orgCtx := ctx.Query("organization_id"); orgCtx != "" {
-		if parsed, parseErr := uuid.Parse(orgCtx); parseErr == nil {
-			orgIDForPlan = &parsed
-		}
-	} else if orgFromCtx, exists := ctx.Get("org_context_id"); exists {
-		if orgStr, ok := orgFromCtx.(string); ok && orgStr != "" {
-			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
-				orgIDForPlan = &parsed
-			}
-		}
-	}
-	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID, orgIDForPlan)
+	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID, previewOrgID)
 	if planErr != nil || planResult == nil || planResult.Plan == nil {
 		errors.Respond(ctx, http.StatusForbidden, "No active subscription plan")
 		return
@@ -878,8 +887,8 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		RecordingEnabled: 1,
 		SessionUser:      scenario.SessionUser,
 	}
-	if scenario.OrganizationID != nil {
-		composedInput.OrganizationID = scenario.OrganizationID.String()
+	if previewOrgID != nil {
+		composedInput.OrganizationID = previewOrgID.String()
 	}
 	// Persistence: SSOT lives in ResolveScenarioPersistenceMode (shared with LaunchScenario).
 	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(planResult.Plan)
@@ -907,6 +916,10 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 			respondSessionExists(ctx)
 			return
 		}
+		if stderrors.Is(startErr, services.ErrPreviewNotAuthorized) {
+			errors.Respond(ctx, http.StatusForbidden, startErr.Error())
+			return
+		}
 		slog.Error("failed to start preview session", "userID", userID, "scenarioID", scenarioID, "err", startErr)
 		errors.Respond(ctx, http.StatusInternalServerError, startErr.Error())
 		return
@@ -918,14 +931,4 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		Status:            session.Status,
 		ProvisioningPhase: session.ProvisioningPhase,
 	})
-}
-
-// hasStep reports whether one of steps has the given Order.
-func hasStep(steps []models.ScenarioStep, order int) bool {
-	for _, step := range steps {
-		if step.Order == order {
-			return true
-		}
-	}
-	return false
 }
