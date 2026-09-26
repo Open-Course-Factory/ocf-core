@@ -284,6 +284,11 @@ func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 		CreatedByID:      userID,
 	}
 
+	if err := scenarioHooks.RefuseFileRefsOnNewScenario(scenario, ctx.GetStringSlice("userRoles")); err != nil {
+		errors.Respond(ctx, http.StatusForbidden, err.Error())
+		return
+	}
+
 	if err := sc.db.Create(scenario).Error; err != nil {
 		slog.Error("failed to create org scenario", "err", err, "org_id", orgID)
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to create scenario")
@@ -371,6 +376,11 @@ func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 		IntroFileID:      input.IntroFileID,
 		FinishFileID:     input.FinishFileID,
 		CreatedByID:      userID,
+	}
+
+	if err := scenarioHooks.RefuseFileRefsOnNewScenario(scenario, ctx.GetStringSlice("userRoles")); err != nil {
+		errors.Respond(ctx, http.StatusForbidden, err.Error())
+		return
 	}
 
 	if err := sc.db.Create(scenario).Error; err != nil {

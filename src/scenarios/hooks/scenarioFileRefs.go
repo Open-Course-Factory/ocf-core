@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/utils"
 
@@ -60,7 +61,7 @@ func refuseForeignFileRefs[M any](db *gorm.DB, scenarioID uuid.UUID, fields map[
 			return fmt.Errorf("check %s: %w", column, err)
 		}
 		if owned == 0 {
-			return utils.PermissionDeniedError("set "+column+" to a file outside", "scenario")
+			return foreignFileRefError(column)
 		}
 	}
 	return nil
@@ -88,4 +89,23 @@ func fileRefOf[M any](newEntity any, column string, get func(*M) *uuid.UUID) (uu
 		return uuid.Nil, false, fmt.Errorf("unexpected %T for a file reference", newEntity)
 	}
 	return uuid.Nil, false, nil
+}
+
+// RefuseFileRefsOnNewScenario refuses any file id on a scenario a
+// non-administrator creates: a scenario that does not exist yet owns no file,
+// so the id can only be someone else's.
+func RefuseFileRefsOnNewScenario(scenario *models.Scenario, roles []string) error {
+	if access.IsAdmin(roles) {
+		return nil
+	}
+	for column, get := range scenarioFileRefs {
+		if get(scenario) != nil {
+			return foreignFileRefError(column)
+		}
+	}
+	return nil
+}
+
+func foreignFileRefError(column string) error {
+	return utils.PermissionDeniedError("set "+column+" to a file outside", "scenario")
 }
