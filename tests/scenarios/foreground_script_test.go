@@ -142,18 +142,14 @@ func TestForegroundScript_SkippedWhenTheBackgroundScriptFailed(t *testing.T) {
 // live-console path above always finds nobody attached and the demonstration
 // would be lost. Instead the build leaves it pending on the run, and it is typed
 // when the learner first opens their console — once, and only while the run is
-// still on the step it belongs to. A learner whose page was already open during
-// the build gets it at the end of the build, without waiting for a new attach.
+// still on the step it belongs to. Only that attach types it: never the build,
+// even when the learner's page is already open while the level is built.
 
 // launchWithFirstStepForeground launches a two-step scenario whose first step
 // has a background and a foreground script, waits for the build, and returns
-// the running session.
-//
-// consoleOpen says whether the learner's console is attached during the build.
-// When it is not, the mock answers ErrNoLiveConsole as tt-backend's 409 does,
-// and the helper then opens the console: from there on writes succeed, and the
-// write log starts empty — attempts against a closed console typed nothing.
-func launchWithFirstStepForeground(t *testing.T, name string, consoleOpen bool) (*models.ScenarioSession, *bgTrackingVerificationService, *services.ScenarioSessionService, *gorm.DB) {
+// the running session. The mock accepts every console write, as if the
+// learner's page were open throughout, so any write the build makes shows up.
+func launchWithFirstStepForeground(t *testing.T, name string) (*models.ScenarioSession, *bgTrackingVerificationService, *services.ScenarioSessionService, *gorm.DB) {
 	t.Helper()
 	db := freshTestDB(t)
 
@@ -167,19 +163,12 @@ func launchWithFirstStepForeground(t *testing.T, name string, consoleOpen bool) 
 	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Step 2"}).Error)
 
 	verifySvc := &bgTrackingVerificationService{}
-	if !consoleOpen {
-		verifySvc.consoleErr = services.ErrNoLiveConsole
-	}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
 	session, err := sessionSvc.StartScenario("student-"+name, scenario.ID, "terminal-"+name, "")
 	require.NoError(t, err)
 	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
 
-	if !consoleOpen {
-		verifySvc.consoleErr = nil
-		verifySvc.consoleWrites = nil
-	}
 	return session, verifySvc, sessionSvc, db
 }
 
@@ -191,10 +180,13 @@ func pendingForegroundOrder(t *testing.T, db *gorm.DB, sessionID any) *int {
 }
 
 func TestForeground_PendingAfterProvisioning_TypedOnFirstLearnerAttach(t *testing.T) {
-	session, verifySvc, sessionSvc, db := launchWithFirstStepForeground(t, "fg-pending-attach", false)
+	session, verifySvc, sessionSvc, db := launchWithFirstStepForeground(t, "fg-pending-attach")
 
+	assert.Empty(t, verifySvc.consoleWrites,
+		"the build never types the foreground script: only the learner's own "+
+			"first console attach does, even when a console is already open")
 	pending := pendingForegroundOrder(t, db, session.ID)
-	require.NotNil(t, pending, "with no console attached, the build must leave the first step's foreground pending on the run")
+	require.NotNil(t, pending, "the build must leave the first step's foreground pending on the run")
 	assert.Equal(t, 0, *pending)
 
 	sessionSvc.DeliverPendingForeground("terminal-fg-pending-attach")
@@ -210,7 +202,7 @@ func TestForeground_PendingAfterProvisioning_TypedOnFirstLearnerAttach(t *testin
 // demonstration has already played in that shell, and whatever it did to it (a
 // cd, an export) is still true; typing it again is noise at best.
 func TestForeground_SecondAttach_DoesNotRetype(t *testing.T) {
-	_, verifySvc, sessionSvc, _ := launchWithFirstStepForeground(t, "fg-second-attach", false)
+	_, verifySvc, sessionSvc, _ := launchWithFirstStepForeground(t, "fg-second-attach")
 
 	sessionSvc.DeliverPendingForeground("terminal-fg-second-attach")
 	sessionSvc.DeliverPendingForeground("terminal-fg-second-attach")
@@ -229,7 +221,7 @@ func TestForeground_SecondAttach_DoesNotRetype(t *testing.T) {
 // step never moves back to it; clearing it on advance would be an extra write
 // for no observable difference.
 func TestForeground_StepAdvancedMeanwhile_PendingDropped(t *testing.T) {
-	session, verifySvc, sessionSvc, db := launchWithFirstStepForeground(t, "fg-advanced", false)
+	session, verifySvc, sessionSvc, db := launchWithFirstStepForeground(t, "fg-advanced")
 
 	result, err := sessionSvc.VerifyCurrentStep(session.ID)
 	require.NoError(t, err)
@@ -244,25 +236,6 @@ func TestForeground_StepAdvancedMeanwhile_PendingDropped(t *testing.T) {
 
 	assert.Empty(t, verifySvc.consoleWrites,
 		"a foreground left pending by a step the learner has already left must never be typed")
-}
-
-// The learner's page is often already open while the level is built: the
-// console attached before the build finished, and no further attach will come to
-// deliver the script. So the build tries to type it as it ends, and only a
-// missing console leaves it pending.
-func TestForeground_ConsoleAttachedDuringBuild_TypedAtEndOfBuild(t *testing.T) {
-	session, verifySvc, sessionSvc, db := launchWithFirstStepForeground(t, "fg-open-during-build", true)
-
-	require.Len(t, verifySvc.consoleWrites, 1,
-		"a console already open during the build gets the foreground script as the build ends")
-	assert.Equal(t, "cd /opt/lab && ls", verifySvc.consoleWrites[0].text)
-	assert.Equal(t, "terminal-fg-open-during-build", verifySvc.consoleWrites[0].sessionID)
-	assert.Nil(t, pendingForegroundOrder(t, db, session.ID),
-		"a script typed at the end of the build is no longer pending")
-
-	sessionSvc.DeliverPendingForeground("terminal-fg-open-during-build")
-
-	assert.Len(t, verifySvc.consoleWrites, 1, "a later attach must not type it again")
 }
 
 // Reprovisioning a step whose foreground is still pending.
