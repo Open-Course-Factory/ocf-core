@@ -13,7 +13,8 @@ import (
 // StartScenarioSessionCleanupJob starts a background job that releases scenario
 // sessions no learner can act on any more: zombies whose terminal has
 // expired/stopped/disappeared, and sessions stalled in "provisioning" because
-// their setup goroutine died. Runs every 5 minutes.
+// their setup goroutine died — a stalled rebuild goes back to its learner
+// instead. Runs every 5 minutes.
 func StartScenarioSessionCleanupJob(db *gorm.DB) {
 	terminalService := terminalServices.NewTerminalTrainerService(db)
 	// Started on its own goroutine, unlike the other jobs: its first pass
@@ -25,7 +26,25 @@ func StartScenarioSessionCleanupJob(db *gorm.DB) {
 
 func sweepScenarioSessions(db *gorm.DB, terminalService terminalServices.TerminalTrainerService) {
 	cleanupZombieScenarioSessions(db, terminalService)
+	// Before the stuck-provisioning reaper: a stalled rebuild goes back to its
+	// learner as rebuildable, where the reaper would write it off.
+	releaseStalledReplays(db, terminalService)
 	cleanupStuckProvisioningSessions(db)
+}
+
+func releaseStalledReplays(db *gorm.DB, terminalService terminalServices.TerminalTrainerService) {
+	halfBuilt, err := services.ReleaseStalledReplays(db)
+	if err != nil {
+		log.Printf("❌ [SCENARIO CLEANUP] Failed to release stalled replays: %v", err)
+	}
+	for _, terminalID := range halfBuilt {
+		if err := terminalService.DeleteSession(terminalID); err != nil {
+			log.Printf("❌ [SCENARIO CLEANUP] Failed to delete the half-built terminal %s of a stalled replay: %v", terminalID, err)
+		}
+	}
+	if len(halfBuilt) > 0 {
+		log.Printf("🧹 [SCENARIO CLEANUP] Released %d stalled scenario replays", len(halfBuilt))
+	}
 }
 
 func cleanupZombieScenarioSessions(db *gorm.DB, terminalService terminalServices.TerminalTrainerService) {

@@ -364,8 +364,9 @@ type AvailableScenarioOutput struct {
 	// list that may be older than the page.
 	ActiveSessionID         string `json:"active_session_id,omitempty"`
 	ActiveTerminalSessionID string `json:"active_terminal_session_id,omitempty"`
-	// ActiveSessionResumeMode says how that run is resumed: "live" or
-	// "paused" (its terminal must be started again first).
+	// ActiveSessionResumeMode says how that run is resumed: "live",
+	// "paused" (its terminal must be started again first) or "rebuild" (its
+	// container is gone and is rebuilt at the current step).
 	ActiveSessionResumeMode string `json:"active_session_resume_mode,omitempty"`
 	// ResolvedDistribution and ResolvedSize are what a launch would actually
 	// use, after image matching and size fallback. InstanceType above is only
@@ -438,7 +439,8 @@ type MySessionResponse struct {
 	// True for any non-empty ResumeMode.
 	Resumable bool `json:"resumable"`
 	// ResumeMode says how the run is resumed: "live" (reattach to the running
-	// terminal) or "paused" (start the stopped terminal again, back at the
-	// same step). Empty when the run cannot be resumed.
+	// terminal), "paused" (start the stopped terminal again, back at the
+	// same step) or "rebuild" (the container is gone: a new one is built as
+	// the learner left it). Empty when the run cannot be resumed.
 	ResumeMode string `json:"resume_mode,omitempty"`
 }
