@@ -17,6 +17,7 @@ package scenarios_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -157,17 +158,59 @@ func TestScenarioPatch_AdministratorCanMoveScenarioBetweenOrgs(t *testing.T) {
 	assertStillInOrg(t, db, scenario.ID, orgB)
 }
 
-func TestScenarioPatch_PublicFlagStillRefusedOnOrgScenario(t *testing.T) {
+// The public flag is a platform notion: asking for it on an org scenario is
+// an invalid request, not a permission problem, so it answers 400 — for
+// everyone, administrators included — and writes nothing.
+func TestScenarioPatch_PublicFlagOnOrgScenarioIsABadRequest(t *testing.T) {
 	db := freshTestDB(t)
 	orgA := createTestOrg(t, db, "org-a-owner")
 	addOrgMember(t, db, orgA, "org-a-manager", orgModels.OrgRoleManager)
-	scenario := createTestScenarioForOrg(t, db, orgA, "public-org")
 
-	router := setupArchiveRouter(t, db, "org-a-manager", []string{"member"})
+	cases := []struct {
+		name  string
+		user  string
+		roles []string
+		body  map[string]any
+	}{
+		{"is_public alone", "org-a-manager", []string{"member"}, map[string]any{"is_public": true, "title": "renamed"}},
+		{"is_public with the same org", "org-a-manager", []string{"member"}, map[string]any{"is_public": true, "organization_id": orgA, "title": "renamed"}},
+		{"administrator", "platform-admin", []string{"administrator"}, map[string]any{"is_public": true, "title": "renamed"}},
+	}
+	for i, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			scenario := createTestScenarioForOrg(t, db, orgA, fmt.Sprintf("public-org-%d", i))
+			router := setupArchiveRouter(t, db, c.user, c.roles)
 
-	w := patchScenarioJSON(t, router, scenario.ID, orgIDBody(t, map[string]any{"is_public": true, "organization_id": orgA}))
-	assert.GreaterOrEqual(t, w.Code, 400, "an org scenario cannot be made public. Body: %s", w.Body.String())
-	s := storedScenario(t, db, scenario.ID)
-	assert.False(t, s.IsPublic)
-	assertStillInOrg(t, db, scenario.ID, orgA)
+			w := patchScenarioJSON(t, router, scenario.ID, orgIDBody(t, c.body))
+			assert.Equal(t, http.StatusBadRequest, w.Code, "an org scenario cannot be made public. Body: %s", w.Body.String())
+			s := storedScenario(t, db, scenario.ID)
+			assert.False(t, s.IsPublic)
+			assert.Equal(t, scenario.Title, s.Title, "the refused patch must not be written")
+			assertStillInOrg(t, db, scenario.ID, orgA)
+		})
+	}
+}
+
+// The create twin: POST /scenarios is admin-only, and even an admin cannot
+// create a public org scenario. (The org and group create routes never reach
+// the hook — Scenario.BeforeSave silently clears the flag there.)
+func TestScenarioCreate_PublicOrgScenarioIsABadRequest(t *testing.T) {
+	db := freshTestDB(t)
+	orgA := createTestOrg(t, db, "org-a-owner")
+
+	router := setupArchiveRouter(t, db, "platform-admin", []string{"administrator"})
+
+	body := orgIDBody(t, map[string]any{
+		"name": "public-org-create", "title": "Public org create", "instance_type": "ubuntu:22.04",
+		"organization_id": orgA, "is_public": true,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "an org scenario cannot be public, not even an admin's. Body: %s", w.Body.String())
+	var count int64
+	require.NoError(t, db.Model(&models.Scenario{}).Where("name = ?", "public-org-create").Count(&count).Error)
+	assert.Zero(t, count, "the refused scenario must not be created")
 }
