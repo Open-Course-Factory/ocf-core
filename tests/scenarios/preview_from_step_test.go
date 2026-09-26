@@ -57,9 +57,28 @@ type previewTTBackend struct {
 
 	mu      sync.Mutex
 	scripts []string
+	envs    []map[string]string
+	pushes  []pushedFile
 	stopped []string
+	started []string
 	// failOn makes the exec of any script containing it exit 1.
 	failOn string
+	// onExec, when set, runs as each exec arrives, outside the lock, and
+	// returns the script's stdout. It runs on the server goroutine: assert,
+	// not require.
+	onExec func(script string) string
+	// beforeCreate, when set, runs as POST /1.0/sessions arrives, before it is
+	// forwarded and outside every lock, so it may block.
+	beforeCreate func()
+	// startMissing makes POST /1.0/sessions/{id}/start answer 404, as
+	// tt-backend does for a container that is gone.
+	startMissing bool
+}
+
+// pushedFile is one file-push the build sent.
+type pushedFile struct {
+	path    string
+	content string
 }
 
 func newPreviewTTBackend(t *testing.T) *previewTTBackend {
@@ -75,7 +94,8 @@ func newPreviewTTBackend(t *testing.T) *previewTTBackend {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/1.0/exec":
 			var body struct {
-				Command []string `json:"command"`
+				Command []string          `json:"command"`
+				Env     map[string]string `json:"env"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			script := ""
@@ -84,15 +104,49 @@ func newPreviewTTBackend(t *testing.T) *previewTTBackend {
 			}
 			tt.mu.Lock()
 			tt.scripts = append(tt.scripts, script)
+			tt.envs = append(tt.envs, body.Env)
 			fail := tt.failOn != "" && strings.Contains(script, tt.failOn)
+			onExec := tt.onExec
 			tt.mu.Unlock()
+			stdout := ""
+			if onExec != nil {
+				stdout = onExec(script)
+			}
 			exitCode := 0
 			if fail {
 				exitCode = 1
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"exit_code": exitCode, "stdout": "", "stderr": ""})
+			_ = json.NewEncoder(w).Encode(map[string]any{"exit_code": exitCode, "stdout": stdout, "stderr": ""})
 		case r.Method == http.MethodPost && r.URL.Path == "/1.0/file-push":
+			var body struct {
+				TargetPath string `json:"target_path"`
+				Content    string `json:"content"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			tt.mu.Lock()
+			tt.pushes = append(tt.pushes, pushedFile{path: body.TargetPath, content: body.Content})
+			tt.mu.Unlock()
 			_, _ = w.Write([]byte(`{}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/start"):
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/1.0/sessions/"), "/start")
+			tt.mu.Lock()
+			tt.started = append(tt.started, id)
+			missing := tt.startMissing
+			tt.mu.Unlock()
+			if missing {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"session not found"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"expires_at": time.Now().Add(time.Hour).Unix()})
+		case r.Method == http.MethodPost && r.URL.Path == "/1.0/sessions":
+			tt.mu.Lock()
+			beforeCreate := tt.beforeCreate
+			tt.mu.Unlock()
+			if beforeCreate != nil {
+				beforeCreate()
+			}
+			forward.ServeHTTP(w, r)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/build-complete"):
 			_, _ = w.Write([]byte(`{}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop"):
