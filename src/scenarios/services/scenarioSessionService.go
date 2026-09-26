@@ -1024,9 +1024,9 @@ func (s *ScenarioSessionService) runForegroundScript(sessionID uuid.UUID, termin
 	}
 }
 
-// DeliverPendingForeground types the foreground script a build left pending
-// (leaveForegroundPending) once the learner's own console has attached to the
-// terminal. It is the console-attach observer, so like EndCrashTrapRun it has
+// DeliverPendingForeground types the foreground script a build or a live
+// attempt left pending (leaveForegroundPending) once the learner's own console
+// has attached to the terminal. It is the console-attach observer, so like EndCrashTrapRun it has
 // nobody to answer and reports through logs.
 //
 // The pending order is claimed before anything is typed, so of two attaches
