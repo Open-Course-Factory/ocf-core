@@ -28,6 +28,9 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 		Title:        "Cleanup Test",
 		InstanceType: "ubuntu:22.04",
 		CreatedByID:  "creator-1",
+		// Crash traps: the sweep abandons only runs that cannot be rebuilt
+		// (TestCleanupZombieScenarioSessions_SparesRebuildableRun).
+		CrashTraps: true,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
@@ -130,6 +133,9 @@ func TestCleanupZombieScenarioSessions_HandlesInProgressStatus(t *testing.T) {
 		Title:        "Cleanup In Progress Test",
 		InstanceType: "ubuntu:22.04",
 		CreatedByID:  "creator-1",
+		// Crash traps: the sweep abandons only runs that cannot be rebuilt
+		// (TestCleanupZombieScenarioSessions_SparesRebuildableRun).
+		CrashTraps: true,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
@@ -328,6 +334,9 @@ func TestCleanupZombieScenarioSessions_AbandonsRunOnExpiredButRunningTerminal(t 
 		Title:        "Cleanup Expired Running",
 		InstanceType: "ubuntu:22.04",
 		CreatedByID:  "creator-1",
+		// Crash traps: the sweep abandons only runs that cannot be rebuilt
+		// (TestCleanupZombieScenarioSessions_SparesRebuildableRun).
+		CrashTraps: true,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
@@ -401,6 +410,171 @@ func seedOpenRunWithTerminal(t *testing.T, db *gorm.DB, userID, terminalSessionI
 	return session, terminal
 }
 
+// runSeeder is the signature shared by seedOpenRunWithTerminal and its
+// crash-trap and preview variants.
+type runSeeder func(t *testing.T, db *gorm.DB, userID, terminalSessionID string, state terminalModels.TerminalState, expires time.Duration, persistence string, status string) (models.ScenarioSession, *terminalModels.Terminal)
+
+// seedCrashTrapRunWithTerminal is seedOpenRunWithTerminal for a crash-trap
+// scenario: the kind of run that dies with its container.
+func seedCrashTrapRunWithTerminal(t *testing.T, db *gorm.DB, userID, terminalSessionID string, state terminalModels.TerminalState, expires time.Duration, persistence string, status string) (models.ScenarioSession, *terminalModels.Terminal) {
+	t.Helper()
+	session, terminal := seedOpenRunWithTerminal(t, db, userID, terminalSessionID, state, expires, persistence, status)
+	require.NoError(t, db.Model(&models.Scenario{}).
+		Where("id = ?", session.ScenarioID).Update("crash_traps", true).Error)
+	return session, terminal
+}
+
+// seedPreviewRunWithTerminal is seedOpenRunWithTerminal for an author's
+// preview run, which is never rebuilt either.
+func seedPreviewRunWithTerminal(t *testing.T, db *gorm.DB, userID, terminalSessionID string, state terminalModels.TerminalState, expires time.Duration, persistence string, status string) (models.ScenarioSession, *terminalModels.Terminal) {
+	t.Helper()
+	session, terminal := seedOpenRunWithTerminal(t, db, userID, terminalSessionID, state, expires, persistence, status)
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("id = ?", session.ID).Update("is_preview", true).Error)
+	session.IsPreview = true
+	return session, terminal
+}
+
+// A normal run whose container is gone keeps its progress: the learner
+// resumes it by rebuilding the environment at the current step. The sweep
+// abandoning it every five minutes would throw that progress away.
+func TestCleanupZombieScenarioSessions_SparesRebuildableRun(t *testing.T) {
+	db := freshTestDB(t)
+
+	cases := []struct {
+		name        string
+		state       terminalModels.TerminalState
+		expires     time.Duration
+		persistence string
+		status      string
+	}{
+		{"deleted", terminalModels.StateDeleted, -2 * time.Hour, "", "active"},
+		{"stopped-expired", terminalModels.StateStopped, -time.Hour, "", "active"},
+		{"running-expired-ephemeral", terminalModels.StateRunning, -21 * time.Hour, "ephemeral", "in_progress"},
+		{"missing-row", "", 0, "", "active"},
+	}
+	runs := map[string]models.ScenarioSession{}
+	for _, tc := range cases {
+		run, _ := seedOpenRunWithTerminal(t, db, "student-rebuild-"+tc.name, "terminal-rebuild-"+tc.name,
+			tc.state, tc.expires, tc.persistence, tc.status)
+		runs[tc.name] = run
+	}
+
+	count, err := services.CleanupZombieScenarioSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+	for _, tc := range cases {
+		assert.Equal(t, tc.status, sessionStatus(t, db, runs[tc.name].ID),
+			"a normal run whose container is gone (%s) is rebuildable and must stay open", tc.name)
+	}
+}
+
+func TestCleanupZombieScenarioSessions_AbandonsGoneCrashTrapRun(t *testing.T) {
+	db := freshTestDB(t)
+
+	gone, _ := seedCrashTrapRunWithTerminal(t, db, "student-crash-gone", "terminal-crash-gone",
+		terminalModels.StateDeleted, -time.Hour, "", "in_progress")
+	paused, _ := seedCrashTrapRunWithTerminal(t, db, "student-crash-paused", "terminal-crash-paused",
+		terminalModels.StateStopped, time.Hour, "persistent", "active")
+
+	count, err := services.CleanupZombieScenarioSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+	assert.Equal(t, "abandoned", sessionStatus(t, db, gone.ID),
+		"a crash-trap run dies with its container: nothing is left to resume")
+	assert.Equal(t, "active", sessionStatus(t, db, paused.ID),
+		"a paused crash-trap run still holds its container")
+}
+
+func TestCleanupZombieScenarioSessions_AbandonsGonePreviewRun(t *testing.T) {
+	db := freshTestDB(t)
+
+	gone, _ := seedPreviewRunWithTerminal(t, db, "author-preview-gone", "terminal-preview-gone",
+		terminalModels.StateRunning, -time.Hour, "ephemeral", "active")
+	live, _ := seedPreviewRunWithTerminal(t, db, "author-preview-live", "terminal-preview-live",
+		terminalModels.StateRunning, time.Hour, "ephemeral", "active")
+
+	count, err := services.CleanupZombieScenarioSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+	assert.Equal(t, "abandoned", sessionStatus(t, db, gone.ID),
+		"a preview whose container is gone is not rebuilt; the author previews again")
+	assert.Equal(t, "active", sessionStatus(t, db, live.ID))
+}
+
+// The pre-sweep sync exists so the sweep can tell a reaped container from a
+// kept one. The sweep now only abandons crash-trap and preview runs, so
+// syncing the owner of a normal run would cost a tt-backend round trip every
+// five minutes for a decision nobody makes.
+func TestOwnersToSyncBeforeSweep_OnlyCrashTrapAndPreviewOwners(t *testing.T) {
+	db := freshTestDB(t)
+
+	for _, owner := range []string{"owner-normal", "owner-crash", "owner-preview"} {
+		seedPersistenceUserKey(t, db, owner)
+	}
+	seedOpenRunWithTerminal(t, db, "owner-normal", "terminal-sync-normal",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
+	seedCrashTrapRunWithTerminal(t, db, "owner-crash", "terminal-sync-crash",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
+	seedPreviewRunWithTerminal(t, db, "owner-preview", "terminal-sync-preview",
+		terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
+
+	owners, err := services.OwnersToSyncBeforeSweep(db)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"owner-crash", "owner-preview"}, owners,
+		"only owners of runs the sweep could abandon are worth a sync")
+}
+
+// A rebuild runs in a goroutine. A process restart mid-replay leaves the row
+// in provisioning/replay forever, and the stuck-provisioning reaper would then
+// make it setup_failed — which the launch path abandons, so the learner loses
+// the progress the rebuild was meant to keep. ReleaseStalledReplays, which the
+// cron runs first, hands such a run back to the resume rule instead: open,
+// no phase, and with its half-built terminal returned for deletion, so the
+// next resume rebuilds again.
+func TestReleaseStalledReplays_ReturnsRunToRebuildable(t *testing.T) {
+	db := freshTestDB(t)
+
+	seedReplay := func(name, phase string, age time.Duration) models.ScenarioSession {
+		run, _ := seedOpenRunWithTerminal(t, db, "student-"+name, "terminal-"+name,
+			terminalModels.StateRunning, time.Hour, "ephemeral", "provisioning")
+		require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", run.ID).
+			Updates(map[string]any{"provisioning_phase": phase}).Error)
+		require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", run.ID).
+			Update("updated_at", time.Now().Add(-age)).Error)
+		return run
+	}
+	stalled := seedReplay("replay-stalled", "replay", 15*time.Minute)
+	recent := seedReplay("replay-recent", "replay", 2*time.Minute)
+	stalledLaunch := seedReplay("launch-stalled", "step_setup", 15*time.Minute)
+
+	released, err := services.ReleaseStalledReplays(db)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"terminal-replay-stalled"}, released,
+		"the stalled replay's terminal is returned so the cron can delete it")
+
+	var reloaded models.ScenarioSession
+	require.NoError(t, db.First(&reloaded, "id = ?", stalled.ID).Error)
+	assert.Equal(t, "active", reloaded.Status, "a stalled replay goes back to an open run, not setup_failed")
+	assert.Equal(t, "", reloaded.ProvisioningPhase)
+
+	assert.Equal(t, "provisioning", sessionStatus(t, db, recent.ID),
+		"a replay still inside its budget is not stalled")
+	assert.Equal(t, "provisioning", sessionStatus(t, db, stalledLaunch.ID),
+		"a stalled launch has no progress to keep; it is the stuck-provisioning reaper's")
+
+	// The reaper that follows in the same pass leaves the released run alone.
+	_, err = services.CleanupStuckProvisioningSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, "active", sessionStatus(t, db, stalled.ID))
+
+	// Once the cron has deleted the half-built terminal, the run is
+	// rebuildable again.
+	deleted := &terminalModels.Terminal{SessionID: "terminal-replay-stalled", State: terminalModels.StateDeleted}
+	require.NoError(t, db.First(&reloaded, "id = ?", stalled.ID).Error)
+	assert.Equal(t, services.ResumeModeRebuild, services.RunResumeMode(&reloaded, deleted, false))
+}
+
 // A paused terminal is stopped with its container kept until the reap
 // deadline (expires_at moved forward by the stop). The run behind it is the
 // one the learner will resume — abandoning it every five minutes made Pause
@@ -463,34 +637,65 @@ func TestZombieCleanupAgreesWithRunResumeMode(t *testing.T) {
 		{"missing-row", "", 0, ""},
 	}
 	statuses := []string{"active", "in_progress"}
+	// The run's own axes: whether the scenario has crash traps, and whether
+	// the run is a preview. Either one makes a gone container the end of it.
+	type runKind struct {
+		name       string
+		crashTraps bool
+		preview    bool
+	}
+	runKinds := []runKind{
+		{"normal", false, false},
+		{"crash", true, false},
+		{"preview", false, true},
+		{"crash-preview", true, true},
+	}
 
 	type seeded struct {
-		session  models.ScenarioSession
-		terminal *terminalModels.Terminal
+		session    models.ScenarioSession
+		terminal   *terminalModels.Terminal
+		crashTraps bool
 	}
 	var all []seeded
-	for _, tc := range terminalCases {
-		for _, status := range statuses {
-			key := tc.name + "-" + status
-			session, terminal := seedOpenRunWithTerminal(t, db, "student-agree-"+key, "terminal-agree-"+key,
-				tc.state, tc.expires, tc.persistence, status)
-			all = append(all, seeded{session, terminal})
+	for _, kind := range runKinds {
+		for _, tc := range terminalCases {
+			for _, status := range statuses {
+				key := kind.name + "-" + tc.name + "-" + status
+				session, terminal := seedOpenRunWithTerminal(t, db, "student-agree-"+key, "terminal-agree-"+key,
+					tc.state, tc.expires, tc.persistence, status)
+				if kind.crashTraps {
+					require.NoError(t, db.Model(&models.Scenario{}).
+						Where("id = ?", session.ScenarioID).Update("crash_traps", true).Error)
+				}
+				if kind.preview {
+					require.NoError(t, db.Model(&models.ScenarioSession{}).
+						Where("id = ?", session.ID).Update("is_preview", true).Error)
+					session.IsPreview = true
+				}
+				all = append(all, seeded{session, terminal, kind.crashTraps})
+			}
 		}
 	}
 
 	// Judge every run before the cron rewrites any status.
 	wantAbandoned := make(map[string]bool, len(all))
-	paused := 0
+	paused, rebuild := 0, 0
 	for i := range all {
-		mode := services.RunResumeMode(&all[i].session, all[i].terminal)
+		mode := services.RunResumeMode(&all[i].session, all[i].terminal, all[i].crashTraps)
 		wantAbandoned[all[i].session.ID.String()] = mode == services.ResumeModeNone
-		if mode == services.ResumeModePaused {
+		switch mode {
+		case services.ResumeModePaused:
 			paused++
+		case services.ResumeModeRebuild:
+			rebuild++
 		}
 	}
-	// stopped-future ×2 persistence + running-past-persistent, each × 2 statuses.
-	// Without paused rows the matrix would only re-check the live rule.
-	require.Equal(t, 6, paused, "RunResumeMode must report the paused rows of the matrix as paused")
+	// stopped-future ×2 persistence + running-past-persistent, each × 2 statuses,
+	// × 4 run kinds. Without paused rows the matrix would only re-check the live rule.
+	require.Equal(t, 24, paused, "RunResumeMode must report the paused rows of the matrix as paused")
+	// The 7 gone-container terminal cases × 2 statuses, for normal runs only.
+	// Without rebuild rows the matrix would not pin the sweep's new filter.
+	require.Equal(t, 14, rebuild, "RunResumeMode must report the normal runs on gone containers as rebuild")
 
 	_, err := services.CleanupZombieScenarioSessions(db)
 	require.NoError(t, err)
@@ -548,19 +753,23 @@ func runZombieCleanupAfterSync(t *testing.T, reportTargetsAs string) (*gorm.DB, 
 	configureTTServerForPersistence(t, srv.URL)
 
 	runs := map[string]models.ScenarioSession{}
-	seed := func(userID, terminalID string, state terminalModels.TerminalState, expires time.Duration, persistence, status string) {
+	seed := func(seedRun runSeeder, userID, terminalID string, state terminalModels.TerminalState, expires time.Duration, persistence, status string) {
 		seedPersistenceUserKey(t, db, userID)
-		run, _ := seedOpenRunWithTerminal(t, db, userID, terminalID, state, expires, persistence, status)
+		run, _ := seedRun(t, db, userID, terminalID, state, expires, persistence, status)
 		runs[terminalID] = run
 	}
-	// Targets: open runs on running + persistent + past-expiry terminals.
-	seed("owner-ttl-active", "terminal-ttl-active", terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
-	seed("owner-ttl-in-progress", "terminal-ttl-in-progress", terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
+	// Targets: open crash-trap runs on running + persistent + past-expiry
+	// terminals — the sweep abandons only runs that cannot be rebuilt.
+	seed(seedCrashTrapRunWithTerminal, "owner-ttl-active", "terminal-ttl-active", terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
+	seed(seedCrashTrapRunWithTerminal, "owner-ttl-in-progress", "terminal-ttl-in-progress", terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
 	// Not targets: nothing about these runs is stale in a way a sync resolves.
-	seed("owner-paused", "terminal-paused", terminalModels.StateStopped, time.Hour, "persistent", "active")
-	seed("owner-live", "terminal-live", terminalModels.StateRunning, time.Hour, "persistent", "in_progress")
-	seed("owner-finished", "terminal-finished", terminalModels.StateRunning, -30*time.Minute, "persistent", "completed")
-	seed("owner-ephemeral-dead", "terminal-ephemeral-dead", terminalModels.StateRunning, -30*time.Minute, "ephemeral", "active")
+	seed(seedCrashTrapRunWithTerminal, "owner-paused", "terminal-paused", terminalModels.StateStopped, time.Hour, "persistent", "active")
+	seed(seedCrashTrapRunWithTerminal, "owner-live", "terminal-live", terminalModels.StateRunning, time.Hour, "persistent", "in_progress")
+	seed(seedCrashTrapRunWithTerminal, "owner-finished", "terminal-finished", terminalModels.StateRunning, -30*time.Minute, "persistent", "completed")
+	seed(seedCrashTrapRunWithTerminal, "owner-ephemeral-dead", "terminal-ephemeral-dead", terminalModels.StateRunning, -30*time.Minute, "ephemeral", "active")
+	// A normal run on the same kind of stale terminal: rebuildable whichever
+	// way the sync goes, so its owner is not synced.
+	seed(seedOpenRunWithTerminal, "owner-ttl-normal", "terminal-ttl-normal", terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
 
 	svc := terminalServices.NewTerminalTrainerService(db)
 	synced := syncThenSweep(t, db, func(userID string) {
@@ -569,7 +778,7 @@ func runZombieCleanupAfterSync(t *testing.T, reportTargetsAs string) (*gorm.DB, 
 	})
 
 	assert.ElementsMatch(t, []string{"owner-ttl-active", "owner-ttl-in-progress"}, synced,
-		"only owners of running+persistent+past-expiry terminals behind active/in_progress runs are synced, each once")
+		"only owners of running+persistent+past-expiry terminals behind active/in_progress crash-trap or preview runs are synced, each once")
 	return db, runs
 }
 
@@ -601,6 +810,8 @@ func TestCleanupZombieScenarioSessions_SyncsStaleTTLStoppedTerminalsFirst(t *tes
 	assert.Equal(t, "active", sessionStatus(t, db, runs["terminal-paused"].ID))
 	assert.Equal(t, "in_progress", sessionStatus(t, db, runs["terminal-live"].ID))
 	assert.Equal(t, "completed", sessionStatus(t, db, runs["terminal-finished"].ID))
+	assert.Equal(t, "active", sessionStatus(t, db, runs["terminal-ttl-normal"].ID),
+		"a normal run is rebuildable whether or not tt-backend still keeps its container")
 }
 
 func TestCleanupZombieScenarioSessions_SyncKeepsRunWhoseContainerIsStillKept(t *testing.T) {
@@ -632,9 +843,9 @@ func TestCleanupZombieScenarioSessions_TTBackendDown_AbandonsNothing(t *testing.
 
 	owner := "owner-during-outage"
 	seedPersistenceUserKey(t, db, owner)
-	staleRun, _ := seedOpenRunWithTerminal(t, db, owner, "terminal-outage-stale",
+	staleRun, _ := seedCrashTrapRunWithTerminal(t, db, owner, "terminal-outage-stale",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
-	liveRun, _ := seedOpenRunWithTerminal(t, db, owner, "terminal-outage-live",
+	liveRun, _ := seedCrashTrapRunWithTerminal(t, db, owner, "terminal-outage-live",
 		terminalModels.StateRunning, time.Hour, "persistent", "active")
 
 	svc := terminalServices.NewTerminalTrainerService(db)
@@ -660,17 +871,17 @@ func TestCleanupZombieScenarioSessions_SkipsOwnersWithoutActiveKey(t *testing.T)
 	db := freshTestDB(t)
 
 	seedPersistenceUserKey(t, db, "owner-with-key")
-	seedOpenRunWithTerminal(t, db, "owner-with-key", "terminal-with-key",
+	seedCrashTrapRunWithTerminal(t, db, "owner-with-key", "terminal-with-key",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
 
-	noKeyRun, _ := seedOpenRunWithTerminal(t, db, "owner-no-key", "terminal-no-key",
+	noKeyRun, _ := seedCrashTrapRunWithTerminal(t, db, "owner-no-key", "terminal-no-key",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
 
 	seedPersistenceUserKey(t, db, "owner-inactive-key")
 	// is_active carries gorm:"default:true", so false is written by an update.
 	require.NoError(t, db.Model(&terminalModels.UserTerminalKey{}).
 		Where("user_id = ?", "owner-inactive-key").Update("is_active", false).Error)
-	inactiveKeyRun, _ := seedOpenRunWithTerminal(t, db, "owner-inactive-key", "terminal-inactive-key",
+	inactiveKeyRun, _ := seedCrashTrapRunWithTerminal(t, db, "owner-inactive-key", "terminal-inactive-key",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "in_progress")
 
 	synced := syncThenSweep(t, db, func(string) {})
@@ -687,11 +898,11 @@ func TestCleanupZombieScenarioSessions_SkipsOwnersOfSoftDeletedRuns(t *testing.T
 	db := freshTestDB(t)
 
 	seedPersistenceUserKey(t, db, "owner-open-run")
-	seedOpenRunWithTerminal(t, db, "owner-open-run", "terminal-open-run",
+	seedCrashTrapRunWithTerminal(t, db, "owner-open-run", "terminal-open-run",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
 
 	seedPersistenceUserKey(t, db, "owner-deleted-run")
-	deletedRun, _ := seedOpenRunWithTerminal(t, db, "owner-deleted-run", "terminal-deleted-run",
+	deletedRun, _ := seedCrashTrapRunWithTerminal(t, db, "owner-deleted-run", "terminal-deleted-run",
 		terminalModels.StateRunning, -30*time.Minute, "persistent", "active")
 	require.NoError(t, db.Delete(&deletedRun).Error)
 

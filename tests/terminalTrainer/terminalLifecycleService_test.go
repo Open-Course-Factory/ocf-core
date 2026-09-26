@@ -125,3 +125,33 @@ func TestLifecycleService_StartSession_TransitionsRowToRunning(t *testing.T) {
 	assert.Equal(t, newExpiry, updated.ExpiresAt.Unix(),
 		"resume must mirror the tt-backend expires_at onto the row")
 }
+
+// TestDeleteSession_LeavesLinkedRunToTheResumeRule pins that DeleteSession, like
+// StopSession, never writes to the linked scenario run. Deleting the terminal
+// destroys the container, but whether the run is over is RunResumeMode's call:
+// a normal run keeps its progress and is rebuilt on resume, while a crash-trap
+// or preview run is ended by the zombie cron (or at once by the next launch).
+// Abandoning it here threw away the progress of every run whose terminal the
+// learner trashed.
+func TestDeleteSession_LeavesLinkedRunToTheResumeRule(t *testing.T) {
+	ttServer, _ := startLifecycleTTServer(t)
+	defer ttServer.Close()
+	configureTTServer(t, ttServer.URL)
+
+	db := freshTestDB(t)
+	userID := "delete-run-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+
+	terminal, err := createTestTerminal(db, userID, "running", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	runID := linkedScenarioRun(t, db, terminal.SessionID)
+
+	svc := services.NewTerminalTrainerService(db)
+	require.NoError(t, svc.DeleteSession(terminal.SessionID))
+
+	updated, err := svc.GetSessionInfo(terminal.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StateDeleted, updated.State, "the terminal itself is deleted")
+	assert.Equal(t, "active", linkedScenarioRunStatus(t, db, runID),
+		"DeleteSession must not write to scenario_sessions")
+}
