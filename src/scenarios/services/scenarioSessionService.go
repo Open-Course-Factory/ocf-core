@@ -795,7 +795,7 @@ func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSessi
 		}
 	}
 
-	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, step, session.Locale); err != nil {
+	if err := s.runStepProvisioning(session.ID, *session.TerminalSessionID, &session.Scenario, session.Flags, step, session.Locale); err != nil {
 		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
 		slog.Error("step provisioning failed", "session_id", session.ID, "step_order", step.Order, "err", err)
 		return dto.StepProvisioningStatus{NextStepProvisioningFailed: true}
@@ -971,7 +971,7 @@ func (s *ScenarioSessionService) adoptScriptChosenAnswer(stdout string, flags []
 // served by having the flag in place than by having nothing.
 //
 // The foreground script runs last, after the environment it acts on exists.
-func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep, locale string) error {
+func (s *ScenarioSessionService) runStepProvisioning(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep, locale string) error {
 	stdout, scriptErr := s.executeBackgroundScript(terminalSessionID, scenario, step, stepProvisioningEnv(scenario, flags, step.Order, locale))
 	s.adoptScriptChosenAnswer(stdout, flags, step)
 	flagErr := s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, step.Order)
@@ -983,7 +983,7 @@ func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, s
 		// a failed script, so it counts as a provisioning failure too.
 		return flagErr
 	}
-	s.runForegroundScript(terminalSessionID, step)
+	s.runForegroundScript(sessionID, terminalSessionID, step)
 	return nil
 }
 
@@ -998,11 +998,11 @@ func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, s
 // runs. Failing the advance over a demonstration would cost the learner a step
 // they had legitimately earned.
 //
-// The commonest reason it does nothing is that no console is attached — the
-// learner has not opened their terminal, or has closed it. That is not a fault,
-// and it is logged at info rather than as an error so it does not read as one
-// in an operator's logs.
-func (s *ScenarioSessionService) runForegroundScript(terminalSessionID string, step *models.ScenarioStep) {
+// The commonest reason it cannot be typed is that no console is attached — the
+// learner has not opened their terminal, or has closed it. That is not a fault:
+// the script is left pending, as a build leaves it, and typed on the learner's
+// next attach (DeliverPendingForeground).
+func (s *ScenarioSessionService) runForegroundScript(sessionID uuid.UUID, terminalSessionID string, step *models.ScenarioStep) {
 	if s.verificationService == nil {
 		return
 	}
@@ -1017,7 +1017,8 @@ func (s *ScenarioSessionService) runForegroundScript(terminalSessionID string, s
 	case err == nil:
 		slog.Info("foreground script sent to console", "step_order", step.Order)
 	case errors.Is(err, ErrNoLiveConsole):
-		slog.Info("skipping foreground script: no console attached", "step_order", step.Order)
+		slog.Info("foreground script left pending: no console attached", "step_order", step.Order)
+		s.leaveForegroundPending(sessionID, step)
 	default:
 		slog.Warn("failed to send foreground script to console", "step_order", step.Order, "err", err)
 	}
@@ -1136,7 +1137,7 @@ func (s *ScenarioSessionService) runAsyncStepProvisioning(sessionID uuid.UUID, t
 		}
 	}()
 
-	if err := s.runStepProvisioning(terminalSessionID, scenario, flags, step, locale); err != nil {
+	if err := s.runStepProvisioning(sessionID, terminalSessionID, scenario, flags, step, locale); err != nil {
 		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
 		slog.Error("step provisioning failed", "session_id", sessionID, "step_order", step.Order, "err", err)
 		s.failStepProvisioning(sessionID)
@@ -1231,7 +1232,7 @@ func (s *ScenarioSessionService) ReprovisionCurrentStep(sessionID uuid.UUID, for
 		Update("pending_foreground_order", nil).Error; err != nil {
 		slog.Error("could not take over the pending foreground script", "session_id", session.ID, "err", err)
 	}
-	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, runnable, session.Locale); err != nil {
+	if err := s.runStepProvisioning(session.ID, *session.TerminalSessionID, &session.Scenario, session.Flags, runnable, session.Locale); err != nil {
 		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
 		slog.Error("step reprovisioning failed", "session_id", session.ID, "step_order", step.Order, "err", err)
 		s.setSessionRunState(session.ID, statusSetupFailed)
