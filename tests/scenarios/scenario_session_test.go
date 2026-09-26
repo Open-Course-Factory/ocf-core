@@ -58,6 +58,11 @@ type mockVerificationService struct {
 	err       error
 	execCalls []execCall
 	execErr   error
+	// pushCalls records every file pushed into the container — flags land
+	// this way when their step declares a FlagPath.
+	pushCalls []pushFileCall
+	// execStdout is what every exec prints, for scripts whose output OCF reads.
+	execStdout string
 }
 
 func (m *mockVerificationService) VerifyStep(terminalSessionID string, step *models.ScenarioStep) (bool, string, error) {
@@ -65,6 +70,7 @@ func (m *mockVerificationService) VerifyStep(terminalSessionID string, step *mod
 }
 
 func (m *mockVerificationService) PushFile(sessionID string, targetPath string, content string, mode string) error {
+	m.pushCalls = append(m.pushCalls, pushFileCall{sessionID, targetPath, content, mode})
 	return nil
 }
 
@@ -76,7 +82,7 @@ func (m *mockVerificationService) ExecInContainer(sessionID string, command []st
 	if m.execErr != nil {
 		return -1, "", "", m.execErr
 	}
-	return 0, "", "", nil
+	return 0, m.execStdout, "", nil
 }
 
 func TestScenarioSessionService_StartScenario(t *testing.T) {
@@ -1081,4 +1087,92 @@ func TestScenarioSession_CompletedAndActive_Allowed(t *testing.T) {
 	}
 	err := db.Create(&activeSession).Error
 	assert.NoError(t, err, "same user should be allowed completed + active sessions")
+}
+
+// --- The first step is set up at launch like any other ---
+//
+// Editor-made scenarios number their steps from 1; seeded ones from 0. Launch
+// used to treat "the first step" as "order 0", so a 1-based scenario's first
+// flag was never planted and its answer never adopted.
+
+// startFirstStepScenario launches a two-step scenario whose first step has the
+// given order, a background script and a file-planted flag, and waits for the
+// launch's setup to finish.
+func startFirstStepScenario(t *testing.T, firstOrder int, verifySvc *mockVerificationService) (*models.ScenarioSession, *models.ScenarioStep) {
+	t.Helper()
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         fmt.Sprintf("first-step-%d", firstOrder),
+		Title:        "First Step",
+		InstanceType: "ubuntu:22.04",
+		FlagsEnabled: true,
+		FlagSecret:   "secret",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	first := models.ScenarioStep{
+		ScenarioID:       scenario.ID,
+		Order:            firstOrder,
+		Title:            "First",
+		BackgroundScript: "echo first",
+		HasFlag:          true,
+		FlagPath:         "/tmp/first.flag",
+	}
+	second := models.ScenarioStep{
+		ScenarioID: scenario.ID,
+		Order:      firstOrder + 1,
+		Title:      "Second",
+		HasFlag:    true,
+		FlagPath:   "/tmp/second.flag",
+	}
+	require.NoError(t, db.Create(&first).Error)
+	require.NoError(t, db.Create(&second).Error)
+
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+	session, err := sessionSvc.StartScenario("student-first", scenario.ID, "terminal-first", "")
+	require.NoError(t, err)
+	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
+
+	var stored models.ScenarioSession
+	require.NoError(t, db.Preload("Flags").First(&stored, "id = ?", session.ID).Error)
+	return &stored, &first
+}
+
+func TestStartScenario_OneBasedScenario_DeploysFirstStepFlag(t *testing.T) {
+	verifySvc := &mockVerificationService{}
+	_, first := startFirstStepScenario(t, 1, verifySvc)
+
+	require.Len(t, verifySvc.pushCalls, 1, "the first step's flag is planted at launch, and only that one")
+	assert.Equal(t, "terminal-first", verifySvc.pushCalls[0].sessionID)
+	assert.Equal(t, first.FlagPath, verifySvc.pushCalls[0].targetPath)
+	assert.Equal(t, "flag{test-student-first}\n", verifySvc.pushCalls[0].content)
+}
+
+// A legacy seeded scenario starts at order 0 and must keep its flag.
+func TestStartScenario_ZeroBasedScenario_DeploysFirstStepFlag(t *testing.T) {
+	verifySvc := &mockVerificationService{}
+	_, first := startFirstStepScenario(t, 0, verifySvc)
+
+	require.Len(t, verifySvc.pushCalls, 1, "the first step's flag is planted at launch, and only that one")
+	assert.Equal(t, first.FlagPath, verifySvc.pushCalls[0].targetPath)
+	assert.Equal(t, "flag{test-student-first}\n", verifySvc.pushCalls[0].content)
+}
+
+func TestStartScenario_FirstStepScriptAnswerIsAdopted(t *testing.T) {
+	verifySvc := &mockVerificationService{execStdout: "OCF_ANSWER: Tuesday\n"}
+	session, first := startFirstStepScenario(t, 1, verifySvc)
+
+	answers := make(map[int]string)
+	for _, f := range session.Flags {
+		answers[f.StepOrder] = f.ExpectedFlag
+	}
+	assert.Equal(t, "Tuesday", answers[first.Order],
+		"the first step's script chose the answer, so that is what the learner is graded against")
+	assert.Equal(t, "flag{test-student-first}", answers[first.Order+1],
+		"a later step keeps its generated flag until its own script runs")
+	require.Len(t, verifySvc.pushCalls, 1)
+	assert.Equal(t, "Tuesday\n", verifySvc.pushCalls[0].content,
+		"the planted flag file carries the adopted answer, not the generated token")
 }
