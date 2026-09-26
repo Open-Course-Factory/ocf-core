@@ -84,40 +84,100 @@ func TestResumableSessionsReportTheRunThatBlocksALaunch(t *testing.T) {
 // tears it down, so a state-only check reported the run as live forever. The
 // learner saw "a run is already in progress" for a container deleted hours
 // earlier, and could neither resume it nor start another.
-func startScenarioThenExpireItsTerminal(t *testing.T, name string) (*services.ScenarioSessionService, models.Scenario, string) {
+//
+// Whether such a run is over depends on the scenario. A crash-trap run is
+// permadeath: its container is the run, so once it is gone there is nothing
+// to return to. Any other run keeps its progress and is rebuilt on resume.
+func startScenarioThenExpireItsTerminal(t *testing.T, name string, crashTraps bool) (*gorm.DB, *services.ScenarioSessionService, models.Scenario, string) {
 	t.Helper()
 	db, svc, scenario, userID := startScenarioWithLiveTerminal(t, name)
 
 	require.NoError(t, db.Model(&terminalModels.Terminal{}).
 		Where("session_id = ?", "live-terminal").
 		Update("expires_at", time.Now().Add(-time.Hour)).Error)
+	if crashTraps {
+		require.NoError(t, db.Model(&models.Scenario{}).
+			Where("id = ?", scenario.ID).Update("crash_traps", true).Error)
+	}
 
-	return svc, scenario, userID
+	return db, svc, scenario, userID
 }
 
 func TestStartScenarioAfterTerminalExpiredIsAllowed(t *testing.T) {
-	svc, scenario, userID := startScenarioThenExpireItsTerminal(t, "relaunch-after-expiry")
+	_, svc, scenario, userID := startScenarioThenExpireItsTerminal(t, "relaunch-after-expiry", true)
 
 	_, err := svc.StartScenario(userID, scenario.ID, "", "")
-	require.NoError(t, err, "a run whose terminal has expired must not block the next one")
+	require.NoError(t, err, "a crash-trap run whose terminal has expired must not block the next one")
 }
 
 func TestResumableSessionsOmitsRunOnExpiredTerminal(t *testing.T) {
-	svc, scenario, userID := startScenarioThenExpireItsTerminal(t, "resumable-after-expiry")
+	_, svc, scenario, userID := startScenarioThenExpireItsTerminal(t, "resumable-after-expiry", true)
 
 	runs, err := svc.GetResumableRuns(userID, []uuid.UUID{scenario.ID})
 	require.NoError(t, err)
-	require.Empty(t, runs, "an expired terminal leaves nothing to resume")
+	require.Empty(t, runs, "an expired terminal leaves nothing of a crash-trap run to resume")
 }
 
 func TestMySessionsReportsExpiredRunAsNotResumable(t *testing.T) {
-	svc, _, userID := startScenarioThenExpireItsTerminal(t, "my-sessions-after-expiry")
+	_, svc, _, userID := startScenarioThenExpireItsTerminal(t, "my-sessions-after-expiry", true)
 
 	sessions, err := svc.GetMySessions(userID)
 	require.NoError(t, err)
 	require.Len(t, sessions, 1)
 	require.False(t, sessions[0].Resumable,
-		"the launcher offers Resume from this flag; a dead terminal must not set it")
+		"the launcher offers Resume from this flag; a dead crash-trap terminal must not set it")
+}
+
+// A normal run whose container is gone is still the learner's run: its
+// progress is kept and resuming rebuilds the environment at the current step.
+// Launching over it would throw that progress away, so the launch path refuses
+// with the same typed conflict as for a live or paused run.
+func TestStartScenarioWithRebuildableRunReturnsTypedConflict(t *testing.T) {
+	db, svc, scenario, userID := startScenarioThenExpireItsTerminal(t, "rebuild-launch-conflict", false)
+
+	_, err := svc.StartScenario(userID, scenario.ID, "", "")
+
+	require.ErrorIs(t, err, services.ErrActiveSessionExists,
+		"a rebuildable run is resumable; launching again must be the typed conflict, not a silent abandon")
+
+	var open int64
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("user_id = ? AND scenario_id = ? AND status = ?", userID, scenario.ID, "active").
+		Count(&open).Error)
+	require.Equal(t, int64(1), open, "the rebuildable run must still be the learner's open run")
+}
+
+func TestAvailableScenariosReportRebuildRunWithMode(t *testing.T) {
+	db, svc, scenario, userID := startScenarioThenExpireItsTerminal(t, "rebuild-listing", false)
+
+	runs, err := svc.GetResumableRuns(userID, []uuid.UUID{scenario.ID})
+	require.NoError(t, err)
+	run, ok := runs[scenario.ID]
+	require.True(t, ok, "the listing must report the rebuildable run the launch path refuses for")
+	require.Equal(t, services.ResumeModeRebuild, run.Mode)
+
+	card := availableCard(t, db, userID, scenario.ID)
+	require.Equal(t, run.Session.ID.String(), card["active_session_id"])
+	require.Equal(t, "rebuild", card["active_session_resume_mode"],
+		"the card must say the environment is gone so it can offer 'rebuild and resume at step N'")
+}
+
+func TestMySessionsReportsRebuildRun(t *testing.T) {
+	_, svc, _, userID := startScenarioThenExpireItsTerminal(t, "my-sessions-rebuild", false)
+
+	sessions, err := svc.GetMySessions(userID)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+
+	raw, err := json.Marshal(sessions[0])
+	require.NoError(t, err)
+	var wire map[string]any
+	require.NoError(t, json.Unmarshal(raw, &wire))
+
+	require.Equal(t, "rebuild", wire["resume_mode"],
+		"the learner's session list must say the run is resumed by rebuilding its environment")
+	require.Equal(t, true, wire["resumable"],
+		"resumable stays true for any resume mode, for clients that read only the flag")
 }
 
 // A paused run is a run. Pausing a persistent terminal stops the container but
@@ -216,7 +276,7 @@ func TestRunResumeMode_FinishedRunIsNeverResumable(t *testing.T) {
 		for name, terminal := range terminals {
 			t.Run(status+"/"+name, func(t *testing.T) {
 				session := &models.ScenarioSession{Status: status, TerminalSessionID: &terminalSessionID}
-				require.Equal(t, services.ResumeModeNone, services.RunResumeMode(session, terminal),
+				require.Equal(t, services.ResumeModeNone, services.RunResumeMode(session, terminal, false),
 					"a run with status %s is over; its %s terminal must not make it resumable", status, name)
 			})
 		}
@@ -229,7 +289,89 @@ func TestRunResumeMode_FinishedRunIsNeverResumable(t *testing.T) {
 	for _, status := range []string{"active", "in_progress", "provisioning"} {
 		t.Run(status+"/paused", func(t *testing.T) {
 			session := &models.ScenarioSession{Status: status, TerminalSessionID: &terminalSessionID}
-			require.Equal(t, services.ResumeModePaused, services.RunResumeMode(session, paused))
+			require.Equal(t, services.ResumeModePaused, services.RunResumeMode(session, paused, false))
+		})
+	}
+}
+
+// goneTerminals are the ways a run's container can be gone: the terminal row
+// says so, its expiry has passed, or the row itself has vanished (nil).
+func goneTerminals(terminalSessionID string) map[string]*terminalModels.Terminal {
+	return map[string]*terminalModels.Terminal{
+		"deleted": {
+			SessionID: terminalSessionID,
+			State:     terminalModels.StateDeleted,
+			ExpiresAt: time.Now().Add(time.Hour),
+		},
+		"running-expired-ephemeral": {
+			SessionID: terminalSessionID,
+			State:     terminalModels.StateRunning,
+			ExpiresAt: time.Now().Add(-time.Hour),
+		},
+		"stopped-expired-persistent": {
+			SessionID:       terminalSessionID,
+			State:           terminalModels.StateStopped,
+			PersistenceMode: terminalModels.PersistenceModePersistent,
+			ExpiresAt:       time.Now().Add(-time.Hour),
+		},
+		"missing-row": nil,
+	}
+}
+
+// A normal run outlives its container. Its progress, hints and score are in
+// the database, and resuming rebuilds the environment at the current step.
+func TestRunResumeMode_ContainerGone_NormalRun_IsRebuild(t *testing.T) {
+	terminalSessionID := "t-gone"
+	for _, status := range []string{"active", "in_progress"} {
+		for name, terminal := range goneTerminals(terminalSessionID) {
+			t.Run(status+"/"+name, func(t *testing.T) {
+				session := &models.ScenarioSession{Status: status, TerminalSessionID: &terminalSessionID}
+				require.Equal(t, services.ResumeModeRebuild, services.RunResumeMode(session, terminal, false),
+					"an open run whose container is gone (%s) is rebuilt, not lost", name)
+			})
+		}
+	}
+}
+
+// A crash-trap run is permadeath: the container is the run, and its
+// config.json is never replayed. Once the container is gone the run is over.
+func TestRunResumeMode_ContainerGone_CrashTraps_IsNone(t *testing.T) {
+	terminalSessionID := "t-gone"
+	for _, status := range []string{"active", "in_progress"} {
+		for name, terminal := range goneTerminals(terminalSessionID) {
+			t.Run(status+"/"+name, func(t *testing.T) {
+				session := &models.ScenarioSession{Status: status, TerminalSessionID: &terminalSessionID}
+				require.Equal(t, services.ResumeModeNone, services.RunResumeMode(session, terminal, true),
+					"a crash-trap run whose container is gone (%s) cannot be rebuilt", name)
+			})
+		}
+	}
+}
+
+// A preview is an author's throwaway run: once its container is gone the
+// author previews again (from any step), nothing is rebuilt.
+func TestRunResumeMode_ContainerGone_Preview_IsNone(t *testing.T) {
+	terminalSessionID := "t-gone"
+	for _, status := range []string{"active", "in_progress"} {
+		for name, terminal := range goneTerminals(terminalSessionID) {
+			t.Run(status+"/"+name, func(t *testing.T) {
+				session := &models.ScenarioSession{Status: status, TerminalSessionID: &terminalSessionID, IsPreview: true}
+				require.Equal(t, services.ResumeModeNone, services.RunResumeMode(session, terminal, false),
+					"a preview run whose container is gone (%s) is not rebuilt", name)
+			})
+		}
+	}
+}
+
+// setup_failed is open but broken: its environment never finished building,
+// so there is no step to rebuild to. The launch path abandons it instead.
+func TestRunResumeMode_SetupFailed_IsNone(t *testing.T) {
+	terminalSessionID := "t-gone"
+	for name, terminal := range goneTerminals(terminalSessionID) {
+		t.Run(name, func(t *testing.T) {
+			session := &models.ScenarioSession{Status: "setup_failed", TerminalSessionID: &terminalSessionID}
+			require.Equal(t, services.ResumeModeNone, services.RunResumeMode(session, terminal, false),
+				"a setup_failed run whose container is gone (%s) is not rebuildable", name)
 		})
 	}
 }

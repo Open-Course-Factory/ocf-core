@@ -23,6 +23,9 @@ func TestStartScenario_ZombieSession_ExpiredTerminal_AutoAbandons(t *testing.T) 
 		Title:        "Zombie Expired Terminal",
 		InstanceType: "ubuntu:22.04",
 		CreatedByID:  "creator-1",
+		// Crash traps: only a permadeath run dies with its container; any
+		// other run is rebuilt (TestStartScenarioWithRebuildableRunReturnsTypedConflict).
+		CrashTraps: true,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
@@ -104,6 +107,9 @@ func TestStartScenario_ZombieSession_StoppedTerminal_AutoAbandons(t *testing.T) 
 		Title:        "Zombie Stopped Terminal",
 		InstanceType: "ubuntu:22.04",
 		CreatedByID:  "creator-1",
+		// Crash traps: only a permadeath run dies with its container; any
+		// other run is rebuilt (TestStartScenarioWithRebuildableRunReturnsTypedConflict).
+		CrashTraps: true,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
@@ -180,6 +186,9 @@ func TestStartScenario_ZombieSession_DeletedTerminal_AutoAbandons(t *testing.T) 
 		Title:        "Zombie Deleted Terminal",
 		InstanceType: "ubuntu:22.04",
 		CreatedByID:  "creator-1",
+		// Crash traps: only a permadeath run dies with its container; any
+		// other run is rebuilt (TestStartScenarioWithRebuildableRunReturnsTypedConflict).
+		CrashTraps: true,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
