@@ -248,22 +248,39 @@ func (s *ScenarioSessionService) assertLocaleLaunchable(scenarioID uuid.UUID, lo
 }
 
 func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UUID, terminalSessionID string, locale string) (*models.ScenarioSession, error) {
-	// Load scenario with steps
+	scenario, err := s.loadScenarioWithSteps(scenarioID)
+	if err != nil {
+		return nil, err
+	}
+	// Start on the first step's actual Order, not a hardcoded 0.
+	// Editor-created scenarios use 1-based ordering; legacy seeded ones may
+	// use 0-based. Either way, GetCurrentStep looks up the step whose Order
+	// matches CurrentStep, so seed it from data.
+	return s.startRun(userID, scenario, terminalSessionID, locale, scenario.Steps[0].Order)
+}
+
+// loadScenarioWithSteps loads a scenario and its steps in order, refusing one
+// with no step to start on.
+func (s *ScenarioSessionService) loadScenarioWithSteps(scenarioID uuid.UUID) (*models.Scenario, error) {
 	var scenario models.Scenario
 	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
 	}).First(&scenario, "id = ?", scenarioID).Error; err != nil {
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
-
 	if len(scenario.Steps) == 0 {
 		return nil, fmt.Errorf("scenario has no steps")
 	}
+	return &scenario, nil
+}
 
-	// Initialize CurrentStep to the first step's actual Order, not a
-	// hardcoded 0. Editor-created scenarios use 1-based ordering; legacy
-	// seeded ones may use 0-based. Either way, GetCurrentStep looks up
-	// the step whose Order matches CurrentStep, so seed it from data.
+// startRun creates a run of the scenario on the step whose Order is
+// startOrder: the steps before it read as completed, the ones after it as
+// locked, and the container is built through it, as a learner arriving there
+// would find it.
+func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenario, terminalSessionID string, locale string, startOrder int) (*models.ScenarioSession, error) {
+	scenarioID := scenario.ID
+
 	// A language the scenario cannot actually deliver is refused rather than
 	// quietly downgraded. A learner who asked for French and silently got
 	// English would read correct text describing the wrong world — the failure
@@ -271,15 +288,16 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 	if err := s.assertLocaleLaunchable(scenarioID, locale); err != nil {
 		return nil, err
 	}
-
-	firstStepOrder := scenario.Steps[0].Order
+	if findStepByOrder(scenario.Steps, startOrder) == nil {
+		return nil, fmt.Errorf("scenario has no step %d", startOrder)
+	}
 
 	now := time.Now()
 	session := &models.ScenarioSession{
 		ScenarioID:        scenarioID,
 		UserID:            userID,
 		TerminalSessionID: &terminalSessionID,
-		CurrentStep:       firstStepOrder,
+		CurrentStep:       startOrder,
 		Status:            "active",
 		StartedAt:         now,
 		Locale:            locale,
@@ -329,16 +347,18 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		}
 
 		// Create step progress for each step
-		for i, step := range scenario.Steps {
-			status := "locked"
-			if i == 0 {
-				status = "active"
-			}
-
+		for _, step := range scenario.Steps {
 			progress := models.ScenarioStepProgress{
 				SessionID: session.ID,
 				StepOrder: step.Order,
-				Status:    status,
+				Status:    "locked",
+			}
+			switch {
+			case step.Order < startOrder:
+				progress.Status = "completed"
+				progress.CompletedAt = &now
+			case step.Order == startOrder:
+				progress.Status = "active"
 			}
 			if err := tx.Create(&progress).Error; err != nil {
 				return fmt.Errorf("failed to create step progress: %w", err)
@@ -347,7 +367,7 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 
 		// Generate flags if enabled
 		if scenario.FlagsEnabled && s.flagService != nil {
-			flags := s.flagService.GenerateFlags(&scenario, session.ID, userID)
+			flags := s.flagService.GenerateFlags(scenario, session.ID, userID)
 			for i := range flags {
 				if err := tx.Create(&flags[i]).Error; err != nil {
 					return fmt.Errorf("failed to create flag: %w", err)
@@ -378,24 +398,24 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		// For crash_traps scenarios: push /etc/challenge/config.json with all flags
 		// BEFORE running the background script (setup.sh reads this file)
 		if scenario.CrashTraps && len(session.Flags) > 0 {
-			if err := s.deployChallengeConfig(*session.TerminalSessionID, &scenario, session, userID); err != nil {
+			if err := s.deployChallengeConfig(*session.TerminalSessionID, scenario, session, userID); err != nil {
 				slog.Error("failed to deploy challenge config", "session_id", session.ID, "err", err)
 				return nil, fmt.Errorf("failed to deploy challenge config: %w", err)
 			}
 		}
 
-		// Build the world for the first step: vocabulary and scenario setup
-		// script first (global env prep), then the first step's background
-		// script.
+		// Build the world for the step the run starts on: vocabulary and
+		// scenario setup script first (global env prep), then every step's
+		// background script through it.
 		job := buildJob{
 			sessionID:  session.ID,
 			terminalID: *session.TerminalSessionID,
-			scenario:   &scenario,
+			scenario:   scenario,
 			// A copy: the build adopts script-chosen answers into its flags, in
 			// the background, while the caller still holds the session.
 			flags:        slices.Clone(session.Flags),
 			locale:       session.Locale,
-			throughOrder: scenario.Steps[0].Order,
+			throughOrder: startOrder,
 			phase:        "step_setup",
 		}
 		runsScripts := s.buildRunsScripts(job)
@@ -413,8 +433,8 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		} else {
 			// Nothing to run: the build is only the flag and the intro banner,
 			// so it happens inline and the run stays active. Going through
-			// buildWorld all the same keeps one rule for what the first step
-			// gets. Both are best-effort and log their own failures;
+			// buildWorld all the same keeps one rule for what the starting
+			// step gets. Both are best-effort and log their own failures;
 			// reprovision-step is the retry.
 			_ = s.buildWorld(job)
 			// Nothing ran, but the container was still created with the
@@ -433,6 +453,9 @@ type PreviewOption func(*previewConfig)
 type previewConfig struct {
 	isOrgManager func(userID string, orgID uuid.UUID) bool
 	isAdmin      bool
+	// startAtStep is the Order of the step the preview starts on; nil means
+	// the first step, as a launch does.
+	startAtStep *int
 }
 
 // WithOrgManagerCheck injects a callback to check if a user is an org manager.
@@ -449,34 +472,62 @@ func WithAdminBypass() PreviewOption {
 	}
 }
 
-// PreviewScenario creates a preview session for testing a scenario without group assignment.
-// Only the scenario creator, an org manager (if the scenario belongs to an org), or a
-// platform admin may preview.
-func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.UUID, terminalSessionID string, opts ...PreviewOption) (*models.ScenarioSession, error) {
-	cfg := &previewConfig{}
-	for _, o := range opts {
-		o(cfg)
+// WithStartAtStep starts the preview on the step whose Order is order, built
+// as a learner arriving there would find it, rather than on the first step.
+func WithStartAtStep(order int) PreviewOption {
+	return func(c *previewConfig) {
+		c.startAtStep = &order
 	}
+}
 
-	// Load scenario
-	var scenario models.Scenario
-	if err := s.db.First(&scenario, "id = ?", scenarioID).Error; err != nil {
-		return nil, fmt.Errorf("scenario not found: %w", err)
-	}
+// ErrPreviewNotAuthorized refuses a preview to anyone but the scenario's
+// creator, a manager of its organization, or a platform admin.
+var ErrPreviewNotAuthorized = errors.New("not authorized to preview this scenario")
 
-	// Authorization: creator, org manager, or admin
+// AuthorizePreview is the one rule for who may preview a scenario: its
+// creator, a manager of its organization, or a platform admin. The controller
+// asks it before creating a terminal, so a refusal costs nothing;
+// PreviewScenario asks it again for callers that go straight to the service.
+func AuthorizePreview(userID string, scenario *models.Scenario, opts ...PreviewOption) error {
+	cfg := newPreviewConfig(opts)
 	authorized := cfg.isAdmin || scenario.CreatedByID == userID
 	if !authorized && scenario.OrganizationID != nil && cfg.isOrgManager != nil {
 		authorized = cfg.isOrgManager(userID, *scenario.OrganizationID)
 	}
 	if !authorized {
-		return nil, fmt.Errorf("not authorized to preview this scenario")
+		return ErrPreviewNotAuthorized
+	}
+	return nil
+}
+
+func newPreviewConfig(opts []PreviewOption) *previewConfig {
+	cfg := &previewConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
+	return cfg
+}
+
+// PreviewScenario creates a preview session for testing a scenario without group assignment.
+// Only the scenario creator, an org manager (if the scenario belongs to an org), or a
+// platform admin may preview.
+func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.UUID, terminalSessionID string, opts ...PreviewOption) (*models.ScenarioSession, error) {
+	scenario, err := s.loadScenarioWithSteps(scenarioID)
+	if err != nil {
+		return nil, err
+	}
+	if err := AuthorizePreview(userID, scenario, opts...); err != nil {
+		return nil, err
 	}
 
-	// Delegate to StartScenario for session creation
+	startOrder := scenario.Steps[0].Order
+	if cfg := newPreviewConfig(opts); cfg.startAtStep != nil {
+		startOrder = *cfg.startAtStep
+	}
+
 	// Preview runs in the scenario's own language: there is no learner here to
 	// have chosen one.
-	session, err := s.StartScenario(userID, scenarioID, terminalSessionID, "")
+	session, err := s.startRun(userID, scenario, terminalSessionID, "", startOrder)
 	if err != nil {
 		return nil, err
 	}
@@ -488,6 +539,35 @@ func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.
 	session.IsPreview = true
 
 	return session, nil
+}
+
+// ReplacePreviewRun makes way for a new preview of the scenario by userID: it
+// abandons their open preview run, if any, and returns that run's terminal so
+// the caller can delete it — every "test from this step" is a new preview,
+// and the old one would otherwise hold budget until its TTL.
+//
+// A run that is not a preview is real progress and is never replaced: a
+// resumable one is ErrActiveSessionExists. A zombie is left to startRun, which
+// abandons it as a launch does.
+func (s *ScenarioSessionService) ReplacePreviewRun(userID string, scenarioID uuid.UUID) (string, error) {
+	existing, mode, err := findExistingSession(s.db, userID, scenarioID)
+	if err != nil || existing == nil {
+		return "", err
+	}
+	if !existing.IsPreview {
+		if mode != ResumeModeNone {
+			return "", ErrActiveSessionExists
+		}
+		return "", nil
+	}
+	// Not abandonable means it ended in the meantime: its terminal still goes.
+	if err := s.AbandonSession(existing.ID); err != nil && !errors.Is(err, ErrSessionNotAbandonable) {
+		return "", err
+	}
+	if existing.TerminalSessionID == nil {
+		return "", nil
+	}
+	return *existing.TerminalSessionID, nil
 }
 
 // runLaunchBuild builds the world for the first step asynchronously and
