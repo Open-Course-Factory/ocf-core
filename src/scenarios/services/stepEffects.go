@@ -141,7 +141,7 @@ func (s *ScenarioSessionService) emitIntroBanner(session *models.ScenarioSession
 	if session.TerminalSessionID == nil || s.verificationService == nil {
 		return
 	}
-	if to := findStepByOrder(session.Scenario.Steps, toOrder); to != nil {
+	if to := FindStepByOrder(session.Scenario.Steps, toOrder); to != nil {
 		if banner, ok := introBanner(to); ok {
 			// --resume is inert when no screen is held, so the terminal's own
 			// state decides whether this continues a held transition. Threading
@@ -269,8 +269,8 @@ func (s *ScenarioSessionService) warnIfEffectsUnsupported(terminalSessionID stri
 // expires on its own inside the container, because none of these paths run if
 // the engine dies mid-transition.
 func (s *ScenarioSessionService) runStepTransition(session *models.ScenarioSession, fromOrder, toOrder int) dto.StepProvisioningStatus {
-	from := findStepByOrder(session.Scenario.Steps, fromOrder)
-	to := findStepByOrder(session.Scenario.Steps, toOrder)
+	from := FindStepByOrder(session.Scenario.Steps, fromOrder)
+	to := FindStepByOrder(session.Scenario.Steps, toOrder)
 
 	var outro stepBanner
 	hasOutro, hasIntro := false, false

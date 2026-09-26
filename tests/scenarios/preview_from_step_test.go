@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -37,6 +38,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	orgModels "soli/formations/src/organizations/models"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
@@ -256,9 +259,17 @@ func previewScenario(t *testing.T, db *gorm.DB, userID string, scenarioID uuid.U
 	t.Helper()
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
+	return previewScenarioRaw(t, db, userID, scenarioID, bytes.NewReader(raw))
+}
+
+// previewScenarioRaw POSTs body as is — nil for a request with no body at all.
+func previewScenarioRaw(t *testing.T, db *gorm.DB, userID string, scenarioID uuid.UUID, body io.Reader) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodPost,
-		"/api/v1/scenarios/"+scenarioID.String()+"/preview", bytes.NewReader(raw))
-	req.Header.Set("Content-Type", "application/json")
+		"/api/v1/scenarios/"+scenarioID.String()+"/preview", body)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	w := httptest.NewRecorder()
 	previewRouter(t, db, userID).ServeHTTP(w, req)
 	return w
@@ -469,4 +480,199 @@ func TestPreview_WithoutFromStep_StartsAtTheFirstStep(t *testing.T) {
 	for order := 2; order <= previewStepCount; order++ {
 		assert.Equal(t, "locked", progress[order].Status, "step %d", order)
 	}
+}
+
+// seedOrgScenarioManager creates a team organization, a scenario of it
+// created by someone else, and managerID — a manager of that organization who
+// may preview it — with a terminal key but no plan of their own. It returns
+// the organization.
+func seedOrgScenarioManager(t *testing.T, db *gorm.DB, scenario *models.Scenario, managerID string) uuid.UUID {
+	t.Helper()
+	org := orgModels.Organization{
+		Name:             "preview-org-" + uuid.New().String(),
+		DisplayName:      "Preview Org",
+		OwnerUserID:      scenario.CreatedByID,
+		OrganizationType: orgModels.OrgTypeTeam,
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&org).Error)
+	require.NoError(t, db.Omit("Metadata").Create(&orgModels.OrganizationMember{
+		OrganizationID: org.ID,
+		UserID:         managerID,
+		Role:           orgModels.OrgRoleManager,
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}).Error)
+	require.NoError(t, db.Model(scenario).Update("organization_id", org.ID).Error)
+	seedPersistenceUserKey(t, db, managerID)
+	return org.ID
+}
+
+// The editor previews an org scenario in the org it is working in, and says
+// so in the body (scenarioSessionService.ts previewScenario sends
+// organization_id there, never in the query). The plan is that org's: a
+// manager whose only plan comes from the org must be able to preview, on a
+// terminal of that org.
+func TestPreview_OrgScenario_UsesTheBodyOrganisationPlan(t *testing.T) {
+	db, _, scenario := seedPreviewableScenario(t, "preview-org-plan")
+	managerID := "preview-org-manager-" + uuid.New().String()
+	orgID := seedOrgScenarioManager(t, db, scenario, managerID)
+
+	// The org grants its managers a plan through a role mapping — a plan the
+	// manager holds only in this org's context, not globally.
+	plan := paymentModels.SubscriptionPlan{
+		Name:                      "OrgManagerPlan",
+		Priority:                  10,
+		MaxSessionDurationMinutes: 60,
+		MaxCPU:                    8000,
+		MaxMemoryMB:               8192,
+		DataPersistenceEnabled:    true,
+		IsActive:                  true,
+		BillingInterval:           "month",
+		Currency:                  "eur",
+	}
+	require.NoError(t, db.Create(&plan).Error)
+	require.NoError(t, db.Create(&paymentModels.OrganizationRolePlan{
+		OrganizationID:     orgID,
+		Role:               string(orgModels.OrgRoleManager),
+		SubscriptionPlanID: plan.ID,
+	}).Error)
+	tt := newPreviewTTBackend(t)
+
+	w := previewScenario(t, db, managerID, scenario.ID, map[string]any{"organization_id": orgID.String()})
+	resp, _ := previewedRun(t, db, w)
+
+	assert.Equal(t, 1, tt.createCalls())
+	var terminal terminalModels.Terminal
+	require.NoError(t, db.Where("session_id = ?", resp.TerminalSessionID).First(&terminal).Error)
+	require.NotNil(t, terminal.OrganizationID, "the preview's terminal belongs to an organization")
+	assert.Equal(t, orgID, *terminal.OrganizationID, "the preview's terminal is the org's")
+}
+
+// Admin/Scenarios.vue posts the preview with no body at all: that is the
+// plain preview from the first step, not a malformed request.
+func TestPreview_NoBody_BehavesAsToday(t *testing.T) {
+	db, authorID, scenario := seedPreviewableScenario(t, "preview-no-body")
+	tt := newPreviewTTBackend(t)
+
+	w := previewScenarioRaw(t, db, authorID, scenario.ID, nil)
+	_, run := previewedRun(t, db, w)
+
+	assert.True(t, run.IsPreview)
+	assert.Equal(t, 1, run.CurrentStep)
+	assert.Equal(t, []string{"setup", "bg1"}, tt.builtSteps())
+}
+
+// A body that is not JSON is refused before anything is created: guessing
+// what it meant could preview the wrong step.
+func TestPreview_MalformedJSON_400(t *testing.T) {
+	db, authorID, scenario := seedPreviewableScenario(t, "preview-malformed")
+	tt := newPreviewTTBackend(t)
+
+	w := previewScenarioRaw(t, db, authorID, scenario.ID, strings.NewReader(`{"from_step_order": `))
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, 0, tt.createCalls(), "a refused preview creates no terminal")
+}
+
+// A preview run is a preview from the moment its row exists. Written as a
+// learner run and flagged afterwards, it spends a window — the whole
+// synchronous part of its start, build launch included — looking like real
+// progress to everything that tells the two apart: a second preview gets 409
+// instead of replacing it, the zombie rules treat it as a learner's.
+//
+// Observable: the is_preview column read back, inside the inserting
+// transaction, right after the INSERT of the scenario_sessions row.
+func TestPreview_RunIsMarkedPreviewFromTheStart(t *testing.T) {
+	db, authorID, scenario := seedPreviewableScenario(t, "preview-marked-at-insert")
+	tt := newPreviewTTBackend(t)
+
+	var mu sync.Mutex
+	var insertedAsPreview []bool
+	const callback = "test:read-back-inserted-run"
+	require.NoError(t, db.Callback().Create().After("gorm:create").Register(callback, func(tx *gorm.DB) {
+		run, ok := tx.Statement.Dest.(*models.ScenarioSession)
+		if tx.Statement.Table != "scenario_sessions" || !ok || tx.Error != nil {
+			return
+		}
+		var isPreview bool
+		assert.NoError(t, tx.Session(&gorm.Session{NewDB: true}).Table("scenario_sessions").
+			Select("is_preview").Where("id = ?", run.ID).Scan(&isPreview).Error)
+		mu.Lock()
+		insertedAsPreview = append(insertedAsPreview, isPreview)
+		mu.Unlock()
+	}))
+	t.Cleanup(func() { _ = db.Callback().Create().Remove(callback) })
+
+	w := previewScenario(t, db, authorID, scenario.ID, map[string]any{})
+	previewedRun(t, db, w)
+
+	assert.Equal(t, 1, tt.createCalls())
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []bool{true}, insertedAsPreview,
+		"the preview run's row is inserted with is_preview already true")
+}
+
+// The preview is authorized twice: by the controller before the terminal
+// exists, and by the service when the run is created. When the second one
+// refuses — here the caller lost their manager role while the terminal was
+// being created — that is still a 403, and the terminal it no longer may use
+// is deleted.
+func TestPreview_AuthorisationLostAfterTerminalCreated_403AndTerminalDeleted(t *testing.T) {
+	db, _, scenario := seedPreviewableScenario(t, "preview-late-refusal")
+	managerID := "preview-late-manager-" + uuid.New().String()
+	orgID := seedOrgScenarioManager(t, db, scenario, managerID)
+	seedPersistencePlan(t, db, managerID, true)
+	tt := newPreviewTTBackend(t)
+	tt.onCreate = func() string {
+		assert.NoError(t, db.Model(&orgModels.OrganizationMember{}).
+			Where("organization_id = ? AND user_id = ?", orgID, managerID).
+			Update("role", orgModels.OrgRoleMember).Error)
+		return ""
+	}
+
+	w := previewScenario(t, db, managerID, scenario.ID, map[string]any{})
+
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"a refused preview is a 403 whichever check refused it; body=%s", w.Body.String())
+	require.Equal(t, 1, tt.createCalls(), "the refusal came after the terminal was created")
+	tt.assertNewTerminalDeleted(t, db)
+	var runs int64
+	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("scenario_id = ?", scenario.ID).Count(&runs).Error)
+	assert.Zero(t, runs, "a refused preview leaves no run")
+}
+
+// A platform administrator previews any scenario, an org's included, without
+// being a member of that org — as Admin/Scenarios.vue does, with no body. The
+// org's plan is not theirs to spend: the preview runs on the admin's own plan,
+// on a terminal outside the org.
+func TestPreview_AdminNotMemberOfTheScenarioOrg_UsesTheirOwnPlan(t *testing.T) {
+	db, _, scenario := seedPreviewableScenario(t, "preview-admin-other-org")
+	seedOrgScenarioManager(t, db, scenario, "preview-admin-org-manager-"+uuid.New().String())
+	adminID := "preview-admin-" + uuid.New().String()
+	seedPersistencePlan(t, db, adminID, true)
+	seedPersistenceUserKey(t, db, adminID)
+	tt := newPreviewTTBackend(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID.String()+"/preview", nil)
+	w := httptest.NewRecorder()
+	setupPreviewRouterWithAdminStub(t, db, adminID).ServeHTTP(w, req)
+	resp, _ := previewedRun(t, db, w)
+
+	assert.Equal(t, 1, tt.createCalls())
+	var terminal terminalModels.Terminal
+	require.NoError(t, db.Where("session_id = ?", resp.TerminalSessionID).First(&terminal).Error)
+	assert.Nil(t, terminal.OrganizationID,
+		"the admin's preview runs on their own plan, on a terminal outside the org")
+}
+
+// An organization_id that is not an id is refused before anything is created.
+func TestPreview_InvalidOrganisationID_400(t *testing.T) {
+	db, authorID, scenario := seedPreviewableScenario(t, "preview-invalid-org")
+	tt := newPreviewTTBackend(t)
+
+	w := previewScenario(t, db, authorID, scenario.ID, map[string]any{"organization_id": "not-a-uuid"})
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, 0, tt.createCalls(), "a refused preview creates no terminal")
 }
