@@ -278,9 +278,8 @@ func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 		OrganizationID:   &orgID,
 		IsPublic:         input.IsPublic,
 		SetupScript:      input.SetupScript,
-		SetupScriptID:    input.SetupScriptID,
-		IntroFileID:      input.IntroFileID,
-		FinishFileID:     input.FinishFileID,
+		// No SetupScriptID / IntroFileID / FinishFileID: a scenario that does
+		// not exist yet owns no file, so any id sent here is someone else's.
 		CreatedByID:      userID,
 	}
 
@@ -367,9 +366,8 @@ func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 		OrganizationID:   group.OrganizationID,
 		IsPublic:         input.IsPublic,
 		SetupScript:      input.SetupScript,
-		SetupScriptID:    input.SetupScriptID,
-		IntroFileID:      input.IntroFileID,
-		FinishFileID:     input.FinishFileID,
+		// No SetupScriptID / IntroFileID / FinishFileID: a scenario that does
+		// not exist yet owns no file, so any id sent here is someone else's.
 		CreatedByID:      userID,
 	}
 
