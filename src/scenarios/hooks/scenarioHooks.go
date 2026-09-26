@@ -86,16 +86,17 @@ func (h *ScenarioAuthorizationHook) checkExisting(ctx *hooks.HookContext, raw an
 	return nil
 }
 
-// refuseOrgChange keeps a scenario in its organisation (#520): moving it, or
-// turning it into a platform scenario with the nil UUID, is an administrator's
-// act. Sending the stored organisation back unchanged is a normal edit.
+// refuseOrgChange keeps a scenario in its organisation (#520): changing the
+// organisation is an administrator's act. Sending the stored organisation back
+// unchanged is a normal edit; a value that is not a UUID is refused.
 func refuseOrgChange(ctx *hooks.HookContext) error {
 	patch, _ := ctx.NewEntity.(map[string]any)
-	orgID, patched := patch["organization_id"].(uuid.UUID)
+	value, patched := patch["organization_id"]
 	if !patched {
 		return nil
 	}
-	if old, ok := ctx.OldEntity.(*models.Scenario); ok && old.OrganizationID != nil && *old.OrganizationID == orgID {
+	orgID, isUUID := value.(uuid.UUID)
+	if old, ok := ctx.OldEntity.(*models.Scenario); isUUID && ok && old.OrganizationID != nil && *old.OrganizationID == orgID {
 		return nil
 	}
 	return utils.PermissionDeniedError("move", "scenario")
@@ -114,7 +115,11 @@ func refusePublicOrgScenario(ctx *hooks.HookContext) error {
 		if !ok {
 			return nil
 		}
-		public, _ := patch["is_public"].(bool)
+		value, patched := patch["is_public"]
+		public, isBool := value.(bool)
+		if patched && !isBool {
+			return entityErrors.NewValidationError("is_public", "must be a boolean")
+		}
 		if !public {
 			return nil
 		}
