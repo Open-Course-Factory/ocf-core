@@ -685,10 +685,10 @@ func (s *ScenarioSessionService) buildStep(job buildJob, step *models.ScenarioSt
 		// The intro cannot be drawn now — no console has attached yet — so it
 		// is staged as the MOTD and rendered when the learner's shell starts.
 		s.stageIntroForLogin(job.terminalID, step, job.sessionID)
-		// The foreground script waits for the learner's console, which is
-		// usually not open yet; when it already is, it is typed right away.
+		// The foreground script cannot be typed now either: it waits for the
+		// learner's own console (DeliverPendingForeground). A console already
+		// open may be a supervisor's, who must never be typed at.
 		s.leaveForegroundPending(job.sessionID, step)
-		s.DeliverPendingForeground(job.terminalID)
 	}
 	return nil
 }
@@ -1024,15 +1024,17 @@ func (s *ScenarioSessionService) runForegroundScript(terminalSessionID string, s
 }
 
 // DeliverPendingForeground types the foreground script a build left pending
-// (leaveForegroundPending) into the learner's console. The build calls it once
-// at its end, for a console already open, and it is the console-attach
-// observer for one opened later; like EndCrashTrapRun it has nobody to answer
-// and reports through logs.
+// (leaveForegroundPending) once the learner's own console has attached to the
+// terminal. It is the console-attach observer, so like EndCrashTrapRun it has
+// nobody to answer and reports through logs.
 //
 // The pending order is claimed before anything is typed, so of two attaches
 // racing (a reload, a second tab) exactly one types it. The claim also requires
 // the run to still be on that step: a learner who solved it without opening the
 // console never gets its demonstration typed into the next step's shell.
+// One narrow race is accepted: if the first of two near-simultaneous attaches
+// fails to type it and puts it back after the second has looked, neither types
+// it, and it waits for the learner's next attach.
 func (s *ScenarioSessionService) DeliverPendingForeground(terminalSessionID string) {
 	if terminalSessionID == "" || s.verificationService == nil {
 		return
@@ -1064,11 +1066,14 @@ func (s *ScenarioSessionService) DeliverPendingForeground(terminalSessionID stri
 	if err := s.verificationService.WriteToConsole(terminalSessionID, script); err != nil {
 		// Put it back, guarded the same way, so the learner's next attach
 		// tries again instead of the demonstration being lost.
-		s.db.Model(&models.ScenarioSession{}).
+		if restoreErr := s.db.Model(&models.ScenarioSession{}).
 			Where("id = ? AND pending_foreground_order IS NULL AND current_step = ?", session.ID, order).
-			Update("pending_foreground_order", order)
+			Update("pending_foreground_order", order).Error; restoreErr != nil {
+			slog.Error("could not put the foreground script back as pending: it will not be typed",
+				"session_id", session.ID, "step_order", order, "err", restoreErr)
+		}
 		if errors.Is(err, ErrNoLiveConsole) {
-			// The ordinary case at the end of a build: nobody has attached yet.
+			// The console closed again before the script got there: not a fault.
 			slog.Info("foreground script left pending: no console attached", "session_id", session.ID, "step_order", order)
 		} else {
 			slog.Warn("failed to type the pending foreground script; left pending for the next attach",
@@ -1095,6 +1100,9 @@ func (s *ScenarioSessionService) startAsyncStepProvisioning(session *models.Scen
 		Updates(map[string]any{
 			"status":             statusProvisioning,
 			"provisioning_phase": "step_setup",
+			// This run types the step's foreground live once the level is
+			// built, so a copy left pending must not be typed before that.
+			"pending_foreground_order": nil,
 		})
 	if result.Error != nil {
 		slog.Error("failed to mark session provisioning", "session_id", session.ID, "step_order", step.Order, "err", result.Error)
@@ -1217,7 +1225,12 @@ func (s *ScenarioSessionService) ReprovisionCurrentStep(sessionID uuid.UUID, for
 	}
 
 	// Synchronous: run first, then record the outcome, so a failed retry never
-	// leaves the session claiming to be playable.
+	// leaves the session claiming to be playable. The retry types the step's
+	// foreground itself, so a copy left pending would be typed a second time.
+	if err := s.db.Model(&models.ScenarioSession{}).Where("id = ?", session.ID).
+		Update("pending_foreground_order", nil).Error; err != nil {
+		slog.Error("could not take over the pending foreground script", "session_id", session.ID, "err", err)
+	}
 	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, runnable, session.Locale); err != nil {
 		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
 		slog.Error("step reprovisioning failed", "session_id", session.ID, "step_order", step.Order, "err", err)

@@ -5,13 +5,15 @@ import (
 	"encoding/csv"
 	stderrors "errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
-	"strings"
+	"runtime/debug"
 	"soli/formations/src/auth/casdoor"
 	config "soli/formations/src/configuration"
+	"strconv"
+	"strings"
 	"time"
 
 	access "soli/formations/src/auth/access"
@@ -55,7 +57,6 @@ type TerminalController interface {
 	SyncUserSessions(ctx *gin.Context)
 	GetSessionStatus(ctx *gin.Context)
 	GetSyncStatistics(ctx *gin.Context)
-
 
 	// Méthodes de métriques
 	GetServerMetrics(ctx *gin.Context)
@@ -353,21 +354,31 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		}
 	}()
 
-	reportLearnerAttach(terminal, userId)
+	reportLearnerAttach(ctx, terminal)
 	relayTerminalToClient(terminalConn, clientConn, terminal.SessionID)
 }
 
 // reportLearnerAttach publishes the console attach when the user opening it
 // owns the terminal. A teacher or an admin may open a learner's console through
-// this same route, and that is not the learner sitting down at their shell.
+// this same route, and an admin impersonating the learner opens it as them;
+// neither is the learner sitting down at their shell.
 //
 // The observer runs off the relay: typing a pending foreground script is a
-// round trip to tt-backend, and the learner's output must not wait for it.
-func reportLearnerAttach(terminal *models.Terminal, attachingUserID string) {
-	if terminal.UserID != attachingUserID {
+// round trip to tt-backend, and the learner's output must not wait for it. A
+// panic there is logged rather than taking the whole server down with it.
+func reportLearnerAttach(ctx *gin.Context, terminal *models.Terminal) {
+	if terminal.UserID != ctx.GetString("userId") || ctx.GetString("impersonatorId") != "" {
 		return
 	}
-	go services.ReportConsoleAttach(terminal.SessionID)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("console attach observer panic",
+					"terminal_session_id", terminal.SessionID, "panic", r, "stack", string(debug.Stack()))
+			}
+		}()
+		services.ReportConsoleAttach(terminal.SessionID)
+	}()
 }
 
 // consoleRelayConn is the narrow part of *websocket.Conn the console relay
@@ -737,11 +748,11 @@ func (tc *terminalController) SyncSession(ctx *gin.Context) {
 	if sessionResult == nil {
 		// Session non trouvée dans les résultats, créer une réponse par défaut
 		sessionResult = &dto.SyncSessionResponse{
-			SessionID:    sessionID,
+			SessionID:     sessionID,
 			PreviousState: string(terminal.State),
 			CurrentState:  string(terminal.State),
-			Updated:      false,
-			LastSyncAt:   time.Now(),
+			Updated:       false,
+			LastSyncAt:    time.Now(),
 		}
 	}
 
@@ -1908,6 +1919,7 @@ func (tc *terminalController) GetSessionOptions(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Terminal trainer error"
 //	@Router			/terminals/start-composed-session [post]
+//
 // gatePastDueBeyondGrace delegates to the shared dunning gate — the logic
 // moved to paymentMiddleware.GatePastDueBeyondGrace so the scenario
 // launch/preview routes enforce the exact same rule (it living here as a
@@ -1958,7 +1970,7 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 		// Plan limit / authorization errors → 403
 		if strings.Contains(errMsg, "plan_limit") || strings.Contains(errMsg, "plan_disabled") || strings.Contains(errMsg, "not allowed") {
 			statusCode = http.StatusForbidden
-		// Validation / input errors → 400
+			// Validation / input errors → 400
 		} else if strings.Contains(errMsg, "invalid") || strings.Contains(errMsg, "missing") || strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "required") {
 			statusCode = http.StatusBadRequest
 		}
