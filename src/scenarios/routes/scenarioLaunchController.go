@@ -61,6 +61,9 @@ func NewScenarioLaunchController(db *gorm.DB) *scenarioLaunchController {
 	// is the lower layer (scenarios imports it, not the reverse), so this is
 	// the mirror image of the terminal-stop callback above.
 	terminalServices.SetConsoleShellKilledObserver(sessionService.EndCrashTrapRun)
+	// Same inversion for the learner's console attach, which is when a
+	// foreground script left pending by a build can finally be typed.
+	terminalServices.SetConsoleAttachedObserver(sessionService.DeliverPendingForeground)
 
 	return &scenarioLaunchController{
 		scenarioControllerBase: newScenarioControllerBase(db),

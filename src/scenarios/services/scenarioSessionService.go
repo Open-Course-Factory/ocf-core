@@ -685,8 +685,24 @@ func (s *ScenarioSessionService) buildStep(job buildJob, step *models.ScenarioSt
 		// The intro cannot be drawn now — no console has attached yet — so it
 		// is staged as the MOTD and rendered when the learner's shell starts.
 		s.stageIntroForLogin(job.terminalID, step, job.sessionID)
+		// The foreground script cannot be typed now either, for the same
+		// reason; it waits for the learner's console (DeliverPendingForeground).
+		s.leaveForegroundPending(job.sessionID, step)
 	}
 	return nil
+}
+
+// leaveForegroundPending records that step's foreground script is waiting for
+// the learner's console. A step without one leaves nothing pending.
+func (s *ScenarioSessionService) leaveForegroundPending(sessionID uuid.UUID, step *models.ScenarioStep) {
+	if ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript) == "" {
+		return
+	}
+	if err := s.db.Model(&models.ScenarioSession{}).Where("id = ?", sessionID).
+		Update("pending_foreground_order", step.Order).Error; err != nil {
+		slog.Error("could not leave the foreground script pending: it will not be typed",
+			"session_id", sessionID, "step_order", step.Order, "err", err)
+	}
 }
 
 // heartbeat reports the build's progress on the run, which also refreshes
@@ -1004,6 +1020,56 @@ func (s *ScenarioSessionService) runForegroundScript(terminalSessionID string, s
 	default:
 		slog.Warn("failed to send foreground script to console", "step_order", step.Order, "err", err)
 	}
+}
+
+// DeliverPendingForeground types the foreground script a build left pending
+// (leaveForegroundPending) once the learner's console has attached to the
+// terminal. It is the console-attach observer, so like EndCrashTrapRun it has
+// nobody to answer and reports through logs.
+//
+// The pending order is claimed before anything is typed, so of two attaches
+// racing (a reload, a second tab) exactly one types it. The claim also requires
+// the run to still be on that step: a learner who solved it without opening the
+// console never gets its demonstration typed into the next step's shell.
+func (s *ScenarioSessionService) DeliverPendingForeground(terminalSessionID string) {
+	if terminalSessionID == "" || s.verificationService == nil {
+		return
+	}
+	session, err := s.FindSessionByTerminal(terminalSessionID)
+	if err != nil || session.PendingForegroundOrder == nil {
+		return // plain terminal, or nothing waiting
+	}
+	order := *session.PendingForegroundOrder
+
+	claim := s.db.Model(&models.ScenarioSession{}).
+		Where("id = ? AND pending_foreground_order = ? AND current_step = ? AND status IN ?",
+			session.ID, order, order, []string{statusActive, statusInProgress, statusProvisioning}).
+		Update("pending_foreground_order", nil)
+	if claim.Error != nil {
+		slog.Error("could not claim the pending foreground script", "session_id", session.ID, "err", claim.Error)
+		return
+	}
+	if claim.RowsAffected != 1 {
+		return // another attach typed it, or the run has moved on
+	}
+
+	var step models.ScenarioStep
+	if err := s.db.Where("scenario_id = ? AND \"order\" = ?", session.ScenarioID, order).First(&step).Error; err != nil {
+		slog.Error("could not load the step of a pending foreground script", "session_id", session.ID, "step_order", order, "err", err)
+		return
+	}
+	script := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript)
+	if err := s.verificationService.WriteToConsole(terminalSessionID, script); err != nil {
+		// Put it back, guarded the same way, so the learner's next attach
+		// tries again instead of the demonstration being lost.
+		s.db.Model(&models.ScenarioSession{}).
+			Where("id = ? AND pending_foreground_order IS NULL AND current_step = ?", session.ID, order).
+			Update("pending_foreground_order", order)
+		slog.Warn("failed to type the pending foreground script; left pending for the next attach",
+			"session_id", session.ID, "step_order", order, "err", err)
+		return
+	}
+	slog.Info("pending foreground script sent to console", "session_id", session.ID, "step_order", order)
 }
 
 // startAsyncStepProvisioning moves the session to "provisioning" and runs the

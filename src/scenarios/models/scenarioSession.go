@@ -56,6 +56,12 @@ type ScenarioSession struct {
 	// that do not exist. Empty means the scenario's default.
 	Locale string `gorm:"type:varchar(10)" json:"locale,omitempty" mapstructure:"locale"`
 
+	// PendingForegroundOrder is the order of the step whose foreground script
+	// is waiting for the learner's console. A build runs before any console is
+	// attached, so the script is typed on the learner's first attach instead,
+	// and only while the run is still on that step. Nil when nothing waits.
+	PendingForegroundOrder *int `json:"-"`
+
 	// Relations
 	StepProgress []ScenarioStepProgress `gorm:"foreignKey:SessionID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"step_progress,omitempty"`
 	Flags        []ScenarioFlag         `gorm:"foreignKey:SessionID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"flags,omitempty"`

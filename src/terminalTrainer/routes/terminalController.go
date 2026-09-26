@@ -353,7 +353,21 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		}
 	}()
 
+	reportLearnerAttach(terminal, userId)
 	relayTerminalToClient(terminalConn, clientConn, terminal.SessionID)
+}
+
+// reportLearnerAttach publishes the console attach when the user opening it
+// owns the terminal. A teacher or an admin may open a learner's console through
+// this same route, and that is not the learner sitting down at their shell.
+//
+// The observer runs off the relay: typing a pending foreground script is a
+// round trip to tt-backend, and the learner's output must not wait for it.
+func reportLearnerAttach(terminal *models.Terminal, attachingUserID string) {
+	if terminal.UserID != attachingUserID {
+		return
+	}
+	go services.ReportConsoleAttach(terminal.SessionID)
 }
 
 // consoleRelayConn is the narrow part of *websocket.Conn the console relay

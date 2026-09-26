@@ -1,7 +1,5 @@
 package services
 
-import "sync"
-
 // ConsoleShellKilledCloseCode is the WebSocket close code tt-backend sends when
 // the learner's shell was terminated by SIGKILL.
 //
@@ -37,10 +35,7 @@ func IsShellKilledCloseCode(closeCode int) bool {
 // shell was SIGKILLed.
 type ConsoleShellKilledObserver func(terminalSessionID string)
 
-var (
-	consoleShellKilledMu       sync.RWMutex
-	consoleShellKilledObserver ConsoleShellKilledObserver
-)
+var consoleShellKilled consoleObserver
 
 // SetConsoleShellKilledObserver registers the handler for SIGKILLed shells,
 // replacing any previous one. Passing nil unregisters.
@@ -51,9 +46,7 @@ var (
 // at route-registration time — the same shape as ScenarioSessionService's
 // TerminalStopFunc callback, in the opposite direction.
 func SetConsoleShellKilledObserver(observer ConsoleShellKilledObserver) {
-	consoleShellKilledMu.Lock()
-	defer consoleShellKilledMu.Unlock()
-	consoleShellKilledObserver = observer
+	consoleShellKilled.set(observer)
 }
 
 // ReportConsoleClose hands a closed console connection to the registered
@@ -67,12 +60,5 @@ func ReportConsoleClose(terminalSessionID string, closeCode int) {
 	if terminalSessionID == "" || !IsShellKilledCloseCode(closeCode) {
 		return
 	}
-
-	consoleShellKilledMu.RLock()
-	observer := consoleShellKilledObserver
-	consoleShellKilledMu.RUnlock()
-
-	if observer != nil {
-		observer(terminalSessionID)
-	}
+	consoleShellKilled.notify(terminalSessionID)
 }
