@@ -320,6 +320,44 @@ func TestCleanupStuckProvisioningSessions_SparesAStepInsideItsDeclaredBudget(t *
 		"a step still inside the budget it was allowed to declare is not stuck")
 }
 
+// A replay is ReleaseStalledReplays' to judge, never the stuck-setup reaper's.
+// The two compute their own cutoff, so a replay that crosses it between the
+// cron's two calls was released by neither and written off by the reaper:
+// setup_failed, which the next launch abandons, losing the progress the
+// rebuild existed to keep. The reaper therefore skips every row that is
+// rebuilding from an old terminal, however stale.
+func TestCleanupStuckProvisioningSessions_LeavesReplaysAlone(t *testing.T) {
+	db := freshTestDB(t)
+
+	seedStalled := func(name, phase string, rebuildFrom *string) models.ScenarioSession {
+		run, _ := seedOpenRunWithTerminal(t, db, "student-"+name, "terminal-"+name,
+			terminalModels.StateRunning, time.Hour, "ephemeral", "provisioning")
+		require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", run.ID).
+			Updates(map[string]any{"provisioning_phase": phase, "rebuild_from_terminal_id": rebuildFrom}).Error)
+		require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", run.ID).
+			Update("updated_at", time.Now().Add(-time.Hour)).Error)
+		return run
+	}
+	oldTerminal := "old-terminal-reaper-replay"
+	replay := seedStalled("reaper-replay", "replay", &oldTerminal)
+	launch := seedStalled("reaper-launch", "step_setup", nil)
+
+	count, err := services.CleanupStuckProvisioningSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	var untouched models.ScenarioSession
+	require.NoError(t, db.First(&untouched, "id = ?", replay.ID).Error)
+	assert.Equal(t, "provisioning", untouched.Status,
+		"a stale replay is left to ReleaseStalledReplays, never written off as setup_failed")
+	assert.Equal(t, "replay", untouched.ProvisioningPhase)
+	require.NotNil(t, untouched.RebuildFromTerminalID)
+	assert.Equal(t, oldTerminal, *untouched.RebuildFromTerminalID)
+
+	assert.Equal(t, "setup_failed", sessionStatus(t, db, launch.ID),
+		"a stale ordinary launch is still the reaper's")
+}
+
 // TestCleanupZombieScenarioSessions_AbandonsRunOnExpiredButRunningTerminal is
 // the case the state-only rule missed, and the one learners actually hit: a
 // terminal that simply reached its TTL. Nothing moves the state column then, so
