@@ -2,6 +2,7 @@ package scenarios_test
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
@@ -1210,4 +1212,95 @@ func TestStartScenario_ScriptlessOneBasedScenario_DeploysFirstStepFlag(t *testin
 	assert.Equal(t, "terminal-first", verifySvc.pushCalls[0].sessionID)
 	assert.Equal(t, "/tmp/first.flag", verifySvc.pushCalls[0].targetPath)
 	assert.Equal(t, "flag{test-student-first}\n", verifySvc.pushCalls[0].content)
+}
+
+// abandoningVerificationService abandons the run while its first exec — the
+// scenario setup script — is running, the way a learner clicking Abandon
+// mid-build does.
+type abandoningVerificationService struct {
+	mockVerificationService
+	db *gorm.DB
+}
+
+func (m *abandoningVerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
+	if len(m.execCalls) == 0 {
+		m.db.Model(&models.ScenarioSession{}).Where("terminal_session_id = ?", sessionID).Update("status", "abandoned")
+	}
+	return m.mockVerificationService.ExecInContainer(sessionID, command, env, timeout)
+}
+
+// A run abandoned mid-build stops being built: nobody is waiting for the rest
+// of the world. It is not a failure either — the run stays abandoned and the
+// terminal is left to the abandon path — but the build window still closes.
+func TestStartScenario_AbandonedMidSetup_StopsBuildingEarly(t *testing.T) {
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "abandoned-mid-setup",
+		Title:        "Abandoned Mid Setup",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+		SetupScript:  "echo setup",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	step := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "First", BackgroundScript: "echo first"}
+	require.NoError(t, db.Create(&step).Error)
+
+	verifySvc := &abandoningVerificationService{db: db}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+	stopped := &terminalCallTracker{}
+	sessionSvc.SetTerminalStopFunc(stopped.StopFunc())
+	built := &terminalCallTracker{}
+	sessionSvc.SetTerminalBuildCompleteFunc(services.TerminalBuildCompleteFunc(built.StopFunc()))
+
+	session, err := sessionSvc.StartScenario("student-abandon", scenario.ID, "terminal-abandon", "")
+	require.NoError(t, err)
+	require.Equal(t, "provisioning", session.Status)
+
+	require.Eventually(t, func() bool { return built.CallCount() > 0 }, 3*time.Second, 10*time.Millisecond,
+		"the build window closes on every exit from the build, an abandoned one included")
+
+	require.Len(t, verifySvc.execCalls, 1, "only the setup script ran; the step's script was never started")
+	assert.Equal(t, []string{"/bin/sh", "-c", "set -e\necho setup"}, verifySvc.execCalls[0].command)
+	var final models.ScenarioSession
+	require.NoError(t, db.First(&final, "id = ?", session.ID).Error)
+	assert.Equal(t, "abandoned", final.Status, "an abandoned run is not a failed one")
+	assert.Equal(t, 0, stopped.CallCount(), "the abandon path owns the terminal, not the build")
+}
+
+// Installing the vocabulary is a script run like any other, so a scenario whose
+// only build work is its lexicon is built in the background too — not by an
+// exec held inside the launch request.
+func TestStartScenario_LexiconOnly_IsBuiltAsynchronously(t *testing.T) {
+	db, scenario := lexiconScenario(t)
+	step := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "First"}
+	require.NoError(t, db.Create(&step).Error)
+
+	verifySvc := &mockVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-lexicon", scenario.ID, "terminal-lexicon-only", "")
+	require.NoError(t, err)
+	assert.Equal(t, "provisioning", session.Status, "there is a script to run, so the launch returns before it runs")
+
+	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
+	require.Len(t, verifySvc.execCalls, 1)
+	assert.Contains(t, strings.Join(verifySvc.execCalls[0].command, " "), "cat > /etc/ocf-lexicon.sh",
+		"the vocabulary was installed")
+}
+
+// The first step's script builds the level from a bare container, whatever the
+// step's number: editor-made scenarios start at 1, seeded ones at 0, and both
+// first steps get the initial-setup budget rather than a later step's.
+func TestStartScenario_FirstStepGetsTheInitialSetupTimeout(t *testing.T) {
+	for _, firstOrder := range []int{0, 1} {
+		t.Run(fmt.Sprintf("first order %d", firstOrder), func(t *testing.T) {
+			verifySvc := &mockVerificationService{}
+			startFirstStepScenario(t, firstOrder, verifySvc)
+
+			require.Len(t, verifySvc.execCalls, 1)
+			assert.Equal(t, []string{"/bin/sh", "-c", "set -e\necho first"}, verifySvc.execCalls[0].command)
+			assert.Equal(t, 300, verifySvc.execCalls[0].timeout)
+		})
+	}
 }
