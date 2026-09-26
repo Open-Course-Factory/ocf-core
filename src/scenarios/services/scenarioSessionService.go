@@ -1289,7 +1289,10 @@ func (s *ScenarioSessionService) resolveRunnableStep(step *models.ScenarioStep, 
 // It exists so a client that polls session info — after a page reload, say, and
 // so never saw the advance response — can still derive when to stop waiting.
 //
-// A rebuild (phase "replay") waits on its whole replay, not one step.
+// A run built through several steps waits on the whole build, not one step: a
+// rebuild (phase "replay"), and a preview started past the first step, which
+// replays the same scripts. A preview advancing mid-run past its first step is
+// reported the same way — a longer wait than it needs, never a shorter one.
 func (s *ScenarioSessionService) CurrentStepProvisioningTimeout(session *models.ScenarioSession) int {
 	if session.Status != "provisioning" {
 		return 0
@@ -1298,12 +1301,13 @@ func (s *ScenarioSessionService) CurrentStepProvisioningTimeout(session *models.
 	if err := s.db.Where("scenario_id = ?", session.ScenarioID).Find(&steps).Error; err != nil {
 		return 0
 	}
-	if session.ProvisioningPhase == provisioningPhaseReplay {
-		return replayProvisioningTimeout(steps, session.CurrentStep)
-	}
 	step := FindStepByOrder(steps, session.CurrentStep)
 	if step == nil {
 		return 0
+	}
+	replaysEarlierSteps := session.IsPreview && !isInitialSetup(steps, step)
+	if session.ProvisioningPhase == provisioningPhaseReplay || replaysEarlierSteps {
+		return replayProvisioningTimeout(steps, session.CurrentStep)
 	}
 	return effectiveTimeout(steps, step)
 }
