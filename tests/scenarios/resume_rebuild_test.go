@@ -787,6 +787,67 @@ func TestResume_PausedProvisioningRun_CreatesNoTerminal(t *testing.T) {
 	assert.Empty(t, tt.builtSteps())
 }
 
+// failTerminalUpdates makes every UPDATE of the terminals table fail on db
+// until the test ends: the database refusing the write that records a lost
+// container.
+func failTerminalUpdates(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	const name = "test:fail-terminal-updates"
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register(name, func(tx *gorm.DB) {
+		if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "terminals" {
+			_ = tx.AddError(fmt.Errorf("terminals update refused by the test"))
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Update().Remove(name) })
+}
+
+// tt-backend has lost the paused container, but the row saying so could not
+// be written: the run still reads paused, so neither a rebuild nor "run over"
+// is known to be true. The learner is told to try again, and nothing is
+// created on a guess.
+func TestResume_PausedContainerGone_DeletedStateNotSaved_503(t *testing.T) {
+	f := seedResumableRun(t, "resume-paused-unsaved", resumeSeed{terminalState: terminalModels.StateStopped})
+	tt := newPreviewTTBackend(t)
+	tt.startMissing = true
+	failTerminalUpdates(t, f.db)
+
+	w := resumeRun(t, f)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code, "body=%s", w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	reason, _ := body["reason"].(string)
+	assert.NotEmpty(t, reason, "the client offers a retry from the reason")
+	assert.NotEqual(t, "run_over", reason, "the run is not known to be over")
+	assert.Equal(t, []string{f.oldTerminal}, tt.startedSessions())
+	assert.Zero(t, tt.createCalls(), "nothing is created while the run's state is unknown")
+	assert.Equal(t, "active", sessionStatus(t, f.db, f.run.ID))
+}
+
+// The run ended — abandoned in another tab — after the resume judged it
+// rebuildable and before it was reattached. That is not a concurrent resume:
+// the answer is run_over, and the terminal made for it is deleted.
+func TestResume_RunClosedDuringReattach_409RunOver(t *testing.T) {
+	f := seedResumableRun(t, "resume-closed-meanwhile", resumeSeed{})
+	tt := newPreviewTTBackend(t)
+	svc := services.NewScenarioSessionService(f.db, &mockFlagService{}, &mockVerificationService{})
+	tt.beforeCreate = func() {
+		assert.NoError(t, svc.AbandonSession(f.run.ID))
+	}
+
+	w := resumeRun(t, f)
+
+	require.Equal(t, http.StatusConflict, w.Code, "body=%s", w.Body.String())
+	assert.Contains(t, w.Body.String(), `"reason":"run_over"`,
+		"the run ended: nothing is resuming it, so the client must not wait for a winner")
+	assert.Equal(t, 1, tt.createCalls())
+	deleted := tt.deletedSessions()
+	require.Len(t, deleted, 1, "the terminal made for the ended run is deleted")
+	assert.NotEqual(t, f.oldTerminal, deleted[0])
+	assert.Empty(t, tt.builtSteps())
+	assert.Equal(t, "abandoned", sessionStatus(t, f.db, f.run.ID))
+}
+
 // assertPlanRefusal checks a plan refusal is a 403 that gives a reason and
 // says nothing of tt-backend: no URL, no upstream wording, no raw body.
 func assertPlanRefusal(t *testing.T, w *httptest.ResponseRecorder) {
