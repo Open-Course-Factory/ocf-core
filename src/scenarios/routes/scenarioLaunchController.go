@@ -386,6 +386,10 @@ const (
 	blockReasonBudgetExhausted      = "budget_exhausted"
 	blockReasonSizeOverPlan         = "size_over_plan"
 	blockReasonSessionExists        = "session_exists"
+	blockReasonNotInPlan            = "not_in_plan"
+	// Resume refusals.
+	reasonRunOver          = "run_over"
+	reasonResumeInProgress = "resume_in_progress"
 )
 
 // rejectIfRunInProgress answers the request and reports true when the learner
@@ -560,8 +564,8 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	session, startErr := sc.sessionService.StartScenario(userID, scenarioID, terminalResp.SessionID, input.Locale)
 	if startErr != nil {
 		// The new terminal has no usable run and would only hold budget. A run
-		// already bound to it is a crash-trap one (the challenge config failed
-		// to land), which the resume rule and the next launch treat as over.
+		// already bound to it is left to the resume rule: a crash-trap one is
+		// over, a normal one stays rebuildable — both harmless.
 		if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
 			slog.Warn("failed to delete the terminal of a failed scenario launch",
 				"terminal_session_id", terminalResp.SessionID, "err", delErr)
@@ -577,7 +581,6 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, sc.launchResponse(session))
 }
-
 
 // provisionScenarioTerminal creates the terminal a scenario run is built on:
 // the machine provisioning resolved, owned by userID, paid for by plan and
@@ -650,6 +653,16 @@ func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, 
 		// creation route emits — the launcher renders honest budget copy
 		// from it instead of a generic failure.
 		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
+			return nil, false
+		}
+		// The upstream text names hosts and endpoints: the learner gets a
+		// fixed answer, the log keeps the detail.
+		if httperrors.IsPlanRefusal(termErr) {
+			ctx.JSON(http.StatusForbidden, gin.H{
+				"error_code":    http.StatusForbidden,
+				"error_message": "Your plan does not cover the machine this scenario needs.",
+				"reason":        blockReasonNotInPlan,
+			})
 			return nil, false
 		}
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start terminal session. Please try again or contact support.")
@@ -906,7 +919,7 @@ func respondRunOver(ctx *gin.Context) {
 	ctx.JSON(http.StatusConflict, gin.H{
 		"error_code":    http.StatusConflict,
 		"error_message": "This run is over and cannot be resumed.",
-		"reason":        "run_over",
+		"reason":        reasonRunOver,
 	})
 }
 
@@ -946,9 +959,14 @@ func (sc *scenarioLaunchController) ResumeScenario(ctx *gin.Context) {
 		if sc.resumePausedRun(ctx, &run) {
 			return
 		}
-		// tt-backend no longer had the container: the terminal row now says
-		// so, and the run is rebuilt like any whose container is gone.
-		mode = services.ResumeModeRebuild
+		// tt-backend no longer had the container, and the terminal row now
+		// says so: the rule judges the run again — rebuilt if it may be, over
+		// if its container was the run.
+		if mode, err = sc.sessionService.ResumeModeOf(&run); err != nil {
+			slog.Error("failed to judge a scenario run for resume", "session_id", run.ID, "err", err)
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to resume the scenario run")
+			return
+		}
 	}
 	switch mode {
 	case services.ResumeModeLive:
@@ -1038,7 +1056,12 @@ func (sc *scenarioLaunchController) rebuildRun(ctx *gin.Context, run *models.Sce
 				"terminal_session_id", terminalResp.SessionID, "err", delErr)
 		}
 		if stderrors.Is(err, services.ErrRunNotRebuildable) {
-			errors.Respond(ctx, http.StatusConflict, "This run was resumed or ended in the meantime.")
+			// Another resume got there first: the client follows that one.
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error_code":    http.StatusConflict,
+				"error_message": "This run is already being resumed.",
+				"reason":        reasonResumeInProgress,
+			})
 			return
 		}
 		slog.Error("failed to rebuild a scenario run", "session_id", run.ID, "err", err)

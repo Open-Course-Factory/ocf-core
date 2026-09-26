@@ -26,8 +26,6 @@ func StartScenarioSessionCleanupJob(db *gorm.DB) {
 
 func sweepScenarioSessions(db *gorm.DB, terminalService terminalServices.TerminalTrainerService) {
 	cleanupZombieScenarioSessions(db, terminalService)
-	// Before the stuck-provisioning reaper: a stalled rebuild goes back to its
-	// learner as rebuildable, where the reaper would write it off.
 	releaseStalledReplays(db, terminalService)
 	cleanupStuckProvisioningSessions(db)
 }

@@ -92,6 +92,15 @@ const (
 	statusSetupFailed  = "setup_failed"
 )
 
+// Provisioning phases the build reports while a run is "provisioning".
+const (
+	// provisioningPhaseStepSetup: a step's background script is running.
+	provisioningPhaseStepSetup = "step_setup"
+	// provisioningPhaseReplay: the run's environment is being rebuilt at its
+	// current step (ResumeModeRebuild).
+	provisioningPhaseReplay = "replay"
+)
+
 // reprovisionableStatuses are the states from which re-running a step's setup
 // makes sense: a run in progress, or one whose setup already failed. A session
 // already provisioning has a goroutine on the job; a completed or abandoned one
@@ -418,7 +427,7 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 			flags:        slices.Clone(session.Flags),
 			locale:       session.Locale,
 			throughOrder: startOrder,
-			phase:        "step_setup",
+			phase:        provisioningPhaseStepSetup,
 		}
 		runsScripts := s.buildRunsScripts(job)
 		slog.Info("StartScenario build", "session_id", session.ID, "runs_scripts", runsScripts)
@@ -1096,7 +1105,7 @@ func (s *ScenarioSessionService) startAsyncStepProvisioning(session *models.Scen
 		Where("id = ? AND status IN ?", session.ID, fromStatuses).
 		Updates(map[string]any{
 			"status":             statusProvisioning,
-			"provisioning_phase": "step_setup",
+			"provisioning_phase": provisioningPhaseStepSetup,
 		})
 	if result.Error != nil {
 		slog.Error("failed to mark session provisioning", "session_id", session.ID, "step_order", step.Order, "err", result.Error)

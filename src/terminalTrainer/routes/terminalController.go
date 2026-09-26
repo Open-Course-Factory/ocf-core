@@ -1942,7 +1942,7 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 		statusCode := http.StatusInternalServerError
 
 		// Plan limit / authorization errors → 403
-		if strings.Contains(errMsg, "plan_limit") || strings.Contains(errMsg, "plan_disabled") || strings.Contains(errMsg, "not allowed") {
+		if httperrors.IsPlanRefusal(err) {
 			statusCode = http.StatusForbidden
 		// Validation / input errors → 400
 		} else if strings.Contains(errMsg, "invalid") || strings.Contains(errMsg, "missing") || strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "required") {

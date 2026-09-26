@@ -253,8 +253,7 @@ func (l *terminalLifecycleService) StartSession(sessionID string) error {
 // cron zombie qui concluent. Un run normal garde sa progression et son
 // environnement est reconstruit à la reprise ; un run crash-trap ou de
 // prévisualisation est abandonné par le cron (ou tout de suite par le
-// lancement suivant). L'abandon d'office ici jetait la progression de tout
-// run dont l'apprenant supprimait le terminal.
+// lancement suivant).
 //
 // Aucune métrique de quota n'est touchée : la capacité terminale est
 // exclusivement régie par le moteur de budget CPU/RAM
