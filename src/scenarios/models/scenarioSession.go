@@ -62,6 +62,13 @@ type ScenarioSession struct {
 	// and only while the run is still on that step. Nil when nothing waits.
 	PendingForegroundOrder *int `json:"-"`
 
+	// RebuildFromTerminalID is set only while the run's environment is being
+	// rebuilt (provisioning, phase "replay"): the terminal the run was on
+	// before, whose container was gone. A rebuild that fails or stalls puts
+	// the run back on it, so the run reads as rebuildable again rather than as
+	// a live run on a half-built machine.
+	RebuildFromTerminalID *string `gorm:"type:varchar(255)" json:"-"`
+
 	// Relations
 	StepProgress []ScenarioStepProgress `gorm:"foreignKey:SessionID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"step_progress,omitempty"`
 	Flags        []ScenarioFlag         `gorm:"foreignKey:SessionID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"flags,omitempty"`

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
 	"soli/formations/src/utils"
@@ -235,8 +234,15 @@ func (l *terminalLifecycleService) StartSession(sessionID string) error {
 }
 
 // DeleteSession supprime définitivement une session via DELETE /sessions/{id}
-// de tt-backend, marque la ligne locale comme StateDeleted et abandonne tout
-// scenario session lié.
+// de tt-backend et marque la ligne locale comme StateDeleted.
+//
+// Comme pour StopSession, le sort d'un run de scénario lié n'est PAS décidé
+// ici : c'est la règle de reprise (scenarios/services.RunResumeMode) et le
+// cron zombie qui concluent. Un run normal garde sa progression et son
+// environnement est reconstruit à la reprise ; un run crash-trap ou de
+// prévisualisation est abandonné par le cron (ou tout de suite par le
+// lancement suivant). L'abandon d'office ici jetait la progression de tout
+// run dont l'apprenant supprimait le terminal.
 //
 // Aucune métrique de quota n'est touchée : la capacité terminale est
 // exclusivement régie par le moteur de budget CPU/RAM
@@ -267,18 +273,6 @@ func (l *terminalLifecycleService) DeleteSession(sessionID string) error {
 
 	if err := l.repository.DeleteExposedPortsBySessionID(sessionID); err != nil {
 		utils.Warn("failed to clear exposed ports for deleted session %s: %v", sessionID, err)
-	}
-
-	// Auto-abandon any scenario run linked to this terminal. The status list
-	// is owned by the scenarios package: a run whose setup failed is still a
-	// run on this container, and used to be the one left behind here.
-	result := l.db.Model(&struct{}{}).Table("scenario_sessions").
-		Where("terminal_session_id = ? AND status IN ?", sessionID, scenarioModels.OpenSessionStatuses).
-		Update("status", "abandoned")
-	if result.Error != nil {
-		utils.Warn("failed to abandon scenario sessions for terminal %s: %v", sessionID, result.Error)
-	} else if result.RowsAffected > 0 {
-		utils.Debug("Auto-abandoned %d scenario session(s) for deleted terminal %s", result.RowsAffected, sessionID)
 	}
 
 	return nil
