@@ -264,3 +264,85 @@ func TestForeground_ConsoleAttachedDuringBuild_TypedAtEndOfBuild(t *testing.T) {
 
 	assert.Len(t, verifySvc.consoleWrites, 1, "a later attach must not type it again")
 }
+
+// Reprovisioning a step whose foreground is still pending.
+//
+// The retry re-runs the step's setup and ends by typing its foreground live, so
+// the pending copy the build left on the run is spent by it. Leaving it pending
+// would type the demonstration a second time on the learner's next attach —
+// and, while an async retry is still rebuilding the level, type it before the
+// environment it demonstrates exists again.
+
+// stepOnePendingForeground parks a run on a second step that has a background
+// and a foreground script, with that foreground left pending as a build leaves
+// it when no console was attached.
+func stepOnePendingForeground(t *testing.T, db *gorm.DB, name string, async bool) *models.ScenarioSession {
+	t.Helper()
+	session := twoStepSession(t, db, name, models.ScenarioStep{
+		BackgroundScript: "mkdir -p /opt/lab",
+		BackgroundAsync:  async,
+		ForegroundScript: "cd /opt/lab && ls",
+	})
+	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", session.ID).
+		Updates(map[string]any{"current_step": 1, "pending_foreground_order": 1}).Error)
+	return session
+}
+
+func TestForeground_SyncReprovision_TypesItOnce(t *testing.T) {
+	db := freshTestDB(t)
+	session := stepOnePendingForeground(t, db, "fg-reprovision-sync", false)
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.ReprovisionCurrentStep(session.ID, false)
+	require.NoError(t, err)
+	require.Equal(t, "active", result.Status)
+	require.Len(t, verifySvc.consoleWrites, 1, "precondition: the retry typed the foreground into the open console")
+
+	sessionSvc.DeliverPendingForeground("terminal-fg-reprovision-sync")
+
+	assert.Len(t, verifySvc.consoleWrites, 1,
+		"the retry already typed the foreground; the next attach must not type it again")
+	assert.Nil(t, pendingForegroundOrder(t, db, session.ID),
+		"a foreground typed by the retry is no longer pending")
+}
+
+// blockingExecVerificationService holds every container exec until released,
+// so a test can act while a step is still being provisioned.
+type blockingExecVerificationService struct {
+	bgTrackingVerificationService
+	started chan struct{}
+	release chan struct{}
+}
+
+func (m *blockingExecVerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
+	m.started <- struct{}{}
+	<-m.release
+	return m.bgTrackingVerificationService.ExecInContainer(sessionID, command, env, timeout)
+}
+
+func TestForeground_AsyncReprovision_AttachDuringRebuildTypesNothingEarly(t *testing.T) {
+	db := freshTestDB(t)
+	session := stepOnePendingForeground(t, db, "fg-reprovision-async", true)
+	verifySvc := &blockingExecVerificationService{started: make(chan struct{}, 1), release: make(chan struct{})}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.ReprovisionCurrentStep(session.ID, false)
+	require.NoError(t, err)
+	require.Equal(t, "provisioning", result.Status)
+	<-verifySvc.started // the background script is running, not yet done
+
+	sessionSvc.DeliverPendingForeground("terminal-fg-reprovision-async")
+
+	assert.Empty(t, verifySvc.consoleWrites,
+		"an attach while the step is being rebuilt must not type its foreground "+
+			"before its background script has re-run")
+	assert.Nil(t, pendingForegroundOrder(t, db, session.ID),
+		"the retry takes over the pending foreground as it starts")
+
+	close(verifySvc.release)
+	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
+	assert.Len(t, verifySvc.consoleWrites, 1, "the retry types the foreground once, after the rebuild")
+	sessionSvc.DeliverPendingForeground("terminal-fg-reprovision-async")
+	assert.Len(t, verifySvc.consoleWrites, 1, "and a later attach does not type it again")
+}

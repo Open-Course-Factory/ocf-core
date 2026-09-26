@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,10 +23,11 @@ import (
 // tests pin that tt-backend's structured close code now reaches the browser
 // unchanged, and that a SIGKILLed shell is reported for permadeath handling.
 
-// newFakeTerminalTrainer serves one websocket connection that immediately
-// closes with the given code and reason, mimicking tt-backend's exec-exit
-// teardown (execCloseCode in backend/api_session_console.go).
-func newFakeTerminalTrainer(t *testing.T, closeCode int, closeReason string) *httptest.Server {
+// newFakeTerminalTrainer serves one websocket connection that sends greeting as
+// console output (none when empty) and then closes with the given code and
+// reason, mimicking tt-backend's exec-exit teardown (execCloseCode in
+// backend/api_session_console.go).
+func newFakeTerminalTrainer(t *testing.T, greeting string, closeCode int, closeReason string) *httptest.Server {
 	t.Helper()
 	upgrader := websocket.Upgrader{}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +36,9 @@ func newFakeTerminalTrainer(t *testing.T, closeCode int, closeReason string) *ht
 			return
 		}
 		defer conn.Close()
+		if greeting != "" {
+			_ = conn.WriteMessage(websocket.TextMessage, []byte(greeting))
+		}
 		_ = conn.WriteControl(websocket.CloseMessage,
 			websocket.FormatCloseMessage(closeCode, closeReason),
 			time.Now().Add(time.Second))
@@ -78,7 +83,7 @@ func runConsoleProxy(t *testing.T, ttServer *httptest.Server, terminalSessionID 
 }
 
 func TestConsoleRelay_ForwardsShellKilledCloseCodeToBrowser(t *testing.T) {
-	ttServer := newFakeTerminalTrainer(t, services.ConsoleShellKilledCloseCode, "exec_failed")
+	ttServer := newFakeTerminalTrainer(t, "", services.ConsoleShellKilledCloseCode, "exec_failed")
 	defer ttServer.Close()
 
 	err := runConsoleProxy(t, ttServer, "terminal-relay-kill")
@@ -97,7 +102,7 @@ func TestConsoleRelay_ForwardsLearnerExitCloseCodeToBrowser(t *testing.T) {
 	// A learner typing `exit 1` produces exit code 1 → close code 4001. It is
 	// still relayed (the frontend explains the shell ended) but must not be
 	// mistaken for a kill.
-	ttServer := newFakeTerminalTrainer(t, 4001, "exec_failed")
+	ttServer := newFakeTerminalTrainer(t, "", 4001, "exec_failed")
 	defer ttServer.Close()
 
 	err := runConsoleProxy(t, ttServer, "terminal-relay-exit1")
@@ -114,7 +119,7 @@ func TestConsoleRelay_ReportsShellKillForPermadeath(t *testing.T) {
 	})
 	defer services.SetConsoleShellKilledObserver(nil)
 
-	ttServer := newFakeTerminalTrainer(t, services.ConsoleShellKilledCloseCode, "exec_failed")
+	ttServer := newFakeTerminalTrainer(t, "", services.ConsoleShellKilledCloseCode, "exec_failed")
 	defer ttServer.Close()
 
 	_ = runConsoleProxy(t, ttServer, "terminal-permadeath-1")
@@ -162,7 +167,7 @@ func assertCloseNotReported(t *testing.T, closeCode int, closeReason, terminalSe
 	})
 	defer services.SetConsoleShellKilledObserver(nil)
 
-	ttServer := newFakeTerminalTrainer(t, closeCode, closeReason)
+	ttServer := newFakeTerminalTrainer(t, "", closeCode, closeReason)
 	defer ttServer.Close()
 
 	err := runConsoleProxy(t, ttServer, terminalSessionID)
@@ -211,24 +216,6 @@ func TestIsShellKilledCloseCode(t *testing.T) {
 // sitting down at their shell: typing the demonstration then would play it to
 // the wrong audience and use it up before the learner ever saw it.
 
-// newChattyTerminalTrainer serves one console connection that sends a line of
-// output and then closes normally, so the relay under test has frames to pump.
-func newChattyTerminalTrainer(t *testing.T) *httptest.Server {
-	t.Helper()
-	upgrader := websocket.Upgrader{}
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		_ = conn.WriteMessage(websocket.TextMessage, []byte("learner@lab:~$ "))
-		_ = conn.WriteControl(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-			time.Now().Add(time.Second))
-	}))
-}
-
 // observeConsoleAttach registers an attach observer for the test and returns
 // the channel it reports on.
 func observeConsoleAttach(t *testing.T) chan string {
@@ -239,6 +226,18 @@ func observeConsoleAttach(t *testing.T) chan string {
 	})
 	t.Cleanup(func() { services.SetConsoleAttachedObserver(nil) })
 	return attached
+}
+
+// consoleRequest is the gin context of a console request as the auth
+// middlewares leave it: userId is the effective user, and impersonatorId is set
+// only when an admin is acting as that user.
+func consoleRequest(userID, impersonatorID string) *gin.Context {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("userId", userID)
+	if impersonatorID != "" {
+		ctx.Set("impersonatorId", impersonatorID)
+	}
+	return ctx
 }
 
 func assertNoAttachReported(t *testing.T, attached chan string, why string) {
@@ -254,7 +253,7 @@ func TestConsoleRelay_ReportsLearnerAttach(t *testing.T) {
 	attached := observeConsoleAttach(t)
 	terminal := &models.Terminal{SessionID: "terminal-learner-attach", UserID: "learner-1"}
 
-	reportLearnerAttach(terminal, "learner-1")
+	reportLearnerAttach(consoleRequest("learner-1", ""), terminal)
 
 	select {
 	case terminalSessionID := <-attached:
@@ -275,17 +274,31 @@ func TestConsoleRelay_TeacherConsoleAttachIsNotReported(t *testing.T) {
 	attached := observeConsoleAttach(t)
 	terminal := &models.Terminal{SessionID: "terminal-teacher-attach", UserID: "learner-1"}
 
-	reportLearnerAttach(terminal, "teacher-1")
+	reportLearnerAttach(consoleRequest("teacher-1", ""), terminal)
 
 	assertNoAttachReported(t, attached,
 		"a console opened by someone other than the terminal's owner must not "+
 			"be reported as the learner's attach")
 }
 
+// An admin impersonating the learner opens the console as the learner — userId
+// is the owner — but it is still the admin looking, not the learner. Typing the
+// pending demonstration then would spend it on the admin.
+func TestConsoleRelay_ImpersonatedAttachIsNotReported(t *testing.T) {
+	attached := observeConsoleAttach(t)
+	terminal := &models.Terminal{SessionID: "terminal-impersonated-attach", UserID: "learner-1"}
+
+	reportLearnerAttach(consoleRequest("learner-1", "admin-1"), terminal)
+
+	assertNoAttachReported(t, attached,
+		"a console opened under impersonation must not be reported as the "+
+			"learner's attach, even though the effective user owns the terminal")
+}
+
 func TestConsoleRelay_SupervisionAttachIsNotReported(t *testing.T) {
 	attached := observeConsoleAttach(t)
 
-	ttServer := newChattyTerminalTrainer(t)
+	ttServer := newFakeTerminalTrainer(t, "learner@lab:~$ ", websocket.CloseNormalClosure, "")
 	defer ttServer.Close()
 
 	upgrader := websocket.Upgrader{}
