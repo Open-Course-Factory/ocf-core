@@ -24,6 +24,7 @@ type SessionResponse struct {
 	// ResumeMode says how the run is resumed, with the same values as
 	// MySessionResponse.ResumeMode; empty when it cannot be.
 	ResumeMode string    `json:"resume_mode,omitempty"`
+	IsPreview  bool      `json:"is_preview,omitempty"`
 	Grade      *float64  `json:"grade,omitempty"`
 	StartedAt  time.Time `json:"started_at"`
 	// ScenarioText is the scenario's own prose in the language this session was

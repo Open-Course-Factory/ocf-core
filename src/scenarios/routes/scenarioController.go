@@ -123,6 +123,7 @@ func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) d
 		TerminalSessionID:          terminalSessionID,
 		CurrentStep:                session.CurrentStep,
 		Status:                     session.Status,
+		IsPreview:                  session.IsPreview,
 		ProvisioningPhase:          session.ProvisioningPhase,
 		ProvisioningTimeoutSeconds: sc.sessionService.CurrentStepProvisioningTimeout(session),
 		Grade:                      session.Grade,
