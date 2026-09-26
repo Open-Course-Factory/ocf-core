@@ -4,6 +4,7 @@ import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	stderrors "errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -715,7 +716,9 @@ func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioI
 	return count > 0, nil
 }
 
-// Only the scenario creator, an org manager, or a platform admin can use this endpoint.
+// PreviewScenario starts the caller's preview of a scenario on a new terminal,
+// from its first step or from the step named by from_step_order. Only the
+// scenario creator, an org manager, or a platform admin can use this endpoint.
 func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	scenarioID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -732,8 +735,19 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
-	if sc.rejectIfArchived(ctx, &scenario) {
+	// The body is optional: an empty one previews from the first step on the
+	// default backend.
+	var body struct {
+		Backend       string `json:"backend"`
+		FromStepOrder *int   `json:"from_step_order"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil && !stderrors.Is(err, io.EOF) {
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body")
 		return
+	}
+	backend := ctx.Query("backend")
+	if backend == "" {
+		backend = body.Backend
 	}
 
 	// Build preview options
@@ -750,14 +764,23 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		return count > 0
 	}))
 
-	// Read optional backend from query param or JSON body
-	backend := ctx.Query("backend")
-	if backend == "" {
-		var body struct {
-			Backend string `json:"backend"`
+	// Every refusal below comes before a terminal exists: a refused preview
+	// must not leave one behind holding budget.
+	if err := services.AuthorizePreview(userID, &scenario, previewOpts...); err != nil {
+		errors.Respond(ctx, http.StatusForbidden, err.Error())
+		return
+	}
+
+	if sc.rejectIfArchived(ctx, &scenario) {
+		return
+	}
+
+	if body.FromStepOrder != nil {
+		if !hasStep(scenario.Steps, *body.FromStepOrder) {
+			errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Scenario has no step %d", *body.FromStepOrder))
+			return
 		}
-		_ = ctx.ShouldBindJSON(&body)
-		backend = body.Backend
+		previewOpts = append(previewOpts, services.WithStartAtStep(*body.FromStepOrder))
 	}
 
 	// A preview builds the same machine the learners will get, so it asks the
@@ -818,6 +841,26 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
+	// The author's previous preview makes way for this one — deleted before
+	// the new terminal is created, so its budget is free for it. A real run of
+	// theirs is never replaced.
+	previousTerminal, replaceErr := sc.sessionService.ReplacePreviewRun(userID, scenarioID)
+	if stderrors.Is(replaceErr, services.ErrActiveSessionExists) {
+		respondSessionExists(ctx)
+		return
+	}
+	if replaceErr != nil {
+		slog.Error("failed to replace the previous scenario preview", "userID", userID, "scenarioID", scenarioID, "err", replaceErr)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start preview session. Please try again or contact support.")
+		return
+	}
+	if previousTerminal != "" {
+		if delErr := sc.terminalService.DeleteSession(previousTerminal); delErr != nil {
+			slog.Warn("failed to delete the terminal of a replaced scenario preview",
+				"terminal_session_id", previousTerminal, "err", delErr)
+		}
+	}
+
 	// Terminal launch budget enforcement is performed downstream by
 	// StartComposedSession via QuotaService.CheckBudget; no separate slot
 	// check is needed here.
@@ -854,12 +897,18 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	// Create preview session (skips assignment check, sets IsPreview)
 	session, startErr := sc.sessionService.PreviewScenario(userID, scenarioID, terminalResp.SessionID, previewOpts...)
 	if startErr != nil {
-		slog.Error("failed to start preview session", "userID", userID, "scenarioID", scenarioID, "err", startErr)
-		statusCode := http.StatusInternalServerError
-		if strings.Contains(startErr.Error(), "not authorized") {
-			statusCode = http.StatusForbidden
+		// Same as a failed launch: the new terminal has no usable run and would
+		// only hold budget.
+		if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
+			slog.Warn("failed to delete the terminal of a failed scenario preview",
+				"terminal_session_id", terminalResp.SessionID, "err", delErr)
 		}
-		errors.Respond(ctx, statusCode, startErr.Error())
+		if stderrors.Is(startErr, services.ErrActiveSessionExists) {
+			respondSessionExists(ctx)
+			return
+		}
+		slog.Error("failed to start preview session", "userID", userID, "scenarioID", scenarioID, "err", startErr)
+		errors.Respond(ctx, http.StatusInternalServerError, startErr.Error())
 		return
 	}
 
@@ -871,4 +920,12 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	})
 }
 
-
+// hasStep reports whether one of steps has the given Order.
+func hasStep(steps []models.ScenarioStep, order int) bool {
+	for _, step := range steps {
+		if step.Order == order {
+			return true
+		}
+	}
+	return false
+}
