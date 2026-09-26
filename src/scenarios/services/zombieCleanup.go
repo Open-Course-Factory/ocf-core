@@ -11,10 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// provisioningPhaseReplay is the phase of a run whose environment is being
-// rebuilt at its current step (ResumeModeRebuild).
-const provisioningPhaseReplay = "replay"
-
 // sweptStatuses are the run statuses the zombie sweep judges.
 var sweptStatuses = []string{"active", "in_progress"}
 
@@ -121,6 +117,9 @@ func CleanupStuckProvisioningSessions(db *gorm.DB) (int64, error) {
 	result := db.Model(&models.ScenarioSession{}).
 		Where("status = ?", "provisioning").
 		Where("updated_at < ?", cutoff).
+		// A replay is ReleaseStalledReplays' to judge: written off here it
+		// would lose the progress the rebuild exists to keep.
+		Where("rebuild_from_terminal_id IS NULL").
 		Updates(map[string]any{
 			"status":             "setup_failed",
 			"provisioning_phase": "",
