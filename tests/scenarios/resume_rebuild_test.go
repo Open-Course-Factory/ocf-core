@@ -1075,3 +1075,39 @@ func TestSessionByTerminal_ReportsResumeMode(t *testing.T) {
 		})
 	}
 }
+
+// Stop and Delete warn differently when the run ends with its terminal — a
+// preview, like a crash-trap run, is never rebuilt — so the session page has
+// to know which runs are previews. Both routes that describe a run say so.
+func TestSessionByTerminal_ReportsIsPreview(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		preview bool
+	}{
+		{"preview run", true},
+		{"learner run", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := seedResumableRun(t, "session-is-preview", resumeSeed{
+				preview: tc.preview, terminalState: terminalModels.StateRunning,
+			})
+			router := setupTestRouterWithUser(f.db, f.learnerID)
+
+			for _, path := range []string{
+				"/api/v1/scenario-sessions/by-terminal/" + f.oldTerminal,
+				"/api/v1/scenario-sessions/" + f.run.ID.String() + "/info",
+			} {
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				require.Equal(t, http.StatusOK, w.Code, "%s: body=%s", path, w.Body.String())
+				var body map[string]any
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+				if tc.preview {
+					assert.Equal(t, true, body["is_preview"], "%s", path)
+				} else {
+					assert.NotContains(t, body, "is_preview", "%s: a learner's run omits it", path)
+				}
+			}
+		})
+	}
+}
