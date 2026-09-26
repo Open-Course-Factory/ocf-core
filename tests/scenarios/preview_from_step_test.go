@@ -76,6 +76,9 @@ type previewTTBackend struct {
 	// startMissing makes POST /1.0/sessions/{id}/start answer 404, as
 	// tt-backend does for a container that is gone.
 	startMissing bool
+	// createRefusal, when set, is the body of a 403 POST /1.0/sessions answers
+	// instead of creating a session: tt-backend refusing what the plan allows.
+	createRefusal string
 }
 
 // pushedFile is one file-push the build sent.
@@ -145,7 +148,13 @@ func newPreviewTTBackend(t *testing.T) *previewTTBackend {
 		case r.Method == http.MethodPost && r.URL.Path == "/1.0/sessions":
 			tt.mu.Lock()
 			beforeCreate := tt.beforeCreate
+			refusal := tt.createRefusal
 			tt.mu.Unlock()
+			if refusal != "" {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(refusal))
+				return
+			}
 			if beforeCreate != nil {
 				beforeCreate()
 			}
