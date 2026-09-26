@@ -587,3 +587,38 @@ func TestPreview_AuthorisationLostAfterTerminalCreated_403AndTerminalDeleted(t *
 	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("scenario_id = ?", scenario.ID).Count(&runs).Error)
 	assert.Zero(t, runs, "a refused preview leaves no run")
 }
+
+// A platform administrator previews any scenario, an org's included, without
+// being a member of that org — as Admin/Scenarios.vue does, with no body. The
+// org's plan is not theirs to spend: the preview runs on the admin's own plan,
+// on a terminal outside the org.
+func TestPreview_AdminNotMemberOfTheScenarioOrg_UsesTheirOwnPlan(t *testing.T) {
+	db, _, scenario := seedPreviewableScenario(t, "preview-admin-other-org")
+	seedOrgScenarioManager(t, db, scenario, "preview-admin-org-manager-"+uuid.New().String())
+	adminID := "preview-admin-" + uuid.New().String()
+	seedPersistencePlan(t, db, adminID, true)
+	seedPersistenceUserKey(t, db, adminID)
+	tt := newPreviewTTBackend(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID.String()+"/preview", nil)
+	w := httptest.NewRecorder()
+	setupPreviewRouterWithAdminStub(t, db, adminID).ServeHTTP(w, req)
+	resp, _ := previewedRun(t, db, w)
+
+	assert.Equal(t, 1, tt.createCalls())
+	var terminal terminalModels.Terminal
+	require.NoError(t, db.Where("session_id = ?", resp.TerminalSessionID).First(&terminal).Error)
+	assert.Nil(t, terminal.OrganizationID,
+		"the admin's preview runs on their own plan, on a terminal outside the org")
+}
+
+// An organization_id that is not an id is refused before anything is created.
+func TestPreview_InvalidOrganisationID_400(t *testing.T) {
+	db, authorID, scenario := seedPreviewableScenario(t, "preview-invalid-org")
+	tt := newPreviewTTBackend(t)
+
+	w := previewScenario(t, db, authorID, scenario.ID, map[string]any{"organization_id": "not-a-uuid"})
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, 0, tt.createCalls(), "a refused preview creates no terminal")
+}
