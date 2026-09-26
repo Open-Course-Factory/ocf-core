@@ -53,7 +53,7 @@ func (t *terminalCallTracker) CalledWith() []string {
 	return result
 }
 
-func TestRunStep0Setup_StopsTerminalOnFailure(t *testing.T) {
+func TestRunLaunchBuild_StopsTerminalOnFailure(t *testing.T) {
 	db := freshTestDB(t)
 
 	// Create a scenario with a setup script
@@ -86,7 +86,7 @@ func TestRunStep0Setup_StopsTerminalOnFailure(t *testing.T) {
 	tracker := &terminalCallTracker{}
 	sessionSvc.SetTerminalStopFunc(tracker.StopFunc())
 
-	// Start scenario — this triggers runStep0Setup in a goroutine
+	// Start scenario — this triggers runLaunchBuild in a goroutine
 	terminalID := "terminal-stop-test-1"
 	session, err := sessionSvc.StartScenario("student-stop-1", scenario.ID, terminalID, "")
 	require.NoError(t, err)
@@ -179,7 +179,7 @@ func TestAbandonSession_DestroysTerminal(t *testing.T) {
 }
 
 // panickingVerificationService panics on ExecInContainer to simulate an
-// unexpected runtime fault inside runStep0Setup (e.g. a nil-deref from a
+// unexpected runtime fault inside runLaunchBuild (e.g. a nil-deref from a
 // malformed tt-backend response). VerifyStep and PushFile return zero values.
 type panickingVerificationService struct{}
 
@@ -199,19 +199,19 @@ func (p *panickingVerificationService) ExecInContainer(sessionID string, command
 	panic("simulated nil-deref inside ExecInContainer")
 }
 
-// TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed locks the
-// contract that runStep0Setup MUST recover from any panic in its body so
+// TestRunLaunchBuild_RecoversFromPanic_TransitionsToSetupFailed locks the
+// contract that runLaunchBuild MUST recover from any panic in its body so
 // the ocf-core process does not crash. After recovery the session row must
 // be marked status='setup_failed' with provisioning_phase=” and the linked
 // terminal must be stopped via the configured TerminalStopFunc.
 //
-// Without `defer recover()` at the top of runStep0Setup, the goroutine
+// Without `defer recover()` at the top of runLaunchBuild, the goroutine
 // spawned by StartScenario will crash the entire test binary when
 // executeBackgroundScript panics — that is the RED state.
-func TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) {
+func TestRunLaunchBuild_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) {
 	db := freshTestDB(t)
 
-	// Scenario with a non-empty setup script so runStep0Setup enters the
+	// Scenario with a non-empty setup script so runLaunchBuild enters the
 	// executeBackgroundScript branch and the panicking verification service
 	// is invoked.
 	scenario := models.Scenario{
@@ -223,7 +223,7 @@ func TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) 
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	// One step is required so StartScenario spawns the runStep0Setup goroutine
+	// One step is required so StartScenario spawns the runLaunchBuild goroutine
 	// (see scenarioSessionService.go: `if len(scenario.Steps) > 0`).
 	step := models.ScenarioStep{
 		ScenarioID:  scenario.ID,
@@ -264,12 +264,12 @@ func TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) 
 	}
 
 	assert.Equal(t, "setup_failed", finalStatus,
-		"runStep0Setup must mark the session as setup_failed after recovering from a panic")
+		"runLaunchBuild must mark the session as setup_failed after recovering from a panic")
 	assert.Equal(t, "", finalPhase,
-		"runStep0Setup must clear provisioning_phase after recovering from a panic")
+		"runLaunchBuild must clear provisioning_phase after recovering from a panic")
 
 	assert.GreaterOrEqual(t, tracker.CallCount(), 1,
-		"runStep0Setup must call tryStopTerminal after recovering from a panic")
+		"runLaunchBuild must call tryStopTerminal after recovering from a panic")
 	assert.Contains(t, tracker.CalledWith(), terminalID,
 		"tryStopTerminal must be invoked with the linked terminal session ID")
 }

@@ -41,7 +41,7 @@ func TestStartScenario_WithSetupScript_SetsProvisioningPhase(t *testing.T) {
 
 	// Session should be provisioning with setup_script phase. We assert only
 	// on the returned struct — the DB row is updated by a background goroutine
-	// (runStep0Setup) which, with the trivially-succeeding mockVerificationService,
+	// (runLaunchBuild) which, with the trivially-succeeding mockVerificationService,
 	// races to flip Status to "active" before any post-call DB re-read can
 	// observe the intermediate "provisioning" state. The returned value is
 	// the authoritative contract for "what StartScenario wrote to the DB before
@@ -114,7 +114,7 @@ func TestProvisioningPhase_ClearedOnActive(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&session).Error)
 
-	// Simulate transition to active (same logic as runStep0Setup)
+	// Simulate transition to active (same logic as runLaunchBuild)
 	result := db.Model(&models.ScenarioSession{}).
 		Where("id = ? AND status = ?", session.ID, "provisioning").
 		Updates(map[string]any{
