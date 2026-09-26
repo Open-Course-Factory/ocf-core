@@ -113,24 +113,38 @@ func (l *terminalLifecycleService) StopSession(sessionID string) error {
 		utils.Warn("failed to stop session in Terminal Trainer API: %v", err)
 	}
 
-	// 2. Brancher sur le mode de persistance.
-	if terminal.PersistenceMode == models.PersistenceModePersistent {
-		// Persistent : markSessionStopped est la SSOT — même chemin que la
-		// propagation depuis sync (étape 5a) quand tt-backend signale stop.
-		l.sync.markSessionStopped(terminal, idleUntil)
-	} else {
-		// Ephemeral (ou mode vide / inconnu) : le conteneur n'existe plus
-		// côté tt-backend, la ligne locale doit le refléter directement —
-		// pas de transition StateStopped intermédiaire. ExpiresAt/IdleUntil
-		// sont laissés tels quels : la ligne est une pierre tombale, les
-		// filtres aval (OccupiesSlotScope) la sortent dès le state=StateDeleted.
-		utils.Debug("Marking ephemeral session %s as deleted (container destroyed by tt-backend)", sessionID)
-		terminal.State = models.StateDeleted
+	// Relire la ligne : pendant l'appel /stop, quelqu'un d'autre (permadeath
+	// d'un crash trap, suppression admin) a pu la passer à deleted. Réécrire
+	// la copie lue avant l'appel ressusciterait la pierre tombale en
+	// "stopped", qui occuperait le budget jusqu'au reaper.
+	terminal, err = l.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
 	}
 
-	if err := l.repository.UpdateTerminalSession(terminal); err != nil {
-		utils.Error("Failed to update session %s state: %v", sessionID, err)
-		return err
+	// 2. Brancher sur le mode de persistance. Une ligne déjà deleted n'a rien
+	// à écrire.
+	if terminal.State == models.StateDeleted {
+		utils.Debug("Session %s was deleted while stopping — leaving it deleted", sessionID)
+	} else {
+		if terminal.PersistenceMode == models.PersistenceModePersistent {
+			// Persistent : markSessionStopped est la SSOT — même chemin que la
+			// propagation depuis sync (étape 5a) quand tt-backend signale stop.
+			l.sync.markSessionStopped(terminal, idleUntil)
+		} else {
+			// Ephemeral (ou mode vide / inconnu) : le conteneur n'existe plus
+			// côté tt-backend, la ligne locale doit le refléter directement —
+			// pas de transition StateStopped intermédiaire. ExpiresAt/IdleUntil
+			// sont laissés tels quels : la ligne est une pierre tombale, les
+			// filtres aval (OccupiesSlotScope) la sortent dès le state=StateDeleted.
+			utils.Debug("Marking ephemeral session %s as deleted (container destroyed by tt-backend)", sessionID)
+			terminal.State = models.StateDeleted
+		}
+
+		if err := l.repository.UpdateTerminalSession(terminal); err != nil {
+			utils.Error("Failed to update session %s state: %v", sessionID, err)
+			return err
+		}
 	}
 
 	// A stopped/resumable session may come back with a different container

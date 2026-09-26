@@ -129,22 +129,72 @@ func TestConsoleRelay_ReportsShellKillForPermadeath(t *testing.T) {
 
 func TestConsoleRelay_DoesNotReportLearnerInitiatedExit(t *testing.T) {
 	// The guard that keeps `exit 1` from ending a learner's run.
+	assertCloseNotReported(t, 4001, "exec_failed", "terminal-exit1",
+		"(learner ran `exit 1`) must never be reported as a kill — it would end "+
+			"the run of anyone who exits their own shell")
+}
+
+func TestConsoleRelay_RelaysSessionStoppedWithoutReportingIt(t *testing.T) {
+	// tt-backend closes the console with 4300 "session_stopped" whenever the
+	// platform stops or deletes the session (tt#145). That is a pause or a
+	// teardown, never a crash: it must reach the browser unchanged so the
+	// front can tell them apart, and it must never end a crash-trap run.
+	err := assertCloseNotReported(t, services.ConsoleSessionStoppedCloseCode,
+		"session_stopped", "terminal-session-stopped",
+		"(the platform stopped the session) must never be reported as a kill — "+
+			"pausing a crash-trap run would delete it")
+
+	closeErr, ok := err.(*websocket.CloseError)
+	require.True(t, ok, "expected a close frame, got %v", err)
+	assert.Equal(t, services.ConsoleSessionStoppedCloseCode, closeErr.Code)
+	assert.Equal(t, "session_stopped", closeErr.Text)
+}
+
+// assertCloseNotReported relays a console that closes with closeCode and
+// closeReason, fails if the shell-killed observer hears about it, and returns
+// the close error the browser observed.
+func assertCloseNotReported(t *testing.T, closeCode int, closeReason, terminalSessionID, why string) error {
+	t.Helper()
 	reported := make(chan string, 1)
 	services.SetConsoleShellKilledObserver(func(terminalSessionID string) {
 		reported <- terminalSessionID
 	})
 	defer services.SetConsoleShellKilledObserver(nil)
 
-	ttServer := newFakeTerminalTrainer(t, 4001, "exec_failed")
+	ttServer := newFakeTerminalTrainer(t, closeCode, closeReason)
 	defer ttServer.Close()
 
-	_ = runConsoleProxy(t, ttServer, "terminal-exit1")
+	err := runConsoleProxy(t, ttServer, terminalSessionID)
 
 	select {
-	case terminalSessionID := <-reported:
-		t.Fatalf("close code 4001 (learner ran `exit 1`) must never be reported as "+
-			"a kill — it would end the run of anyone who exits their own shell. "+
-			"Got a report for %q", terminalSessionID)
+	case got := <-reported:
+		t.Fatalf("close code %d %s. Got a report for %q", closeCode, why, got)
 	case <-time.After(300 * time.Millisecond):
+	}
+	return err
+}
+
+// TestIsShellKilledCloseCode pins that only a SIGKILLed shell (4137) arms
+// permadeath. Every other non-zero exit shares the 4000-4999 band and must
+// leave the run alone.
+func TestIsShellKilledCloseCode(t *testing.T) {
+	cases := []struct {
+		name string
+		code int
+		want bool
+	}{
+		{"SIGKILL (crash trap, or an Incus-side force-kill)", services.ConsoleShellKilledCloseCode, true},
+		{"learner ran `exit 1`", 4001, false},
+		{"SIGHUP from a dropped console", 4129, false},
+		// Defensive: a learner or a script SIGTERMing the shell. A pause does
+		// not produce it — Incus's graceful stop signals init (SIGPWR/halt),
+		// not the shell.
+		{"SIGTERM of the shell", 4143, false},
+		{"platform stopped the session (tt#145)", services.ConsoleSessionStoppedCloseCode, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, services.IsShellKilledCloseCode(tc.code))
+		})
 	}
 }

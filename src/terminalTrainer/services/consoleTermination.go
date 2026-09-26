@@ -12,6 +12,14 @@ import "sync"
 // code 4000+N (backend/api_session_console.go), giving 4137.
 const ConsoleShellKilledCloseCode = 4137
 
+// ConsoleSessionStoppedCloseCode is the close code tt-backend sends when the
+// platform itself stops or deletes a session (pause, expiry, idle stop,
+// teardown — tt#145). It is outside the 4000+exit-code band on purpose, so a
+// platform stop is never mistaken for a killed shell: tt-backend sends it
+// instead of whatever the shell's exit code would have been, and 4137 is left
+// meaning a real kill.
+const ConsoleSessionStoppedCloseCode = 4300
+
 // IsShellKilledCloseCode reports whether a console close code means the
 // learner's shell was SIGKILLed — the signal a crash-trap payload sends.
 //

@@ -17,14 +17,14 @@ import (
 	"soli/formations/src/scenarios/services"
 )
 
-// terminalStopTracker records calls to the stop function
-type terminalStopTracker struct {
+// terminalCallTracker records calls to a terminal callback (stop or delete).
+type terminalCallTracker struct {
 	mu        sync.Mutex
 	calls     []string
 	returnErr error
 }
 
-func (t *terminalStopTracker) StopFunc() services.TerminalStopFunc {
+func (t *terminalCallTracker) StopFunc() services.TerminalStopFunc {
 	return func(terminalSessionID string) error {
 		t.mu.Lock()
 		defer t.mu.Unlock()
@@ -33,13 +33,19 @@ func (t *terminalStopTracker) StopFunc() services.TerminalStopFunc {
 	}
 }
 
-func (t *terminalStopTracker) CallCount() int {
+// DeleteFunc records calls the same way, for the delete callback. Use a
+// separate tracker per callback to tell a stop from a delete.
+func (t *terminalCallTracker) DeleteFunc() services.TerminalDeleteFunc {
+	return services.TerminalDeleteFunc(t.StopFunc())
+}
+
+func (t *terminalCallTracker) CallCount() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return len(t.calls)
 }
 
-func (t *terminalStopTracker) CalledWith() []string {
+func (t *terminalCallTracker) CalledWith() []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	result := make([]string, len(t.calls))
@@ -77,7 +83,7 @@ func TestRunStep0Setup_StopsTerminalOnFailure(t *testing.T) {
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
 	// Set up the terminal stop tracker
-	tracker := &terminalStopTracker{}
+	tracker := &terminalCallTracker{}
 	sessionSvc.SetTerminalStopFunc(tracker.StopFunc())
 
 	// Start scenario — this triggers runStep0Setup in a goroutine
@@ -231,7 +237,7 @@ func TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) 
 	verifySvc := &panickingVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	tracker := &terminalStopTracker{}
+	tracker := &terminalCallTracker{}
 	sessionSvc.SetTerminalStopFunc(tracker.StopFunc())
 
 	terminalID := "terminal-panic-recovery-1"
@@ -266,4 +272,25 @@ func TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) 
 		"runStep0Setup must call tryStopTerminal after recovering from a panic")
 	assert.Contains(t, tracker.CalledWith(), terminalID,
 		"tryStopTerminal must be invoked with the linked terminal session ID")
+}
+
+// TestWireTerminalCallbacks_WiresDelete pins that the one wiring function
+// every session-service builder calls also gives permadeath its delete
+// callback. It defaults to nil, so a missing wire would disarm crash traps
+// without any error.
+func TestWireTerminalCallbacks_WiresDelete(t *testing.T) {
+	db := freshTestDB(t)
+	session := seedRunOnTerminal(t, db, "wire-delete", true, "terminal-wire-delete")
+
+	tt := newMockTTService()
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	services.WireTerminalCallbacks(sessionSvc, tt)
+
+	sessionSvc.EndCrashTrapRun("terminal-wire-delete")
+
+	assert.Equal(t, []string{"terminal-wire-delete"}, tt.DeletedSessions(),
+		"WireTerminalCallbacks must wire DeleteSession as the delete callback")
+	assert.Empty(t, tt.StoppedSessions(),
+		"permadeath must never merely stop the container")
+	assert.Equal(t, "abandoned", sessionStatus(t, db, session.ID))
 }

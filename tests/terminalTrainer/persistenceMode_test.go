@@ -403,57 +403,6 @@ func TestComputeIdleWindowSeconds_PicksRightFieldByMode(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ScenarioForcesEphemeral — override semantics
-// ---------------------------------------------------------------------------
-
-// TestScenarioForcesEphemeral_ReturnsTrueForCrashTraps documents the rule that
-// scenarios with crash_traps=true must override the user's PersistenceMode
-// choice. Callers (scenario controller, teacher dashboard) use this helper to
-// keep the override consistent across launch paths.
-func TestScenarioForcesEphemeral_ReturnsTrueForCrashTraps(t *testing.T) {
-	assert.True(t, services.ScenarioForcesEphemeral(true),
-		"crash_traps=true must force ephemeral")
-	assert.False(t, services.ScenarioForcesEphemeral(false),
-		"crash_traps=false must leave the user choice intact")
-}
-
-// TestStartScenario_CrashTrapsOverride_PostsEphemeral pins the end-to-end
-// override behaviour by replicating exactly what the scenario controller
-// does: when scenario.CrashTraps is true, set PersistenceMode="ephemeral"
-// before calling StartComposedSession, even on a paid plan that requested
-// "persistent". The body posted to tt-backend must carry "ephemeral".
-func TestStartScenario_CrashTrapsOverride_PostsEphemeral(t *testing.T) {
-	srv, rec := startComposedSessionTTServer(t)
-	defer srv.Close()
-	configureTTServer(t, srv.URL)
-
-	db := freshTestDB(t)
-	userID := "crash-traps-user-" + uuid.New().String()
-	_, err := createTestUserKey(db, userID)
-	require.NoError(t, err)
-
-	plan := makePlan(true) // paid plan would normally allow persistent
-	svc := services.NewTerminalTrainerService(db)
-
-	// Simulate a scenario with crash_traps=true.
-	composedInput := dto.CreateComposedSessionInput{
-		Distribution:    "ubuntu-24.04",
-		Size:            "S",
-		Terms:           "accepted",
-		PersistenceMode: "persistent", // user-requested
-	}
-	if services.ScenarioForcesEphemeral(true /* scenario.CrashTraps */) {
-		composedInput.PersistenceMode = "ephemeral"
-	}
-
-	resp, err := svc.StartComposedSession(userID, composedInput, plan)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	assert.Equal(t, "ephemeral", rec.gotBody["persistence_mode"],
-		"crash_traps scenario must force persistence_mode=ephemeral on the wire even when user asked for persistent; got %v", rec.gotBody)
-}
-
-// ---------------------------------------------------------------------------
 // SSOT: persistence_mode reads DataPersistenceEnabled (single source of truth)
 // ---------------------------------------------------------------------------
 //
@@ -528,6 +477,11 @@ func TestStartComposedSession_PersistentRejectedWhenDataPersistenceDisabled(t *t
 // what the scenario controller writes into composedInput.PersistenceMode
 // before calling StartComposedSession. Both LaunchScenario and the scenario
 // preview path must go through this helper.
+//
+// Crash traps no longer force ephemeral: a crash-trap run on a persistence
+// plan can be paused like any other. Permadeath ends the run by deleting the
+// container instead (EndCrashTrapRun), so persistence cannot keep a dead run
+// alive.
 func TestResolveScenarioPersistenceMode(t *testing.T) {
 	planWithPersistence := &paymentModels.SubscriptionPlan{
 		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
@@ -547,46 +501,30 @@ func TestResolveScenarioPersistenceMode(t *testing.T) {
 	}
 
 	cases := []struct {
-		name       string
-		crashTraps bool
-		plan       *paymentModels.SubscriptionPlan
-		want       string
+		name string
+		plan *paymentModels.SubscriptionPlan
+		want string
 	}{
 		{
-			name:       "crash_traps wins over plan-allows-persistence",
-			crashTraps: true,
-			plan:       planWithPersistence,
-			want:       "ephemeral",
+			name: "plan allows persistence -> persistent",
+			plan: planWithPersistence,
+			want: "persistent",
 		},
 		{
-			name:       "crash_traps wins even when plan forbids persistence",
-			crashTraps: true,
-			plan:       planWithoutPersistence,
-			want:       "ephemeral",
+			name: "plan forbids persistence -> empty (default ephemeral)",
+			plan: planWithoutPersistence,
+			want: "",
 		},
 		{
-			name:       "plan allows persistence and no crash_traps -> persistent",
-			crashTraps: false,
-			plan:       planWithPersistence,
-			want:       "persistent",
-		},
-		{
-			name:       "plan forbids persistence and no crash_traps -> empty (default ephemeral)",
-			crashTraps: false,
-			plan:       planWithoutPersistence,
-			want:       "",
-		},
-		{
-			name:       "nil plan and no crash_traps -> empty (default ephemeral)",
-			crashTraps: false,
-			plan:       nil,
-			want:       "",
+			name: "nil plan -> empty (default ephemeral)",
+			plan: nil,
+			want: "",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := services.ResolveScenarioPersistenceMode(tc.crashTraps, tc.plan)
+			got := services.ResolveScenarioPersistenceMode(tc.plan)
 			assert.Equal(t, tc.want, got)
 		})
 	}

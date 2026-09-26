@@ -10,6 +10,11 @@
 // more importantly — which ones it must leave alone. Before this, the learner
 // simply reconnected to the same container with every flag and step still
 // theirs, and the mechanic did nothing at all.
+//
+// A crash-trap run may now be persistent (pausable), so permadeath deletes the
+// container rather than stopping it: a stopped persistent container would be
+// resumable. A platform stop closes the console with 4300, not 4137 (tt#145),
+// so it never reaches this path.
 package scenarios_test
 
 import (
@@ -52,6 +57,15 @@ func seedRunOnTerminal(t *testing.T, db *gorm.DB, name string, crashTraps bool, 
 	return session
 }
 
+// wireCrashTrapTerminal gives a session service the stop and delete callbacks
+// permadeath uses, and returns a tracker for each.
+func wireCrashTrapTerminal(sessionSvc *services.ScenarioSessionService) (stopped, deleted *terminalCallTracker) {
+	stopped, deleted = &terminalCallTracker{}, &terminalCallTracker{}
+	sessionSvc.SetTerminalStopFunc(stopped.StopFunc())
+	sessionSvc.SetTerminalDeleteFunc(deleted.DeleteFunc())
+	return stopped, deleted
+}
+
 func sessionStatus(t *testing.T, db *gorm.DB, sessionID any) string {
 	t.Helper()
 	var stored models.ScenarioSession
@@ -59,21 +73,22 @@ func sessionStatus(t *testing.T, db *gorm.DB, sessionID any) string {
 	return stored.Status
 }
 
-func TestEndCrashTrapRun_AbandonsTheRunAndStopsTheTerminal(t *testing.T) {
+func TestEndCrashTrapRun_AbandonsTheRunAndDeletesTheTerminal(t *testing.T) {
 	db := freshTestDB(t)
 	session := seedRunOnTerminal(t, db, "permadeath-armed", true, "terminal-permadeath-armed")
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	tracker := &terminalStopTracker{}
-	sessionSvc.SetTerminalStopFunc(tracker.StopFunc())
+	stopped, deleted := wireCrashTrapTerminal(sessionSvc)
 
 	sessionSvc.EndCrashTrapRun("terminal-permadeath-armed")
 
 	assert.Equal(t, "abandoned", sessionStatus(t, db, session.ID),
 		"a SIGKILLed shell inside a crash_traps scenario must end the run — "+
 			"otherwise the learner reconnects with every flag still theirs")
-	assert.Contains(t, tracker.CalledWith(), "terminal-permadeath-armed",
-		"the container must be stopped too, so the learner cannot keep working in it")
+	assert.Equal(t, []string{"terminal-permadeath-armed"}, deleted.CalledWith(),
+		"the container must be deleted, so the learner cannot keep working in it")
+	assert.Zero(t, stopped.CallCount(),
+		"a stopped persistent container is resumable — permadeath must delete, never stop")
 }
 
 func TestEndCrashTrapRun_LeavesOrdinaryScenarioUntouched(t *testing.T) {
@@ -81,15 +96,14 @@ func TestEndCrashTrapRun_LeavesOrdinaryScenarioUntouched(t *testing.T) {
 	session := seedRunOnTerminal(t, db, "permadeath-disarmed", false, "terminal-permadeath-disarmed")
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	tracker := &terminalStopTracker{}
-	sessionSvc.SetTerminalStopFunc(tracker.StopFunc())
+	stopped, deleted := wireCrashTrapTerminal(sessionSvc)
 
 	sessionSvc.EndCrashTrapRun("terminal-permadeath-disarmed")
 
 	assert.Equal(t, "active", sessionStatus(t, db, session.ID),
 		"only crash_traps scenarios arm permadeath; elsewhere a killed shell is "+
 			"an accident the learner recovers from by reconnecting")
-	assert.Zero(t, tracker.CallCount(),
+	assert.Zero(t, stopped.CallCount()+deleted.CallCount(),
 		"an ordinary scenario's container must keep running")
 }
 
@@ -98,14 +112,13 @@ func TestEndCrashTrapRun_LeavesPlainTerminalUntouched(t *testing.T) {
 	// A terminal with no scenario session at all — the ordinary "open a
 	// terminal from the dashboard" case.
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	tracker := &terminalStopTracker{}
-	sessionSvc.SetTerminalStopFunc(tracker.StopFunc())
+	stopped, deleted := wireCrashTrapTerminal(sessionSvc)
 
 	require.NotPanics(t, func() {
 		sessionSvc.EndCrashTrapRun("terminal-with-no-scenario")
 	}, "a plain terminal must be a silent no-op, not a crash")
-	assert.Zero(t, tracker.CallCount(),
-		"a plain terminal must not be stopped by the permadeath path")
+	assert.Zero(t, stopped.CallCount()+deleted.CallCount(),
+		"a plain terminal must not be stopped or deleted by the permadeath path")
 
 	require.NotPanics(t, func() {
 		sessionSvc.EndCrashTrapRun("")
@@ -119,16 +132,15 @@ func TestEndCrashTrapRun_LeavesFinishedRunUntouched(t *testing.T) {
 		Where("id = ?", session.ID).Update("status", "completed").Error)
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	tracker := &terminalStopTracker{}
-	sessionSvc.SetTerminalStopFunc(tracker.StopFunc())
+	stopped, deleted := wireCrashTrapTerminal(sessionSvc)
 
 	sessionSvc.EndCrashTrapRun("terminal-permadeath-finished")
 
 	assert.Equal(t, "completed", sessionStatus(t, db, session.ID),
 		"a run that already finished must not be rewritten to abandoned — the "+
 			"learner's grade would silently disappear")
-	assert.Zero(t, tracker.CallCount(),
-		"nothing to stop for a run that already ended")
+	assert.Zero(t, stopped.CallCount()+deleted.CallCount(),
+		"nothing to stop or delete for a run that already ended")
 }
 
 // TestEndCrashTrapRun_RefusesLearnerActionsAfterPermadeath proves the run is
@@ -139,6 +151,7 @@ func TestEndCrashTrapRun_RefusesLearnerActionsAfterPermadeath(t *testing.T) {
 	session := seedRunOnTerminal(t, db, "permadeath-resume", true, "terminal-permadeath-resume")
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	wireCrashTrapTerminal(sessionSvc)
 	sessionSvc.EndCrashTrapRun("terminal-permadeath-resume")
 	require.Equal(t, "abandoned", sessionStatus(t, db, session.ID))
 
