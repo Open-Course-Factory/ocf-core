@@ -338,7 +338,9 @@ func TestStepFileRef_PatchWithAFileOfTheSameScenario_Allowed(t *testing.T) {
 	}
 }
 
-func TestStepFileRef_PatchClearingTheId_Allowed(t *testing.T) {
+// A JSON null never reaches the hook: the PATCH converter drops nil pointers,
+// so null means "no change" — neither refused nor a way to clear the column.
+func TestStepFileRef_PatchWithNull_IsIgnored(t *testing.T) {
 	db := freshTestDB(t)
 	w := buildFileRefWorld(t, db)
 	router := setupFileRefRouter(t, db, "a-manager", []string{"member"})
@@ -348,7 +350,14 @@ func TestStepFileRef_PatchClearingTheId_Allowed(t *testing.T) {
 		body[field.json] = nil
 	}
 	resp := sendJSON(t, router, http.MethodPatch, "/scenario-steps/"+w.sibling.ID.String(), body)
-	assert.Equal(t, http.StatusNoContent, resp.Code, "clearing a reference is always allowed; body=%s", resp.Body.String())
+	require.Equal(t, http.StatusNoContent, resp.Code, "body=%s", resp.Body.String())
+
+	stored := reloadStep(t, db, w.sibling.ID)
+	for _, field := range stepFileFields {
+		got := field.get(stored)
+		require.NotNil(t, got, "%s: null must leave the stored id alone", field.json)
+		assert.Equal(t, w.shared, *got, "%s: null must leave the stored id alone", field.json)
+	}
 }
 
 func TestStepFileRef_CreateWithAFileOfTheSameScenario_Allowed(t *testing.T) {
