@@ -1176,3 +1176,38 @@ func TestStartScenario_FirstStepScriptAnswerIsAdopted(t *testing.T) {
 	assert.Equal(t, "Tuesday\n", verifySvc.pushCalls[0].content,
 		"the planted flag file carries the adopted answer, not the generated token")
 }
+
+// A scenario with no scripts at all never reaches the async setup, so its first
+// flag is planted on a separate path — which must not assume order 0 either.
+func TestStartScenario_ScriptlessOneBasedScenario_DeploysFirstStepFlag(t *testing.T) {
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "first-step-scriptless",
+		Title:        "First Step Scriptless",
+		InstanceType: "ubuntu:22.04",
+		FlagsEnabled: true,
+		FlagSecret:   "secret",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	steps := []models.ScenarioStep{
+		{ScenarioID: scenario.ID, Order: 1, Title: "First", HasFlag: true, FlagPath: "/tmp/first.flag"},
+		{ScenarioID: scenario.ID, Order: 2, Title: "Second", HasFlag: true, FlagPath: "/tmp/second.flag"},
+	}
+	for i := range steps {
+		require.NoError(t, db.Create(&steps[i]).Error)
+	}
+
+	verifySvc := &mockVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+	session, err := sessionSvc.StartScenario("student-first", scenario.ID, "terminal-first", "")
+	require.NoError(t, err)
+	require.Equal(t, "active", session.Status, "nothing to run, so the run starts active")
+
+	require.Len(t, verifySvc.pushCalls, 1, "the first step's flag is planted at launch, and only that one")
+	assert.Equal(t, "terminal-first", verifySvc.pushCalls[0].sessionID)
+	assert.Equal(t, "/tmp/first.flag", verifySvc.pushCalls[0].targetPath)
+	assert.Equal(t, "flag{test-student-first}\n", verifySvc.pushCalls[0].content)
+}
