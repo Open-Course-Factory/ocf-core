@@ -412,6 +412,23 @@ func TestCurrentStepProvisioningTimeout_OnlyWhileProvisioning(t *testing.T) {
 		"an active session is not waiting on anything")
 }
 
+// The first step of a 1-based scenario runs with the initial-setup budget, so
+// that is the ceiling the client is told to wait for — not a later step's.
+func TestCurrentStepProvisioningTimeout_OneBasedFirstStep_ReportsInitialBudget(t *testing.T) {
+	db := freshTestDB(t)
+	session := twoStepSession(t, db, "first-step-timeout", models.ScenarioStep{BackgroundScript: "echo first"})
+	// Dropping step 0 leaves step 1 as the scenario's first step, as the editor numbers them.
+	require.NoError(t, db.Where("scenario_id = ? AND \"order\" = 0", session.ScenarioID).Delete(&models.ScenarioStep{}).Error)
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("id = ?", session.ID).
+		Updates(map[string]any{"current_step": 1, "status": "provisioning"}).Error)
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &bgTrackingVerificationService{})
+
+	var provisioning models.ScenarioSession
+	require.NoError(t, db.First(&provisioning, "id = ?", session.ID).Error)
+	assert.Equal(t, 300, sessionSvc.CurrentStepProvisioningTimeout(&provisioning))
+}
+
 // -----------------------------------------------------------------------------
 // Session-status guard on the advance endpoints
 //
