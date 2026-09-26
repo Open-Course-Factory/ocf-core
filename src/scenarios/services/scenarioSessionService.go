@@ -384,39 +384,44 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 			}
 		}
 
-		// Execute scenario-level setup script and/or step 0 background script.
-		// Setup script runs first (global env prep), then step 0 background.
-		if len(scenario.Steps) > 0 {
-			setupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
-			bgScript := ResolveScriptContent(s.db, scenario.Steps[0].BackgroundScriptID, scenario.Steps[0].BackgroundScript)
-			slog.Info("StartScenario scripts", "session_id", session.ID, "setup_len", len(setupScript), "bg_len", len(bgScript))
-			if setupScript != "" || bgScript != "" {
-				// Set session to provisioning — frontend will poll until active
-				s.db.Model(session).Updates(map[string]any{
-					"status":             "provisioning",
-					"provisioning_phase": "setup_script",
-				})
-				session.Status = "provisioning"
-				session.ProvisioningPhase = "setup_script"
+		// Build the world for the first step: scenario setup script first
+		// (global env prep), then the first step's background script.
+		first := &scenario.Steps[0]
+		job := buildJob{
+			sessionID:    session.ID,
+			terminalID:   *session.TerminalSessionID,
+			scenario:     &scenario,
+			flags:        session.Flags,
+			locale:       session.Locale,
+			throughOrder: first.Order,
+			phase:        "step_setup",
+		}
+		setupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
+		bgScript := ResolveScriptContent(s.db, first.BackgroundScriptID, first.BackgroundScript)
+		slog.Info("StartScenario scripts", "session_id", session.ID, "setup_len", len(setupScript), "bg_len", len(bgScript))
+		if setupScript != "" || bgScript != "" {
+			// Set session to provisioning — frontend will poll until active
+			s.db.Model(session).Updates(map[string]any{
+				"status":             "provisioning",
+				"provisioning_phase": "setup_script",
+			})
+			session.Status = "provisioning"
+			session.ProvisioningPhase = "setup_script"
 
-				go s.runStep0Setup(session.ID, *session.TerminalSessionID, &scenario, session.Flags, session.Locale)
-			} else {
-				// No scripts — deploy flag and stay active. Best-effort: the
-				// helper logs, and reprovision-step is the retry.
-				if len(session.Flags) > 0 {
-					_ = s.deploySingleFlagToContainer(*session.TerminalSessionID, &scenario, session.Flags, 0)
-				}
-				// A step 0 carrying a banner but no scripts never reaches
-				// runStep0Setup, so stage its intro here too. Without this the
-				// simplest scenarios are exactly the ones whose configured
-				// banner silently never appears.
-				s.deliverStepZeroIntro(*session.TerminalSessionID, &scenario.Steps[0], session.ID)
-				s.warnIfEffectsUnsupported(*session.TerminalSessionID, &scenario, session.ID)
-				// Nothing ran, but the container was still created with the
-				// build features attached — a scenario can declare them and
-				// have no scripts. Close the window here too.
-				s.finishBuild(session.ID, *session.TerminalSessionID)
+			go s.runStep0Setup(job)
+		} else {
+			// No scripts: nothing to wait for, so the rest of the build — flag,
+			// intro banner — happens inline and the run stays active. Going
+			// through buildWorld all the same keeps one rule for what the first
+			// step gets. A failure is best-effort here: the helpers log, and
+			// reprovision-step is the retry.
+			if err := s.buildWorld(job); err != nil {
+				slog.Error("scenario setup failed", "session_id", session.ID, "err", err)
 			}
+			// Nothing ran, but the container was still created with the
+			// build features attached — a scenario can declare them and
+			// have no scripts. Close the window here too.
+			s.finishBuild(session.ID, *session.TerminalSessionID)
 		}
 	}
 
@@ -486,129 +491,197 @@ func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.
 	return session, nil
 }
 
-// runStep0Setup runs the step 0 background script asynchronously and transitions
-// the session from "provisioning" to "active" once setup completes, or to
-// "setup_failed" if the script fails.
-func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, locale string) {
-	// Deferred rather than placed at the end: this function returns from a
-	// dozen points — setup failures, an abandoned session, a recovered panic —
+// runStep0Setup builds the world for the first step asynchronously and
+// transitions the session from "provisioning" to "active" once it is built, or
+// to "setup_failed" if a script fails.
+func (s *ScenarioSessionService) runStep0Setup(job buildJob) {
+	// Deferred rather than placed at the end: this function returns from
+	// several points — setup failures, an abandoned session, a recovered panic —
 	// and every one of them leaves a container still holding the network its
 	// setup asked for.
-	defer s.finishBuild(sessionID, terminalSessionID)
+	defer s.finishBuild(job.sessionID, job.terminalID)
 
 	defer func() {
 		if r := recover(); r != nil {
 			observability.Metrics.ScenarioSetupPanic.Add(1)
 			slog.Error("runStep0Setup panic recovered",
-				"session_id", sessionID,
+				"session_id", job.sessionID,
 				"panic", r,
 				"stack", string(debug.Stack()))
 			// Match the existing error-path updates: gate on status='provisioning'
 			// so we don't clobber an abandoned session.
 			s.db.Model(&models.ScenarioSession{}).
-				Where("id = ? AND status = ?", sessionID, "provisioning").
+				Where("id = ? AND status = ?", job.sessionID, "provisioning").
 				Updates(map[string]any{
 					"status":             "setup_failed",
 					"provisioning_phase": "",
 				})
-			s.tryStopTerminal(terminalSessionID, sessionID)
+			s.tryStopTerminal(job.terminalID, job.sessionID)
 		}
 	}()
 
-	// Execute scenario-level setup script first (global environment preparation)
-	setupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
-
-	// The world's vocabulary goes in before anything that builds the world.
-	// Generated here, per session, because the locale is a property of the
-	// session: a scenario seeded with one language's lexicon baked in could
-	// only ever build that language's world.
-	install, lexErr := s.lexiconInstall(scenario.ID, locale)
-	if lexErr != nil {
-		slog.Error("cannot build the world's vocabulary", "session_id", sessionID, "err", lexErr)
+	if err := s.buildWorld(job); err != nil {
+		if errors.Is(err, errBuildAbandoned) {
+			slog.Warn("scenario session setup stopped: row no longer in provisioning (likely abandoned mid-setup)", "session_id", job.sessionID)
+			return
+		}
+		slog.Error("scenario setup failed", "session_id", job.sessionID, "err", err)
 		s.db.Model(&models.ScenarioSession{}).
-			Where("id = ? AND status = ?", sessionID, "provisioning").
-			Updates(map[string]any{"status": "setup_failed", "provisioning_phase": ""})
-		s.tryStopTerminal(terminalSessionID, sessionID)
+			Where("id = ? AND status = ?", job.sessionID, "provisioning").
+			Updates(map[string]any{
+				"status":             "setup_failed",
+				"provisioning_phase": "",
+			})
+		observability.Metrics.ScenarioSetupFailed.Add(1)
+		s.tryStopTerminal(job.terminalID, job.sessionID)
 		return
 	}
-	setupScript = install + setupScript
-
-	if setupScript != "" {
-		slog.Info("executing scenario setup script", "session_id", sessionID, "script_len", len(setupScript))
-		// Create a temporary step-like structure for executeBackgroundScript
-		setupStep := &models.ScenarioStep{
-			Order:            -1, // sentinel value for logging
-			BackgroundScript: setupScript,
-		}
-		// The scenario-level setup script is not a step and has no "current"
-		// flag; crash_traps scenarios hand it the whole set through config.json.
-		if _, err := s.executeBackgroundScript(terminalSessionID, setupStep, provisioningEnv(scenario, locale)); err != nil {
-			slog.Error("scenario setup script failed", "session_id", sessionID, "err", err)
-			s.db.Model(&models.ScenarioSession{}).
-				Where("id = ? AND status = ?", sessionID, "provisioning").
-				Updates(map[string]any{
-					"status":             "setup_failed",
-					"provisioning_phase": "",
-				})
-			observability.Metrics.ScenarioSetupFailed.Add(1)
-			s.tryStopTerminal(terminalSessionID, sessionID)
-			return
-		}
-	}
-
-	step := &scenario.Steps[0]
-
-	// Execute step 0 background script
-	bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
-	if bgScript != "" {
-		s.db.Model(&models.ScenarioSession{}).
-			Where("id = ? AND status = ?", sessionID, "provisioning").
-			Update("provisioning_phase", "step_setup")
-		if _, err := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order, locale)); err != nil {
-			slog.Error("step 0 setup failed", "session_id", sessionID, "err", err)
-			s.db.Model(&models.ScenarioSession{}).
-				Where("id = ? AND status = ?", sessionID, "provisioning").
-				Updates(map[string]any{
-					"status":             "setup_failed",
-					"provisioning_phase": "",
-				})
-			observability.Metrics.ScenarioSetupFailed.Add(1)
-			s.tryStopTerminal(terminalSessionID, sessionID)
-			return
-		}
-	}
-
-	// Deploy the flag for step 0. Unlike a mid-scenario step, a failure here is
-	// not escalated to setup_failed: that would stop the terminal over a flag
-	// the learner can get back with reprovision-step.
-	if len(flags) > 0 {
-		_ = s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, 0)
-	}
-
-	// Step 0's intro cannot be drawn now — no console has attached yet — so it
-	// is staged as the MOTD and rendered when the learner's shell starts.
-	s.deliverStepZeroIntro(terminalSessionID, step, sessionID)
-
-	// Say so once, loudly, if this scenario wants banners on an image that
-	// cannot draw them. The symptom is otherwise just "nothing happens".
-	s.warnIfEffectsUnsupported(terminalSessionID, scenario, sessionID)
 
 	// Transition to active — only if still provisioning (not abandoned meanwhile)
 	result := s.db.Model(&models.ScenarioSession{}).
-		Where("id = ? AND status = ?", sessionID, "provisioning").
+		Where("id = ? AND status = ?", job.sessionID, "provisioning").
 		Updates(map[string]any{
 			"status":             "active",
 			"provisioning_phase": "",
 		})
 	if result.Error != nil {
-		slog.Error("scenario session active-transition failed", "session_id", sessionID, "err", result.Error)
+		slog.Error("scenario session active-transition failed", "session_id", job.sessionID, "err", result.Error)
 		return
 	}
 	if result.RowsAffected == 0 {
-		slog.Warn("scenario session setup complete but row no longer in provisioning (likely abandoned mid-setup)", "session_id", sessionID)
+		slog.Warn("scenario session setup complete but row no longer in provisioning (likely abandoned mid-setup)", "session_id", job.sessionID)
 		return
 	}
-	slog.Info("scenario session setup complete", "session_id", sessionID)
+	slog.Info("scenario session setup complete", "session_id", job.sessionID)
+}
+
+// buildJob is everything buildWorld needs to put a container in the state a
+// learner at step throughOrder expects.
+type buildJob struct {
+	sessionID  uuid.UUID
+	terminalID string
+	scenario   *models.Scenario
+	flags      []models.ScenarioFlag
+	locale     string
+	// throughOrder is the step the learner will be on: every step up to and
+	// including it is built, none after.
+	throughOrder int
+	// phase is the provisioning_phase reported while the steps' scripts run.
+	phase string
+}
+
+// errBuildAbandoned stops a build whose run left "provisioning" under it —
+// abandoned, most likely. Nobody is waiting for the rest of the world.
+var errBuildAbandoned = errors.New("run no longer provisioning")
+
+// buildWorld is the one place that knows how a container becomes a scenario's
+// world at a given step: the vocabulary and the scenario's setup script, then
+// every step's background script and flag, in order, through throughOrder.
+//
+// Status transitions and the failure policy are the caller's: this reports the
+// first script that failed, or errBuildAbandoned, and changes nothing else on
+// the run.
+func (s *ScenarioSessionService) buildWorld(job buildJob) error {
+	if err := s.runScenarioSetup(job); err != nil {
+		return err
+	}
+	for i := range job.scenario.Steps {
+		step := &job.scenario.Steps[i]
+		if step.Order > job.throughOrder {
+			break
+		}
+		if err := s.buildStep(job, step); err != nil {
+			return err
+		}
+	}
+
+	// Say so once, loudly, if this scenario wants banners on an image that
+	// cannot draw them. The symptom is otherwise just "nothing happens".
+	s.warnIfEffectsUnsupported(job.terminalID, job.scenario, job.sessionID)
+	return nil
+}
+
+// runScenarioSetup installs the world's vocabulary and runs the scenario-level
+// setup script, which prepare the environment before any step does.
+func (s *ScenarioSessionService) runScenarioSetup(job buildJob) error {
+	// The world's vocabulary goes in before anything that builds the world.
+	// Generated here, per session, because the locale is a property of the
+	// session: a scenario seeded with one language's lexicon baked in could
+	// only ever build that language's world.
+	install, err := s.lexiconInstall(job.scenario.ID, job.locale)
+	if err != nil {
+		return fmt.Errorf("cannot build the world's vocabulary: %w", err)
+	}
+	setupScript := install + ResolveScriptContent(s.db, job.scenario.SetupScriptID, job.scenario.SetupScript)
+	if setupScript == "" {
+		return nil
+	}
+
+	slog.Info("executing scenario setup script", "session_id", job.sessionID, "script_len", len(setupScript))
+	// Create a temporary step-like structure for executeBackgroundScript
+	setupStep := &models.ScenarioStep{
+		Order:            -1, // sentinel value for logging
+		BackgroundScript: setupScript,
+	}
+	// The scenario-level setup script is not a step and has no "current"
+	// flag; crash_traps scenarios hand it the whole set through config.json.
+	if _, err := s.executeBackgroundScript(job.terminalID, setupStep, provisioningEnv(job.scenario, job.locale)); err != nil {
+		return fmt.Errorf("scenario setup script: %w", err)
+	}
+	return nil
+}
+
+// buildStep runs one step's background script and plants its flag.
+//
+// Only the step the learner will be on adopts the answer its script declares
+// and stages its intro: an earlier step is already solved, and its stored flag
+// is the one the learner submitted.
+func (s *ScenarioSessionService) buildStep(job buildJob, step *models.ScenarioStep) error {
+	current := step.Order == job.throughOrder
+
+	if ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript) != "" {
+		if !s.heartbeat(job.sessionID, job.phase) {
+			return errBuildAbandoned
+		}
+		stdout, err := s.executeBackgroundScript(job.terminalID, step, stepProvisioningEnv(job.scenario, job.flags, step.Order, job.locale))
+		if err != nil {
+			return fmt.Errorf("step %d setup: %w", step.Order, err)
+		}
+		if current {
+			s.adoptScriptChosenAnswer(stdout, job.flags, step)
+		}
+	}
+
+	// Unlike a mid-scenario advance, a flag that fails to land here is not
+	// escalated to setup_failed: that would stop the terminal over a flag the
+	// learner can get back with reprovision-step.
+	if len(job.flags) > 0 {
+		_ = s.deploySingleFlagToContainer(job.terminalID, job.scenario, job.flags, step.Order)
+	}
+
+	if current {
+		// The intro cannot be drawn now — no console has attached yet — so it
+		// is staged as the MOTD and rendered when the learner's shell starts.
+		s.stageIntroForLogin(job.terminalID, step, job.sessionID)
+	}
+	return nil
+}
+
+// heartbeat reports the build's progress on the run, which also refreshes
+// updated_at so a long build is not taken for a stuck one by the reaper. It
+// answers false once the run is no longer provisioning, so the build stops.
+//
+// A failed write is logged and the build goes on: it says nothing about the
+// run having left provisioning.
+func (s *ScenarioSessionService) heartbeat(sessionID uuid.UUID, phase string) bool {
+	result := s.db.Model(&models.ScenarioSession{}).
+		Where("id = ? AND status = ?", sessionID, "provisioning").
+		Update("provisioning_phase", phase)
+	if result.Error != nil {
+		slog.Error("provisioning heartbeat failed", "session_id", sessionID, "err", result.Error)
+		return true
+	}
+	return result.RowsAffected > 0
 }
 
 // asyncProvisioningThresholdSeconds is the declared budget past which a step's

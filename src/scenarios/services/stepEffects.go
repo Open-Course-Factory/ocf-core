@@ -179,15 +179,15 @@ func (s *ScenarioSessionService) drawBanner(terminalSessionID string, banner ste
 	}
 }
 
-// deliverStepZeroIntro stages the first step's banner for the learner's login
-// shell, which is the only moment it can be seen: the step 0 background script
-// runs while the session is still provisioning, with no console attached.
+// stageIntroForLogin stages a step's banner for the learner's login shell,
+// which is the only moment it can be seen: the world is built while the session
+// is still provisioning, with no console attached.
 //
 // The text is written through a positional parameter rather than interpolated
 // into the command, so it cannot be interpreted as shell however it is
 // written. /etc is outside tt-backend's file-push allowlist, which is why this
 // goes through exec at all.
-func (s *ScenarioSessionService) deliverStepZeroIntro(terminalSessionID string, step *models.ScenarioStep, sessionID uuid.UUID) {
+func (s *ScenarioSessionService) stageIntroForLogin(terminalSessionID string, step *models.ScenarioStep, sessionID uuid.UUID) {
 	banner, ok := introBanner(step)
 	if !ok {
 		return
@@ -196,7 +196,7 @@ func (s *ScenarioSessionService) deliverStepZeroIntro(terminalSessionID string, 
 		return
 	}
 
-	s.execBestEffort(terminalSessionID, sessionID, "step 0 intro text",
+	s.execBestEffort(terminalSessionID, sessionID, "intro text",
 		[]string{"/bin/sh", "-c", `printf '%s\n' "$1" > ` + ocfMotdPath, "sh", banner.Text})
 
 	// Written the same way as the text, for the same reason: a positional
@@ -204,7 +204,7 @@ func (s *ScenarioSessionService) deliverStepZeroIntro(terminalSessionID string, 
 	// interpreted however it is authored. effectNamePattern has already
 	// constrained this to a bare identifier, which is narrower than what the
 	// hook accepts, so whatever reaches the file passes its validation.
-	s.execBestEffort(terminalSessionID, sessionID, "step 0 intro effect",
+	s.execBestEffort(terminalSessionID, sessionID, "intro effect",
 		[]string{"/bin/sh", "-c", `printf '%s\n' "$1" > ` + ocfMotdEffectPath, "sh", banner.Effect})
 }
 
