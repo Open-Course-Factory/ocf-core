@@ -60,7 +60,11 @@ func (h *ScenarioAuthorizationHook) Execute(ctx *hooks.HookContext) error {
 
 	switch ctx.HookType {
 	case hooks.BeforeUpdate:
-		return h.checkExisting(ctx, ctx.OldEntity, "update", "scenario")
+		if err := h.checkExisting(ctx, ctx.OldEntity, "update", "scenario"); err != nil {
+			return err
+		}
+		old := ctx.OldEntity.(*models.Scenario)
+		return refuseForeignFileRefs(h.db, old.ID, scenarioFileRefs, ctx.NewEntity, old)
 	case hooks.BeforeDelete:
 		return h.checkExisting(ctx, ctx.NewEntity, "delete", "scenario")
 	}
