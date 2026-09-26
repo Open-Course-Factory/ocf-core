@@ -3,6 +3,7 @@ package scenarioHooks
 import (
 	"fmt"
 
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/scenarios/models"
@@ -60,6 +61,9 @@ func (h *ScenarioAuthorizationHook) Execute(ctx *hooks.HookContext) error {
 
 	switch ctx.HookType {
 	case hooks.BeforeUpdate:
+		if err := refuseOrgChange(ctx); err != nil {
+			return err
+		}
 		return h.checkExisting(ctx, ctx.OldEntity, "update", "scenario")
 	case hooks.BeforeDelete:
 		return h.checkExisting(ctx, ctx.NewEntity, "delete", "scenario")
@@ -82,7 +86,22 @@ func (h *ScenarioAuthorizationHook) checkExisting(ctx *hooks.HookContext, raw an
 	return nil
 }
 
-var errPublicOrgScenario = fmt.Errorf("an organisation's scenario cannot be public: only platform scenarios are")
+// refuseOrgChange keeps a scenario in its organisation (#520): moving it, or
+// turning it into a platform scenario with the nil UUID, is an administrator's
+// act. Sending the stored organisation back unchanged is a normal edit.
+func refuseOrgChange(ctx *hooks.HookContext) error {
+	patch, _ := ctx.NewEntity.(map[string]any)
+	orgID, patched := patch["organization_id"].(uuid.UUID)
+	if !patched {
+		return nil
+	}
+	if old, ok := ctx.OldEntity.(*models.Scenario); ok && old.OrganizationID != nil && *old.OrganizationID == orgID {
+		return nil
+	}
+	return utils.PermissionDeniedError("move", "scenario")
+}
+
+var errPublicOrgScenario = entityErrors.NewValidationError("is_public", "an organisation's scenario cannot be public: only platform scenarios are")
 
 func refusePublicOrgScenario(ctx *hooks.HookContext) error {
 	switch ctx.HookType {
