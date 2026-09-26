@@ -92,6 +92,10 @@ type resumeSeed struct {
 	inOrg bool
 	// foregroundOnCurrent gives the current step a foreground script.
 	foregroundOnCurrent bool
+	// preview seeds an author's preview run rather than a learner's run.
+	preview bool
+	// status is the run's status; "active" when empty.
+	status string
 }
 
 // seedResumableRun seeds a learner — plan, terminal key — and their open run
@@ -166,13 +170,18 @@ func seedResumableRun(t *testing.T, name string, seed resumeSeed) resumeFixture 
 		OrganizationID:  orgID,
 	}).Error)
 
+	status := seed.status
+	if status == "" {
+		status = "active"
+	}
 	terminalID := oldTerminal
 	run := models.ScenarioSession{
 		ScenarioID:        scenario.ID,
 		UserID:            learnerID,
 		TerminalSessionID: &terminalID,
 		CurrentStep:       resumeCurrentStep,
-		Status:            "active",
+		Status:            status,
+		IsPreview:         seed.preview,
 		StartedAt:         time.Now().Add(-2 * time.Hour).Truncate(time.Second),
 	}
 	require.NoError(t, db.Create(&run).Error)
@@ -568,6 +577,8 @@ func TestResumeRebuild_ConcurrentResumes_OnlyOneReattaches(t *testing.T) {
 		require.Contains(t, []int{http.StatusOK, http.StatusConflict}, w.Code,
 			"response %d; body=%s", i, w.Body.String())
 		if w.Code != http.StatusOK {
+			assert.Contains(t, w.Body.String(), `"reason":"resume_in_progress"`,
+				"the losing resume says why, so the client can follow the winner rather than show a failure")
 			continue
 		}
 		succeeded++
@@ -720,6 +731,113 @@ func TestResume_CrashTrapGone_409RunOver(t *testing.T) {
 	var run models.ScenarioSession
 	require.NoError(t, f.db.First(&run, "id = ?", f.run.ID).Error)
 	assert.Equal(t, f.oldTerminal, *run.TerminalSessionID, "the run is left as it was")
+}
+
+// A paused run whose container turns out to be gone falls through to a
+// rebuild only when the rule allows one. A crash-trap run is over once its
+// container is gone, whatever its terminal row said.
+func TestResume_PausedCrashTrapContainerGone_409RunOver(t *testing.T) {
+	f := seedResumableRun(t, "resume-paused-crash-trap", resumeSeed{
+		crashTraps: true, terminalState: terminalModels.StateStopped,
+	})
+	tt := newPreviewTTBackend(t)
+	tt.startMissing = true
+
+	w := resumeRun(t, f)
+
+	require.Equal(t, http.StatusConflict, w.Code, "body=%s", w.Body.String())
+	assert.Contains(t, w.Body.String(), `"reason":"run_over"`)
+	assert.Equal(t, []string{f.oldTerminal}, tt.startedSessions(), "the paused terminal is tried")
+	assert.Zero(t, tt.createCalls(), "a crash-trap run is never rebuilt")
+	assert.Empty(t, tt.builtSteps())
+}
+
+// Same for a preview: the author starts a new one, it is never rebuilt.
+func TestResume_PausedPreviewContainerGone_409RunOver(t *testing.T) {
+	f := seedResumableRun(t, "resume-paused-preview", resumeSeed{
+		preview: true, terminalState: terminalModels.StateStopped,
+	})
+	tt := newPreviewTTBackend(t)
+	tt.startMissing = true
+
+	w := resumeRun(t, f)
+
+	require.Equal(t, http.StatusConflict, w.Code, "body=%s", w.Body.String())
+	assert.Contains(t, w.Body.String(), `"reason":"run_over"`)
+	assert.Zero(t, tt.createCalls(), "a preview run is never rebuilt")
+	assert.Empty(t, tt.builtSteps())
+}
+
+// A run still provisioning is not a rebuildable one: when its paused
+// container is gone, the resume answers by the rule — run over — and creates
+// nothing, deletes nothing.
+func TestResume_PausedProvisioningRun_CreatesNoTerminal(t *testing.T) {
+	f := seedResumableRun(t, "resume-paused-provisioning", resumeSeed{
+		status: "provisioning", terminalState: terminalModels.StateStopped,
+	})
+	tt := newPreviewTTBackend(t)
+	tt.startMissing = true
+
+	w := resumeRun(t, f)
+
+	require.Equal(t, http.StatusConflict, w.Code, "body=%s", w.Body.String())
+	assert.Contains(t, w.Body.String(), `"reason":"run_over"`)
+	assert.Zero(t, tt.createCalls(), "no terminal for a run that is not rebuildable")
+	assert.Empty(t, tt.deletedSessions())
+	assert.Empty(t, tt.builtSteps())
+}
+
+// assertPlanRefusal checks a plan refusal is a 403 that gives a reason and
+// says nothing of tt-backend: no URL, no upstream wording, no raw body.
+func assertPlanRefusal(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	require.Equal(t, http.StatusForbidden, w.Code,
+		"the plan refused the machine: that is a refusal, not a server error; body=%s", w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	reason, _ := body["reason"].(string)
+	assert.NotEmpty(t, reason, "the client picks its copy from a reason")
+	for _, leak := range []string{"127.0.0.1", "Terminal Trainer", "/1.0/sessions", "refused-by-fake"} {
+		assert.NotContains(t, w.Body.String(), leak, "the answer must not relay the upstream error")
+	}
+}
+
+// planRefusalBody is what tt-backend answers when the plan does not cover the
+// machine asked for. "refused-by-fake" marks the raw text so a relay shows.
+const planRefusalBody = `{"error":"plan_limit: size 'M' is not allowed by this plan (refused-by-fake)"}`
+
+func TestResume_PlanRefusesSize_403(t *testing.T) {
+	f := seedResumableRun(t, "resume-plan-refuses", resumeSeed{})
+	tt := newPreviewTTBackend(t)
+	tt.createRefusal = planRefusalBody
+
+	w := resumeRun(t, f)
+
+	assertPlanRefusal(t, w)
+	assert.Empty(t, tt.builtSteps())
+	var run models.ScenarioSession
+	require.NoError(t, f.db.First(&run, "id = ?", f.run.ID).Error)
+	assert.Equal(t, "active", run.Status, "a refused rebuild leaves the run as it was")
+	assert.Equal(t, f.oldTerminal, *run.TerminalSessionID)
+}
+
+// The launch shares the terminal provisioning with the resume, and answers the
+// same refusal the same way.
+func TestLaunchScenario_PlanRefusesSize_403(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "launch-plan-refuses-" + uuid.New().String()
+	seedPersistencePlan(t, db, userID, true)
+	seedPersistenceUserKey(t, db, userID)
+	scenario := seedPersistenceScenario(t, db, userID, false)
+	tt := newPreviewTTBackend(t)
+	tt.createRefusal = planRefusalBody
+
+	w := launchScenarioForTest(t, setupPersistenceRouter(t, db, userID), scenario.ID)
+
+	assertPlanRefusal(t, w)
+	var runs int64
+	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("scenario_id = ?", scenario.ID).Count(&runs).Error)
+	assert.Zero(t, runs, "a refused launch leaves no run")
 }
 
 // Layer 2: only the run's owner may resume it. Declared once, in
