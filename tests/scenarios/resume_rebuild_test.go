@@ -1041,3 +1041,37 @@ func TestCurrentStepProvisioningTimeout_PreviewFromStep_ReportsReplayBudget(t *t
 		})
 	}
 }
+
+// The session page finds its run through its terminal, and offers Resume or
+// Rebuild from what that answer says: resume_mode carries the same wire values
+// as GET /scenario-sessions/my, and is absent when the run cannot be resumed.
+func TestSessionByTerminal_ReportsResumeMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		seed resumeSeed
+		mode string // "" = absent
+	}{
+		{"container gone, normal run", resumeSeed{}, "rebuild"},
+		{"stopped persistent terminal", resumeSeed{terminalState: terminalModels.StateStopped}, "paused"},
+		{"running terminal", resumeSeed{terminalState: terminalModels.StateRunning}, "live"},
+		{"container gone, crash traps", resumeSeed{crashTraps: true}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := seedResumableRun(t, "by-terminal-resume-mode", tc.seed)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/scenario-sessions/by-terminal/"+f.oldTerminal, nil)
+			w := httptest.NewRecorder()
+			setupTestRouterWithUser(f.db, f.learnerID).ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+			mode, present := body["resume_mode"]
+			if tc.mode == "" {
+				assert.False(t, present, "a run that cannot be resumed carries no resume_mode; got %v", mode)
+				return
+			}
+			assert.Equal(t, tc.mode, mode)
+		})
+	}
+}
