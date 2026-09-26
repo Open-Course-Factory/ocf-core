@@ -631,17 +631,14 @@ func TestResumeRebuild_UsesOldTerminalOrganisation(t *testing.T) {
 	school := *f.orgID
 	elsewhere := createTestOrg(t, f.db, f.learnerID)
 	addOrgMember(t, f.db, elsewhere, f.learnerID, orgModels.OrgRoleOwner)
-	tt := newPreviewTTBackend(t)
+	newPreviewTTBackend(t)
 
 	w := postResume(resumeRouter(t, f.db, f.learnerID, elsewhere.String()), f.run.ID)
 	resp, run := rebuiltRun(t, f, w)
 	require.Equal(t, "active", run.Status)
 
-	tt.persistenceRecorder.mu.Lock()
-	sentOrg := tt.persistenceRecorder.gotBody["organization_id"]
-	tt.persistenceRecorder.mu.Unlock()
-	assert.Equal(t, school.String(), sentOrg, "tt-backend is asked for a terminal in the run's organisation")
-
+	// The organisation is ocf-core's record, on the terminal row: tt-backend is
+	// never told it.
 	var terminal terminalModels.Terminal
 	require.NoError(t, f.db.First(&terminal, "session_id = ?", resp.TerminalSessionID).Error)
 	require.NotNil(t, terminal.OrganizationID, "the rebuilt terminal stays in an organisation")
