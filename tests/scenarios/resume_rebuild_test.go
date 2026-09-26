@@ -800,3 +800,65 @@ func TestCurrentStepProvisioningTimeout_ReplayReturnsRemainingBudget(t *testing.
 	require.NoError(t, f.db.First(&stepSetup, "id = ?", f.run.ID).Error)
 	assert.Equal(t, 200, svc.CurrentStepProvisioningTimeout(&stepSetup))
 }
+
+// A preview from step N builds what a rebuild through N builds, so while it
+// provisions the client waits for the same budget: the setup script's plus
+// every background script's through N — not step N's alone. A preview from
+// the first step keeps the first step's budget. Read mid-build, through the
+// real preview route, so the test does not depend on which phase it reports.
+func TestCurrentStepProvisioningTimeout_PreviewFromStep_ReportsReplayBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		body     map[string]any
+		readAt   string
+		expected int
+		why      string
+	}{
+		{
+			name: "from step 3", body: map[string]any{"from_step_order": 3}, readAt: "echo bg-step-2",
+			// setup 300 (initial budget) + 100 + 30 (default) + 200; step 4 is not built.
+			expected: 300 + 100 + 30 + 200,
+			why:      "a preview from step 3 replays setup and backgrounds 1..3",
+		},
+		{
+			name: "from the first step", body: map[string]any{}, readAt: "echo bg-step-1",
+			expected: 100,
+			why:      "a preview from the first step keeps the first step's budget",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, authorID, scenario := seedPreviewableScenario(t, "preview-timeout")
+			for order, seconds := range map[int]int{1: 100, 2: 0, 3: 200, 4: 400} {
+				require.NoError(t, db.Model(&models.ScenarioStep{}).
+					Where("scenario_id = ? AND \"order\" = ?", scenario.ID, order).
+					Update("background_timeout_seconds", seconds).Error)
+			}
+			svc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+			tt := newPreviewTTBackend(t)
+
+			var mu sync.Mutex
+			reported, seen := 0, false
+			tt.onExec = func(script string) string {
+				if !strings.Contains(script, tc.readAt) {
+					return ""
+				}
+				var run models.ScenarioSession
+				if !assert.NoError(t, db.First(&run, "scenario_id = ? AND is_preview = ?", scenario.ID, true).Error) {
+					return ""
+				}
+				assert.Equal(t, "provisioning", run.Status, "read while the preview is being built")
+				mu.Lock()
+				reported, seen = svc.CurrentStepProvisioningTimeout(&run), true
+				mu.Unlock()
+				return ""
+			}
+
+			previewedRun(t, db, previewScenario(t, db, authorID, scenario.ID, tc.body))
+
+			mu.Lock()
+			defer mu.Unlock()
+			require.True(t, seen, "the build ran %q", tc.readAt)
+			assert.Equal(t, tc.expected, reported, tc.why)
+		})
+	}
+}
