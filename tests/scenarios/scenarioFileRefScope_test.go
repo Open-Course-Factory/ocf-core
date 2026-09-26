@@ -1,26 +1,6 @@
-// tests/scenarios/scenarioFileRefScope_test.go
-//
-// A scenario can only reference its own files (issue #516).
-//
-// Steps and scenarios point at ProjectFile rows by id (verify / background /
-// foreground script, text, hint; setup script, intro, finish). The session
-// engine runs those scripts and the export returns their content, so an id
-// is a read of the file behind it. Before #516 a manager could set any of
-// those ids to any ProjectFile — another organisation's included — and run
-// or export it.
-//
-// The rule, for everyone but platform administrators: on create and update,
-// every non-nil file id must be
-//
-//	(a) unchanged from the stored value (the editor round-trips its ids), or
-//	(b) a file already referenced by the same scenario (the scenario row or
-//	    any of its steps), or
-//	(c) a file whose ScenarioID is this scenario.
-//
-// Anything else is refused with 403 and nothing is written. The importer,
-// seed and duplicate services write ids directly, without the entity hooks,
-// and are covered by their own tests (scenario_duplication_test.go,
-// scenarioExportImport_test.go).
+// A scenario can only reference its own files (issue #516). The rule lives in
+// refuseForeignFileRefs (src/scenarios/hooks/scenarioFileRefs.go); these tests
+// pin it through the generated step and scenario routes.
 package scenarios_test
 
 import (
@@ -36,67 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	access "soli/formations/src/auth/access"
-	"soli/formations/src/auth/casdoor"
-	"soli/formations/src/auth/mocks"
-	ems "soli/formations/src/entityManagement/entityManagementService"
-	"soli/formations/src/entityManagement/hooks"
-	"soli/formations/src/entityManagement/swagger"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
-	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
-	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
-	scenarioController "soli/formations/src/scenarios/routes"
 )
-
-// setupFileRefRouter mounts Scenario and ScenarioStep the way production
-// does — generated CRUD, live scenario hooks, Layer 2 enforcement.
-func setupFileRefRouter(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
-	t.Helper()
-	access.RouteRegistry.Reset()
-	access.ResetEnforcers()
-
-	mockEnforcer := mocks.NewMockEnforcer()
-	mockEnforcer.EnforceFunc = func(params ...any) (bool, error) { return true, nil }
-	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
-	mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	originalEnforcer := casdoor.Enforcer
-	casdoor.Enforcer = mockEnforcer
-
-	originalSvc := ems.GlobalEntityRegistrationService
-	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
-	scenarioController.RegisterScenarioPermissions(mockEnforcer)
-	scenarioRegistration.RegisterScenario(ems.GlobalEntityRegistrationService)
-	scenarioRegistration.RegisterScenarioStep(ems.GlobalEntityRegistrationService)
-	access.RegisterBuiltinEnforcers(nil, access.NewGormMembershipChecker(db))
-
-	hooks.GlobalHookRegistry.ClearAllHooks()
-	hooks.GlobalHookRegistry.DisableAllHooks(false)
-	scenarioHooks.InitScenarioHooks(db)
-
-	t.Cleanup(func() {
-		hooks.GlobalHookRegistry.ClearAllHooks()
-		ems.GlobalEntityRegistrationService = originalSvc
-		casdoor.Enforcer = originalEnforcer
-		access.RouteRegistry.Reset()
-		access.ResetEnforcers()
-	})
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	api := r.Group("/api/v1")
-	api.Use(func(c *gin.Context) {
-		c.Set("userId", userID)
-		c.Set("userRoles", roles)
-		c.Next()
-	})
-	api.Use(access.Layer2Enforcement())
-
-	passthrough := func(c *gin.Context) { c.Next() }
-	swagger.NewSwaggerRouteGenerator(db).RegisterDocumentedRoutes(api, passthrough, passthrough)
-	return r
-}
 
 func sendJSON(t *testing.T, router *gin.Engine, method, path string, body map[string]any) *httptest.ResponseRecorder {
 	t.Helper()
@@ -232,7 +155,7 @@ func TestStepFileRef_PatchWithAnotherScenariosFile_Forbidden(t *testing.T) {
 		t.Run(field.json, func(t *testing.T) {
 			db := freshTestDB(t)
 			w := buildFileRefWorld(t, db)
-			router := setupFileRefRouter(t, db, "a-manager", []string{"member"})
+			router := setupArchiveRouter(t, db, "a-manager", []string{"member"})
 
 			for name, fileID := range map[string]uuid.UUID{
 				"referenced by org B's scenario": w.foreign,
@@ -255,7 +178,7 @@ func TestStepFileRef_CreateWithAnotherScenariosFile_Forbidden(t *testing.T) {
 		t.Run(field.json, func(t *testing.T) {
 			db := freshTestDB(t)
 			w := buildFileRefWorld(t, db)
-			router := setupFileRefRouter(t, db, "a-manager", []string{"member"})
+			router := setupArchiveRouter(t, db, "a-manager", []string{"member"})
 
 			resp := sendJSON(t, router, http.MethodPost, "/scenario-steps", map[string]any{
 				"scenario_id": w.scenarioA.ID.String(),
@@ -280,7 +203,7 @@ func TestScenarioFileRef_PatchWithAnotherScenariosFile_Forbidden(t *testing.T) {
 		t.Run(field.json, func(t *testing.T) {
 			db := freshTestDB(t)
 			w := buildFileRefWorld(t, db)
-			router := setupFileRefRouter(t, db, "a-manager", []string{"member"})
+			router := setupArchiveRouter(t, db, "a-manager", []string{"member"})
 			before := *field.get(w.scenarioA)
 
 			resp := sendJSON(t, router, http.MethodPatch, "/scenarios/"+w.scenarioA.ID.String(),
@@ -302,7 +225,7 @@ func TestScenarioFileRef_PatchWithAnotherScenariosFile_Forbidden(t *testing.T) {
 func TestStepFileRef_PatchResendingTheStoredId_Allowed(t *testing.T) {
 	db := freshTestDB(t)
 	w := buildFileRefWorld(t, db)
-	router := setupFileRefRouter(t, db, "a-manager", []string{"member"})
+	router := setupArchiveRouter(t, db, "a-manager", []string{"member"})
 
 	// The editor sends back every id it loaded, changed or not.
 	body := map[string]any{"title": "Sibling renamed"}
@@ -319,7 +242,7 @@ func TestStepFileRef_PatchWithAFileOfTheSameScenario_Allowed(t *testing.T) {
 		t.Run(field.json, func(t *testing.T) {
 			db := freshTestDB(t)
 			w := buildFileRefWorld(t, db)
-			router := setupFileRefRouter(t, db, "a-manager", []string{"member"})
+			router := setupArchiveRouter(t, db, "a-manager", []string{"member"})
 
 			for name, fileID := range map[string]uuid.UUID{
 				"referenced by a sibling step":     w.shared,
@@ -343,7 +266,7 @@ func TestStepFileRef_PatchWithAFileOfTheSameScenario_Allowed(t *testing.T) {
 func TestStepFileRef_PatchWithNull_IsIgnored(t *testing.T) {
 	db := freshTestDB(t)
 	w := buildFileRefWorld(t, db)
-	router := setupFileRefRouter(t, db, "a-manager", []string{"member"})
+	router := setupArchiveRouter(t, db, "a-manager", []string{"member"})
 
 	body := map[string]any{}
 	for _, field := range stepFileFields {
@@ -363,7 +286,7 @@ func TestStepFileRef_PatchWithNull_IsIgnored(t *testing.T) {
 func TestStepFileRef_CreateWithAFileOfTheSameScenario_Allowed(t *testing.T) {
 	db := freshTestDB(t)
 	w := buildFileRefWorld(t, db)
-	router := setupFileRefRouter(t, db, "a-manager", []string{"member"})
+	router := setupArchiveRouter(t, db, "a-manager", []string{"member"})
 
 	resp := sendJSON(t, router, http.MethodPost, "/scenario-steps", map[string]any{
 		"scenario_id":      w.scenarioA.ID.String(),
@@ -379,7 +302,7 @@ func TestStepFileRef_CreateWithAFileOfTheSameScenario_Allowed(t *testing.T) {
 func TestScenarioFileRef_PatchWithItsOwnFiles_Allowed(t *testing.T) {
 	db := freshTestDB(t)
 	w := buildFileRefWorld(t, db)
-	router := setupFileRefRouter(t, db, "a-manager", []string{"member"})
+	router := setupArchiveRouter(t, db, "a-manager", []string{"member"})
 
 	// Unchanged ids round-tripped by the editor.
 	resp := sendJSON(t, router, http.MethodPatch, "/scenarios/"+w.scenarioA.ID.String(), map[string]any{
@@ -408,7 +331,7 @@ func TestScenarioFileRef_PatchWithItsOwnFiles_Allowed(t *testing.T) {
 func TestFileRef_AdministratorMayReferenceAnyFile(t *testing.T) {
 	db := freshTestDB(t)
 	w := buildFileRefWorld(t, db)
-	router := setupFileRefRouter(t, db, "platform-admin", []string{"administrator"})
+	router := setupArchiveRouter(t, db, "platform-admin", []string{"administrator"})
 
 	resp := sendJSON(t, router, http.MethodPatch, "/scenario-steps/"+w.target.ID.String(),
 		map[string]any{"verify_script_id": w.foreign.String()})
@@ -425,8 +348,8 @@ func TestFileRef_AdministratorMayReferenceAnyFile(t *testing.T) {
 //
 // POST /organizations/:id/scenarios and POST /groups/:groupId/scenarios write
 // the scenario directly, without the entity hooks. A scenario that does not
-// exist yet references nothing, so any file id sent to them is someone
-// else's file.
+// exist yet references nothing, so the file ids in the body are ignored: the
+// blank scenario is created without them.
 
 // createRoutes returns the two create paths for scenario A's organisation,
 // with "a-manager" owning a class of it.
@@ -441,14 +364,7 @@ func createRoutes(t *testing.T, db *gorm.DB, w *fileRefWorld) map[string]string 
 	}
 }
 
-func countScenariosNamed(t *testing.T, db *gorm.DB, name string) int64 {
-	t.Helper()
-	var n int64
-	require.NoError(t, db.Model(&models.Scenario{}).Where("name = ?", name).Count(&n).Error)
-	return n
-}
-
-func TestScenarioFileRef_CreateWithAnExistingFile_Forbidden(t *testing.T) {
+func TestScenarioFileRef_CreateWithAnExistingFile_IsIgnored(t *testing.T) {
 	for _, field := range scenarioFileFields {
 		t.Run(field.json, func(t *testing.T) {
 			db := freshTestDB(t)
@@ -458,15 +374,19 @@ func TestScenarioFileRef_CreateWithAnExistingFile_Forbidden(t *testing.T) {
 
 			for route, path := range routes {
 				resp := sendJSON(t, router, http.MethodPost, path, map[string]any{
-					"name":          "smuggler",
+					"name":          "smuggler-" + route,
 					"title":         "Smuggler",
 					"instance_type": "ubuntu:22.04",
 					field.json:      w.foreign.String(),
 				})
-				assert.Equal(t, http.StatusForbidden, resp.Code,
-					"%s: a new scenario cannot point at org B's file; body=%s", route, resp.Body.String())
-				assert.Zero(t, countScenariosNamed(t, db, "smuggler"),
-					"%s: a refused create must write no scenario", route)
+				require.Equal(t, http.StatusCreated, resp.Code, "%s: body=%s", route, resp.Body.String())
+
+				var created models.Scenario
+				require.NoError(t, db.First(&created, "name = ?", "smuggler-"+route).Error)
+				for _, f := range scenarioFileFields {
+					assert.Nil(t, f.get(&created),
+						"%s: a new scenario owns no file, %s must not be copied from the body", route, f.json)
+				}
 			}
 		})
 	}
@@ -485,23 +405,5 @@ func TestScenarioFileRef_CreateWithoutFiles_Allowed(t *testing.T) {
 			"instance_type": "ubuntu:22.04",
 		})
 		assert.Equal(t, http.StatusCreated, resp.Code, "%s: body=%s", route, resp.Body.String())
-	}
-}
-
-func TestScenarioFileRef_CreateAsAdministratorWithAnyFile_Allowed(t *testing.T) {
-	db := freshTestDB(t)
-	w := buildFileRefWorld(t, db)
-	routes := createRoutes(t, db, w)
-	router := setupOrgTestRouterWithUserAndRoles(t, db, "platform-admin", []string{"administrator"})
-
-	for route, path := range routes {
-		resp := sendJSON(t, router, http.MethodPost, path, map[string]any{
-			"name":            "admin-" + route,
-			"title":           "Admin",
-			"instance_type":   "ubuntu:22.04",
-			"setup_script_id": w.foreign.String(),
-		})
-		assert.Equal(t, http.StatusCreated, resp.Code,
-			"%s: administrators are not bound by the file rule; body=%s", route, resp.Body.String())
 	}
 }

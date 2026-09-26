@@ -42,7 +42,8 @@ import (
 
 // setupArchiveRouter wires the platform archive/unarchive routes as production
 // registers them, behind the same Layer 2 enforcement.
-// setupArchiveRouter mounts the Scenario entity the way production does —
+// setupArchiveRouter mounts the Scenario, ScenarioStep and ScenarioAssignment
+// entities the way production does —
 // generated CRUD and archive/unarchive actions, live scenario hooks, Layer 2
 // enforcement — so the tests below exercise the framework's archive route and
 // the ScenarioArchiveAuthorizationHook, not a hand-written controller.
@@ -62,6 +63,7 @@ func setupArchiveRouter(t *testing.T, db *gorm.DB, userID string, roles []string
 	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
 	scenarioController.RegisterScenarioPermissions(mockEnforcer)
 	scenarioRegistration.RegisterScenario(ems.GlobalEntityRegistrationService)
+	scenarioRegistration.RegisterScenarioStep(ems.GlobalEntityRegistrationService)
 	scenarioRegistration.RegisterScenarioAssignment(ems.GlobalEntityRegistrationService)
 	access.RegisterBuiltinEnforcers(nil, access.NewGormMembershipChecker(db))
 
