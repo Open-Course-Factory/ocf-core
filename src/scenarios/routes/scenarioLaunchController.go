@@ -539,44 +539,6 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Host RAM capacity check — see scenarioRoutes.go for why this is here
-	// instead of in middleware. CheckRAMAvailability drains the request
-	// body via ShouldBindBodyWith, which made ShouldBindJSON above return
-	// EOF (user-reported 400 "Invalid input: EOF"). Beyond that fix, this
-	// check evaluates against the ACTUAL resolved scenario size — not the
-	// plan-max fallback the middleware used because scenarios don't carry
-	// a size in the request body. Mirrors commit 951b69c (resume path).
-	if planVal, exists := ctx.Get("subscription_plan"); exists && planVal != nil {
-		if plan, ok := planVal.(*paymentModels.SubscriptionPlan); ok {
-			if terminalServices.EnforceLaunchCapacity(ctx, plan, provisioning.Size, sc.terminalService) {
-				return
-			}
-		}
-	}
-
-	// Auto-provision terminal key if missing
-	_, keyErr := sc.terminalService.GetUserKey(userID)
-	if keyErr != nil {
-		user, userErr := casdoorsdk.GetUserByUserId(userID)
-		keyName := "auto-" + userID
-		if userErr == nil && user != nil && user.Email != "" {
-			keyName = "auto-" + user.Email
-		}
-		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
-			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to provision terminal access")
-			return
-		}
-	}
-
-	// Fetch terms from tt-backend
-	terms, termsErr := sc.terminalService.GetTerms()
-	if termsErr != nil {
-		slog.Error("failed to fetch terminal terms", "err", termsErr)
-		errors.Respond(ctx, http.StatusServiceUnavailable, "Terminal service unavailable")
-		return
-	}
-
 	// Read plan from middleware context (set by InjectEffectivePlan + RequirePlan)
 	planInterface, exists := ctx.Get("subscription_plan")
 	if !exists {
@@ -589,44 +551,17 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Create terminal session via composed session flow (distribution + size + features)
-	composedInput := terminalDto.CreateComposedSessionInput{
-		Distribution:     provisioning.Distribution,
-		Size:             provisioning.Size,
-		Features:         provisioning.Features,
-		BuildFeatures:    provisioning.BuildFeatures,
-		Terms:            terms,
-		Name:             fmt.Sprintf("scenario-%s", scenario.Title),
-		Hostname:         scenario.Hostname,
-		Backend:          provisioning.Backend,
-		RecordingEnabled: 1,
-		SessionUser:      scenario.SessionUser,
-	}
-	if orgID != nil {
-		composedInput.OrganizationID = orgID.String()
-	}
-	// Persistence: SSOT lives in ResolveScenarioPersistenceMode
-	// (plan-allows-persistence → persistent; else empty default).
-	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(plan)
-
-	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, plan)
-	if termErr != nil {
-		slog.Error("failed to create terminal session for scenario", "scenario", scenario.Name, "userID", userID, "err", termErr)
-		// Budget exhaustion answers the same structured 403 the terminal
-		// creation route emits — the launcher renders honest budget copy
-		// from it instead of a generic failure.
-		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
-			return
-		}
-		errors.Respond(ctx, http.StatusInternalServerError, termErr.Error())
+	terminalResp, ok := sc.provisionScenarioTerminal(ctx, userID, &scenario, provisioning, orgID, plan, "scenario-")
+	if !ok {
 		return
 	}
 
 	// Create scenario session
 	session, startErr := sc.sessionService.StartScenario(userID, scenarioID, terminalResp.SessionID, input.Locale)
 	if startErr != nil {
-		// The new terminal has no usable run and would only hold budget; deleting
-		// it also abandons any half-provisioned run already bound to it.
+		// The new terminal has no usable run and would only hold budget. A run
+		// already bound to it is a crash-trap one (the challenge config failed
+		// to land), which the resume rule and the next launch treat as over.
 		if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
 			slog.Warn("failed to delete the terminal of a failed scenario launch",
 				"terminal_session_id", terminalResp.SessionID, "err", delErr)
@@ -640,14 +575,103 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dto.LaunchScenarioResponse{
-		TerminalSessionID: terminalResp.SessionID,
-		ScenarioSessionID: session.ID.String(),
-		Status:            session.Status,
-		ProvisioningPhase: session.ProvisioningPhase,
-	})
+	ctx.JSON(http.StatusOK, sc.launchResponse(session))
 }
 
+
+// provisionScenarioTerminal creates the terminal a scenario run is built on:
+// the machine provisioning resolved, owned by userID, paid for by plan and
+// filed under orgID. It is everything a launch, a preview and a rebuild share
+// between knowing what to build and having a terminal to build it on — host
+// capacity, the learner's terminal key, the terms, the composed session — so
+// the three cannot drift apart on any of it. On failure it has answered the
+// request, and reports false.
+func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, userID string, scenario *models.Scenario, provisioning services.ScenarioProvisioning, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, namePrefix string) (*terminalDto.TerminalSessionResponse, bool) {
+	// Host RAM capacity check — see scenarioRoutes.go for why this is here
+	// instead of in middleware. CheckRAMAvailability drains the request
+	// body via ShouldBindBodyWith, which made the launch's ShouldBindJSON
+	// return EOF (user-reported 400 "Invalid input: EOF"). Beyond that fix,
+	// this check evaluates against the ACTUAL resolved scenario size — not
+	// the plan-max fallback the middleware used because scenarios don't carry
+	// a size in the request body. Mirrors commit 951b69c (resume path).
+	if terminalServices.EnforceLaunchCapacity(ctx, plan, provisioning.Size, sc.terminalService) {
+		return nil, false
+	}
+
+	// Auto-provision terminal key if missing
+	_, keyErr := sc.terminalService.GetUserKey(userID)
+	if keyErr != nil {
+		user, userErr := casdoorsdk.GetUserByUserId(userID)
+		keyName := "auto-" + userID
+		if userErr == nil && user != nil && user.Email != "" {
+			keyName = "auto-" + user.Email
+		}
+		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
+			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to provision terminal access")
+			return nil, false
+		}
+	}
+
+	// Fetch terms from tt-backend
+	terms, termsErr := sc.terminalService.GetTerms()
+	if termsErr != nil {
+		slog.Error("failed to fetch terminal terms", "err", termsErr)
+		errors.Respond(ctx, http.StatusServiceUnavailable, "Terminal service unavailable")
+		return nil, false
+	}
+
+	// Create terminal session via composed session flow (distribution + size + features)
+	composedInput := terminalDto.CreateComposedSessionInput{
+		Distribution:     provisioning.Distribution,
+		Size:             provisioning.Size,
+		Features:         provisioning.Features,
+		BuildFeatures:    provisioning.BuildFeatures,
+		Terms:            terms,
+		Name:             namePrefix + scenario.Title,
+		Hostname:         scenario.Hostname,
+		Backend:          provisioning.Backend,
+		RecordingEnabled: 1,
+		SessionUser:      scenario.SessionUser,
+	}
+	if orgID != nil {
+		composedInput.OrganizationID = orgID.String()
+	}
+	// Persistence: SSOT lives in ResolveScenarioPersistenceMode
+	// (plan-allows-persistence → persistent; else empty default).
+	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(plan)
+
+	// Budget enforcement is performed by StartComposedSession via
+	// QuotaService.CheckBudget.
+	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, plan)
+	if termErr != nil {
+		slog.Error("failed to create terminal session for scenario", "scenario", scenario.Name, "userID", userID, "err", termErr)
+		// Budget exhaustion answers the same structured 403 the terminal
+		// creation route emits — the launcher renders honest budget copy
+		// from it instead of a generic failure.
+		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
+			return nil, false
+		}
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start terminal session. Please try again or contact support.")
+		return nil, false
+	}
+	return terminalResp, true
+}
+
+// launchResponse is what a launch, a preview or a resume answers: the run, its
+// terminal and, while it is being built, how long the client may wait.
+func (sc *scenarioLaunchController) launchResponse(session *models.ScenarioSession) dto.LaunchScenarioResponse {
+	resp := dto.LaunchScenarioResponse{
+		ScenarioSessionID:          session.ID.String(),
+		Status:                     session.Status,
+		ProvisioningPhase:          session.ProvisioningPhase,
+		ProvisioningTimeoutSeconds: sc.sessionService.CurrentStepProvisioningTimeout(session),
+	}
+	if session.TerminalSessionID != nil {
+		resp.TerminalSessionID = *session.TerminalSessionID
+	}
+	return resp
+}
 
 // openClassMembershipIDs lists the classes userID is an active member of,
 // skipping archived ones: an assignment on an archived class authorises
@@ -812,41 +836,11 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Auto-provision terminal key if missing
-	_, keyErr := sc.terminalService.GetUserKey(userID)
-	if keyErr != nil {
-		user, userErr := casdoorsdk.GetUserByUserId(userID)
-		keyName := "auto-" + userID
-		if userErr == nil && user != nil && user.Email != "" {
-			keyName = "auto-" + user.Email
-		}
-		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
-			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to provision terminal access")
-			return
-		}
-	}
-
-	// Fetch terms from tt-backend
-	terms, termsErr := sc.terminalService.GetTerms()
-	if termsErr != nil {
-		slog.Error("failed to fetch terminal terms", "err", termsErr)
-		errors.Respond(ctx, http.StatusServiceUnavailable, "Terminal service unavailable")
-		return
-	}
-
-	// Get user's effective plan for limit enforcement (org-context-aware)
-	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
-	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID, previewOrgID)
-	if planErr != nil || planResult == nil || planResult.Plan == nil {
-		errors.Respond(ctx, http.StatusForbidden, "No active subscription plan")
-		return
-	}
-
 	// Dunning gate (MANDATORY on every new session-creation route): preview
 	// provisions a real terminal. This route has no InjectEffectivePlan
-	// middleware, so gate on the manually-resolved result.
-	if paymentMiddleware.GatePastDueBeyondGraceForResult(ctx, planResult) {
+	// middleware, so the plan is resolved, and gated, here.
+	planResult, ok := sc.resolveTerminalPlan(ctx, userID, previewOrgID)
+	if !ok {
 		return
 	}
 
@@ -870,36 +864,8 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		}
 	}
 
-	// Terminal launch budget enforcement is performed downstream by
-	// StartComposedSession via QuotaService.CheckBudget; no separate slot
-	// check is needed here.
-
-	// Create terminal session via composed session flow (distribution + size + features)
-	composedInput := terminalDto.CreateComposedSessionInput{
-		Distribution:     provisioning.Distribution,
-		Size:             provisioning.Size,
-		Features:         provisioning.Features,
-		BuildFeatures:    provisioning.BuildFeatures,
-		Terms:            terms,
-		Name:             fmt.Sprintf("preview-%s", scenario.Title),
-		Hostname:         scenario.Hostname,
-		Backend:          provisioning.Backend,
-		RecordingEnabled: 1,
-		SessionUser:      scenario.SessionUser,
-	}
-	if previewOrgID != nil {
-		composedInput.OrganizationID = previewOrgID.String()
-	}
-	// Persistence: SSOT lives in ResolveScenarioPersistenceMode (shared with LaunchScenario).
-	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(planResult.Plan)
-
-	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
-	if termErr != nil {
-		slog.Error("failed to create terminal session for scenario preview", "scenario", scenario.Name, "userID", userID, "err", termErr)
-		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
-			return
-		}
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start terminal session. Please try again or contact support.")
+	terminalResp, provisioned := sc.provisionScenarioTerminal(ctx, userID, &scenario, provisioning, previewOrgID, planResult.Plan, "preview-")
+	if !provisioned {
 		return
 	}
 
@@ -925,10 +891,183 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dto.LaunchScenarioResponse{
-		TerminalSessionID: terminalResp.SessionID,
-		ScenarioSessionID: session.ID.String(),
-		Status:            session.Status,
-		ProvisioningPhase: session.ProvisioningPhase,
+	ctx.JSON(http.StatusOK, sc.launchResponse(session))
+}
+
+// respondRunOver refuses a resume because the run cannot be returned to: it
+// ended, or its container was the run (crash traps, preview) and is gone.
+func respondRunOver(ctx *gin.Context) {
+	ctx.JSON(http.StatusConflict, gin.H{
+		"error_code":    http.StatusConflict,
+		"error_message": "This run is over and cannot be resumed.",
+		"reason":        "run_over",
 	})
+}
+
+// ResumeScenario godoc
+// @Summary Resume a scenario run
+// @Description Gets the learner back into their open run, whatever became of its terminal: a live terminal is returned as is, a paused one is started in place, and a normal run whose container is gone is rebuilt on a new terminal at its current step, progress untouched.
+// @Tags scenario-sessions
+// @Produce json
+// @Param id path string true "Scenario session ID"
+// @Success 200 {object} dto.LaunchScenarioResponse
+// @Failure 402 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 409 {object} errors.APIError
+// @Failure 503 {object} errors.APIError
+// @Router /scenario-sessions/{id}/resume [post]
+// @Security BearerAuth
+func (sc *scenarioLaunchController) ResumeScenario(ctx *gin.Context) {
+	sessionID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid session ID")
+		return
+	}
+	var run models.ScenarioSession
+	if err := sc.db.First(&run, "id = ?", sessionID).Error; err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
+		return
+	}
+	mode, err := sc.sessionService.ResumeModeOf(&run)
+	if err != nil {
+		slog.Error("failed to judge a scenario run for resume", "session_id", run.ID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to resume the scenario run")
+		return
+	}
+
+	if mode == services.ResumeModePaused {
+		if sc.resumePausedRun(ctx, &run) {
+			return
+		}
+		// tt-backend no longer had the container: the terminal row now says
+		// so, and the run is rebuilt like any whose container is gone.
+		mode = services.ResumeModeRebuild
+	}
+	switch mode {
+	case services.ResumeModeLive:
+		ctx.JSON(http.StatusOK, sc.launchResponse(&run))
+	case services.ResumeModeRebuild:
+		sc.rebuildRun(ctx, &run)
+	default:
+		respondRunOver(ctx)
+	}
+}
+
+// resumePausedRun starts a paused run's terminal in place, as
+// /terminals/:id/start does, and answers. It reports false, having answered
+// nothing, when the container turned out to be gone.
+func (sc *scenarioLaunchController) resumePausedRun(ctx *gin.Context, run *models.ScenarioSession) bool {
+	terminalID := *run.TerminalSessionID
+	terminal, err := sc.terminalService.GetSessionInfo(terminalID)
+	if err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Session not found")
+		return true
+	}
+	// Resuming is a new-session-creation path: the dunning gate applies, as on
+	// /terminals/:id/start.
+	planResult, ok := sc.resolveTerminalPlan(ctx, run.UserID, terminal.OrganizationID)
+	if !ok {
+		return true
+	}
+	if terminalServices.EnforceLaunchCapacity(ctx, planResult.Plan, terminal.MachineSize, sc.terminalService) {
+		return true
+	}
+	if err := sc.terminalService.StartSession(terminalID); err != nil {
+		if stderrors.Is(err, terminalServices.ErrContainerGone) {
+			return false
+		}
+		slog.Error("failed to start a paused scenario terminal", "session_id", run.ID, "terminal_session_id", terminalID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to resume the scenario run")
+		return true
+	}
+	ctx.JSON(http.StatusOK, sc.launchResponse(run))
+	return true
+}
+
+// rebuildRun rebuilds a run whose container is gone on a new terminal, with
+// the gates of a launch — a rebuild is a new container — and answers.
+func (sc *scenarioLaunchController) rebuildRun(ctx *gin.Context, run *models.ScenarioSession) {
+	var scenario models.Scenario
+	if err := sc.db.Preload("CompatibleInstanceTypes").Preload("Steps").First(&scenario, run.ScenarioID).Error; err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
+		return
+	}
+	if sc.rejectIfArchived(ctx, &scenario) {
+		return
+	}
+	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		hasAccess, err := sc.checkScenarioAccess(run.UserID, scenario.ID)
+		if err != nil {
+			slog.Error("failed to check scenario access", "err", err)
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify access")
+			return
+		}
+		if !hasAccess {
+			errors.Respond(ctx, http.StatusForbidden, "No access to this scenario")
+			return
+		}
+	}
+
+	orgID := sc.runOrganization(run, &scenario)
+	planResult, ok := sc.resolveTerminalPlan(ctx, run.UserID, orgID)
+	if !ok {
+		return
+	}
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, "")
+	if distErr != nil {
+		respondProvisioningFailure(ctx, scenario.Name, distErr)
+		return
+	}
+	terminalResp, ok := sc.provisionScenarioTerminal(ctx, run.UserID, &scenario, provisioning, orgID, planResult.Plan, "scenario-")
+	if !ok {
+		return
+	}
+
+	rebuilding, err := sc.sessionService.ReattachRunToNewTerminal(run.ID, *run.TerminalSessionID, terminalResp.SessionID)
+	if err != nil {
+		// Nothing will be built on it: it would only hold budget.
+		if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
+			slog.Warn("failed to delete the terminal of a refused scenario rebuild",
+				"terminal_session_id", terminalResp.SessionID, "err", delErr)
+		}
+		if stderrors.Is(err, services.ErrRunNotRebuildable) {
+			errors.Respond(ctx, http.StatusConflict, "This run was resumed or ended in the meantime.")
+			return
+		}
+		slog.Error("failed to rebuild a scenario run", "session_id", run.ID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to resume the scenario run")
+		return
+	}
+	ctx.JSON(http.StatusOK, sc.launchResponse(rebuilding))
+}
+
+// runOrganization is the organization a run lives in: the one its terminal
+// was filed under, whose trainers supervise it (supervision keys on
+// terminals.organization_id). Never the organization the request claims —
+// that would let a learner rebuild into their personal space and drop out of
+// supervision. When the terminal row is gone, an org scenario's own
+// organization stands in: a scenario never leaves its org.
+func (sc *scenarioLaunchController) runOrganization(run *models.ScenarioSession, scenario *models.Scenario) *uuid.UUID {
+	terminal, err := sc.terminalService.GetSessionInfo(*run.TerminalSessionID)
+	if err == nil && terminal.OrganizationID != nil {
+		return terminal.OrganizationID
+	}
+	return scenario.OrganizationID
+}
+
+// resolveTerminalPlan resolves the plan that pays for a new terminal — the
+// user's, in the organization it is filed under — for routes without the plan
+// middleware, and applies the dunning gate. On refusal it has answered the
+// request, and reports false.
+func (sc *scenarioLaunchController) resolveTerminalPlan(ctx *gin.Context, userID string, orgID *uuid.UUID) (*paymentServices.EffectivePlanResult, bool) {
+	planResult, err := paymentServices.NewEffectivePlanService(sc.db).GetUserEffectivePlan(userID, orgID)
+	if err != nil || planResult == nil || planResult.Plan == nil {
+		errors.Respond(ctx, http.StatusForbidden, "No active subscription plan")
+		return nil, false
+	}
+	if paymentMiddleware.GatePastDueBeyondGraceForResult(ctx, planResult) {
+		return nil, false
+	}
+	return planResult, true
 }

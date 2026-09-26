@@ -694,6 +694,10 @@ func (s *ScenarioSessionService) buildRunsScripts(job buildJob) bool {
 	return false
 }
 
+// scenarioSetupOrder stands for the scenario-level setup script where a step
+// order is expected: it comes before every step.
+const scenarioSetupOrder = -1
+
 // runScenarioSetup installs the world's vocabulary and runs the scenario-level
 // setup script, which prepare the environment before any step does.
 func (s *ScenarioSessionService) runScenarioSetup(job buildJob) error {
@@ -713,7 +717,7 @@ func (s *ScenarioSessionService) runScenarioSetup(job buildJob) error {
 	slog.Info("executing scenario setup script", "session_id", job.sessionID, "script_len", len(setupScript))
 	// Create a temporary step-like structure for executeBackgroundScript
 	setupStep := &models.ScenarioStep{
-		Order:            -1, // sentinel value for logging
+		Order:            scenarioSetupOrder,
 		BackgroundScript: setupScript,
 	}
 	// The scenario-level setup script is not a step and has no "current"
@@ -1284,6 +1288,8 @@ func (s *ScenarioSessionService) resolveRunnableStep(step *models.ScenarioStep, 
 // session is currently provisioning, or 0 when it is not provisioning at all.
 // It exists so a client that polls session info — after a page reload, say, and
 // so never saw the advance response — can still derive when to stop waiting.
+//
+// A rebuild (phase "replay") waits on its whole replay, not one step.
 func (s *ScenarioSessionService) CurrentStepProvisioningTimeout(session *models.ScenarioSession) int {
 	if session.Status != "provisioning" {
 		return 0
@@ -1291,6 +1297,9 @@ func (s *ScenarioSessionService) CurrentStepProvisioningTimeout(session *models.
 	var steps []models.ScenarioStep
 	if err := s.db.Where("scenario_id = ?", session.ScenarioID).Find(&steps).Error; err != nil {
 		return 0
+	}
+	if session.ProvisioningPhase == provisioningPhaseReplay {
+		return replayProvisioningTimeout(steps, session.CurrentStep)
 	}
 	step := FindStepByOrder(steps, session.CurrentStep)
 	if step == nil {
@@ -2042,15 +2051,16 @@ func (s *ScenarioSessionService) EndCrashTrapRun(terminalSessionID string) {
 		"terminal_session_id", terminalSessionID)
 }
 
-// tryDeleteTerminal deletes the linked terminal session (best-effort, logs on failure)
+// tryDeleteTerminal deletes a terminal session the run is done with — a crash
+// trap's, or a rebuild's that will not finish (best-effort, logs on failure).
 func (s *ScenarioSessionService) tryDeleteTerminal(terminalSessionID string, sessionID uuid.UUID) {
 	if s.deleteTerminal == nil {
-		slog.Error("crash trap ended the run but no delete callback is wired — container left running",
+		slog.Error("terminal to delete but no delete callback is wired — container left running",
 			"terminal_session_id", terminalSessionID, "session_id", sessionID)
 		return
 	}
 	if err := s.deleteTerminal(terminalSessionID); err != nil {
-		slog.Error("failed to delete terminal after a crash trap — container may be orphaned",
+		slog.Error("failed to delete terminal — container may be orphaned",
 			"terminal_session_id", terminalSessionID, "session_id", sessionID, "err", err)
 	}
 }
@@ -2595,6 +2605,11 @@ func RunResumeMode(session *models.ScenarioSession, terminal *terminalModels.Ter
 func (s *ScenarioSessionService) HasResumableRun(userID string, scenarioID uuid.UUID) (bool, error) {
 	_, mode, err := findExistingSession(s.db, userID, scenarioID)
 	return mode != ResumeModeNone, err
+}
+
+// ResumeModeOf reports how the given run can be resumed.
+func (s *ScenarioSessionService) ResumeModeOf(session *models.ScenarioSession) (ResumeMode, error) {
+	return resumeModeOf(s.db, session)
 }
 
 // ResumableRun is a run the learner can resume, and how.

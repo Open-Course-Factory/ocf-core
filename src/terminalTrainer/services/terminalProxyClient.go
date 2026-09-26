@@ -3,7 +3,9 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -15,6 +17,10 @@ import (
 
 	"golang.org/x/sync/singleflight"
 )
+
+// ErrContainerGone reports that tt-backend no longer knows a session's
+// container — reaped, or its host rebuilt — so there is nothing to start.
+var ErrContainerGone = errors.New("the terminal's container no longer exists")
 
 // terminalProxyClient owns the tt-backend HTTP layer: session start/stop/delete
 // API calls, session/metrics/distribution/size/backend fetches, and the
@@ -96,6 +102,9 @@ func (p *terminalProxyClient) stopSessionInAPI(sessionID, userAPIKey string) (*t
 // {"expiry": N} pour que tt-backend recalcule instance_expiry sur la base
 // de la limite du plan plutôt que sur la valeur par défaut de l'instance.
 // Quand expirySeconds == 0, le corps est nil et tt-backend utilise son défaut.
+//
+// Un 404 de tt-backend veut dire que le conteneur n'existe plus : l'erreur
+// porte alors ErrContainerGone.
 func (p *terminalProxyClient) startSessionInAPI(sessionID, userAPIKey string, expirySeconds int) (int64, error) {
 	url := fmt.Sprintf("%s/%s/sessions/%s/start", p.baseURL, p.apiVersion, sessionID)
 
@@ -111,13 +120,20 @@ func (p *terminalProxyClient) startSessionInAPI(sessionID, userAPIKey string, ex
 		body = map[string]any{"expiry": expirySeconds}
 	}
 
-	var resp struct {
-		ExpiresAt int64 `json:"expires_at,omitempty"`
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, body, opts)
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return 0, fmt.Errorf("%w: %v", ErrContainerGone, err)
 	}
-	if err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, body, &resp, opts); err != nil {
+	if err != nil {
 		return 0, err
 	}
-	return resp.ExpiresAt, nil
+	var started struct {
+		ExpiresAt int64 `json:"expires_at,omitempty"`
+	}
+	if err := resp.DecodeJSON(&started); err != nil {
+		return 0, utils.ExternalAPIError("Terminal Trainer", "decode response", err)
+	}
+	return started.ExpiresAt, nil
 }
 
 // deleteSessionInAPI appelle DELETE /sessions/{id} sur tt-backend.

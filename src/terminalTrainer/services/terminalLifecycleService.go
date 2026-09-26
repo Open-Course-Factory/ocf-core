@@ -2,6 +2,7 @@ package services
 
 import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -192,6 +193,9 @@ func resolvePlanExpirySeconds(plan *paymentModels.SubscriptionPlan) int {
 // (bug observé avec MaxSessionDurationMinutes=1: création 60s OK, reprise 1h).
 // Si SubscriptionPlanID est nil (ancien terminal créé avant que le champ
 // existe), on n'envoie pas d'expiry et tt-backend utilise son défaut.
+//
+// Si tt-backend ne connaît plus le conteneur, la ligne passe à StateDeleted et
+// l'erreur porte ErrContainerGone.
 func (l *terminalLifecycleService) StartSession(sessionID string) error {
 	utils.Debug("StartSession called for session %s", sessionID)
 
@@ -215,6 +219,14 @@ func (l *terminalLifecycleService) StartSession(sessionID string) error {
 	}
 
 	expiresAtUnix, err := l.proxy.startSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey, expirySeconds)
+	if errors.Is(err, ErrContainerGone) {
+		// La ligne disait « arrêté » mais il n'y a plus rien à reprendre :
+		// elle le dit désormais, pour que personne ne retente.
+		terminal.State = models.StateDeleted
+		if updateErr := l.repository.UpdateTerminalSession(terminal); updateErr != nil {
+			utils.Error("Failed to mark session %s deleted after its container vanished: %v", sessionID, updateErr)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("failed to start session in Terminal Trainer API: %w", err)
 	}
