@@ -42,6 +42,7 @@ import (
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/entityManagement/swagger"
+	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
@@ -407,4 +408,91 @@ func TestFileRef_AdministratorMayReferenceAnyFile(t *testing.T) {
 	resp = sendJSON(t, router, http.MethodPatch, "/scenarios/"+w.scenarioA.ID.String(),
 		map[string]any{"setup_script_id": w.orphan.String()})
 	require.Equal(t, http.StatusNoContent, resp.Code, "body=%s", resp.Body.String())
+}
+
+// =============================================================================
+// A new scenario owns no file yet
+// =============================================================================
+//
+// POST /organizations/:id/scenarios and POST /groups/:groupId/scenarios write
+// the scenario directly, without the entity hooks. A scenario that does not
+// exist yet references nothing, so any file id sent to them is someone
+// else's file.
+
+// createRoutes returns the two create paths for scenario A's organisation,
+// with "a-manager" owning a class of it.
+func createRoutes(t *testing.T, db *gorm.DB, w *fileRefWorld) map[string]string {
+	t.Helper()
+	orgA := *w.scenarioA.OrganizationID
+	groupA := createTestGroupInOrg(t, db, orgA, "a-owner")
+	addGroupMember(t, db, groupA, "a-manager", groupModels.GroupMemberRoleOwner)
+	return map[string]string{
+		"org create":   "/organizations/" + orgA.String() + "/scenarios",
+		"group create": "/groups/" + groupA.String() + "/scenarios",
+	}
+}
+
+func countScenariosNamed(t *testing.T, db *gorm.DB, name string) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Model(&models.Scenario{}).Where("name = ?", name).Count(&n).Error)
+	return n
+}
+
+func TestScenarioFileRef_CreateWithAnExistingFile_Forbidden(t *testing.T) {
+	for _, field := range scenarioFileFields {
+		t.Run(field.json, func(t *testing.T) {
+			db := freshTestDB(t)
+			w := buildFileRefWorld(t, db)
+			routes := createRoutes(t, db, w)
+			router := setupOrgTestRouterWithUserAndRoles(t, db, "a-manager", []string{"member"})
+
+			for route, path := range routes {
+				resp := sendJSON(t, router, http.MethodPost, path, map[string]any{
+					"name":          "smuggler",
+					"title":         "Smuggler",
+					"instance_type": "ubuntu:22.04",
+					field.json:      w.foreign.String(),
+				})
+				assert.Equal(t, http.StatusForbidden, resp.Code,
+					"%s: a new scenario cannot point at org B's file; body=%s", route, resp.Body.String())
+				assert.Zero(t, countScenariosNamed(t, db, "smuggler"),
+					"%s: a refused create must write no scenario", route)
+			}
+		})
+	}
+}
+
+func TestScenarioFileRef_CreateWithoutFiles_Allowed(t *testing.T) {
+	db := freshTestDB(t)
+	w := buildFileRefWorld(t, db)
+	routes := createRoutes(t, db, w)
+	router := setupOrgTestRouterWithUserAndRoles(t, db, "a-manager", []string{"member"})
+
+	for route, path := range routes {
+		resp := sendJSON(t, router, http.MethodPost, path, map[string]any{
+			"name":          "blank-" + route,
+			"title":         "Blank",
+			"instance_type": "ubuntu:22.04",
+		})
+		assert.Equal(t, http.StatusCreated, resp.Code, "%s: body=%s", route, resp.Body.String())
+	}
+}
+
+func TestScenarioFileRef_CreateAsAdministratorWithAnyFile_Allowed(t *testing.T) {
+	db := freshTestDB(t)
+	w := buildFileRefWorld(t, db)
+	routes := createRoutes(t, db, w)
+	router := setupOrgTestRouterWithUserAndRoles(t, db, "platform-admin", []string{"administrator"})
+
+	for route, path := range routes {
+		resp := sendJSON(t, router, http.MethodPost, path, map[string]any{
+			"name":            "admin-" + route,
+			"title":           "Admin",
+			"instance_type":   "ubuntu:22.04",
+			"setup_script_id": w.foreign.String(),
+		})
+		assert.Equal(t, http.StatusCreated, resp.Code,
+			"%s: administrators are not bound by the file rule; body=%s", route, resp.Body.String())
+	}
 }
