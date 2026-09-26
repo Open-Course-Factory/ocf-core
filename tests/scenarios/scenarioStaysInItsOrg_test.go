@@ -92,6 +92,20 @@ func TestScenarioPatch_CreatorCannotMoveScenarioToAnotherOrg(t *testing.T) {
 	assertStillInOrg(t, db, scenario.ID, orgA)
 }
 
+func TestScenarioPatch_CreatorCannotMovePlatformScenarioIntoAnOrg(t *testing.T) {
+	db := freshTestDB(t)
+	orgA := createTestOrg(t, db, "org-a-owner")
+	addOrgMember(t, db, orgA, "test-creator", orgModels.OrgRoleManager)
+	// createTestScenarioNoOrg stamps CreatedByID "test-creator", who manages it.
+	scenario := createTestScenarioNoOrg(t, db, "platform-into-org")
+
+	router := setupArchiveRouter(t, db, "test-creator", []string{"member"})
+
+	w := patchScenarioJSON(t, router, scenario.ID, orgIDBody(t, map[string]any{"organization_id": orgA}))
+	assert.Equal(t, http.StatusForbidden, w.Code, "a platform scenario does not join an organisation either. Body: %s", w.Body.String())
+	assert.Nil(t, storedScenario(t, db, scenario.ID).OrganizationID, "the scenario must still be a platform scenario")
+}
+
 func TestScenarioPatch_NonAdminCannotTurnOrgScenarioIntoPlatformScenario(t *testing.T) {
 	db := freshTestDB(t)
 	orgA := createTestOrg(t, db, "org-a-owner")
@@ -128,7 +142,7 @@ func TestScenarioPatch_SameOrgOrNoOrgIsANormalEdit(t *testing.T) {
 		router := setupArchiveRouter(t, db, "org-a-manager", []string{"member"})
 
 		w := patchScenarioJSON(t, router, scenario.ID, orgIDBody(t, map[string]any{"organization_id": orgA, "title": "renamed"}))
-		require.Equal(t, http.StatusNoContent, w.Code, "the front sends the org back unchanged on every save. Body: %s", w.Body.String())
+		require.Equal(t, http.StatusNoContent, w.Code, "a client that sends the stored org back unchanged is making a normal edit. Body: %s", w.Body.String())
 		s := storedScenario(t, db, scenario.ID)
 		assert.Equal(t, "renamed", s.Title)
 		assertStillInOrg(t, db, scenario.ID, orgA)
