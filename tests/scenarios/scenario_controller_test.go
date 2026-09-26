@@ -17,6 +17,7 @@ import (
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"gorm.io/gorm"
 )
@@ -688,6 +689,68 @@ func TestGetMySessions_ReturnsOnlyCallersSessions(t *testing.T) {
 	assert.True(t, ids[sessionA.ID.String()], "A must see own session")
 	assert.False(t, ids[sessionB.ID.String()], "A must NOT see B's session (cross-user read)")
 	assert.Len(t, sessions, 1, "GetMySessions must return only the caller's sessions")
+}
+
+// myRun returns the fixture's run as GET /scenario-sessions/my reports it.
+func myRun(t *testing.T, f resumeFixture) map[string]any {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/scenario-sessions/my", nil)
+	setupMySessionsRouter(f.db, f.learnerID).ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var sessions []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &sessions))
+	for _, s := range sessions {
+		if s["id"] == f.run.ID.String() {
+			return s
+		}
+	}
+	t.Fatalf("the run is not in my sessions: %s", w.Body.String())
+	return nil
+}
+
+// "Start over" relaunches from this list. It must relaunch where the run
+// lives — the organization its terminal was filed under, whose trainers
+// supervise it and whose plan pays for it — not wherever the user's best plan
+// happens to be.
+func TestGetMySessions_ReportsTheRunsTerminalOrganization(t *testing.T) {
+	f := seedResumableRun(t, "my-sessions-terminal-org", resumeSeed{inOrg: true})
+	filedUnder := createTestOrg(t, f.db, "other-org-owner")
+	require.NoError(t, f.db.Model(&terminalModels.Terminal{}).Where("session_id = ?", f.oldTerminal).
+		Update("organization_id", filedUnder).Error)
+
+	assert.Equal(t, filedUnder.String(), myRun(t, f)["organization_id"],
+		"the run's terminal says which organization the run belongs to")
+}
+
+// A terminal filed under no organization leaves the scenario's own: a
+// scenario never leaves its org.
+func TestGetMySessions_OrganizationFallsBackToTheScenarios(t *testing.T) {
+	f := seedResumableRun(t, "my-sessions-scenario-org", resumeSeed{inOrg: true})
+	require.NoError(t, f.db.Model(&terminalModels.Terminal{}).Where("session_id = ?", f.oldTerminal).
+		Update("organization_id", nil).Error)
+
+	assert.Equal(t, f.orgID.String(), myRun(t, f)["organization_id"])
+}
+
+// "Start over" rebuilds the world in the language the run was played in.
+func TestGetMySessions_ReportsTheRunsLocale(t *testing.T) {
+	f := seedResumableRun(t, "my-sessions-locale", resumeSeed{})
+	require.NoError(t, f.db.Model(&models.ScenarioSession{}).Where("id = ?", f.run.ID).
+		Update("locale", "fr").Error)
+
+	assert.Equal(t, "fr", myRun(t, f)["locale"])
+}
+
+// A run started before locales existed — or in the scenario's own language —
+// has none to report.
+func TestGetMySessions_RunWithoutLocale_OmitsIt(t *testing.T) {
+	f := seedResumableRun(t, "my-sessions-no-locale", resumeSeed{})
+
+	run := myRun(t, f)
+	assert.NotContains(t, run, "locale")
+	assert.NotContains(t, run, "organization_id", "a public scenario on a personal terminal belongs to no organization")
 }
 
 func TestSeedScenario_WithOsType(t *testing.T) {
