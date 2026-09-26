@@ -538,8 +538,13 @@ func TestReleaseStalledReplays_ReturnsRunToRebuildable(t *testing.T) {
 	seedReplay := func(name, phase string, age time.Duration) models.ScenarioSession {
 		run, _ := seedOpenRunWithTerminal(t, db, "student-"+name, "terminal-"+name,
 			terminalModels.StateRunning, time.Hour, "ephemeral", "provisioning")
+		// A replay records the terminal it rebuilds from; a launch has none.
+		updates := map[string]any{"provisioning_phase": phase}
+		if phase == "replay" {
+			updates["rebuild_from_terminal_id"] = "old-terminal-" + name
+		}
 		require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", run.ID).
-			Updates(map[string]any{"provisioning_phase": phase}).Error)
+			Updates(updates).Error)
 		require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", run.ID).
 			Update("updated_at", time.Now().Add(-age)).Error)
 		return run
@@ -557,6 +562,10 @@ func TestReleaseStalledReplays_ReturnsRunToRebuildable(t *testing.T) {
 	require.NoError(t, db.First(&reloaded, "id = ?", stalled.ID).Error)
 	assert.Equal(t, "active", reloaded.Status, "a stalled replay goes back to an open run, not setup_failed")
 	assert.Equal(t, "", reloaded.ProvisioningPhase)
+	require.NotNil(t, reloaded.TerminalSessionID)
+	assert.Equal(t, "old-terminal-replay-stalled", *reloaded.TerminalSessionID,
+		"the run goes back to its old terminal id, never stays on the half-built one")
+	assert.Nil(t, reloaded.RebuildFromTerminalID)
 
 	assert.Equal(t, "provisioning", sessionStatus(t, db, recent.ID),
 		"a replay still inside its budget is not stalled")
@@ -568,9 +577,9 @@ func TestReleaseStalledReplays_ReturnsRunToRebuildable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "active", sessionStatus(t, db, stalled.ID))
 
-	// Once the cron has deleted the half-built terminal, the run is
-	// rebuildable again.
-	deleted := &terminalModels.Terminal{SessionID: "terminal-replay-stalled", State: terminalModels.StateDeleted}
+	// Its old terminal is gone (that is why it was being rebuilt), so the run
+	// is rebuildable again.
+	deleted := &terminalModels.Terminal{SessionID: "old-terminal-replay-stalled", State: terminalModels.StateDeleted}
 	require.NoError(t, db.First(&reloaded, "id = ?", stalled.ID).Error)
 	assert.Equal(t, services.ResumeModeRebuild, services.RunResumeMode(&reloaded, deleted, false))
 }
