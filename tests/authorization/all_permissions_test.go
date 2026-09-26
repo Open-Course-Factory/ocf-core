@@ -373,6 +373,7 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/scenario-sessions/:id/submit-flag", "POST"},
 		{"/api/v1/scenario-sessions/:id/abandon", "POST"},
 		{"/api/v1/scenario-sessions/:id/reprovision-step", "POST"},
+		{"/api/v1/scenario-sessions/:id/resume", "POST"},
 		// NEW: Missing session routes
 		{"/api/v1/scenario-sessions/available", "GET"},
 		{"/api/v1/scenario-sessions/:id/info", "GET"},
