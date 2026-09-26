@@ -319,3 +319,87 @@ func TestForeground_AsyncReprovision_AttachDuringRebuildTypesNothingEarly(t *tes
 	sessionSvc.DeliverPendingForeground("terminal-fg-reprovision-async")
 	assert.Len(t, verifySvc.consoleWrites, 1, "and a later attach does not type it again")
 }
+
+// A live foreground with nobody attached.
+//
+// An advance or a retry types the step's foreground straight into the open
+// console. When none is open, the demonstration is not lost: it is left pending
+// for the learner's next attach, exactly as a build leaves it.
+
+// openConsole models the learner opening their console after the live attempt
+// found none: writes succeed from here on, and the log starts empty, since the
+// attempt against a closed console typed nothing.
+func openConsole(verifySvc *bgTrackingVerificationService) {
+	verifySvc.consoleErr = nil
+	verifySvc.consoleWrites = nil
+}
+
+func TestForeground_AdvanceWithNoConsole_LeftPendingForNextAttach(t *testing.T) {
+	db := freshTestDB(t)
+	session := twoStepSession(t, db, "fg-advance-no-console", models.ScenarioStep{
+		ForegroundScript: "cd /opt && ls",
+	})
+	verifySvc := &bgTrackingVerificationService{consoleErr: services.ErrNoLiveConsole}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+	require.True(t, result.Passed)
+
+	pending := pendingForegroundOrder(t, db, session.ID)
+	require.NotNil(t, pending, "a foreground that found no console must wait for the learner's attach")
+	assert.Equal(t, 1, *pending)
+
+	openConsole(verifySvc)
+	sessionSvc.DeliverPendingForeground("terminal-fg-advance-no-console")
+
+	require.Len(t, verifySvc.consoleWrites, 1, "the learner's next attach types it once")
+	assert.Equal(t, "cd /opt && ls", verifySvc.consoleWrites[0].text)
+	assert.Nil(t, pendingForegroundOrder(t, db, session.ID))
+}
+
+// With a console open the advance types it there and then, and leaves nothing
+// behind for the next attach to type a second time.
+func TestForeground_AdvanceWithConsole_LeavesNothingPending(t *testing.T) {
+	db := freshTestDB(t)
+	session := twoStepSession(t, db, "fg-advance-console", models.ScenarioStep{
+		ForegroundScript: "cd /opt && ls",
+	})
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	_, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+	require.Len(t, verifySvc.consoleWrites, 1)
+	assert.Nil(t, pendingForegroundOrder(t, db, session.ID))
+
+	sessionSvc.DeliverPendingForeground("terminal-fg-advance-console")
+
+	assert.Len(t, verifySvc.consoleWrites, 1, "a foreground typed live is not typed again on attach")
+}
+
+func TestForeground_SyncReprovisionWithNoConsole_LeftPending(t *testing.T) {
+	db := freshTestDB(t)
+	session := twoStepSession(t, db, "fg-reprovision-no-console", models.ScenarioStep{
+		BackgroundScript: "mkdir -p /opt/lab",
+		ForegroundScript: "cd /opt/lab && ls",
+	})
+	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", session.ID).
+		Update("current_step", 1).Error)
+	verifySvc := &bgTrackingVerificationService{consoleErr: services.ErrNoLiveConsole}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.ReprovisionCurrentStep(session.ID, false)
+	require.NoError(t, err)
+	require.Equal(t, "active", result.Status)
+
+	pending := pendingForegroundOrder(t, db, session.ID)
+	require.NotNil(t, pending, "a retried foreground that found no console must wait for the learner's attach")
+	assert.Equal(t, 1, *pending)
+
+	openConsole(verifySvc)
+	sessionSvc.DeliverPendingForeground("terminal-fg-reprovision-no-console")
+
+	require.Len(t, verifySvc.consoleWrites, 1, "the learner's next attach types it once")
+	assert.Nil(t, pendingForegroundOrder(t, db, session.ID))
+}
