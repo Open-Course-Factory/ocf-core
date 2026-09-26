@@ -2596,6 +2596,16 @@ func findExistingSession(db *gorm.DB, userID string, scenarioID uuid.UUID) (*mod
 // resumeModeOf loads what RunResumeMode needs to judge one run — its terminal
 // and whether its scenario has crash traps — and applies it.
 func resumeModeOf(db *gorm.DB, session *models.ScenarioSession) (ResumeMode, error) {
+	var scenario models.Scenario
+	if err := db.Select("crash_traps").First(&scenario, "id = ?", session.ScenarioID).Error; err != nil {
+		return ResumeModeNone, fmt.Errorf("failed to read the run's scenario: %w", err)
+	}
+	return resumeModeGiven(db, session, scenario.CrashTraps), nil
+}
+
+// resumeModeGiven is resumeModeOf for a caller that already holds the
+// scenario's crash-traps flag: it loads only the run's terminal.
+func resumeModeGiven(db *gorm.DB, session *models.ScenarioSession, crashTraps bool) ResumeMode {
 	var terminal *terminalModels.Terminal
 	if session.TerminalSessionID != nil {
 		var t terminalModels.Terminal
@@ -2603,11 +2613,7 @@ func resumeModeOf(db *gorm.DB, session *models.ScenarioSession) (ResumeMode, err
 			terminal = &t
 		}
 	}
-	var scenario models.Scenario
-	if err := db.Select("crash_traps").First(&scenario, "id = ?", session.ScenarioID).Error; err != nil {
-		return ResumeModeNone, fmt.Errorf("failed to read the run's scenario: %w", err)
-	}
-	return RunResumeMode(session, terminal, scenario.CrashTraps), nil
+	return RunResumeMode(session, terminal, crashTraps)
 }
 
 // terminalsForSessions loads the terminals backing a set of sessions, keyed by
@@ -2710,6 +2716,12 @@ func (s *ScenarioSessionService) HasResumableRun(userID string, scenarioID uuid.
 // ResumeModeOf reports how the given run can be resumed.
 func (s *ScenarioSessionService) ResumeModeOf(session *models.ScenarioSession) (ResumeMode, error) {
 	return resumeModeOf(s.db, session)
+}
+
+// ResumeModeGiven reports how the given run can be resumed, for a caller that
+// already holds its scenario's crash-traps flag.
+func (s *ScenarioSessionService) ResumeModeGiven(session *models.ScenarioSession, crashTraps bool) ResumeMode {
+	return resumeModeGiven(s.db, session, crashTraps)
 }
 
 // ResumableRun is a run the learner can resume, and how.

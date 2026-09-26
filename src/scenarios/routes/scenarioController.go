@@ -134,6 +134,7 @@ func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) d
 	// the scenario, so a French session opened with an English welcome.
 	var scenario models.Scenario
 	if err := sc.db.First(&scenario, "id = ?", session.ScenarioID).Error; err == nil {
+		response.ResumeMode = string(sc.sessionService.ResumeModeGiven(session, scenario.CrashTraps))
 		prose := services.ResolveScenarioText(sc.db, scenario, session.Locale)
 		response.ScenarioText = &dto.SessionScenarioText{
 			Title:       prose.Title,

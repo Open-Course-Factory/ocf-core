@@ -20,9 +20,12 @@ type SessionResponse struct {
 	// only while Status is "provisioning". A client that polls this endpoint
 	// after a reload never saw the advance response, so it needs the ceiling
 	// from here to know when to stop waiting.
-	ProvisioningTimeoutSeconds int       `json:"provisioning_timeout_seconds,omitempty"`
-	Grade                      *float64  `json:"grade,omitempty"`
-	StartedAt                  time.Time `json:"started_at"`
+	ProvisioningTimeoutSeconds int `json:"provisioning_timeout_seconds,omitempty"`
+	// ResumeMode says how the run is resumed, with the same values as
+	// MySessionResponse.ResumeMode; empty when it cannot be.
+	ResumeMode string    `json:"resume_mode,omitempty"`
+	Grade      *float64  `json:"grade,omitempty"`
+	StartedAt  time.Time `json:"started_at"`
 	// ScenarioText is the scenario's own prose in the language this session was
 	// started in. Served from here rather than left to the client to fetch,
 	// because the session is what knows the locale — a client asking the plain
