@@ -278,15 +278,9 @@ func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 		OrganizationID:   &orgID,
 		IsPublic:         input.IsPublic,
 		SetupScript:      input.SetupScript,
-		SetupScriptID:    input.SetupScriptID,
-		IntroFileID:      input.IntroFileID,
-		FinishFileID:     input.FinishFileID,
+		// No SetupScriptID / IntroFileID / FinishFileID: a scenario that does
+		// not exist yet owns no file, so any id sent here is someone else's.
 		CreatedByID:      userID,
-	}
-
-	if err := scenarioHooks.RefuseFileRefsOnNewScenario(scenario, ctx.GetStringSlice("userRoles")); err != nil {
-		errors.Respond(ctx, http.StatusForbidden, err.Error())
-		return
 	}
 
 	if err := sc.db.Create(scenario).Error; err != nil {
@@ -372,15 +366,9 @@ func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 		OrganizationID:   group.OrganizationID,
 		IsPublic:         input.IsPublic,
 		SetupScript:      input.SetupScript,
-		SetupScriptID:    input.SetupScriptID,
-		IntroFileID:      input.IntroFileID,
-		FinishFileID:     input.FinishFileID,
+		// No SetupScriptID / IntroFileID / FinishFileID: a scenario that does
+		// not exist yet owns no file, so any id sent here is someone else's.
 		CreatedByID:      userID,
-	}
-
-	if err := scenarioHooks.RefuseFileRefsOnNewScenario(scenario, ctx.GetStringSlice("userRoles")); err != nil {
-		errors.Respond(ctx, http.StatusForbidden, err.Error())
-		return
 	}
 
 	if err := sc.db.Create(scenario).Error; err != nil {

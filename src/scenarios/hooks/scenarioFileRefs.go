@@ -2,11 +2,8 @@ package scenarioHooks
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 
-	"soli/formations/src/auth/access"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/utils"
 
@@ -14,24 +11,38 @@ import (
 	"gorm.io/gorm"
 )
 
+// fileRef is one file-id column of M and the getter of its field.
+type fileRef[M any] struct {
+	column string
+	get    func(*M) *uuid.UUID
+}
+
 // The file-id columns of a step and of a scenario. Each id is a read of the
 // file behind it: the session engine runs it and the export returns it.
 var (
-	stepFileRefs = map[string]func(*models.ScenarioStep) *uuid.UUID{
-		"verify_script_id":     func(s *models.ScenarioStep) *uuid.UUID { return s.VerifyScriptID },
-		"background_script_id": func(s *models.ScenarioStep) *uuid.UUID { return s.BackgroundScriptID },
-		"foreground_script_id": func(s *models.ScenarioStep) *uuid.UUID { return s.ForegroundScriptID },
-		"text_file_id":         func(s *models.ScenarioStep) *uuid.UUID { return s.TextFileID },
-		"hint_file_id":         func(s *models.ScenarioStep) *uuid.UUID { return s.HintFileID },
+	stepFileRefs = []fileRef[models.ScenarioStep]{
+		{"verify_script_id", func(s *models.ScenarioStep) *uuid.UUID { return s.VerifyScriptID }},
+		{"background_script_id", func(s *models.ScenarioStep) *uuid.UUID { return s.BackgroundScriptID }},
+		{"foreground_script_id", func(s *models.ScenarioStep) *uuid.UUID { return s.ForegroundScriptID }},
+		{"text_file_id", func(s *models.ScenarioStep) *uuid.UUID { return s.TextFileID }},
+		{"hint_file_id", func(s *models.ScenarioStep) *uuid.UUID { return s.HintFileID }},
 	}
-	scenarioFileRefs = map[string]func(*models.Scenario) *uuid.UUID{
-		"setup_script_id": func(s *models.Scenario) *uuid.UUID { return s.SetupScriptID },
-		"intro_file_id":   func(s *models.Scenario) *uuid.UUID { return s.IntroFileID },
-		"finish_file_id":  func(s *models.Scenario) *uuid.UUID { return s.FinishFileID },
+	scenarioFileRefs = []fileRef[models.Scenario]{
+		{"setup_script_id", func(s *models.Scenario) *uuid.UUID { return s.SetupScriptID }},
+		{"intro_file_id", func(s *models.Scenario) *uuid.UUID { return s.IntroFileID }},
+		{"finish_file_id", func(s *models.Scenario) *uuid.UUID { return s.FinishFileID }},
 	}
-	stepFileColumns     = strings.Join(slices.Collect(maps.Keys(stepFileRefs)), ", ")
-	scenarioFileColumns = strings.Join(slices.Collect(maps.Keys(scenarioFileRefs)), ", ")
+	stepFileColumns     = columnList(stepFileRefs)
+	scenarioFileColumns = columnList(scenarioFileRefs)
 )
+
+func columnList[M any](refs []fileRef[M]) string {
+	columns := make([]string, len(refs))
+	for i, ref := range refs {
+		columns[i] = ref.column
+	}
+	return strings.Join(columns, ", ")
+}
 
 // refuseForeignFileRefs enforces that a scenario only references its own
 // files (#516). Every file id the write sets must be unchanged from old, or
@@ -39,13 +50,13 @@ var (
 // scenario by ProjectFile.ScenarioID. newEntity is the created model or the
 // PATCH map; old is nil on create. Importer, seed and duplicate write ids
 // without the entity hooks and are not subject to this.
-func refuseForeignFileRefs[M any](db *gorm.DB, scenarioID uuid.UUID, fields map[string]func(*M) *uuid.UUID, newEntity any, old *M) error {
-	for column, get := range fields {
-		id, set, err := fileRefOf(newEntity, column, get)
+func refuseForeignFileRefs[M any](db *gorm.DB, scenarioID uuid.UUID, refs []fileRef[M], newEntity any, old *M) error {
+	for _, ref := range refs {
+		id, set, err := fileRefOf(newEntity, ref)
 		if err != nil {
 			return err
 		}
-		if !set || old != nil && get(old) != nil && *get(old) == id {
+		if !set || old != nil && ref.get(old) != nil && *ref.get(old) == id {
 			continue
 		}
 		var owned int64
@@ -58,54 +69,34 @@ func refuseForeignFileRefs[M any](db *gorm.DB, scenarioID uuid.UUID, fields map[
 					Where("scenario_id = ? AND ? IN ("+stepFileColumns+")", scenarioID, id))).
 			Count(&owned).Error
 		if err != nil {
-			return fmt.Errorf("check %s: %w", column, err)
+			return fmt.Errorf("check %s: %w", ref.column, err)
 		}
 		if owned == 0 {
-			return foreignFileRefError(column)
+			return utils.PermissionDeniedError("set "+ref.column+" to a file outside", "scenario")
 		}
 	}
 	return nil
 }
 
-// fileRefOf reads one file id from the created model or the PATCH map.
-func fileRefOf[M any](newEntity any, column string, get func(*M) *uuid.UUID) (uuid.UUID, bool, error) {
+// fileRefOf reads one file id from the created model or the PATCH map. The
+// DtoToMap converters put uuid.UUID values in the map; any other type is
+// refused rather than skipped.
+func fileRefOf[M any](newEntity any, ref fileRef[M]) (uuid.UUID, bool, error) {
 	switch e := newEntity.(type) {
 	case *M:
-		if id := get(e); id != nil {
+		if id := ref.get(e); id != nil {
 			return *id, true, nil
 		}
 	case map[string]any:
-		switch v := e[column].(type) {
+		switch v := e[ref.column].(type) {
 		case uuid.UUID:
 			return v, true, nil
-		case string:
-			id, err := uuid.Parse(v)
-			return id, err == nil, err
 		case nil:
 		default:
-			return uuid.Nil, false, fmt.Errorf("%s: unexpected %T", column, v)
+			return uuid.Nil, false, fmt.Errorf("%s: unexpected %T", ref.column, v)
 		}
 	default:
 		return uuid.Nil, false, fmt.Errorf("unexpected %T for a file reference", newEntity)
 	}
 	return uuid.Nil, false, nil
-}
-
-// RefuseFileRefsOnNewScenario refuses any file id on a scenario a
-// non-administrator creates: a scenario that does not exist yet owns no file,
-// so the id can only be someone else's.
-func RefuseFileRefsOnNewScenario(scenario *models.Scenario, roles []string) error {
-	if access.IsAdmin(roles) {
-		return nil
-	}
-	for column, get := range scenarioFileRefs {
-		if get(scenario) != nil {
-			return foreignFileRefError(column)
-		}
-	}
-	return nil
-}
-
-func foreignFileRefError(column string) error {
-	return utils.PermissionDeniedError("set "+column+" to a file outside", "scenario")
 }

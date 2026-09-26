@@ -27,11 +27,15 @@ func TestFileRefColumns_ListEveryFileIdField(t *testing.T) {
 	})
 }
 
-func assertListsEveryFileRef[M any](t *testing.T, model *M, listed map[string]func(*M) *uuid.UUID) {
+func assertListsEveryFileRef[M any](t *testing.T, model *M, refs []fileRef[M]) {
 	t.Helper()
 	s, err := schema.Parse(model, &sync.Map{}, schema.NamingStrategy{})
 	require.NoError(t, err)
 
+	listed := map[string]func(*M) *uuid.UUID{}
+	for _, ref := range refs {
+		listed[ref.column] = ref.get
+	}
 	uuidPtr := reflect.TypeOf((*uuid.UUID)(nil))
 	typ := reflect.TypeOf(model).Elem()
 	found := 0
@@ -56,5 +60,5 @@ func assertListsEveryFileRef[M any](t *testing.T, model *M, listed map[string]fu
 			assert.Equal(t, id, *got, "the getter for %s does not read %s", field.DBName, f.Name)
 		}
 	}
-	assert.Equal(t, len(listed), found, "every listed column must match a file-id field")
+	assert.Equal(t, len(refs), found, "every listed column must match a file-id field")
 }
