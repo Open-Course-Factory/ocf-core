@@ -90,10 +90,7 @@ func startLifecycleTTServer(t *testing.T) (*httptest.Server, *recorder) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop"):
 			w.Header().Set("Content-Type", "application/json")
-			idle := time.Now().Add(24 * time.Hour).UTC()
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"idle_until": idle.Format(time.RFC3339),
-			})
+			_, _ = w.Write([]byte(ttStoppedBody(time.Now().Add(24 * time.Hour))))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/start"):
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "running"})

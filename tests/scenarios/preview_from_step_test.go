@@ -166,7 +166,8 @@ func newPreviewTTBackend(t *testing.T) *previewTTBackend {
 			tt.mu.Lock()
 			tt.stopped = append(tt.stopped, id)
 			tt.mu.Unlock()
-			_, _ = w.Write([]byte(`{}`))
+			// tt-backend's persistent stop answer: idle_until in unix seconds.
+			_ = json.NewEncoder(w).Encode(map[string]any{"state": "stopped", "idle_until": time.Now().Add(time.Hour).Unix()})
 		default:
 			forward.ServeHTTP(w, r)
 		}

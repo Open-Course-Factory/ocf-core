@@ -210,7 +210,7 @@ func TestStopThenSync_EphemeralTerminalStaysDeletedAndItsRunIsRebuilt(t *testing
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"idle_until": idleUntil.UTC().Format(time.RFC3339)})
+			_, _ = w.Write([]byte(ttDeletedBody))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sessions"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"sessions": []map[string]any{{
