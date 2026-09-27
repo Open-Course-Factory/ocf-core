@@ -321,7 +321,9 @@ func TestSyncUserSessions_RevokedRowInItsExpirySecondStaysRevoked(t *testing.T) 
 // DELETE whenever tt still lists the container as live (status 0), or the
 // orphan runs unseen until tt's expiry and may hold the key's tt budget. A
 // session tt already reports expired or deleted is left alone: tt lists those
-// on every pass (include_expired), so deleting them again would be noise. A
+// on every pass (include_expired), so deleting them again would be noise. That
+// includes status 0 with state deleted, which tt answers when its final write
+// failed after the container was destroyed; a DELETE there only earns a 409. A
 // retry tt refuses is not the pass's failure: the row stays buried and the
 // next pass tries again.
 func TestSyncUserSessions_TombstoneRetriesTheTTDeleteOnlyWhileTheContainerIsLive(t *testing.T) {
@@ -338,6 +340,7 @@ func TestSyncUserSessions_TombstoneRetriesTheTTDeleteOnlyWhileTheContainerIsLive
 		{"running", 0, "running", true, false},
 		{"stopped", 0, "stopped", true, false},
 		{"retry refused by tt", 0, "running", true, true},
+		{"status 0 but state deleted", 0, "deleted", false, false},
 		{"deleted", 4, "deleted", false, false},
 		{"clock-expired", 1, "running", false, false},
 	} {
