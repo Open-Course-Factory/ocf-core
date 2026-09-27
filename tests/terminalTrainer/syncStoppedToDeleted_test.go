@@ -283,10 +283,11 @@ func TestSyncUserSessions_ClockExpiredRunningRowStaysRunning(t *testing.T) {
 }
 
 // A revoked row whose tt expiry falls in the current second: tt still answers
-// status 0 (it compares whole seconds), so the sync's expiry check sets the row
-// to deleted before the stopped report is read. That intermediate deleted must
-// not let markSessionStopped hand the revoked user a resumable session back.
-func TestSyncUserSessions_RevokedRowInItsExpirySecondNotStopped(t *testing.T) {
+// status 0 (it compares whole seconds), so the sync's expiry check fires before
+// the stopped report is read. Revoked is authoritative: the expiry check must
+// not relabel it as expired, and markSessionStopped must not hand the revoked
+// user a resumable session back.
+func TestSyncUserSessions_RevokedRowInItsExpirySecondStaysRevoked(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -307,9 +308,10 @@ func TestSyncUserSessions_RevokedRowInItsExpirySecondNotStopped(t *testing.T) {
 
 	var reloaded models.Terminal
 	require.NoError(t, sharedTestDB.Where("session_id = ?", sessionID).First(&reloaded).Error)
-	assert.NotEqual(t, models.StateStopped, reloaded.State,
-		"a revoked row must never come back as stopped: that is a resumable "+
-			"session holding budget for a revoked user")
+	assert.Equal(t, models.StateRevoked, reloaded.State,
+		"a revoked row stays revoked: stopped would be a resumable session "+
+			"holding budget for a revoked user, deleted would relabel a "+
+			"billing revocation as a plain expiry")
 }
 
 // Marking a row deleted does not prove tt destroyed its container: DeleteSession
