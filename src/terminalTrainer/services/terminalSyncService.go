@@ -239,14 +239,23 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 			// reste pleinement autoritaire : sa sémantique billing et sa copy
 			// UI ne doivent pas être remplacées par un banal "expiré".
 			//
+			// deleted est une pierre tombale : aucune passe de sync ne la
+			// ramène à running ni à stopped. DeleteSession (et StopSession pour
+			// un terminal éphémère) marque la ligne deleted même quand l'appel
+			// tt-backend échoue, pour libérer le slot — la ressusciter
+			// reprendrait ce slot et ferait passer le run pour une pause.
+			//
 			// L'autorité s'évalue CONTRE LA CIBLE : deux écritures se suivent
 			// (état dérivé du status legacy ci-dessous, puis lifecycle state
 			// plus bas) et peuvent diverger sur une réponse incohérente — un
 			// prédicat précalculé sur une seule des deux cibles laisserait la
-			// seconde écriture passer outre la garde.
+			// seconde écriture passer outre la garde. Elle s'évalue aussi
+			// DEPUIS l'état d'origine (previousState) : la première écriture
+			// fait passer un stopped légitime (status legacy ≠ 0) en deleted,
+			// que markSessionStopped restaure ensuite en stopped.
 			stateChangeAllowed := func(target models.TerminalState) bool {
-				switch localSession.State {
-				case models.StateRevoked:
+				switch previousState {
+				case models.StateRevoked, models.StateDeleted:
 					return false
 				case models.StateStopped:
 					return target == models.StateDeleted
@@ -303,15 +312,16 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 			// l'utilisateur perdrait la capacité réservée d'un coup, alors
 			// que le conteneur est toujours résumable côté tt-backend.
 			//
-			// Garde SPÉCIFIQUE à StateRevoked (et non le prédicat
-			// localStateIsAuthoritative complet) : la révocation billing laisse
+			// Garde SPÉCIFIQUE à StateRevoked et à la pierre tombale
+			// StateDeleted (et non le prédicat stateChangeAllowed complet,
+			// qui bloquerait aussi stopped) : la révocation billing laisse
 			// le conteneur vivant, donc son reaper idle finit par le rapporter
 			// "stopped" — sans cette garde, markSessionStopped ressusciterait la
 			// ligne révoquée en stopped (resumable + ré-occupe le budget),
 			// rendant sa session à un utilisateur révoqué. StateStopped, lui,
 			// DOIT continuer à passer par markSessionStopped pour rafraîchir sa
 			// deadline idle (fenêtre de reprise), d'où la garde ciblée.
-			if apiSession.State == models.StateStopped && localSession.State != models.StateRevoked {
+			if apiSession.State == models.StateStopped && localSession.State != models.StateRevoked && previousState != models.StateDeleted {
 				var idleUntilPtr *time.Time
 				if apiSession.IdleUntil > 0 {
 					t := time.Unix(apiSession.IdleUntil, 0).Local()
