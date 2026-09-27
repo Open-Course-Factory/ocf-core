@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,17 +30,13 @@ import (
 	services "soli/formations/src/terminalTrainer/services"
 )
 
-// ttServerReportingState fakes tt-backend listing one session in the given
-// lifecycle state.
-func ttServerReportingState(t *testing.T, sessionID, state string) *httptest.Server {
+// ttServerReportingState fakes tt-backend listing one session with the given
+// legacy status and lifecycle state. The sync reads BOTH signals, so callers
+// pass a pair tt-backend really produces. A non-zero status is past its expiry.
+func ttServerReportingState(t *testing.T, sessionID, state string, status int) *httptest.Server {
 	t.Helper()
-	// Keep the legacy numeric status coherent with the lifecycle state —
-	// the sync reads BOTH signals, and an incoherent pair would test a
-	// response tt-backend never produces.
-	status := 0 // active
 	expiresAt := time.Now().Add(time.Hour).Unix()
-	if state == "deleted" {
-		status = 4
+	if status != 0 {
 		expiresAt = time.Now().Add(-time.Hour).Unix()
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,20 +62,18 @@ func ttServerReportingState(t *testing.T, sessionID, state string) *httptest.Ser
 	}))
 }
 
-func seedStoppedTerminal(t *testing.T, sessionID, userID string) {
+func seedSyncTerminal(t *testing.T, sessionID, userID string, state models.TerminalState, expiresAt time.Time) {
 	t.Helper()
 	userKey, err := createTestUserKey(sharedTestDB, userID)
 	require.NoError(t, err)
-	idleUntil := time.Now().Add(-16 * 24 * time.Hour) // long overdue
 	require.NoError(t, sharedTestDB.Create(&models.Terminal{
 		SessionID:         sessionID,
 		UserID:            userID,
-		Name:              "Deadlocked Terminal",
-		State:             models.StateStopped,
+		Name:              "Sync Terminal",
+		State:             state,
 		PersistenceMode:   "ephemeral",
-		ExpiresAt:         time.Now().Add(-17 * 24 * time.Hour),
+		ExpiresAt:         expiresAt,
 		MachineSize:       "S",
-		IdleUntil:         &idleUntil,
 		UserTerminalKeyID: userKey.ID,
 	}).Error)
 }
@@ -92,11 +87,11 @@ func TestSyncUserSessions_StoppedRowAdoptsTerminalDeletion(t *testing.T) {
 	sessionID := "sync-dead-" + uuid.New().String()
 	userID := "sync-dead-user-" + uuid.New().String()
 
-	srv := ttServerReportingState(t, sessionID, "deleted")
+	srv := ttServerReportingState(t, sessionID, "deleted", 4)
 	defer srv.Close()
 	configureTTServer(t, srv.URL)
 
-	seedStoppedTerminal(t, sessionID, userID)
+	seedSyncTerminal(t, sessionID, userID, models.StateStopped, time.Now().Add(-17*24*time.Hour))
 
 	svc := services.NewTerminalTrainerService(sharedTestDB)
 	_, err := svc.SyncUserSessions(userID)
@@ -119,11 +114,11 @@ func TestSyncUserSessions_StoppedRowStillIgnoresRunningFlap(t *testing.T) {
 	sessionID := "sync-flap-" + uuid.New().String()
 	userID := "sync-flap-user-" + uuid.New().String()
 
-	srv := ttServerReportingState(t, sessionID, "running")
+	srv := ttServerReportingState(t, sessionID, "running", 0)
 	defer srv.Close()
 	configureTTServer(t, srv.URL)
 
-	seedStoppedTerminal(t, sessionID, userID)
+	seedSyncTerminal(t, sessionID, userID, models.StateStopped, time.Now().Add(-17*24*time.Hour))
 
 	svc := services.NewTerminalTrainerService(sharedTestDB)
 	_, err := svc.SyncUserSessions(userID)
@@ -143,22 +138,6 @@ func TestSyncUserSessions_StoppedRowStillIgnoresRunningFlap(t *testing.T) {
 // back to 'stopped' through markSessionStopped, so it held budget again and
 // its scenario run read as paused instead of rebuilt.
 
-func seedDeletedTerminal(t *testing.T, sessionID, userID string) {
-	t.Helper()
-	userKey, err := createTestUserKey(sharedTestDB, userID)
-	require.NoError(t, err)
-	require.NoError(t, sharedTestDB.Create(&models.Terminal{
-		SessionID:         sessionID,
-		UserID:            userID,
-		Name:              "Tombstone Terminal",
-		State:             models.StateDeleted,
-		PersistenceMode:   "ephemeral",
-		ExpiresAt:         time.Now().Add(time.Hour),
-		MachineSize:       "S",
-		UserTerminalKeyID: userKey.ID,
-	}).Error)
-}
-
 func TestSyncUserSessions_DeletedRowIgnoresStoppedReport(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -173,7 +152,7 @@ func TestSyncUserSessions_DeletedRowIgnoresStoppedReport(t *testing.T) {
 	defer srv.Close()
 	configureTTServer(t, srv.URL)
 
-	seedDeletedTerminal(t, sessionID, userID)
+	seedSyncTerminal(t, sessionID, userID, models.StateDeleted, time.Now().Add(time.Hour))
 
 	_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
 	require.NoError(t, err)
@@ -194,11 +173,11 @@ func TestSyncUserSessions_DeletedRowIgnoresRunningReport(t *testing.T) {
 	sessionID := "sync-tomb-running-" + uuid.New().String()
 	userID := "sync-tomb-running-user-" + uuid.New().String()
 
-	srv := ttServerReportingState(t, sessionID, "running")
+	srv := ttServerReportingState(t, sessionID, "running", 0)
 	defer srv.Close()
 	configureTTServer(t, srv.URL)
 
-	seedDeletedTerminal(t, sessionID, userID)
+	seedSyncTerminal(t, sessionID, userID, models.StateDeleted, time.Now().Add(time.Hour))
 
 	_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
 	require.NoError(t, err)
@@ -269,4 +248,151 @@ func TestStopThenSync_EphemeralTerminalStaysDeletedAndItsRunIsRebuilt(t *testing
 	run := &scenarioModels.ScenarioSession{Status: "active", TerminalSessionID: &terminal.SessionID}
 	assert.Equal(t, scenarioServices.ResumeModeRebuild, scenarioServices.RunResumeMode(run, &reloaded, false),
 		"a normal run whose ephemeral terminal was stopped is rebuilt, not paused")
+}
+
+// The status-derived write turns a running row past its expiry into deleted,
+// and the lifecycle state write then restores running. tt-backend answers that
+// pair (status 1, state running) for a clock-expired session its reaper has not
+// reached yet. The tombstone rule must judge the row as it was before the pass;
+// judged on the intermediate deleted, it would bury a live persistent session
+// and refuse the stopped report that follows its auto-stop, losing Resume.
+func TestSyncUserSessions_ClockExpiredRunningRowStaysRunning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	freshTestDB(t)
+
+	sessionID := "sync-clock-expired-" + uuid.New().String()
+	userID := "sync-clock-expired-user-" + uuid.New().String()
+
+	srv := ttServerReportingState(t, sessionID, "running", 1)
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	seedSyncTerminal(t, sessionID, userID, models.StateRunning, time.Now().Add(time.Hour))
+
+	_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
+	require.NoError(t, err)
+
+	var reloaded models.Terminal
+	require.NoError(t, sharedTestDB.Where("session_id = ?", sessionID).First(&reloaded).Error)
+	assert.Equal(t, models.StateRunning, reloaded.State,
+		"a running row tt reports as status 1 + state running stays running: "+
+			"the tombstone rule reads the state before the pass, not the "+
+			"intermediate deleted the status write left")
+}
+
+// A revoked row whose tt expiry falls in the current second: tt still answers
+// status 0 (it compares whole seconds), so the sync's expiry check sets the row
+// to deleted before the stopped report is read. That intermediate deleted must
+// not let markSessionStopped hand the revoked user a resumable session back.
+func TestSyncUserSessions_RevokedRowInItsExpirySecondNotStopped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	freshTestDB(t)
+
+	sessionID := "sync-revoked-expiry-" + uuid.New().String()
+	userID := "sync-revoked-expiry-user-" + uuid.New().String()
+
+	srv := syncSessionTTServer(t, sessionID, "stopped", "persistent",
+		time.Now().Unix(), time.Now().Add(24*time.Hour).Unix())
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	seedSyncTerminal(t, sessionID, userID, models.StateRevoked, time.Now().Add(time.Hour))
+
+	_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
+	require.NoError(t, err)
+
+	var reloaded models.Terminal
+	require.NoError(t, sharedTestDB.Where("session_id = ?", sessionID).First(&reloaded).Error)
+	assert.NotEqual(t, models.StateStopped, reloaded.State,
+		"a revoked row must never come back as stopped: that is a resumable "+
+			"session holding budget for a revoked user")
+}
+
+// Marking a row deleted does not prove tt destroyed its container: DeleteSession
+// and an ephemeral StopSession mark the tombstone even when the tt call fails.
+// The sync used to revive such a row, which by accident let the learner delete
+// it again. Now that a tombstone stays buried, the sync itself retries the tt
+// DELETE whenever tt still lists the container as live (status 0), or the
+// orphan runs unseen until tt's expiry and may hold the key's tt budget. A
+// session tt already reports expired or deleted is left alone: tt lists those
+// on every pass (include_expired), so deleting them again would be noise.
+func TestSyncUserSessions_TombstoneRetriesTheTTDeleteOnlyWhileTheContainerIsLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	for _, tc := range []struct {
+		name       string
+		status     int
+		state      string
+		wantDelete bool
+	}{
+		{"running", 0, "running", true},
+		{"stopped", 0, "stopped", true},
+		{"deleted", 4, "deleted", false},
+		{"clock-expired", 1, "running", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			freshTestDB(t)
+
+			sessionID := "sync-tomb-retry-" + uuid.New().String()
+			userID := "sync-tomb-retry-user-" + uuid.New().String()
+
+			var mu sync.Mutex
+			var deletes []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/sessions/"+sessionID):
+					mu.Lock()
+					deletes = append(deletes, sessionID)
+					mu.Unlock()
+					_, _ = w.Write([]byte(`{}`))
+				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sessions"):
+					expiresAt := time.Now().Add(time.Hour).Unix()
+					if tc.status != 0 {
+						expiresAt = time.Now().Add(-time.Hour).Unix()
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"sessions": []map[string]any{{
+							"id":         sessionID,
+							"session_id": sessionID,
+							"name":       "tst",
+							"status":     tc.status,
+							"expires_at": expiresAt,
+							"created_at": time.Now().Add(-2 * time.Hour).Unix(),
+							"state":      tc.state,
+						}},
+						"count": 1,
+					})
+				default:
+					http.Error(w, "unexpected request: "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+				}
+			}))
+			defer srv.Close()
+			configureTTServer(t, srv.URL)
+
+			seedSyncTerminal(t, sessionID, userID, models.StateDeleted, time.Now().Add(time.Hour))
+
+			_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
+			require.NoError(t, err)
+
+			var reloaded models.Terminal
+			require.NoError(t, sharedTestDB.Where("session_id = ?", sessionID).First(&reloaded).Error)
+			assert.Equal(t, models.StateDeleted, reloaded.State, "a tombstone stays deleted")
+
+			mu.Lock()
+			defer mu.Unlock()
+			if tc.wantDelete {
+				assert.Equal(t, []string{sessionID}, deletes,
+					"tt still lists the tombstone's container as live: the sync must retry the tt DELETE once")
+			} else {
+				assert.Empty(t, deletes,
+					"tt already reports the container expired or deleted: the sync must not delete it again")
+			}
+		})
+	}
 }
