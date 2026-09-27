@@ -321,21 +321,25 @@ func TestSyncUserSessions_RevokedRowInItsExpirySecondStaysRevoked(t *testing.T) 
 // DELETE whenever tt still lists the container as live (status 0), or the
 // orphan runs unseen until tt's expiry and may hold the key's tt budget. A
 // session tt already reports expired or deleted is left alone: tt lists those
-// on every pass (include_expired), so deleting them again would be noise.
+// on every pass (include_expired), so deleting them again would be noise. A
+// retry tt refuses is not the pass's failure: the row stays buried and the
+// next pass tries again.
 func TestSyncUserSessions_TombstoneRetriesTheTTDeleteOnlyWhileTheContainerIsLive(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
 	for _, tc := range []struct {
-		name       string
-		status     int
-		state      string
-		wantDelete bool
+		name        string
+		status      int
+		state       string
+		wantDelete  bool
+		deleteFails bool
 	}{
-		{"running", 0, "running", true},
-		{"stopped", 0, "stopped", true},
-		{"deleted", 4, "deleted", false},
-		{"clock-expired", 1, "running", false},
+		{"running", 0, "running", true, false},
+		{"stopped", 0, "stopped", true, false},
+		{"retry refused by tt", 0, "running", true, true},
+		{"deleted", 4, "deleted", false, false},
+		{"clock-expired", 1, "running", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			freshTestDB(t)
@@ -352,6 +356,10 @@ func TestSyncUserSessions_TombstoneRetriesTheTTDeleteOnlyWhileTheContainerIsLive
 					mu.Lock()
 					deletes = append(deletes, sessionID)
 					mu.Unlock()
+					if tc.deleteFails {
+						http.Error(w, `{"error":"backend unavailable"}`, http.StatusInternalServerError)
+						return
+					}
 					_, _ = w.Write([]byte(`{}`))
 				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sessions"):
 					expiresAt := time.Now().Add(time.Hour).Unix()
@@ -380,7 +388,7 @@ func TestSyncUserSessions_TombstoneRetriesTheTTDeleteOnlyWhileTheContainerIsLive
 			seedSyncTerminal(t, sessionID, userID, models.StateDeleted, time.Now().Add(time.Hour))
 
 			_, err := services.NewTerminalTrainerService(sharedTestDB).SyncUserSessions(userID)
-			require.NoError(t, err)
+			require.NoError(t, err, "a retry DELETE tt refuses does not fail the sync pass")
 
 			var reloaded models.Terminal
 			require.NoError(t, sharedTestDB.Where("session_id = ?", sessionID).First(&reloaded).Error)
