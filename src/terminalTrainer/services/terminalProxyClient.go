@@ -74,7 +74,8 @@ func (p *terminalProxyClient) buildAPIPath(endpoint string, instanceType string)
 }
 
 // stopSessionInAPI appelle POST /sessions/{id}/stop sur tt-backend.
-// Retourne idle_until si tt-backend en propose un.
+// Retourne idle_until (unix seconds côté tt-backend) pour un stop persistant ;
+// nil pour un stop éphémère, qui répond {"state":"deleted"} sans idle_until.
 func (p *terminalProxyClient) stopSessionInAPI(sessionID, userAPIKey string) (*time.Time, error) {
 	url := fmt.Sprintf("%s/%s/sessions/%s/stop", p.baseURL, p.apiVersion, sessionID)
 
@@ -84,12 +85,16 @@ func (p *terminalProxyClient) stopSessionInAPI(sessionID, userAPIKey string) (*t
 	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
 
 	var resp struct {
-		IdleUntil *time.Time `json:"idle_until,omitempty"`
+		IdleUntil int64 `json:"idle_until,omitempty"`
 	}
 	if err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, nil, &resp, opts); err != nil {
 		return nil, err
 	}
-	return resp.IdleUntil, nil
+	if resp.IdleUntil == 0 {
+		return nil, nil
+	}
+	idleUntil := time.Unix(resp.IdleUntil, 0).Local()
+	return &idleUntil, nil
 }
 
 // startSessionInAPI appelle POST /sessions/{id}/start sur tt-backend.
