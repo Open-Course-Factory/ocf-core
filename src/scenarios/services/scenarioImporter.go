@@ -124,6 +124,23 @@ type KillerCodaOCF struct {
 	// distribution's own, which is root: a scenario only names one when being
 	// root would defeat what it teaches, as it does for file permissions.
 	SessionUser      *int     `json:"session_user,omitempty"`
+	// Hostname is the name the learner's terminal gets (it shows in the shell
+	// prompt). Absent leaves the scenario's current hostname untouched, so a
+	// re-import of an older index.json does not wipe one set through the API.
+	Hostname *string `json:"hostname,omitempty"`
+}
+
+// hostnamePattern is an RFC 1123 host label: lowercase letters, digits and
+// hyphens, not starting or ending with a hyphen, at most 63 characters (the
+// column size and the DNS limit).
+var hostnamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// ValidateScenarioHostname checks a hostname declared in index.json.
+func ValidateScenarioHostname(hostname string) error {
+	if !hostnamePattern.MatchString(hostname) {
+		return fmt.Errorf("invalid hostname %q in extensions.ocf.hostname: use 1 to 63 lowercase letters, digits or hyphens, not starting or ending with a hyphen", hostname)
+	}
+	return nil
 }
 
 // KillerCodaAssets describes files to copy into the environment
@@ -194,7 +211,7 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 			oldFileIDs := collectProjectFileIDs(tx, existing.ID)
 
 			// Null out scenario-level FKs before deleting files
-			if err := tx.Model(&existing).Updates(map[string]any{
+			updates := map[string]any{
 				"title":           scenario.Title,
 				"description":     scenario.Description,
 				"difficulty":      scenario.Difficulty,
@@ -211,7 +228,12 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				"setup_script_id": nil,
 				"intro_file_id":   nil,
 				"finish_file_id":  nil,
-			}).Error; err != nil {
+			}
+			// Only a declared hostname replaces the current one (see KillerCodaOCF.Hostname).
+			if scenario.Hostname != "" {
+				updates["hostname"] = scenario.Hostname
+			}
+			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
 				return fmt.Errorf("failed to update scenario: %w", err)
 			}
 
@@ -334,7 +356,14 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	var compatibleInstanceTypes []models.ScenarioInstanceType
 	requiredFeatures := ""
 	buildFeatures := ""
+	hostname := ""
 	if index.Extensions != nil && index.Extensions.OCF != nil {
+		if index.Extensions.OCF.Hostname != nil {
+			hostname = *index.Extensions.OCF.Hostname
+			if err := ValidateScenarioHostname(hostname); err != nil {
+				return nil, err
+			}
+		}
 		flagsEnabled = index.Extensions.OCF.Flags
 		crashTraps = index.Extensions.OCF.CrashTraps
 		sessionUser = index.Extensions.OCF.SessionUser
@@ -394,6 +423,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		FlagSecret:     flagSecret,
 		CrashTraps:     crashTraps,
 		SessionUser:    sessionUser,
+		Hostname:       hostname,
 		IntroText:      introText,
 		FinishText:     finishText,
 		SetupScript:    setupScript,

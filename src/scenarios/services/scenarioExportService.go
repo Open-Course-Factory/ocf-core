@@ -355,15 +355,20 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 	}
 
 	if scenario.FlagsEnabled || scenario.CrashTraps ||
-		len(declaredImages) > 0 || len(requiredFeatures) > 0 {
-		index.Extensions = &KillerCodaExtensions{
-			OCF: &KillerCodaOCF{
-				Flags:                   scenario.FlagsEnabled,
-				CrashTraps:              scenario.CrashTraps,
-				CompatibleInstanceTypes: declaredImages,
-				RequiredFeatures:        requiredFeatures,
-			},
+		len(declaredImages) > 0 || len(requiredFeatures) > 0 || scenario.Hostname != "" {
+		ocf := &KillerCodaOCF{
+			Flags:                   scenario.FlagsEnabled,
+			CrashTraps:              scenario.CrashTraps,
+			CompatibleInstanceTypes: declaredImages,
+			RequiredFeatures:        requiredFeatures,
 		}
+		// Export the hostname so an exported archive re-imports with the same
+		// terminal name instead of falling back to the generated one.
+		if scenario.Hostname != "" {
+			hostname := scenario.Hostname
+			ocf.Hostname = &hostname
+		}
+		index.Extensions = &KillerCodaExtensions{OCF: ocf}
 	}
 
 	return index
