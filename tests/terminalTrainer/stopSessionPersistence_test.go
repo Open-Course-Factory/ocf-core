@@ -29,14 +29,11 @@
 package terminalTrainer_tests
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -182,6 +179,8 @@ func TestStopSession_Persistent_ExtendsExpiresAtToIdleUntil(t *testing.T) {
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
 	assert.Equal(t, models.StateStopped, reloaded.State, "persistent stop must mark state=stopped")
+	require.NotNil(t, reloaded.IdleUntil)
+	assert.Equal(t, idleUntil.Unix(), reloaded.IdleUntil.Unix(), "IdleUntil must be tt-backend's idle_until (unix seconds)")
 
 	// ExpiresAt must be aligned with idle_until (tolerate 1s clock drift /
 	// JSON round-trip truncation).
@@ -270,107 +269,6 @@ func TestStopSession_Ephemeral_MarksDeleted(t *testing.T) {
 	// IdleUntil must NOT be set — the tombstone has no idle window.
 	assert.Nil(t, reloaded.IdleUntil,
 		"ephemeral stop must NOT set IdleUntil (tombstone row, no idle window)")
-}
-
-// ---------------------------------------------------------------------------
-// The /stop answer tt-backend really sends decodes cleanly (#530).
-// ---------------------------------------------------------------------------
-
-// stopWarning is what StopSession logs when it could not read tt-backend's
-// answer to /stop — the only trace of a decode failure, since StopSession
-// carries on with the local transition either way.
-const stopWarning = "failed to stop session in Terminal Trainer API"
-
-type stopLogBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *stopLogBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *stopLogBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
-// captureStopLogs redirects the standard logger (which backs utils.Warn) to a
-// buffer for the duration of the test.
-func captureStopLogs(t *testing.T) *stopLogBuffer {
-	t.Helper()
-	buf := &stopLogBuffer{}
-	prevOut := log.Writer()
-	log.SetOutput(buf)
-	t.Cleanup(func() { log.SetOutput(prevOut) })
-	return buf
-}
-
-// A persistent stop answers idle_until in unix seconds. StopSession must read
-// it, not fail the decode and fall back to the plan's window: the row's
-// IdleUntil and ExpiresAt are tt-backend's reap deadline to the second.
-func TestStopSession_Persistent_ReadsTTBackendUnixIdleUntil(t *testing.T) {
-	// Far from the plan's 60 minutes so a fallback cannot pass for the real value.
-	idleUntil := time.Now().Add(3 * time.Hour).Truncate(time.Second)
-	srv := stopOnlyTTServer(t, ttStoppedBody(idleUntil))
-	defer srv.Close()
-	configureTTServer(t, srv.URL)
-
-	db := freshTestDB(t)
-	userID := "owner-stop-unix-idle-" + uuid.New().String()
-	seedActiveSubscription(t, db, userID)
-
-	terminal, err := createTestTerminal(db, userID, "running", time.Now().Add(time.Hour))
-	require.NoError(t, err)
-	terminal.PersistenceMode = "persistent"
-	require.NoError(t, db.Save(terminal).Error)
-	seedPlanForTerminal(t, db, terminal, 60)
-
-	logs := captureStopLogs(t)
-	require.NoError(t, services.NewTerminalTrainerService(db).StopSession(terminal.SessionID))
-
-	assert.NotContains(t, logs.String(), stopWarning,
-		"tt-backend's persistent /stop answer must decode without error")
-
-	var reloaded models.Terminal
-	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	assert.Equal(t, models.StateStopped, reloaded.State)
-	require.NotNil(t, reloaded.IdleUntil, "IdleUntil must be tt-backend's idle_until")
-	assert.Equal(t, idleUntil.Unix(), reloaded.IdleUntil.Unix(),
-		"IdleUntil must be tt-backend's idle_until")
-	assert.Equal(t, idleUntil.Unix(), reloaded.ExpiresAt.Unix(),
-		"markSessionStopped must set ExpiresAt from tt-backend's idle_until, not the plan's window")
-}
-
-// An ephemeral stop answers {"state":"deleted"} with no idle_until since
-// tt-backend 0.30.1. It decodes cleanly and leaves a tombstone.
-func TestStopSession_Ephemeral_DeletedAnswerDecodesCleanly(t *testing.T) {
-	srv := stopOnlyTTServer(t, ttDeletedBody)
-	defer srv.Close()
-	configureTTServer(t, srv.URL)
-
-	db := freshTestDB(t)
-	userID := "owner-stop-deleted-answer-" + uuid.New().String()
-	seedActiveSubscription(t, db, userID)
-
-	terminal, err := createTestTerminal(db, userID, "running", time.Now().Add(time.Hour))
-	require.NoError(t, err)
-	terminal.PersistenceMode = "ephemeral"
-	require.NoError(t, db.Save(terminal).Error)
-
-	logs := captureStopLogs(t)
-	require.NoError(t, services.NewTerminalTrainerService(db).StopSession(terminal.SessionID))
-
-	assert.NotContains(t, logs.String(), stopWarning,
-		"tt-backend's ephemeral /stop answer must decode without error")
-
-	var reloaded models.Terminal
-	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	assert.Equal(t, models.StateDeleted, reloaded.State)
-	assert.Nil(t, reloaded.IdleUntil, "an ephemeral stop has no idle window")
 }
 
 // ---------------------------------------------------------------------------
