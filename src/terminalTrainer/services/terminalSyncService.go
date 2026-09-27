@@ -244,6 +244,9 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 			// un terminal éphémère) marque la ligne deleted même quand l'appel
 			// tt-backend échoue, pour libérer le slot — la ressusciter
 			// reprendrait ce slot et ferait passer le run pour une pause.
+			// Comme la ligne n'est plus ressuscitée, c'est le sync qui rejoue
+			// le DELETE tt tant que tt liste encore le conteneur vivant
+			// (status 0) ; sinon l'orphelin tournerait jusqu'à son expiry tt.
 			//
 			// L'autorité s'évalue CONTRE LA CIBLE : deux écritures se suivent
 			// (état dérivé du status legacy ci-dessous, puis lifecycle state
@@ -267,6 +270,12 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 			utils.Debug("SyncUserSessions - Session %s: local='%s', api_status='%d' (target_state='%s')",
 				sessionID, localSession.State, apiSession.Status, apiStateName)
 
+			if previousState == models.StateDeleted && apiSession.Status == 0 {
+				if err := s.proxy.deleteSessionInAPI(sessionID, userKey.APIKey); err != nil {
+					utils.Warn("SyncUserSessions - retrying tt delete of tombstone %s failed: %v", sessionID, err)
+				}
+			}
+
 			// Vérifier si le state a changé.
 			if localSession.State != apiStateName && stateChangeAllowed(apiStateName) {
 				utils.Debug("SyncUserSessions - State mismatch for session %s: changing '%s' -> '%s'",
@@ -282,7 +291,7 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 			// Si tt-backend la voit encore StateRunning mais ExpiresAt est passé,
 			// le sync local doit la marquer comme effacée.
 			expiryTime := time.Unix(apiSession.ExpiresAt, 0)
-			if time.Now().After(expiryTime) && apiStateName == models.StateRunning {
+			if time.Now().After(expiryTime) && apiStateName == models.StateRunning && stateChangeAllowed(models.StateDeleted) {
 				utils.Debug("SyncUserSessions - Session %s expired by date, marking as deleted", sessionID)
 				localSession.State = models.StateDeleted
 				needsUpdate = true
@@ -321,7 +330,7 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 			// rendant sa session à un utilisateur révoqué. StateStopped, lui,
 			// DOIT continuer à passer par markSessionStopped pour rafraîchir sa
 			// deadline idle (fenêtre de reprise), d'où la garde ciblée.
-			if apiSession.State == models.StateStopped && localSession.State != models.StateRevoked && previousState != models.StateDeleted {
+			if apiSession.State == models.StateStopped && previousState != models.StateRevoked && previousState != models.StateDeleted {
 				var idleUntilPtr *time.Time
 				if apiSession.IdleUntil > 0 {
 					t := time.Unix(apiSession.IdleUntil, 0).Local()
