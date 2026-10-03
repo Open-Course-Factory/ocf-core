@@ -664,12 +664,12 @@ func (s *ScenarioSessionService) buildRunsScripts(job buildJob) bool {
 	if install, err := s.lexiconInstall(job.scenario.ID, job.locale); err != nil || install != "" {
 		return true
 	}
-	if ResolveScriptContent(s.db, job.scenario.SetupScriptID, job.scenario.SetupScript) != "" {
+	if job.scenario.SetupScript != "" {
 		return true
 	}
 	for i := range job.scenario.Steps {
 		step := &job.scenario.Steps[i]
-		if step.Order <= job.throughOrder && ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript) != "" {
+		if step.Order <= job.throughOrder && step.BackgroundScript != "" {
 			return true
 		}
 	}
@@ -691,7 +691,7 @@ func (s *ScenarioSessionService) runScenarioSetup(job buildJob) error {
 	if err != nil {
 		return fmt.Errorf("cannot build the world's vocabulary: %w", err)
 	}
-	setupScript := install + ResolveScriptContent(s.db, job.scenario.SetupScriptID, job.scenario.SetupScript)
+	setupScript := install + job.scenario.SetupScript
 	if setupScript == "" {
 		return nil
 	}
@@ -718,7 +718,7 @@ func (s *ScenarioSessionService) runScenarioSetup(job buildJob) error {
 func (s *ScenarioSessionService) buildStep(job buildJob, step *models.ScenarioStep) error {
 	current := step.Order == job.throughOrder
 
-	if ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript) != "" {
+	if step.BackgroundScript != "" {
 		if !s.heartbeat(job.sessionID, job.phase) {
 			return errBuildAbandoned
 		}
@@ -753,7 +753,7 @@ func (s *ScenarioSessionService) buildStep(job buildJob, step *models.ScenarioSt
 // leaveForegroundPending records that step's foreground script is waiting for
 // the learner's console. A step without one leaves nothing pending.
 func (s *ScenarioSessionService) leaveForegroundPending(sessionID uuid.UUID, step *models.ScenarioStep) {
-	if ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript) == "" {
+	if step.ForegroundScript == "" {
 		return
 	}
 	if err := s.db.Model(&models.ScenarioSession{}).Where("id = ?", sessionID).
@@ -828,13 +828,13 @@ func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSessi
 		return dto.StepProvisioningStatus{}
 	}
 
-	hasScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript) != ""
+	hasScript := step.BackgroundScript != ""
 	hasFlag := findFlagByStepOrder(session.Flags, nextStepOrder) != nil
 	// The foreground script counts as work too. Leaving it out of this check
 	// meant a step that declared only a foreground script fell out here and was
 	// never run at all — the one shape where it is the entire content of the
 	// step.
-	hasForeground := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript) != ""
+	hasForeground := step.ForegroundScript != ""
 	if !hasScript && !hasFlag && !hasForeground {
 		return dto.StepProvisioningStatus{}
 	}
@@ -1064,7 +1064,7 @@ func (s *ScenarioSessionService) runForegroundScript(sessionID uuid.UUID, termin
 		return
 	}
 
-	script := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript)
+	script := step.ForegroundScript
 	if script == "" {
 		return
 	}
@@ -1120,7 +1120,7 @@ func (s *ScenarioSessionService) DeliverPendingForeground(terminalSessionID stri
 		slog.Error("could not load the step of a pending foreground script", "session_id", session.ID, "step_order", order, "err", err)
 		return
 	}
-	script := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript)
+	script := step.ForegroundScript
 	if err := s.verificationService.WriteToConsole(terminalSessionID, script); err != nil {
 		// Put it back, guarded the same way, so the learner's next attach
 		// tries again instead of the demonstration being lost.
@@ -1334,12 +1334,11 @@ func (s *ScenarioSessionService) loadReprovisionableSession(sessionID uuid.UUID)
 	return &session, nil
 }
 
-// resolveRunnableStep returns a copy of the step carrying its background script
-// inline, optionally force-flagged. The copy is needed because
-// executeBackgroundScript re-reads the script from the ProjectFile whenever
-// BackgroundScriptID is set, which would discard the injected flag.
+// resolveRunnableStep returns a copy of the step carrying its background script,
+// optionally force-flagged. A copy, so the injected flag never leaks into the
+// session's loaded step.
 func (s *ScenarioSessionService) resolveRunnableStep(step *models.ScenarioStep, force bool) (*models.ScenarioStep, error) {
-	script := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
+	script := step.BackgroundScript
 	if script == "" {
 		return nil, fmt.Errorf("current step has no background script to run")
 	}
@@ -1348,7 +1347,6 @@ func (s *ScenarioSessionService) resolveRunnableStep(step *models.ScenarioStep, 
 	}
 
 	runnable := *step
-	runnable.BackgroundScriptID = nil
 	runnable.BackgroundScript = script
 	return &runnable, nil
 }
@@ -1613,9 +1611,6 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		// Info steps have no script — clicking "next" advances the session.
 		return s.completeInfoStep(&session)
 	}
-
-	// Pre-populate VerifyScript from ProjectFile (VerificationService doesn't have DB access)
-	currentStep.VerifyScript = ResolveScriptContent(s.db, currentStep.VerifyScriptID, currentStep.VerifyScript)
 
 	// Steps without a verify script auto-pass when the user clicks verify
 	var passed bool
@@ -2432,8 +2427,7 @@ func isInitialSetup(steps []models.ScenarioStep, step *models.ScenarioStep) bool
 // Large scripts are pushed as temp files via PushFile, then executed from disk
 // and cleaned up afterward, to avoid tt-backend's 4KB exec argument limit.
 func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, scenario *models.Scenario, step *models.ScenarioStep, env map[string]string) (string, error) {
-	// Resolve background script from ProjectFile if available
-	bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
+	bgScript := step.BackgroundScript
 	if bgScript == "" {
 		return "", nil
 	}

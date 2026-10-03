@@ -19,9 +19,8 @@ type StepText struct {
 
 // ResolveStepText assembles a step's prose for one locale.
 //
-// Two layers, in order: the step's own content — which may itself live in a
-// ProjectFile, hence ResolveScriptContent — and then the locale's translation
-// laid over it.
+// Two layers, in order: the step's own content, and then the locale's
+// translation laid over it.
 //
 // A field the translation leaves empty keeps the default. An empty column means
 // the field has not been translated yet, and treating it as an instruction to
@@ -34,8 +33,8 @@ type StepText struct {
 func ResolveStepText(db *gorm.DB, step models.ScenarioStep, locale string) StepText {
 	text := StepText{
 		Title: step.Title,
-		Text:  ResolveScriptContent(db, step.TextFileID, step.TextContent),
-		Hint:  ResolveScriptContent(db, step.HintFileID, step.HintContent),
+		Text:  step.TextContent,
+		Hint:  step.HintContent,
 	}
 	translation, ok := findStepTranslation(db, step.ID, locale)
 	if !ok {
@@ -108,8 +107,8 @@ func ResolveScenarioText(db *gorm.DB, scenario models.Scenario, locale string) S
 	prose := ScenarioProse{
 		Title:       scenario.Title,
 		Description: scenario.Description,
-		Intro:       ResolveScriptContent(db, scenario.IntroFileID, scenario.IntroText),
-		Finish:      ResolveScriptContent(db, scenario.FinishFileID, scenario.FinishText),
+		Intro:       scenario.IntroText,
+		Finish:      scenario.FinishText,
 	}
 	if locale == "" {
 		return prose

@@ -206,7 +206,7 @@ func stepHasAWayThrough(db *gorm.DB, step models.ScenarioStep) bool {
 		// Every flag step gets a flag to find.
 		return true
 	}
-	return step.VerifyScript != "" || step.VerifyScriptID != nil
+	return step.VerifyScript != ""
 }
 
 // coverageDetail says, in numbers, why a language is not offered.
