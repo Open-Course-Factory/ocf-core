@@ -1,9 +1,12 @@
 package models
 
 import (
+	"log"
+
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // ScenarioStep represents a single step within a scenario
@@ -73,4 +76,61 @@ func (s ScenarioStep) GetReferenceObject() string {
 // TableName specifies the table name
 func (ScenarioStep) TableName() string {
 	return "scenario_steps"
+}
+
+// Canonical step_type values. The strings are part of the stored data and the
+// API contract with the frontend, so they must not be renamed.
+const (
+	StepTypeTerminal = "terminal"
+	StepTypeFlag     = "flag"
+)
+
+// NormalizeFlagStep is the one rule linking a step's type to its flag: a step
+// carries a flag exactly when it is a flag step.
+//
+// has_flag still promotes a terminal (or undeclared) step to a flag step,
+// because that is how KillerCoda imports and the editor's legacy checkbox say
+// "flag step". It never adds a flag to a quiz or info step, and it never
+// removes one from a flag step: the editor creates flag steps with has_flag
+// false, and those must still get their flag.
+func NormalizeFlagStep(stepType string, hasFlag bool) (string, bool) {
+	if stepType == "" {
+		stepType = StepTypeTerminal
+	}
+	if hasFlag && stepType == StepTypeTerminal {
+		stepType = StepTypeFlag
+	}
+	return stepType, stepType == StepTypeFlag
+}
+
+// BeforeSave applies NormalizeFlagStep to every struct write — create, save,
+// seed, import, duplicate. A PATCH writes a column map that this cannot see;
+// scenarioHooks.ScenarioStepFlagHook applies the same rule there.
+func (s *ScenarioStep) BeforeSave(*gorm.DB) error {
+	s.StepType, s.HasFlag = NormalizeFlagStep(s.StepType, s.HasFlag)
+	return nil
+}
+
+// MigrateFlagStepConsistency applies NormalizeFlagStep to the rows written
+// before it existed: terminal steps with a flag were dead ends (Verify refused,
+// no flag input), and flag steps without one generated no flag. Idempotent.
+func MigrateFlagStepConsistency(db *gorm.DB) {
+	repairs := []struct{ what, sql string }{
+		{"terminal steps with a flag promoted to flag steps",
+			"UPDATE scenario_steps SET step_type = 'flag' WHERE has_flag = true AND (step_type = 'terminal' OR step_type = '' OR step_type IS NULL)"},
+		{"flag steps given their flag",
+			"UPDATE scenario_steps SET has_flag = true WHERE step_type = 'flag' AND has_flag = false"},
+		{"non-flag steps cleared of a flag",
+			"UPDATE scenario_steps SET has_flag = false WHERE step_type <> 'flag' AND has_flag = true"},
+	}
+	for _, r := range repairs {
+		res := db.Exec(r.sql)
+		if res.Error != nil {
+			log.Printf("[FLAG-STEP-MIGRATION] %s: %v", r.what, res.Error)
+			return
+		}
+		if res.RowsAffected > 0 {
+			log.Printf("[FLAG-STEP-MIGRATION] %d %s", res.RowsAffected, r.what)
+		}
+	}
 }

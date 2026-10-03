@@ -12,10 +12,9 @@
 // the answer can be stored once, rather than asking every consumer to
 // re-derive it from has_flag.
 //
-// The distinction that makes this delicate: has_flag:true together with an
-// explicit step_type:"terminal" is a LEGITIMATE authored combination — a
-// terminal step that also drops a flag file via FlagPath. Only the absence of
-// a declared type means "infer it".
+// has_flag:true together with an explicit step_type:"terminal" is a flag step
+// too: as a terminal step it showed Verify, which the backend refused. See
+// flagStepSingleSource_test.go for the rule on every write path.
 package scenarios_test
 
 import (
@@ -52,19 +51,19 @@ func TestResolveStepType_InfersFlagOnlyWhenNoTypeIsDeclared(t *testing.T) {
 			why:     "unchanged default for steps that carry no flag",
 		},
 		{
-			name:     "terminal step that also drops a flag file",
+			name:     "terminal step with a flag",
 			declared: "terminal",
 			hasFlag:  true,
-			want:     "terminal",
-			why: "a legitimate authored combination (FlagPath), NOT a conflict to " +
-				"repair — an explicit type always wins",
+			want:     "flag",
+			why: "the learner UI picks its input from step_type alone, so a terminal " +
+				"step with a flag showed Verify and the backend refused it",
 		},
 		{
 			name:     "quiz step that also carries a flag",
 			declared: "quiz",
 			hasFlag:  true,
 			want:     "quiz",
-			why:      "an explicit type wins regardless of which type it is",
+			why:      "has_flag only promotes a terminal step; a quiz stays a quiz",
 		},
 		{
 			name:     "explicit flag step",
@@ -171,9 +170,10 @@ func TestSeedScenario_StoresFlagStepsAsFlagType(t *testing.T) {
 
 	assert.Equal(t, "flag", steps[0].StepType,
 		"a seeded step with a flag and no declared type must be stored as a flag step")
-	assert.Equal(t, "terminal", steps[1].StepType,
-		"an explicit terminal type wins even with a flag — that combination is a "+
-			"terminal step that also drops a flag file, not a mistake")
+	assert.Equal(t, "flag", steps[1].StepType,
+		"a terminal step with a flag is a flag step — as a terminal step it showed "+
+			"Verify, which the backend refused")
+	assert.True(t, steps[1].HasFlag)
 	assert.Equal(t, "terminal", steps[2].StepType,
 		"a step with no flag is unchanged")
 }

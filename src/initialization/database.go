@@ -169,6 +169,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	// has somewhere to land.
 	scenarioModels.MigrateEstimatedTimeToMinutes(db)
 	db.AutoMigrate(&scenarioModels.ScenarioStep{})
+	scenarioModels.MigrateFlagStepConsistency(db)
 	db.AutoMigrate(&scenarioModels.ScenarioStepHint{})
 	db.AutoMigrate(&scenarioModels.ScenarioSession{})
 	db.AutoMigrate(&scenarioModels.ScenarioStepProgress{})
