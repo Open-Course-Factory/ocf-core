@@ -181,9 +181,8 @@ func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
 // @Router /scenarios/seed [post]
 // @Security BearerAuth
 func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
-	var input dto.SeedScenarioInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, err.Error())
+	input, ok := bindSeedScenarioInput(ctx)
+	if !ok {
 		return
 	}
 
