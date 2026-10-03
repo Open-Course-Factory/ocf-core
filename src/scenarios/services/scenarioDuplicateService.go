@@ -83,11 +83,10 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 		// 1. Create new scenario (copy fields, new ID)
 		var flagSecret string
 		if source.FlagsEnabled {
-			secretBytes := make([]byte, 32)
-			if _, err := rand.Read(secretBytes); err != nil {
-				return fmt.Errorf("failed to generate flag secret: %w", err)
+			var err error
+			if flagSecret, err = NewFlagSecret(); err != nil {
+				return err
 			}
-			flagSecret = hex.EncodeToString(secretBytes)
 		}
 
 		// Generate a short random suffix to ensure unique slug on repeated duplication

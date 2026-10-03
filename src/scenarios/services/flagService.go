@@ -2,15 +2,18 @@ package services
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 
 	"soli/formations/src/scenarios/models"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // FlagService generates and validates per-student, per-step unique flags using HMAC-SHA256
@@ -77,4 +80,32 @@ func (s *FlagService) computeFlag(secret string, sessionID uuid.UUID, stepOrder 
 	hexStr := hex.EncodeToString(hash)
 
 	return fmt.Sprintf("%s%s}", generatedFlagPrefix, hexStr[:16])
+}
+
+// NewFlagSecret returns a fresh HMAC key for a scenario's flags.
+func NewFlagSecret() (string, error) {
+	secretBytes := make([]byte, 32)
+	if _, err := rand.Read(secretBytes); err != nil {
+		return "", fmt.Errorf("failed to generate flag secret: %w", err)
+	}
+	return hex.EncodeToString(secretBytes), nil
+}
+
+// ensureFlagSecret gives a scenario with flag steps a stored secret before its
+// flags are generated. Scenarios built in the editor never got one, and an
+// HMAC under an empty key is a flag the learner can compute from their own
+// session id.
+func ensureFlagSecret(tx *gorm.DB, scenario *models.Scenario) error {
+	if scenario.FlagSecret != "" || !slices.ContainsFunc(scenario.Steps, func(st models.ScenarioStep) bool { return st.HasFlag }) {
+		return nil
+	}
+	secret, err := NewFlagSecret()
+	if err != nil {
+		return err
+	}
+	if err := tx.Model(&models.Scenario{}).Where("id = ?", scenario.ID).Update("flag_secret", secret).Error; err != nil {
+		return fmt.Errorf("failed to store flag secret: %w", err)
+	}
+	scenario.FlagSecret = secret
+	return nil
 }

@@ -1,9 +1,7 @@
 package services
 
 import (
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"mime"
@@ -384,11 +382,10 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	// Generate flag secret if flags are enabled
 	var flagSecret string
 	if flagsEnabled {
-		secretBytes := make([]byte, 32)
-		if _, err := rand.Read(secretBytes); err != nil {
-			return nil, fmt.Errorf("failed to generate flag secret: %w", err)
+		var err error
+		if flagSecret, err = NewFlagSecret(); err != nil {
+			return nil, err
 		}
-		flagSecret = hex.EncodeToString(secretBytes)
 	}
 
 	// Read intro and finish markdown (support both details-level and top-level locations)
