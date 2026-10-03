@@ -238,8 +238,8 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Migrate existing hint_content to progressive hint records
 	migrateHintContentToHints(db)
 
-	// Migrate inline scripts/markdown to ProjectFile records
-	migrateInlineContentToProjectFiles(db)
+	// Scripts and texts live inline only; fold the ProjectFile copies back in
+	InlineFileBackedContent(db)
 
 	// Give the public plans the names the offer uses. Runs BEFORE the two routines
 	// below: EnsureFreePlanExists keys on the current name and would otherwise
@@ -1081,173 +1081,75 @@ func migrateHintContentToHints(db *gorm.DB) {
 	}
 }
 
-// migrateInlineContentToProjectFiles converts inline scripts and markdown content
-// on ScenarioStep and Scenario records into ProjectFile records. Idempotent: only
-// migrates fields where the corresponding FK is still NULL.
-func migrateInlineContentToProjectFiles(db *gorm.DB) {
-	// --- Step-level migration ---
-	var steps []scenarioModels.ScenarioStep
-	db.Where(
-		"(verify_script != '' AND verify_script IS NOT NULL AND verify_script_id IS NULL) OR "+
-			"(background_script != '' AND background_script IS NOT NULL AND background_script_id IS NULL) OR "+
-			"(foreground_script != '' AND foreground_script IS NOT NULL AND foreground_script_id IS NULL) OR "+
-			"(text_content != '' AND text_content IS NOT NULL AND text_file_id IS NULL) OR "+
-			"(hint_content != '' AND hint_content IS NOT NULL AND hint_file_id IS NULL)",
-	).Find(&steps)
+// fileBackedColumns pairs each deprecated ProjectFile pointer column with the
+// inline column that now holds its content alone.
+var fileBackedColumns = map[string][][2]string{
+	"scenarios": {
+		{"setup_script_id", "setup_script"},
+		{"intro_file_id", "intro_text"},
+		{"finish_file_id", "finish_text"},
+	},
+	"scenario_steps": {
+		{"verify_script_id", "verify_script"},
+		{"background_script_id", "background_script"},
+		{"foreground_script_id", "foreground_script"},
+		{"text_file_id", "text_content"},
+		{"hint_file_id", "hint_content"},
+	},
+}
 
-	if len(steps) > 0 {
-		// Group steps by scenario for per-scenario transactions
-		scenarioSteps := make(map[string][]scenarioModels.ScenarioStep)
-		for _, step := range steps {
-			key := step.ScenarioID.String()
-			scenarioSteps[key] = append(scenarioSteps[key], step)
+// InlineFileBackedContent ends the double storage of scenario scripts and texts.
+// Imports wrote each one inline and to a ProjectFile, the runtime read the file
+// and the editor wrote the inline copy, so an edit never reached a learner.
+//
+// For every pointer to a live file the file's content is copied inline — the
+// file is what learners ran — and a pointer to a missing file keeps the inline
+// copy it served. The files pointed at are deleted, except images and files
+// linked to a scenario, and only then are the pointers cleared: a file two
+// columns share must be copied into both before it goes. One transaction, and
+// idempotent: a second run finds no pointer left.
+func InlineFileBackedContent(db *gorm.DB) {
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := forEachFileBackedColumn(func(table, pointer, inline string) error {
+			return copyLiveFileContentInline(tx, table, pointer, inline)
+		}); err != nil {
+			return err
 		}
-
-		for _, stepsForScenario := range scenarioSteps {
-			err := db.Transaction(func(tx *gorm.DB) error {
-				for _, step := range stepsForScenario {
-					stepDir := fmt.Sprintf("step%d", step.Order+1)
-
-					if step.VerifyScript != "" && step.VerifyScriptID == nil {
-						file := scenarioModels.ProjectFile{
-							Name:        "verify.sh",
-							RelPath:     stepDir + "/verify.sh",
-							ContentType: "script",
-							Content:     step.VerifyScript,
-							StorageType: "database",
-							SizeBytes:   int64(len(step.VerifyScript)),
-						}
-						if err := tx.Create(&file).Error; err != nil {
-							return fmt.Errorf("failed to create verify ProjectFile for step %s: %w", step.ID, err)
-						}
-						if err := tx.Model(&step).Update("verify_script_id", file.ID).Error; err != nil {
-							return fmt.Errorf("failed to update verify_script_id for step %s: %w", step.ID, err)
-						}
-					}
-
-					if step.BackgroundScript != "" && step.BackgroundScriptID == nil {
-						file := scenarioModels.ProjectFile{
-							Name:        "background.sh",
-							RelPath:     stepDir + "/background.sh",
-							ContentType: "script",
-							Content:     step.BackgroundScript,
-							StorageType: "database",
-							SizeBytes:   int64(len(step.BackgroundScript)),
-						}
-						if err := tx.Create(&file).Error; err != nil {
-							return fmt.Errorf("failed to create background ProjectFile for step %s: %w", step.ID, err)
-						}
-						if err := tx.Model(&step).Update("background_script_id", file.ID).Error; err != nil {
-							return fmt.Errorf("failed to update background_script_id for step %s: %w", step.ID, err)
-						}
-					}
-
-					if step.ForegroundScript != "" && step.ForegroundScriptID == nil {
-						file := scenarioModels.ProjectFile{
-							Name:        "foreground.sh",
-							RelPath:     stepDir + "/foreground.sh",
-							ContentType: "script",
-							Content:     step.ForegroundScript,
-							StorageType: "database",
-							SizeBytes:   int64(len(step.ForegroundScript)),
-						}
-						if err := tx.Create(&file).Error; err != nil {
-							return fmt.Errorf("failed to create foreground ProjectFile for step %s: %w", step.ID, err)
-						}
-						if err := tx.Model(&step).Update("foreground_script_id", file.ID).Error; err != nil {
-							return fmt.Errorf("failed to update foreground_script_id for step %s: %w", step.ID, err)
-						}
-					}
-
-					if step.TextContent != "" && step.TextFileID == nil {
-						file := scenarioModels.ProjectFile{
-							Name:        "text.md",
-							RelPath:     stepDir + "/text.md",
-							ContentType: "markdown",
-							Content:     step.TextContent,
-							StorageType: "database",
-							SizeBytes:   int64(len(step.TextContent)),
-						}
-						if err := tx.Create(&file).Error; err != nil {
-							return fmt.Errorf("failed to create text ProjectFile for step %s: %w", step.ID, err)
-						}
-						if err := tx.Model(&step).Update("text_file_id", file.ID).Error; err != nil {
-							return fmt.Errorf("failed to update text_file_id for step %s: %w", step.ID, err)
-						}
-					}
-
-					if step.HintContent != "" && step.HintFileID == nil {
-						file := scenarioModels.ProjectFile{
-							Name:        "hint.md",
-							RelPath:     stepDir + "/hint.md",
-							ContentType: "markdown",
-							Content:     step.HintContent,
-							StorageType: "database",
-							SizeBytes:   int64(len(step.HintContent)),
-						}
-						if err := tx.Create(&file).Error; err != nil {
-							return fmt.Errorf("failed to create hint ProjectFile for step %s: %w", step.ID, err)
-						}
-						if err := tx.Model(&step).Update("hint_file_id", file.ID).Error; err != nil {
-							return fmt.Errorf("failed to update hint_file_id for step %s: %w", step.ID, err)
-						}
-					}
-				}
-				return nil
-			})
-			if err != nil {
-				log.Printf("[MIGRATION] Failed to migrate inline content for scenario steps: %v", err)
-			}
+		if err := forEachFileBackedColumn(func(table, pointer, _ string) error {
+			return deleteContentFilesBehind(tx, table, pointer)
+		}); err != nil {
+			return err
 		}
-	}
-
-	// --- Scenario-level migration (intro_text, finish_text) ---
-	var scenarios []scenarioModels.Scenario
-	db.Where(
-		"(intro_text != '' AND intro_text IS NOT NULL AND intro_file_id IS NULL) OR "+
-			"(finish_text != '' AND finish_text IS NOT NULL AND finish_file_id IS NULL)",
-	).Find(&scenarios)
-
-	for _, scenario := range scenarios {
-		err := db.Transaction(func(tx *gorm.DB) error {
-			if scenario.IntroText != "" && scenario.IntroFileID == nil {
-				file := scenarioModels.ProjectFile{
-					Name:        "intro.md",
-					RelPath:     "intro.md",
-					ContentType: "markdown",
-					Content:     scenario.IntroText,
-					StorageType: "database",
-					SizeBytes:   int64(len(scenario.IntroText)),
-				}
-				if err := tx.Create(&file).Error; err != nil {
-					return fmt.Errorf("failed to create intro ProjectFile for scenario %s: %w", scenario.ID, err)
-				}
-				if err := tx.Model(&scenario).Update("intro_file_id", file.ID).Error; err != nil {
-					return fmt.Errorf("failed to update intro_file_id for scenario %s: %w", scenario.ID, err)
-				}
-			}
-
-			if scenario.FinishText != "" && scenario.FinishFileID == nil {
-				file := scenarioModels.ProjectFile{
-					Name:        "finish.md",
-					RelPath:     "finish.md",
-					ContentType: "markdown",
-					Content:     scenario.FinishText,
-					StorageType: "database",
-					SizeBytes:   int64(len(scenario.FinishText)),
-				}
-				if err := tx.Create(&file).Error; err != nil {
-					return fmt.Errorf("failed to create finish ProjectFile for scenario %s: %w", scenario.ID, err)
-				}
-				if err := tx.Model(&scenario).Update("finish_file_id", file.ID).Error; err != nil {
-					return fmt.Errorf("failed to update finish_file_id for scenario %s: %w", scenario.ID, err)
-				}
-			}
-
-			return nil
+		return forEachFileBackedColumn(func(table, pointer, _ string) error {
+			return tx.Exec("UPDATE " + table + " SET " + pointer + " = NULL WHERE " + pointer + " IS NOT NULL").Error
 		})
-		if err != nil {
-			log.Printf("[MIGRATION] Failed to migrate inline content for scenario %s: %v", scenario.ID, err)
+	})
+	if err != nil {
+		log.Printf("[MIGRATION] Failed to inline file-backed scenario content: %v", err)
+	}
+}
+
+func forEachFileBackedColumn(fn func(table, pointer, inline string) error) error {
+	for table, pairs := range fileBackedColumns {
+		for _, pair := range pairs {
+			if err := fn(table, pair[0], pair[1]); err != nil {
+				return fmt.Errorf("%s.%s: %w", table, pair[0], err)
+			}
 		}
 	}
+	return nil
+}
+
+func copyLiveFileContentInline(tx *gorm.DB, table, pointer, inline string) error {
+	liveFile := "FROM project_files WHERE project_files.id = " + table + "." + pointer + " AND project_files.deleted_at IS NULL"
+	return tx.Exec("UPDATE " + table + " SET " + inline + " = (SELECT content " + liveFile + ") " +
+		"WHERE " + pointer + " IS NOT NULL AND EXISTS (SELECT 1 " + liveFile + ")").Error
+}
+
+// deleteContentFilesBehind deletes the files a pointer column references,
+// sparing images and files linked to a scenario: those are still served.
+func deleteContentFilesBehind(tx *gorm.DB, table, pointer string) error {
+	pointed := tx.Table(table).Select(pointer).Where(pointer + " IS NOT NULL")
+	return tx.Where("id IN (?) AND content_type <> ? AND scenario_id IS NULL", pointed, "image").
+		Delete(&scenarioModels.ProjectFile{}).Error
 }
