@@ -23,9 +23,8 @@ func NewScenarioDuplicateService(db *gorm.DB) *ScenarioDuplicateService {
 }
 
 // DuplicateScenario creates a deep copy of the source scenario including Steps,
-// Hints, quiz Questions, CompatibleInstanceTypes, and ProjectFiles. FK
-// references (script IDs) on steps and scenario are remapped to the newly
-// created ProjectFile copies.
+// Hints, quiz Questions, CompatibleInstanceTypes, and the ProjectFiles linked
+// to it (its images).
 //
 // NOT duplicated: ScenarioAssignments, ScenarioSessions, Flags, StepProgress.
 //
@@ -52,30 +51,9 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
 
-	// Load ProjectFiles for the scenario
 	var sourceFiles []models.ProjectFile
 	if err := s.db.Where("scenario_id = ?", sourceID).Find(&sourceFiles).Error; err != nil {
 		return nil, fmt.Errorf("failed to load project files: %w", err)
-	}
-
-	// Also collect ProjectFiles referenced by FKs (scenario-level + step-level)
-	// that may not have scenario_id set (non-image files)
-	referencedFileIDs := collectReferencedFileIDs(&source)
-	if len(referencedFileIDs) > 0 {
-		var referencedFiles []models.ProjectFile
-		if err := s.db.Where("id IN ?", referencedFileIDs).Find(&referencedFiles).Error; err != nil {
-			return nil, fmt.Errorf("failed to load referenced project files: %w", err)
-		}
-		// Merge, avoiding duplicates
-		existingIDs := make(map[uuid.UUID]bool)
-		for _, f := range sourceFiles {
-			existingIDs[f.ID] = true
-		}
-		for _, f := range referencedFiles {
-			if !existingIDs[f.ID] {
-				sourceFiles = append(sourceFiles, f)
-			}
-		}
 	}
 
 	var newScenario *models.Scenario
@@ -127,11 +105,10 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			return fmt.Errorf("failed to create duplicate scenario: %w", err)
 		}
 
-		// 2. Copy ProjectFiles (map old ID -> new ID)
+		// 2. Copy ProjectFiles
 		// NOTE: StorageRef is shallow-copied. If S3-backed storage is introduced,
 		// duplication must either copy the S3 object or implement reference counting
 		// to prevent a delete of one copy from breaking the other's reference.
-		fileIDMap := make(map[uuid.UUID]uuid.UUID) // oldID -> newID
 		for _, srcFile := range sourceFiles {
 			newFile := models.ProjectFile{
 				Name:        srcFile.Name,
@@ -142,41 +119,14 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 				StorageType: srcFile.StorageType,
 				StorageRef:  srcFile.StorageRef,
 				SizeBytes:   srcFile.SizeBytes,
-			}
-			// Image files get linked to the new scenario via ScenarioID
-			if srcFile.ScenarioID != nil {
-				newFile.ScenarioID = &newScenario.ID
+				ScenarioID:  &newScenario.ID,
 			}
 			if err := tx.Create(&newFile).Error; err != nil {
 				return fmt.Errorf("failed to create project file copy: %w", err)
 			}
-			fileIDMap[srcFile.ID] = newFile.ID
 		}
 
-		// 3. Update scenario-level FK refs to point to new ProjectFile IDs
-		updates := map[string]any{}
-		if source.SetupScriptID != nil {
-			if newID, ok := fileIDMap[*source.SetupScriptID]; ok {
-				updates["setup_script_id"] = newID
-			}
-		}
-		if source.IntroFileID != nil {
-			if newID, ok := fileIDMap[*source.IntroFileID]; ok {
-				updates["intro_file_id"] = newID
-			}
-		}
-		if source.FinishFileID != nil {
-			if newID, ok := fileIDMap[*source.FinishFileID]; ok {
-				updates["finish_file_id"] = newID
-			}
-		}
-		if len(updates) > 0 {
-			if err := tx.Model(newScenario).Updates(updates).Error; err != nil {
-				return fmt.Errorf("failed to update scenario file refs: %w", err)
-			}
-		}
-
-		// 4. Copy Steps (with updated FK refs)
+		// 3. Copy Steps
 		for _, srcStep := range source.Steps {
 			newStep := models.ScenarioStep{
 				ScenarioID:               newScenario.ID,
@@ -200,38 +150,11 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 				FlagLevel:                srcStep.FlagLevel,
 			}
 
-			// Remap step-level FK refs
-			if srcStep.VerifyScriptID != nil {
-				if newID, ok := fileIDMap[*srcStep.VerifyScriptID]; ok {
-					newStep.VerifyScriptID = &newID
-				}
-			}
-			if srcStep.BackgroundScriptID != nil {
-				if newID, ok := fileIDMap[*srcStep.BackgroundScriptID]; ok {
-					newStep.BackgroundScriptID = &newID
-				}
-			}
-			if srcStep.ForegroundScriptID != nil {
-				if newID, ok := fileIDMap[*srcStep.ForegroundScriptID]; ok {
-					newStep.ForegroundScriptID = &newID
-				}
-			}
-			if srcStep.TextFileID != nil {
-				if newID, ok := fileIDMap[*srcStep.TextFileID]; ok {
-					newStep.TextFileID = &newID
-				}
-			}
-			if srcStep.HintFileID != nil {
-				if newID, ok := fileIDMap[*srcStep.HintFileID]; ok {
-					newStep.HintFileID = &newID
-				}
-			}
-
 			if err := tx.Create(&newStep).Error; err != nil {
 				return fmt.Errorf("failed to create step copy: %w", err)
 			}
 
-			// 5. Copy Hints (linked to new step ID)
+			// 4. Copy Hints (linked to new step ID)
 			for _, srcHint := range srcStep.Hints {
 				newHint := models.ScenarioStepHint{
 					StepID:  newStep.ID,
@@ -243,7 +166,7 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 				}
 			}
 
-			// 6. Copy quiz Questions (linked to new step ID). Without these a
+			// 5. Copy quiz Questions (linked to new step ID). Without these a
 			// duplicated quiz step renders as an exam with nothing in it.
 			for _, srcQuestion := range srcStep.Questions {
 				newQuestion := models.ScenarioStepQuestion{
@@ -262,7 +185,7 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			}
 		}
 
-		// 7. Copy CompatibleInstanceTypes
+		// 6. Copy CompatibleInstanceTypes
 		for _, srcIT := range source.CompatibleInstanceTypes {
 			newIT := models.ScenarioInstanceType{
 				ScenarioID:   newScenario.ID,
@@ -299,36 +222,4 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 	}
 
 	return &result, nil
-}
-
-// collectReferencedFileIDs gathers all ProjectFile IDs referenced by scenario and step FKs.
-func collectReferencedFileIDs(scenario *models.Scenario) []uuid.UUID {
-	var ids []uuid.UUID
-	if scenario.SetupScriptID != nil {
-		ids = append(ids, *scenario.SetupScriptID)
-	}
-	if scenario.IntroFileID != nil {
-		ids = append(ids, *scenario.IntroFileID)
-	}
-	if scenario.FinishFileID != nil {
-		ids = append(ids, *scenario.FinishFileID)
-	}
-	for _, step := range scenario.Steps {
-		if step.VerifyScriptID != nil {
-			ids = append(ids, *step.VerifyScriptID)
-		}
-		if step.BackgroundScriptID != nil {
-			ids = append(ids, *step.BackgroundScriptID)
-		}
-		if step.ForegroundScriptID != nil {
-			ids = append(ids, *step.ForegroundScriptID)
-		}
-		if step.TextFileID != nil {
-			ids = append(ids, *step.TextFileID)
-		}
-		if step.HintFileID != nil {
-			ids = append(ids, *step.HintFileID)
-		}
-	}
-	return ids
 }

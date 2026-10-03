@@ -2,7 +2,6 @@ package scenarios_test
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -26,28 +25,12 @@ import (
 // required.
 
 // stepFieldsNotCopiedVerbatim are the ScenarioStep fields a faithful duplicate
-// is still expected to differ on, each with the reason it does. Scalar fields
-// outside this map must come through unchanged; ProjectFile references are
-// handled by isProjectFileRef below, which asserts re-pointing rather than
-// equality.
+// is still expected to differ on, each with the reason it does. Every field
+// outside this map must come through unchanged.
 var stepFieldsNotCopiedVerbatim = map[string]string{
 	"ScenarioID": "points at the new scenario by definition",
 	"Hints":      "separate rows with their own IDs — compared by content below",
 	"Questions":  "separate rows with their own IDs — compared by content below",
-}
-
-// isProjectFileRef reports whether a field is a reference to a ProjectFile.
-// Duplication re-points these at freshly copied files instead of sharing the
-// originals, so they are asserted to have been re-pointed rather than compared.
-//
-// Matching on the name suffix rather than an explicit list is deliberate: new
-// ProjectFile references keep arriving (the effect-asset work adds two more),
-// and this way they are covered on arrival instead of silently skipped.
-func isProjectFileRef(field reflect.StructField) bool {
-	if field.Type != reflect.TypeOf((*uuid.UUID)(nil)) {
-		return false
-	}
-	return strings.HasSuffix(field.Name, "FileID") || strings.HasSuffix(field.Name, "ScriptID")
 }
 
 func TestDuplicateScenario_StepsAreFieldCompleteAgainstSource(t *testing.T) {
@@ -98,37 +81,12 @@ func TestDuplicateScenario_StepsAreFieldCompleteAgainstSource(t *testing.T) {
 			if _, excluded := stepFieldsNotCopiedVerbatim[field.Name]; excluded {
 				continue
 			}
-			if isProjectFileRef(field) {
-				assertProjectFileRefRepointed(t, field.Name, src.Field(f), dst.Field(f))
-				continue
-			}
 
 			assert.Equal(t, src.Field(f).Interface(), dst.Field(f).Interface(),
 				"step %d: field %s was not carried over by duplication. Add it to the copy in scenarioDuplicateService.DuplicateScenario, or to stepFieldsNotCopiedVerbatim with the reason it legitimately differs.",
 				sourceSteps[i].Order, field.Name)
 		}
 	}
-}
-
-// assertProjectFileRefRepointed checks that a ProjectFile reference was copied
-// as a reference: present when the source had one, absent when it did not, and
-// pointing at a different file. Sharing the original would make deleting one
-// scenario break the other.
-func assertProjectFileRefRepointed(t *testing.T, fieldName string, srcField, dstField reflect.Value) {
-	t.Helper()
-
-	srcRef := srcField.Interface().(*uuid.UUID)
-	dstRef := dstField.Interface().(*uuid.UUID)
-
-	if srcRef == nil {
-		assert.Nil(t, dstRef, "%s: the source had no file, so the copy must not invent one", fieldName)
-		return
-	}
-	if !assert.NotNil(t, dstRef, "%s: the source referenced a file and the copy lost it", fieldName) {
-		return
-	}
-	assert.NotEqual(t, *srcRef, *dstRef,
-		"%s: the copy shares the source's ProjectFile — deleting either scenario would break the other", fieldName)
 }
 
 // loadStepsWithRelations reads a scenario's steps in display order with the
