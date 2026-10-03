@@ -5,7 +5,9 @@ import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
 )
 
-// ProjectFile represents a reusable file (script, markdown, text, image) stored in the database
+// ProjectFile is a file stored in the database: in practice the images an
+// imported scenario's markdown references, linked to it by ScenarioID. Scenario
+// scripts and texts are not files; they live inline on Scenario and ScenarioStep.
 type ProjectFile struct {
 	entityManagementModels.BaseModel
 	Name        string     `gorm:"type:varchar(255);not null" json:"name" mapstructure:"name"`
