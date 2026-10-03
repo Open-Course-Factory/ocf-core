@@ -376,8 +376,10 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 			}
 		}
 
-		// Generate flags if enabled
-		if scenario.FlagsEnabled && s.flagService != nil {
+		// Every flag step gets its flag. FlagsEnabled is only the import-time
+		// default for has_flag: gating on it here left editor-built flag steps
+		// with nothing to find.
+		if s.flagService != nil {
 			if err := ensureFlagSecret(tx, scenario); err != nil {
 				return err
 			}
@@ -877,7 +879,7 @@ const ocfSessionUserEnv = "OCF_SESSION_USER"
 // exactly the request it sends today rather than an empty, confusing variable.
 func stepProvisioningEnv(scenario *models.Scenario, flags []models.ScenarioFlag, stepOrder int, locale string) map[string]string {
 	env := provisioningEnv(scenario, locale)
-	if scenario == nil || !scenario.FlagsEnabled {
+	if scenario == nil {
 		return env
 	}
 	flag := findFlagByStepOrder(flags, stepOrder)
