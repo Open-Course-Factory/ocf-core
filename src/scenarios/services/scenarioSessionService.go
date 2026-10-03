@@ -378,6 +378,9 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 
 		// Generate flags if enabled
 		if scenario.FlagsEnabled && s.flagService != nil {
+			if err := ensureFlagSecret(tx, scenario); err != nil {
+				return err
+			}
 			flags := s.flagService.GenerateFlags(scenario, session.ID, userID)
 			for i := range flags {
 				if err := tx.Create(&flags[i]).Error; err != nil {

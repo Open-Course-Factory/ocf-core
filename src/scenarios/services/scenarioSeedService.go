@@ -1,8 +1,6 @@
 package services
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -48,11 +46,10 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			// Keep existing flag secret on update so active sessions remain valid
 			flagSecret = existing.FlagSecret
 		} else {
-			secretBytes := make([]byte, 32)
-			if _, err := rand.Read(secretBytes); err != nil {
-				return nil, false, fmt.Errorf("failed to generate flag secret: %w", err)
+			var err error
+			if flagSecret, err = NewFlagSecret(); err != nil {
+				return nil, false, err
 			}
-			flagSecret = hex.EncodeToString(secretBytes)
 		}
 	}
 
