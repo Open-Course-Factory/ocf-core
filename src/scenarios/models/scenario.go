@@ -73,6 +73,8 @@ type Scenario struct {
 	// report is for.
 	Locales string `gorm:"type:text" json:"locales,omitempty" mapstructure:"locales"`
 	SetupScript    string     `gorm:"type:text" json:"setup_script,omitempty"`
+	// Deprecated: content lives inline only (InlineFileBackedContent empties
+	// these at startup). Kept for rollback safety; drop in the next release.
 	SetupScriptID  *uuid.UUID `gorm:"type:uuid;index" json:"setup_script_id,omitempty" mapstructure:"setup_script_id"`
 	IntroFileID    *uuid.UUID `gorm:"type:uuid;index" json:"intro_file_id,omitempty" mapstructure:"intro_file_id"`
 	FinishFileID   *uuid.UUID `gorm:"type:uuid;index" json:"finish_file_id,omitempty" mapstructure:"finish_file_id"`

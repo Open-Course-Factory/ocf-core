@@ -136,102 +136,7 @@ func TestProjectFile_Create_AllContentTypes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. FK relationships
-// ---------------------------------------------------------------------------
-
-func TestScenarioStep_WithProjectFileFK(t *testing.T) {
-	db := freshTestDB(t)
-
-	// Create a ProjectFile for the verify script
-	verifyFile := models.ProjectFile{
-		Name:        "verify.sh",
-		ContentType: "script",
-		Content:     "#!/bin/bash\ntest -f /tmp/done",
-	}
-	require.NoError(t, db.Create(&verifyFile).Error)
-
-	// Create a Scenario (required parent for ScenarioStep)
-	scenario := models.Scenario{
-		Name:         "fk-test-scenario",
-		Title:        "FK Test",
-		InstanceType: "ubuntu:22.04",
-		CreatedByID:  "creator-1",
-	}
-	require.NoError(t, db.Create(&scenario).Error)
-
-	// Create a ScenarioStep with VerifyScriptID pointing to the file
-	step := models.ScenarioStep{
-		ScenarioID:     scenario.ID,
-		Order:          1,
-		Title:          "Step with file FK",
-		VerifyScriptID: &verifyFile.ID,
-	}
-	require.NoError(t, db.Create(&step).Error)
-
-	// Verify FK is persisted and queryable
-	var found models.ScenarioStep
-	require.NoError(t, db.First(&found, "id = ?", step.ID).Error)
-	require.NotNil(t, found.VerifyScriptID)
-	assert.Equal(t, verifyFile.ID, *found.VerifyScriptID)
-
-	// Verify we can load the file through the FK
-	var linkedFile models.ProjectFile
-	require.NoError(t, db.First(&linkedFile, "id = ?", *found.VerifyScriptID).Error)
-	assert.Equal(t, "#!/bin/bash\ntest -f /tmp/done", linkedFile.Content)
-}
-
-func TestScenario_WithProjectFileFKs(t *testing.T) {
-	db := freshTestDB(t)
-
-	// Create 3 ProjectFiles
-	setupFile := models.ProjectFile{
-		Name:        "setup.sh",
-		ContentType: "script",
-		Content:     "#!/bin/bash\napt-get update",
-	}
-	require.NoError(t, db.Create(&setupFile).Error)
-
-	introFile := models.ProjectFile{
-		Name:        "intro.md",
-		ContentType: "markdown",
-		Content:     "# Welcome to the lab",
-	}
-	require.NoError(t, db.Create(&introFile).Error)
-
-	finishFile := models.ProjectFile{
-		Name:        "finish.md",
-		ContentType: "markdown",
-		Content:     "# Congratulations!",
-	}
-	require.NoError(t, db.Create(&finishFile).Error)
-
-	// Create a Scenario with all 3 FK pointers
-	scenario := models.Scenario{
-		Name:          "fk-all-test",
-		Title:         "All FKs Test",
-		InstanceType:  "ubuntu:22.04",
-		CreatedByID:   "creator-1",
-		SetupScriptID: &setupFile.ID,
-		IntroFileID:   &introFile.ID,
-		FinishFileID:  &finishFile.ID,
-	}
-	require.NoError(t, db.Create(&scenario).Error)
-
-	// Verify all 3 FKs are persisted
-	var found models.Scenario
-	require.NoError(t, db.First(&found, "id = ?", scenario.ID).Error)
-
-	require.NotNil(t, found.SetupScriptID)
-	require.NotNil(t, found.IntroFileID)
-	require.NotNil(t, found.FinishFileID)
-
-	assert.Equal(t, setupFile.ID, *found.SetupScriptID)
-	assert.Equal(t, introFile.ID, *found.IntroFileID)
-	assert.Equal(t, finishFile.ID, *found.FinishFileID)
-}
-
-// ---------------------------------------------------------------------------
-// 5. Import stores scripts and texts inline only; images stay files
+// 3. Import stores scripts and texts inline only; images stay files
 // ---------------------------------------------------------------------------
 
 func writeInlineOnlyScenario(t *testing.T, dir, version string) {
@@ -302,7 +207,7 @@ func TestImport_Reimport_ReplacesContentAndImages(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 9. GET /project-files/:id/content endpoint
+// 4. GET /project-files/:id/content endpoint
 // ---------------------------------------------------------------------------
 
 func TestProjectFileController_GetContent_Script(t *testing.T) {
@@ -393,71 +298,36 @@ func TestProjectFileController_GetContent_InvalidID(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 10. GET /project-files/by-scenario/:scenarioId endpoint
+// 5. GET /project-files/by-scenario/:scenarioId endpoint
 // ---------------------------------------------------------------------------
 
-func TestProjectFileController_GetByScenario_Success(t *testing.T) {
+func TestProjectFileController_GetByScenario_ListsLinkedFiles(t *testing.T) {
 	db := freshTestDB(t)
 
-	// Create ProjectFiles
-	introFile := models.ProjectFile{Name: "intro.md", ContentType: "markdown", Content: "# Intro", StorageType: "database", SizeBytes: 7}
-	verifyFile := models.ProjectFile{Name: "verify.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", StorageType: "database", SizeBytes: 16}
-	textFile := models.ProjectFile{Name: "text.md", ContentType: "markdown", Content: "Step text", StorageType: "database", SizeBytes: 9}
-	require.NoError(t, db.Create(&introFile).Error)
-	require.NoError(t, db.Create(&verifyFile).Error)
-	require.NoError(t, db.Create(&textFile).Error)
-
-	// Create scenario referencing these files
-	scenario := models.Scenario{
-		Name:        "by-scenario-test",
-		Title:       "By Scenario Test",
-		InstanceType: "ubuntu:22.04",
-		CreatedByID: "user-1",
-		IntroFileID: &introFile.ID,
-		Steps: []models.ScenarioStep{
-			{
-				Order:          0,
-				Title:          "Step 1",
-				VerifyScriptID: &verifyFile.ID,
-				TextFileID:     &textFile.ID,
-			},
-		},
-	}
+	scenario := models.Scenario{Name: "by-scenario-test", Title: "By Scenario Test", InstanceType: "ubuntu:22.04", CreatedByID: "user-1"}
 	require.NoError(t, db.Create(&scenario).Error)
+	image := models.ProjectFile{Name: "diagram.png", RelPath: "images/diagram.png", ContentType: "image", Content: "aW1n", StorageType: "database", SizeBytes: 3, ScenarioID: &scenario.ID}
+	unlinked := models.ProjectFile{Name: "other.png", ContentType: "image", Content: "aW1n", StorageType: "database"}
+	require.NoError(t, db.Create(&image).Error)
+	require.NoError(t, db.Create(&unlinked).Error)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	api := r.Group("/api/v1")
-	api.Use(func(c *gin.Context) {
-		c.Set("userId", "test-user")
-		c.Set("userRoles", []string{"admin"})
-		c.Next()
-	})
 	ctrl := scenarioController.NewProjectFileController(db)
-	api.GET("/project-files/by-scenario/:scenarioId", ctrl.GetByScenario)
+	r.GET("/api/v1/project-files/by-scenario/:scenarioId", adminMiddleware(), ctrl.GetByScenario)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/project-files/by-scenario/"+scenario.ID.String(), nil)
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-
 	var result []map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
-	assert.Len(t, result, 3) // intro + verify + text
-
-	// Verify each item has used_as and no content
-	usedAsValues := make(map[string]bool)
-	for _, item := range result {
-		usedAs, ok := item["used_as"].(string)
-		require.True(t, ok)
-		usedAsValues[usedAs] = true
-		_, hasContent := item["content"]
-		assert.False(t, hasContent, "by-scenario response should not include content")
-	}
-	assert.True(t, usedAsValues["intro"])
-	assert.True(t, usedAsValues["Step 1 — verify_script"])
-	assert.True(t, usedAsValues["Step 1 — text"])
+	require.Len(t, result, 1)
+	assert.Equal(t, image.ID.String(), result[0]["id"])
+	assert.Equal(t, "image", result[0]["used_as"])
+	_, hasContent := result[0]["content"]
+	assert.False(t, hasContent, "by-scenario response should not include content")
 }
 
 // adminMiddleware injects admin role for tests that require admin access.
@@ -472,7 +342,7 @@ func adminMiddleware() gin.HandlerFunc {
 func TestProjectFileController_GetByScenario_Empty(t *testing.T) {
 	db := freshTestDB(t)
 
-	// Scenario with no ProjectFile FKs
+	// Scenario with no linked ProjectFile
 	scenario := models.Scenario{
 		Name:        "no-files-test",
 		Title:       "No Files",
@@ -516,97 +386,7 @@ func TestProjectFileController_GetByScenario_NotFound(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 11. GET /project-files/:id/usage endpoint
-// ---------------------------------------------------------------------------
-
-func TestProjectFileController_GetUsage_Success(t *testing.T) {
-	db := freshTestDB(t)
-
-	// Create a ProjectFile
-	file := models.ProjectFile{Name: "shared.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", StorageType: "database"}
-	require.NoError(t, db.Create(&file).Error)
-
-	// Reference it from a scenario (intro) and a step (verify)
-	scenario := models.Scenario{
-		Name:        "usage-test",
-		Title:       "Usage Test",
-		InstanceType: "ubuntu:22.04",
-		CreatedByID: "user-1",
-		IntroFileID: &file.ID,
-		Steps: []models.ScenarioStep{
-			{
-				Order:          0,
-				Title:          "Verify Step",
-				VerifyScriptID: &file.ID,
-			},
-		},
-	}
-	require.NoError(t, db.Create(&scenario).Error)
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	api := r.Group("/api/v1")
-	ctrl := scenarioController.NewProjectFileController(db)
-	api.GET("/project-files/:id/usage", adminMiddleware(), ctrl.GetUsage)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+file.ID.String()+"/usage", nil)
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var result []map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
-	assert.Len(t, result, 2) // scenario intro + step verify
-
-	fields := make(map[string]bool)
-	for _, ref := range result {
-		fields[ref["field"].(string)] = true
-		assert.Equal(t, "usage-test", ref["scenario_name"])
-	}
-	assert.True(t, fields["intro"])
-	assert.True(t, fields["verify_script"])
-}
-
-func TestProjectFileController_GetUsage_Unused(t *testing.T) {
-	db := freshTestDB(t)
-
-	file := models.ProjectFile{Name: "unused.sh", ContentType: "script", Content: "echo unused", StorageType: "database"}
-	require.NoError(t, db.Create(&file).Error)
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	ctrl := scenarioController.NewProjectFileController(db)
-	r.GET("/api/v1/project-files/:id/usage", adminMiddleware(), ctrl.GetUsage)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+file.ID.String()+"/usage", nil)
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var result []map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
-	assert.Len(t, result, 0)
-}
-
-func TestProjectFileController_GetUsage_NotFound(t *testing.T) {
-	db := freshTestDB(t)
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	ctrl := scenarioController.NewProjectFileController(db)
-	r.GET("/api/v1/project-files/:id/usage", adminMiddleware(), ctrl.GetUsage)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+uuid.New().String()+"/usage", nil)
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-}
-
-// ---------------------------------------------------------------------------
-// 12. Filter ProjectFiles by scenarioId (admin page filter)
+// 6. Filter ProjectFiles by scenarioId (admin page filter)
 // ---------------------------------------------------------------------------
 
 func TestProjectFile_FilterByScenarioId(t *testing.T) {

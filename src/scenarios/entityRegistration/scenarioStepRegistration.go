@@ -39,11 +39,6 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						HasFlag:            model.HasFlag,
 						FlagPath:           model.FlagPath,
 						FlagLevel:          model.FlagLevel,
-						VerifyScriptID:     model.VerifyScriptID,
-						BackgroundScriptID: model.BackgroundScriptID,
-						ForegroundScriptID: model.ForegroundScriptID,
-						TextFileID:         model.TextFileID,
-						HintFileID:         model.HintFileID,
 						CreatedAt:          model.CreatedAt,
 						UpdatedAt:          model.UpdatedAt,
 					}
@@ -101,11 +96,6 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						HasFlag:            input.HasFlag,
 						FlagPath:           input.FlagPath,
 						FlagLevel:          input.FlagLevel,
-						VerifyScriptID:     input.VerifyScriptID,
-						BackgroundScriptID: input.BackgroundScriptID,
-						ForegroundScriptID: input.ForegroundScriptID,
-						TextFileID:         input.TextFileID,
-						HintFileID:         input.HintFileID,
 					}
 				},
 				DtoToMap: func(input dto.EditScenarioStepInput) map[string]any {
@@ -163,21 +153,6 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.FlagLevel != nil {
 						updates["flag_level"] = *input.FlagLevel
-					}
-					if input.VerifyScriptID != nil {
-						updates["verify_script_id"] = *input.VerifyScriptID
-					}
-					if input.BackgroundScriptID != nil {
-						updates["background_script_id"] = *input.BackgroundScriptID
-					}
-					if input.ForegroundScriptID != nil {
-						updates["foreground_script_id"] = *input.ForegroundScriptID
-					}
-					if input.TextFileID != nil {
-						updates["text_file_id"] = *input.TextFileID
-					}
-					if input.HintFileID != nil {
-						updates["hint_file_id"] = *input.HintFileID
 					}
 					return updates
 				},

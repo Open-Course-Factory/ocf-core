@@ -55,6 +55,8 @@ type ScenarioStep struct {
 	HasFlag            bool                   `gorm:"default:false" json:"has_flag"`
 	FlagPath           string                 `gorm:"type:varchar(500)" json:"flag_path,omitempty"` // where to place the flag file in the container
 	FlagLevel          int                    `gorm:"default:0" json:"flag_level"`
+	// Deprecated: content lives inline only (InlineFileBackedContent empties
+	// these at startup). Kept for rollback safety; drop in the next release.
 	VerifyScriptID     *uuid.UUID             `gorm:"type:uuid;index" json:"verify_script_id,omitempty" mapstructure:"verify_script_id"`
 	BackgroundScriptID *uuid.UUID             `gorm:"type:uuid;index" json:"background_script_id,omitempty" mapstructure:"background_script_id"`
 	ForegroundScriptID *uuid.UUID             `gorm:"type:uuid;index" json:"foreground_script_id,omitempty" mapstructure:"foreground_script_id"`

@@ -19,10 +19,8 @@ import (
 // with admin bypass).
 //
 // Sensitive fields exposed by the leak (issue #293):
-//   - Scenario.SetupScript, SetupScriptID, IntroFileID, FinishFileID
+//   - Scenario.SetupScript
 //   - Step.HintContent, FlagPath, FlagLevel
-//   - Step.VerifyScriptID, BackgroundScriptID, ForegroundScriptID
-//   - Step.TextFileID, HintFileID
 //   - Question.CorrectAnswer, Explanation (entire Questions slice)
 //
 // The simplest correct redaction is to drop the Steps slice entirely — JSON
@@ -134,14 +132,12 @@ func redactUnlessManager[T any](
 }
 
 // stripScenarioDto clears the sensitive parts of a ScenarioOutput in place.
-// Steps is the umbrella container for HintContent, FlagPath, script IDs,
-// file IDs, and the entire Questions slice (with CorrectAnswer + Explanation).
+// Steps is the umbrella container for HintContent, FlagPath, the scripts,
+// and the entire Questions slice (with CorrectAnswer + Explanation).
 // Setting it to nil makes JSON `omitempty` drop the field entirely.
 //
 // Top-level scenario fields that also leak setup-time secrets:
 //   - SetupScript: shell script that may contain secrets / cleanup commands
-//   - SetupScriptID, IntroFileID, FinishFileID: project-file UUIDs that
-//     enable enumeration of internal artifacts
 // scenarioListScope keeps GET /scenarios to what the caller may manage plus
 // public scenarios; a platform admin keeps the platform-wide list. The redactor
 // above still runs on every row it lets through.
@@ -178,9 +174,6 @@ func stripScenarioDto(out *dto.ScenarioOutput) {
 	out.CanManage = false
 	out.Steps = nil
 	out.SetupScript = ""
-	out.SetupScriptID = nil
-	out.IntroFileID = nil
-	out.FinishFileID = nil
 }
 
 // readRoles extracts the roles slice from the gin context, tolerating
