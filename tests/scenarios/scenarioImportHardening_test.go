@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,7 @@ func setupImportHardeningRouter(db *gorm.DB, userID string) *gin.Engine {
 	mc := scenarioController.NewScenarioManagementController(db)
 	r.POST("/groups/:groupId/scenarios/import-json", mc.GroupImportJSON)
 	r.POST("/groups/:groupId/scenarios/upload", mc.GroupUploadScenario)
+	r.POST("/organizations/:id/scenarios/import-json", mc.OrgImportJSON)
 	return r
 }
 
@@ -99,4 +101,24 @@ func TestGroupUploadScenario_OrglessClass_Refused(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
+}
+
+func TestOrgImportJSON_OversizedBody_Returns413(t *testing.T) {
+	db := freshTestDB(t)
+	ownerID := "org-owner-oversized"
+	orgID := createTestOrg(t, db, ownerID)
+
+	payload := `{"title":"Huge","instance_type":"ubuntu:22.04","description":"` +
+		strings.Repeat("a", 11*1024*1024) + `"}`
+
+	router := setupImportHardeningRouter(db, ownerID)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/organizations/"+orgID.String()+"/scenarios/import-json", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+	var count int64
+	db.Model(&models.Scenario{}).Count(&count)
+	assert.Equal(t, int64(0), count)
 }

@@ -279,13 +279,33 @@ func (b *scenarioControllerBase) writeScenarioExport(ctx *gin.Context, scenarioI
 	}
 }
 
+// maxScenarioJSONBytes caps a JSON scenario import, matching the 10 MB cap on
+// archive uploads.
+const maxScenarioJSONBytes = 10 * 1024 * 1024
+
+// bindSeedScenarioInput decodes a JSON scenario import body of at most
+// maxScenarioJSONBytes, answering the request itself when it cannot.
+func bindSeedScenarioInput(ctx *gin.Context) (dto.SeedScenarioInput, bool) {
+	var input dto.SeedScenarioInput
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxScenarioJSONBytes)
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		var tooLarge *http.MaxBytesError
+		if stderrors.As(err, &tooLarge) {
+			errors.Respond(ctx, http.StatusRequestEntityTooLarge, "Scenario JSON exceeds 10MB limit")
+		} else {
+			errors.Respond(ctx, http.StatusBadRequest, err.Error())
+		}
+		return input, false
+	}
+	return input, true
+}
+
 // importScenarioJSON creates or updates a scenario from the JSON body under
 // the given owner, optionally assigning it to a group, and answers the
 // request. The caller has already run its authorization gate.
 func (b *scenarioControllerBase) importScenarioJSON(ctx *gin.Context, orgID *uuid.UUID, assignToGroup *uuid.UUID) {
-	var input dto.SeedScenarioInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, err.Error())
+	input, ok := bindSeedScenarioInput(ctx)
+	if !ok {
 		return
 	}
 
