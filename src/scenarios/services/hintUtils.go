@@ -3,7 +3,23 @@ package services
 import (
 	"regexp"
 	"strings"
+
+	"soli/formations/src/scenarios/models"
 )
+
+// BuildStepHints turns a step's hint markdown into the progressive hint rows a
+// learner reveals one by one. Empty content means no hints at all.
+func BuildStepHints(content string) []models.ScenarioStepHint {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	parts := SplitHintContent(content)
+	hints := make([]models.ScenarioStepHint, len(parts))
+	for i, part := range parts {
+		hints[i] = models.ScenarioStepHint{Level: i + 1, Content: part}
+	}
+	return hints
+}
 
 // SplitHintContent splits a single hint content string into multiple hints
 // by detecting `### Indice N` or `### Hint N` headers (case-insensitive, optional colon).

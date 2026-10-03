@@ -82,18 +82,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			FlagPath:                 st.FlagPath,
 		}
 
-		// Build progressive hints from hint content
-		if st.HintContent != "" {
-			parts := SplitHintContent(st.HintContent)
-			hints := make([]models.ScenarioStepHint, len(parts))
-			for j, part := range parts {
-				hints[j] = models.ScenarioStepHint{
-					Level:   j + 1,
-					Content: part,
-				}
-			}
-			newSteps[i].Hints = hints
-		}
+		newSteps[i].Hints = BuildStepHints(st.HintContent)
 
 		// Build quiz questions; GORM cascade-creates them with the step
 		if len(st.Questions) > 0 {
