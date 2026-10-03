@@ -461,18 +461,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			StepType: ResolveStepType("", stepHasFlag),
 		}
 
-		// Build progressive hints from hint content
-		if step.HintContent != "" {
-			parts := SplitHintContent(step.HintContent)
-			hints := make([]models.ScenarioStepHint, len(parts))
-			for j, part := range parts {
-				hints[j] = models.ScenarioStepHint{
-					Level:   j + 1,
-					Content: part,
-				}
-			}
-			step.Hints = hints
-		}
+		step.Hints = BuildStepHints(step.HintContent)
 
 		// Apply step extensions sidecar (extensions.json) if present — overrides step_type
 		// and adds quiz questions without changing the KillerCoda index.json schema.
