@@ -195,13 +195,13 @@ func TestPATCHScenario_NonStringEmptyValuesStillSafelyDropped(t *testing.T) {
 
 	r := setupScenarioPatchRouter(t, db, creatorID, []string{"administrator"})
 
-	// SetupScriptID is *uuid.UUID — sending "" here MUST be silently
+	// OrganizationID is *uuid.UUID — sending "" here MUST be silently
 	// dropped (StringToUUIDHook would convert to uuid.Nil, but the cleanup
 	// is the older, safer guard). We're really just asserting no decode
 	// error — the column stays nil, and the title update still goes through.
 	patchBody := map[string]any{
 		"title":           "Updated Non-String",
-		"setup_script_id": "",
+		"organization_id": "",
 	}
 	body, _ := json.Marshal(patchBody)
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/scenarios/"+scenario.ID.String(), bytes.NewBuffer(body))
@@ -214,5 +214,5 @@ func TestPATCHScenario_NonStringEmptyValuesStillSafelyDropped(t *testing.T) {
 	var reloaded models.Scenario
 	require.NoError(t, db.First(&reloaded, "id = ?", scenario.ID).Error)
 	assert.Equal(t, "Updated Non-String", reloaded.Title)
-	assert.Nil(t, reloaded.SetupScriptID, "empty string for *uuid.UUID field should not corrupt the column")
+	assert.Nil(t, reloaded.OrganizationID, "empty string for *uuid.UUID field should not corrupt the column")
 }

@@ -192,11 +192,7 @@ func (h *ScenarioStepAuthorizationHook) Execute(ctx *hooks.HookContext) error {
 	case hooks.BeforeCreate:
 		return h.checkCreate(ctx)
 	case hooks.BeforeUpdate:
-		if err := h.checkUpdateOrDelete(ctx, ctx.OldEntity, "update", "scenario step"); err != nil {
-			return err
-		}
-		old := ctx.OldEntity.(*models.ScenarioStep)
-		return refuseForeignFileRefs(h.db, old.ScenarioID, stepFileRefs, ctx.NewEntity, old)
+		return h.checkUpdateOrDelete(ctx, ctx.OldEntity, "update", "scenario step")
 	case hooks.BeforeDelete:
 		return h.checkUpdateOrDelete(ctx, ctx.NewEntity, "delete", "scenario step")
 	}
@@ -222,7 +218,7 @@ func (h *ScenarioStepAuthorizationHook) checkCreate(ctx *hooks.HookContext) erro
 	if !allowed {
 		return utils.PermissionDeniedError("add steps to", "scenario")
 	}
-	return refuseForeignFileRefs(h.db, step.ScenarioID, stepFileRefs, ctx.NewEntity, nil)
+	return nil
 }
 
 func (h *ScenarioStepAuthorizationHook) checkUpdateOrDelete(ctx *hooks.HookContext, raw any, action, entityLabel string) error {

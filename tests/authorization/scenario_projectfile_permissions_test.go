@@ -11,20 +11,16 @@ import (
 )
 
 // TestRegisterScenarioPermissions_ProjectFileAdminRoutesGrantAdministrator is the
-// RED test for #408. Two project-file routes are declared Layer-2 AdminOnly but
-// their Layer-1 Casbin grant is still "member":
+// RED test for #408. The project-file listing route is declared Layer-2
+// AdminOnly but its Layer-1 Casbin grant was "member":
 //
 //	GET /api/v1/project-files/by-scenario/:scenarioId   (list files for a scenario)
-//	GET /api/v1/project-files/:id/usage                 (file usage info)
 //
-// The handlers self-enforce isProjectFileAdmin, so this is not a live bug, but the
+// The handler self-enforces isProjectFileAdmin, so this is not a live bug, but the
 // Layer-1 grant should match the AdminOnly intent and deny non-admins at the
 // gateway (defense-in-depth), consistent with the sibling admin-only scenario
 // routes (import/seed/upload/duplicate). The fix flips Role from member →
-// administrator on these two routes only.
-//
-// RED today: both are registered for "member".
-// After the fix: both are registered for "administrator".
+// administrator on that route only.
 func TestRegisterScenarioPermissions_ProjectFileAdminRoutesGrantAdministrator(t *testing.T) {
 	mockEnforcer := mocks.NewMockEnforcer()
 
@@ -57,7 +53,7 @@ func TestRegisterScenarioPermissions_ProjectFileAdminRoutesGrantAdministrator(t 
 		return "", false
 	}
 
-	// The two admin-only project-file routes MUST be Layer-1 gated to
+	// The admin-only project-file route MUST be Layer-1 gated to
 	// "administrator", not "member".
 	adminRoutes := []struct {
 		path   string
@@ -68,11 +64,6 @@ func TestRegisterScenarioPermissions_ProjectFileAdminRoutesGrantAdministrator(t 
 			path:   "/api/v1/project-files/by-scenario/:scenarioId",
 			method: "GET",
 			desc:   "list project files for a scenario (admin only)",
-		},
-		{
-			path:   "/api/v1/project-files/:id/usage",
-			method: "GET",
-			desc:   "project file usage info (admin only)",
 		},
 	}
 

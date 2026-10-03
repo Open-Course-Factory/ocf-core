@@ -48,9 +48,6 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						OrganizationID: input.OrganizationID,
 						IsPublic:       input.IsPublic,
 						SetupScript:    input.SetupScript,
-						SetupScriptID:  input.SetupScriptID,
-						IntroFileID:    input.IntroFileID,
-						FinishFileID:   input.FinishFileID,
 					}
 					return scenario
 				},
@@ -133,15 +130,6 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					}
 					if input.SetupScript != nil {
 						updates["setup_script"] = *input.SetupScript
-					}
-					if input.SetupScriptID != nil {
-						updates["setup_script_id"] = *input.SetupScriptID
-					}
-					if input.IntroFileID != nil {
-						updates["intro_file_id"] = *input.IntroFileID
-					}
-					if input.FinishFileID != nil {
-						updates["finish_file_id"] = *input.FinishFileID
 					}
 					return updates
 				},
@@ -240,9 +228,6 @@ func ScenarioToOutput(model *models.Scenario) dto.ScenarioOutput {
 		IsPublic:       model.IsPublic,
 		CanManage:      true, // cleared by scenarioRedactor for non-managers
 		SetupScript:    model.SetupScript,
-		SetupScriptID:  model.SetupScriptID,
-		IntroFileID:    model.IntroFileID,
-		FinishFileID:   model.FinishFileID,
 		ArchivedAt:     model.ArchivedAt,
 		CreatedAt:      model.CreatedAt,
 		UpdatedAt:      model.UpdatedAt,
@@ -263,11 +248,6 @@ func ScenarioToOutput(model *models.Scenario) dto.ScenarioOutput {
 				HasFlag:            step.HasFlag,
 				FlagPath:           step.FlagPath,
 				FlagLevel:          step.FlagLevel,
-				VerifyScriptID:     step.VerifyScriptID,
-				BackgroundScriptID: step.BackgroundScriptID,
-				ForegroundScriptID: step.ForegroundScriptID,
-				TextFileID:         step.TextFileID,
-				HintFileID:         step.HintFileID,
 				CreatedAt:          step.CreatedAt,
 				UpdatedAt:          step.UpdatedAt,
 			}

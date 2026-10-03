@@ -16,9 +16,6 @@ import (
 // Sensitive step fields (issue #293):
 //   - HintContent — may include flag-revealing hints
 //   - FlagPath, FlagLevel — CTF flag metadata
-//   - VerifyScriptID, BackgroundScriptID, ForegroundScriptID — script UUIDs
-//     enable enumeration of solution scripts
-//   - TextFileID, HintFileID — project-file UUIDs
 //   - Questions slice — contains CorrectAnswer + Explanation
 //
 // Note: ScenarioStep has DefaultIncludes=["Questions"], so direct
@@ -56,11 +53,6 @@ func stripScenarioStepDto(out *dto.ScenarioStepOutput) {
 	out.ForegroundScript = ""
 	out.FlagPath = ""
 	out.FlagLevel = 0
-	out.VerifyScriptID = nil
-	out.BackgroundScriptID = nil
-	out.ForegroundScriptID = nil
-	out.TextFileID = nil
-	out.HintFileID = nil
 	// Drop the Questions slice entirely so embedded CorrectAnswer +
 	// Explanation never reach a non-manager.
 	out.Questions = nil

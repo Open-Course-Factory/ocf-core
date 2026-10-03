@@ -3,9 +3,8 @@ package scenarios_test
 // Tests for the scenario content leak (issue #293).
 //
 // Security bug: GET /api/v1/scenarios and GET /api/v1/scenarios/:id return the
-// full step + question content (HintContent, FlagPath, FlagLevel,
-// VerifyScriptID, BackgroundScriptID, ForegroundScriptID, TextFileID,
-// HintFileID, Questions[].CorrectAnswer, Questions[].Explanation) to every
+// full step + question content (HintContent, FlagPath, FlagLevel, the
+// scripts, Questions[].CorrectAnswer, Questions[].Explanation) to every
 // authenticated Member. Students who can read those fields can cheat on quizzes
 // and CTF flag steps before they ever launch the lab.
 //
@@ -19,9 +18,8 @@ package scenarios_test
 //
 //   1. Admin / creator / org-manager / group-manager  -> full content
 //   2. Regular member with no manage relation         -> stripped
-//      - Steps must not leak HintContent, FlagPath, FlagLevel,
-//        VerifyScriptID, BackgroundScriptID, ForegroundScriptID,
-//        TextFileID, HintFileID
+//      - Steps must not leak HintContent, FlagPath, FlagLevel or the
+//        scripts
 //      - Questions must not be returned at all (no CorrectAnswer / Explanation
 //        leak)
 //   3. ?include=Steps.Questions must NOT bypass the strip — the redaction is
@@ -66,11 +64,6 @@ var stepSensitiveFields = []string{
 	"verify_script",
 	"background_script",
 	"foreground_script",
-	"verify_script_id",
-	"background_script_id",
-	"foreground_script_id",
-	"text_file_id",
-	"hint_file_id",
 }
 
 // =============================================================================
@@ -120,16 +113,10 @@ func setupScenarioReadAuthzTest(t *testing.T, db *gorm.DB, userID string, roles 
 }
 
 // buildLeakyScenario creates a scenario with one step (full of sensitive
-// content: hint, flag, scripts, file IDs) and one quiz question with
+// content: hint, flag) and one quiz question with
 // CorrectAnswer + Explanation. This is the worst case for the leak.
 func buildLeakyScenario(t *testing.T, db *gorm.DB, name, creatorID string, orgID *uuid.UUID) *models.Scenario {
 	t.Helper()
-
-	verifyScriptID := uuid.New()
-	bgScriptID := uuid.New()
-	fgScriptID := uuid.New()
-	textFileID := uuid.New()
-	hintFileID := uuid.New()
 
 	scenario := &models.Scenario{
 		Name:           name,
@@ -152,11 +139,6 @@ func buildLeakyScenario(t *testing.T, db *gorm.DB, name, creatorID string, orgID
 		HasFlag:            true,
 		FlagPath:           "/etc/secret/flag.txt",
 		FlagLevel:          3,
-		VerifyScriptID:     &verifyScriptID,
-		BackgroundScriptID: &bgScriptID,
-		ForegroundScriptID: &fgScriptID,
-		TextFileID:         &textFileID,
-		HintFileID:         &hintFileID,
 	}
 	require.NoError(t, db.Create(&step).Error)
 
@@ -244,9 +226,6 @@ func assertStepHasFullContent(t *testing.T, step map[string]any) {
 		assert.EqualValues(t, 3, v, "manager must see flag_level")
 	} else {
 		t.Errorf("manager must receive flag_level on step")
-	}
-	for _, f := range []string{"verify_script_id", "background_script_id", "foreground_script_id", "text_file_id", "hint_file_id"} {
-		assert.NotNil(t, step[f], "manager must see %s (script/file id)", f)
 	}
 	questions, ok := step["questions"].([]any)
 	require.True(t, ok, "manager must see questions array")

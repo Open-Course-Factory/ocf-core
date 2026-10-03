@@ -8,12 +8,10 @@ package scenarios_test
 //
 //   1. GET /api/v1/scenarios[/:id] still returns ScenarioOutput.SetupScript
 //      (raw setup-script body executed in the lab container — often the lab
-//      "answer" itself), plus SetupScriptID, IntroFileID, FinishFileID, to
-//      any authenticated Member.
+//      "answer" itself) to any authenticated Member.
 //
 //   2. GET /api/v1/scenario-steps[/:id] returns the full step content
-//      (HintContent, FlagPath, FlagLevel, VerifyScriptID, BackgroundScriptID,
-//      ForegroundScriptID, TextFileID, HintFileID, plus the embedded
+//      (HintContent, FlagPath, FlagLevel, the scripts, plus the embedded
 //      Questions[].CorrectAnswer / Explanation) directly to any Member.
 //      This sibling route bypasses the redactor that lives on the Scenario
 //      entity.
@@ -68,20 +66,11 @@ func setupExtendedReadAuthzTest(t *testing.T, db *gorm.DB, userID string, roles 
 }
 
 // buildLeakyScenarioWithSetupScript creates a scenario seeded with a
-// SetupScript + script/file IDs (so we can test the top-level scenario
+// SetupScript (so we can test the top-level scenario
 // fields) AND one step with sensitive content + one quiz question. Returns
 // a fully-loaded scenario, the step, and the question for direct lookups.
 func buildLeakyScenarioWithSetupScript(t *testing.T, db *gorm.DB, name, creatorID string, orgID *uuid.UUID) (*models.Scenario, *models.ScenarioStep, *models.ScenarioStepQuestion) {
 	t.Helper()
-
-	setupScriptID := uuid.New()
-	introFileID := uuid.New()
-	finishFileID := uuid.New()
-	verifyScriptID := uuid.New()
-	bgScriptID := uuid.New()
-	fgScriptID := uuid.New()
-	textFileID := uuid.New()
-	hintFileID := uuid.New()
 
 	scenario := &models.Scenario{
 		Name:           name,
@@ -92,9 +81,6 @@ func buildLeakyScenarioWithSetupScript(t *testing.T, db *gorm.DB, name, creatorI
 		OrganizationID: orgID,
 		FlagsEnabled:   true,
 		SetupScript:    leakSetupScript,
-		SetupScriptID:  &setupScriptID,
-		IntroFileID:    &introFileID,
-		FinishFileID:   &finishFileID,
 	}
 	require.NoError(t, db.Create(scenario).Error)
 
@@ -111,11 +97,6 @@ func buildLeakyScenarioWithSetupScript(t *testing.T, db *gorm.DB, name, creatorI
 		HasFlag:            true,
 		FlagPath:           "/etc/secret/flag.txt",
 		FlagLevel:          3,
-		VerifyScriptID:     &verifyScriptID,
-		BackgroundScriptID: &bgScriptID,
-		ForegroundScriptID: &fgScriptID,
-		TextFileID:         &textFileID,
-		HintFileID:         &hintFileID,
 	}
 	require.NoError(t, db.Create(&step).Error)
 
@@ -159,15 +140,6 @@ func assertStepBodyHasFullContent(t *testing.T, step map[string]any) {
 		assert.EqualValues(t, 3, v, "manager must see flag_level")
 	} else {
 		t.Errorf("manager must receive flag_level on step")
-	}
-	for _, f := range []string{
-		"verify_script_id",
-		"background_script_id",
-		"foreground_script_id",
-		"text_file_id",
-		"hint_file_id",
-	} {
-		assert.NotNil(t, step[f], "manager must see %s", f)
 	}
 	questions, ok := step["questions"].([]any)
 	require.True(t, ok, "manager must see questions array; body=%v", step)
@@ -248,12 +220,12 @@ func assertQuestionBodyStripped(t *testing.T, q map[string]any) {
 // Scenario-level setup_script stripping (3 tests).
 // =============================================================================
 
-// assertScenarioSetupScriptStripped checks that the top-level SetupScript +
-// script/file IDs are not leaked to a non-manager. Either absent (omitempty)
+// assertScenarioSetupScriptStripped checks that the top-level SetupScript
+// is not leaked to a non-manager. Either absent (omitempty)
 // or zero / null is acceptable.
 func assertScenarioSetupScriptStripped(t *testing.T, body map[string]any) {
 	t.Helper()
-	for _, f := range []string{"setup_script", "setup_script_id", "intro_file_id", "finish_file_id"} {
+	for _, f := range []string{"setup_script"} {
 		v, present := body[f]
 		if !present {
 			continue
@@ -284,12 +256,9 @@ func TestGetScenario_AsAdmin_ReturnsSetupScript(t *testing.T) {
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 
-	// Positive control: admin must see SetupScript + IDs.
+	// Positive control: admin must see SetupScript.
 	assert.Equal(t, leakSetupScript, body["setup_script"],
 		"admin must see setup_script (positive control)")
-	assert.NotNil(t, body["setup_script_id"], "admin must see setup_script_id")
-	assert.NotNil(t, body["intro_file_id"], "admin must see intro_file_id")
-	assert.NotNil(t, body["finish_file_id"], "admin must see finish_file_id")
 }
 
 func TestGetScenario_AsRegularMember_StripsSetupScript(t *testing.T) {
