@@ -56,12 +56,13 @@ func TestDuplicateScenario_StepsAreFieldCompleteAgainstSource(t *testing.T) {
 
 	// The source fixture is generic, so give its steps the values whose loss
 	// motivated this test: a quiz step with questions, and an exam-mode step.
+	// Neither kind carries a flag (models.NormalizeFlagStep).
 	require.NoError(t, db.Model(&models.ScenarioStep{}).
 		Where("id = ?", source.Steps[0].ID).
-		Updates(map[string]any{"step_type": "quiz", "show_immediate_feedback": true}).Error)
+		Updates(map[string]any{"step_type": "quiz", "has_flag": false, "show_immediate_feedback": true}).Error)
 	require.NoError(t, db.Model(&models.ScenarioStep{}).
 		Where("id = ?", source.Steps[1].ID).
-		Updates(map[string]any{"step_type": "info", "show_immediate_feedback": false}).Error)
+		Updates(map[string]any{"step_type": "info", "has_flag": false, "show_immediate_feedback": false}).Error)
 	require.NoError(t, db.Create(&models.ScenarioStepQuestion{
 		StepID:        source.Steps[0].ID,
 		Order:         1,

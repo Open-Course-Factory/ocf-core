@@ -117,7 +117,7 @@ func TestScenarioHealth_FlagStepIsNotADeadEnd(t *testing.T) {
 	db, scenario, steps := coverageScenario(t, `["en"]`)
 	for i, step := range steps {
 		if i == 0 {
-			require.NoError(t, db.Model(&step).Update("has_flag", true).Error)
+			require.NoError(t, db.Model(&step).Updates(map[string]any{"step_type": "flag", "has_flag": true}).Error)
 			continue
 		}
 		require.NoError(t, db.Model(&step).Update("verify_script", "exit 0").Error)

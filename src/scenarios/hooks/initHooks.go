@@ -53,6 +53,13 @@ func InitScenarioHooks(db *gorm.DB) {
 	// Translations are Member-writable, so every write operation on them needs
 	// an authorization hook. Without one the entity is not weakly protected but
 	// unprotected, and any learner could rewrite another trainer's content.
+	stepFlagHook := NewScenarioStepFlagHook()
+	if err := hooks.GlobalHookRegistry.RegisterHook(stepFlagHook); err != nil {
+		log.Printf("Failed to register scenario step flag hook: %v", err)
+	} else {
+		log.Println("Scenario step flag hook registered")
+	}
+
 	translationAuthHook := NewScenarioStepTranslationAuthorizationHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(translationAuthHook); err != nil {
 		log.Printf("Failed to register scenario step translation authorization hook: %v", err)
