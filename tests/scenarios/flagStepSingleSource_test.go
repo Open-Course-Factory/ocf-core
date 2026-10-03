@@ -158,6 +158,25 @@ func TestFlagRule_SeededFlagStep_PatchTitleOnly_KeepsItsFlag(t *testing.T) {
 	assert.Equal(t, step.Order, flags[0].StepOrder)
 }
 
+// A scenario built in the editor has flags_enabled false; its flag steps must
+// still be playable.
+func TestFlagRule_FlagsDisabledScenario_FlagStepStillGetsItsFlag(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := createScenarioForFlagRule(t, db, "editor-built-flags")
+	require.False(t, scenario.FlagsEnabled)
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "find it", StepType: "flag",
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 1, Title: "verify it", StepType: "terminal",
+	}).Error)
+
+	flags := startRunWithRealFlags(t, db, scenario.ID)
+	require.Len(t, flags, 1, "exactly the flag step gets a flag")
+	assert.Equal(t, 0, flags[0].StepOrder)
+	assert.Regexp(t, `^FLAG\{[0-9a-f]{16}\}$`, flags[0].ExpectedFlag)
+}
+
 func TestFlagRule_StartupRepair_FixesRowsWrittenBeforeTheRule(t *testing.T) {
 	db := freshTestDB(t)
 	scenario := createScenarioForFlagRule(t, db, "flag-rule-repair")
