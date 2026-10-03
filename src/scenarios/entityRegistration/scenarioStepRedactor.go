@@ -25,6 +25,9 @@ import (
 // GET /scenario-steps/:id always preloads Questions. Stripping the slice
 // here covers both the default case and any `?include=Questions` request.
 func scenarioStepRedactor(c *gin.Context, dtoPtr any, db *gorm.DB) error {
+	// The one DB-aware step after model→DTO conversion, so it also shows
+	// file-backed content (see fileBackedContent.go) before redacting.
+	withFileContent(dtoPtr, db, stepOutputFiles)
 	return redactUnlessManager(c, dtoPtr, db, "scenarioStepRedactor", scenarioOfStepOutput, stripScenarioStepDto)
 }
 

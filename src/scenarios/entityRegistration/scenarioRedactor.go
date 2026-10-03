@@ -34,6 +34,9 @@ import (
 // the client sends — fixing the leak even when default preloads or explicit
 // includes have already populated the steps in the model.
 func scenarioRedactor(c *gin.Context, dtoPtr any, db *gorm.DB) error {
+	// The one DB-aware step after model→DTO conversion, so it also shows
+	// file-backed content (see fileBackedContent.go) before redacting.
+	withFileContent(dtoPtr, db, scenarioOutputFiles)
 	return redactUnlessManager(c, dtoPtr, db, "scenarioRedactor", scenarioFromOutput, stripScenarioDto)
 }
 
