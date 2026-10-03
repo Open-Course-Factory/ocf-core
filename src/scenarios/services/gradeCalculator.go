@@ -121,7 +121,7 @@ func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []mode
 //
 // Denominator semantics:
 //   - quiz step: + questionCountByStepID[step.ID]
-//   - flag-bearing step (StepType=="flag" OR HasFlag): + 1
+//   - flag step: + 1
 //   - terminal/info steps: ignored entirely.
 //
 // Callers must pre-filter `steps` to exclude soft-deleted rows and
@@ -160,7 +160,7 @@ func ComputeCorrectCountsFromLoaded(
 			if p, ok := progressByOrder[step.Order]; ok && p.QuizScore != nil {
 				correct += int64(math.Round(*p.QuizScore * float64(n)))
 			}
-		case stepType == "flag" || step.HasFlag:
+		case stepType == "flag":
 			total += 1
 			if f, ok := flagByOrder[step.Order]; ok && f.IsCorrect {
 				correct += 1

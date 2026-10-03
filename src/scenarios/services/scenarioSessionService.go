@@ -1675,12 +1675,6 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return s.completeInfoStep(&session)
 	}
 
-	// Backward compat: legacy steps with HasFlag but no step_type still route
-	// to flag submission.
-	if currentStep.HasFlag && stepType == "terminal" {
-		return nil, fmt.Errorf("this step requires flag submission via /submit-flag, not /verify")
-	}
-
 	// Pre-populate VerifyScript from ProjectFile (VerificationService doesn't have DB access)
 	currentStep.VerifyScript = ResolveScriptContent(s.db, currentStep.VerifyScriptID, currentStep.VerifyScript)
 
