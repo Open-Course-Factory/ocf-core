@@ -106,9 +106,6 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 	if isUpdate {
 		// Update existing scenario in a transaction
 		err := s.db.Transaction(func(tx *gorm.DB) error {
-			// Collect old ProjectFile IDs before deleting steps
-			oldFileIDs := collectProjectFileIDs(tx, existing.ID)
-
 			if err := tx.Model(&existing).Updates(map[string]any{
 				"title":              input.Title,
 				"description":        input.Description,
@@ -127,9 +124,6 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 				"intro_text":         input.IntroText,
 				"finish_text":        input.FinishText,
 				"setup_script":       input.SetupScript,
-				"setup_script_id":    nil,
-				"intro_file_id":      nil,
-				"finish_file_id":     nil,
 			}).Error; err != nil {
 				return fmt.Errorf("failed to update scenario: %w", err)
 			}
@@ -200,11 +194,10 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 					return fmt.Errorf("failed to create instance type: %w", err)
 				}
 			}
-			// Delete old ProjectFiles (orphaned from previous imports)
-			if len(oldFileIDs) > 0 {
-				if err := tx.Where("id IN ?", oldFileIDs).Delete(&models.ProjectFile{}).Error; err != nil {
-					return fmt.Errorf("failed to delete old project files: %w", err)
-				}
+			// A seed carries no images: those a previous import stored no
+			// longer belong to the content this replaces it with.
+			if err := deleteScenarioImages(tx, existing.ID); err != nil {
+				return err
 			}
 
 			// Write the steps, reusing the row that already held each order.
@@ -228,17 +221,6 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 				if err := tx.Create(&newSteps[i]).Error; err != nil {
 					return fmt.Errorf("failed to create step: %w", err)
 				}
-			}
-
-			// Create ProjectFiles (dual-write: content stored inline AND in ProjectFile)
-			srcScenario := &models.Scenario{
-				IntroText:   input.IntroText,
-				FinishText:  input.FinishText,
-				SetupScript: input.SetupScript,
-				Steps:       newSteps,
-			}
-			if err := createProjectFilesForScenario(tx, &existing, srcScenario, nil); err != nil {
-				return fmt.Errorf("failed to create project files: %w", err)
 			}
 
 			return nil
@@ -286,17 +268,6 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 
 		if err := s.db.Create(&scenario).Error; err != nil {
 			return nil, false, fmt.Errorf("failed to create scenario: %w", err)
-		}
-
-		// Create ProjectFiles (dual-write)
-		srcScenario := &models.Scenario{
-			IntroText:   input.IntroText,
-			FinishText:  input.FinishText,
-			SetupScript: input.SetupScript,
-			Steps:       newSteps,
-		}
-		if err := createProjectFilesForScenario(s.db, &scenario, srcScenario, nil); err != nil {
-			return nil, false, fmt.Errorf("failed to create project files: %w", err)
 		}
 	}
 

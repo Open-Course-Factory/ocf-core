@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// --- Helper: create a full source scenario with steps, hints, project files, and instance types ---
+// --- Helper: create a full source scenario with steps, hints, an image, and instance types ---
 
 func createFullSourceScenario(t *testing.T, db *gorm.DB, orgID *uuid.UUID) models.Scenario {
 	t.Helper()
@@ -50,63 +50,6 @@ func createFullSourceScenario(t *testing.T, db *gorm.DB, orgID *uuid.UUID) model
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	// Create scenario-level project files
-	setupFile := models.ProjectFile{
-		Name: "background.sh", RelPath: "background.sh", ContentType: "script",
-		Content: "#!/bin/bash\necho setup", StorageType: "database", SizeBytes: 25,
-	}
-	require.NoError(t, db.Create(&setupFile).Error)
-
-	introFile := models.ProjectFile{
-		Name: "intro.md", RelPath: "intro.md", ContentType: "markdown",
-		Content: "Welcome to the test", StorageType: "database", SizeBytes: 19,
-	}
-	require.NoError(t, db.Create(&introFile).Error)
-
-	finishFile := models.ProjectFile{
-		Name: "finish.md", RelPath: "finish.md", ContentType: "markdown",
-		Content: "Congratulations!", StorageType: "database", SizeBytes: 17,
-	}
-	require.NoError(t, db.Create(&finishFile).Error)
-
-	// Update scenario FKs
-	require.NoError(t, db.Model(&scenario).Updates(map[string]any{
-		"setup_script_id": setupFile.ID,
-		"intro_file_id":   introFile.ID,
-		"finish_file_id":  finishFile.ID,
-	}).Error)
-
-	// Create step-level project files
-	verifyFile := models.ProjectFile{
-		Name: "verify.sh", RelPath: "step1/verify.sh", ContentType: "script",
-		Content: "#!/bin/bash\nexit 0", StorageType: "database", SizeBytes: 20,
-	}
-	require.NoError(t, db.Create(&verifyFile).Error)
-
-	bgFile := models.ProjectFile{
-		Name: "background.sh", RelPath: "step1/background.sh", ContentType: "script",
-		Content: "#!/bin/bash\necho bg", StorageType: "database", SizeBytes: 21,
-	}
-	require.NoError(t, db.Create(&bgFile).Error)
-
-	textFile := models.ProjectFile{
-		Name: "text.md", RelPath: "step1/text.md", ContentType: "markdown",
-		Content: "# Step 1\nDo something", StorageType: "database", SizeBytes: 22,
-	}
-	require.NoError(t, db.Create(&textFile).Error)
-
-	fgFile := models.ProjectFile{
-		Name: "foreground.sh", RelPath: "step1/foreground.sh", ContentType: "script",
-		Content: "#!/bin/bash\necho fg", StorageType: "database", SizeBytes: 21,
-	}
-	require.NoError(t, db.Create(&fgFile).Error)
-
-	hintFile := models.ProjectFile{
-		Name: "hint.md", RelPath: "step1/hint.md", ContentType: "markdown",
-		Content: "# Hint\nTry this approach", StorageType: "database", SizeBytes: 25,
-	}
-	require.NoError(t, db.Create(&hintFile).Error)
-
 	// Create an image file linked to the scenario
 	imageFile := models.ProjectFile{
 		Name: "diagram.png", RelPath: "images/diagram.png", ContentType: "image",
@@ -127,11 +70,6 @@ func createFullSourceScenario(t *testing.T, db *gorm.DB, orgID *uuid.UUID) model
 		HasFlag:            true,
 		FlagPath:           "/tmp/flag1",
 		FlagLevel:          1,
-		VerifyScriptID:     &verifyFile.ID,
-		BackgroundScriptID: &bgFile.ID,
-		ForegroundScriptID: &fgFile.ID,
-		TextFileID:         &textFile.ID,
-		HintFileID:         &hintFile.ID,
 	}
 	require.NoError(t, db.Create(&step1).Error)
 
@@ -282,56 +220,6 @@ func TestDuplicateScenario_NewIDs(t *testing.T) {
 		assert.NotEqual(t, source.CompatibleInstanceTypes[i].ID, it.ID)
 		assert.Equal(t, result.ID, it.ScenarioID)
 	}
-}
-
-func TestDuplicateScenario_StepFKsUpdated(t *testing.T) {
-	db := freshTestDB(t)
-	source := createFullSourceScenario(t, db, nil)
-	svc := services.NewScenarioDuplicateService(db)
-
-	result, err := svc.DuplicateScenario(source.ID, "user1", nil)
-	require.NoError(t, err)
-
-	// Reload steps with FK fields (the preload may not include them)
-	var newSteps []models.ScenarioStep
-	require.NoError(t, db.Where("scenario_id = ?", result.ID).Order("\"order\" ASC").Find(&newSteps).Error)
-	require.Len(t, newSteps, 2)
-
-	// Step 0 had all 5 FK fields set
-	assert.NotNil(t, newSteps[0].VerifyScriptID)
-	assert.NotNil(t, newSteps[0].BackgroundScriptID)
-	assert.NotNil(t, newSteps[0].ForegroundScriptID)
-	assert.NotNil(t, newSteps[0].TextFileID)
-	assert.NotNil(t, newSteps[0].HintFileID)
-
-	// Verify the FKs point to new project files (not the source ones)
-	var sourceSteps []models.ScenarioStep
-	require.NoError(t, db.Where("scenario_id = ?", source.ID).Order("\"order\" ASC").Find(&sourceSteps).Error)
-
-	assert.NotEqual(t, *sourceSteps[0].VerifyScriptID, *newSteps[0].VerifyScriptID)
-	assert.NotEqual(t, *sourceSteps[0].BackgroundScriptID, *newSteps[0].BackgroundScriptID)
-	assert.NotEqual(t, *sourceSteps[0].ForegroundScriptID, *newSteps[0].ForegroundScriptID)
-	assert.NotEqual(t, *sourceSteps[0].TextFileID, *newSteps[0].TextFileID)
-	assert.NotEqual(t, *sourceSteps[0].HintFileID, *newSteps[0].HintFileID)
-
-	// Verify the new project files actually exist and have the right content
-	var verifyFile models.ProjectFile
-	require.NoError(t, db.First(&verifyFile, "id = ?", *newSteps[0].VerifyScriptID).Error)
-	assert.Equal(t, "#!/bin/bash\nexit 0", verifyFile.Content)
-
-	// Verify scenario-level FKs are also remapped
-	var newScenario models.Scenario
-	require.NoError(t, db.First(&newScenario, "id = ?", result.ID).Error)
-	assert.NotNil(t, newScenario.SetupScriptID)
-	assert.NotNil(t, newScenario.IntroFileID)
-	assert.NotNil(t, newScenario.FinishFileID)
-
-	// Reload the source to compare
-	var srcScenario models.Scenario
-	require.NoError(t, db.First(&srcScenario, "id = ?", source.ID).Error)
-	assert.NotEqual(t, *srcScenario.SetupScriptID, *newScenario.SetupScriptID)
-	assert.NotEqual(t, *srcScenario.IntroFileID, *newScenario.IntroFileID)
-	assert.NotEqual(t, *srcScenario.FinishFileID, *newScenario.FinishFileID)
 }
 
 func TestDuplicateScenario_FlagSecretRegenerated(t *testing.T) {

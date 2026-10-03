@@ -231,235 +231,74 @@ func TestScenario_WithProjectFileFKs(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Import creates ProjectFile records (dual-write)
+// 5. Import stores scripts and texts inline only; images stay files
 // ---------------------------------------------------------------------------
 
-func TestImport_CreatesProjectFiles(t *testing.T) {
-	db := freshTestDB(t)
-	importer := services.NewScenarioImporterService(db)
-
-	tmpDir := t.TempDir()
-
-	// Create a realistic scenario directory
-	writeTestFile(t, tmpDir, "intro.md", "# Welcome to the lab")
-	writeTestFile(t, tmpDir, "finish.md", "# Congratulations!")
-
-	os.MkdirAll(filepath.Join(tmpDir, "step1"), 0755)
-	writeTestFile(t, tmpDir, "step1/text.md", "Navigate to /tmp")
-	writeTestFile(t, tmpDir, "step1/verify.sh", "#!/bin/bash\ntest -d /tmp")
-	writeTestFile(t, tmpDir, "step1/hint.md", "Try using cd")
-	writeTestFile(t, tmpDir, "step1/background.sh", "#!/bin/bash\nmkdir -p /tmp/test")
-
-	indexJSON := `{
-		"title": "ProjectFile Import Test",
-		"description": "Testing ProjectFile creation on import",
-		"difficulty": "beginner",
-		"time": "15m",
+func writeInlineOnlyScenario(t *testing.T, dir, version string) {
+	t.Helper()
+	writeTestFile(t, dir, "intro.md", "# Intro "+version+"\n![diagram](diagram.png)")
+	writeTestFile(t, dir, "diagram.png", "png "+version)
+	os.MkdirAll(filepath.Join(dir, "step1"), 0755)
+	writeTestFile(t, dir, "step1/text.md", "Text "+version)
+	writeTestFile(t, dir, "step1/verify.sh", "#!/bin/bash\nverify "+version)
+	writeTestFile(t, dir, "index.json", `{
+		"title": "Inline Only Import",
 		"details": {
-			"intro": {"text": "intro.md"},
-			"steps": [
-				{
-					"title": "Step One",
-					"text": "step1/text.md",
-					"verify": "step1/verify.sh",
-					"hint": "step1/hint.md",
-					"background": "step1/background.sh",
-					"foreground": ""
-				}
-			],
-			"finish": {"text": "finish.md"}
+			"intro": {"text": "intro.md", "background": "step1/verify.sh"},
+			"steps": [{"title": "Step One", "text": "step1/text.md", "verify": "step1/verify.sh", "hint": "step1/text.md"}]
 		},
 		"backend": {"imageid": "ubuntu:22.04"}
-	}`
-	writeTestFile(t, tmpDir, "index.json", indexJSON)
-
-	scenario, err := importer.ImportFromDirectory(tmpDir, "user-pf-test", nil, "builtin")
-	require.NoError(t, err)
-
-	// --- Verify scenario-level ProjectFile records ---
-
-	// Reload scenario to get FK pointers set by createProjectFilesForScenario
-	var reloaded models.Scenario
-	err = db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).First(&reloaded, "id = ?", scenario.ID).Error
-	require.NoError(t, err)
-
-	// IntroFileID should be set
-	require.NotNil(t, reloaded.IntroFileID, "IntroFileID should be set after import")
-	var introFile models.ProjectFile
-	require.NoError(t, db.First(&introFile, "id = ?", *reloaded.IntroFileID).Error)
-	assert.Equal(t, "intro.md", introFile.Name)
-	assert.Equal(t, "markdown", introFile.ContentType)
-	assert.Equal(t, "# Welcome to the lab", introFile.Content)
-	assert.Equal(t, "intro.md", introFile.RelPath)
-
-	// FinishFileID should be set
-	require.NotNil(t, reloaded.FinishFileID, "FinishFileID should be set after import")
-	var finishFile models.ProjectFile
-	require.NoError(t, db.First(&finishFile, "id = ?", *reloaded.FinishFileID).Error)
-	assert.Equal(t, "finish.md", finishFile.Name)
-	assert.Equal(t, "markdown", finishFile.ContentType)
-	assert.Equal(t, "# Congratulations!", finishFile.Content)
-	assert.Equal(t, "finish.md", finishFile.RelPath)
-
-	// --- Verify step-level ProjectFile records ---
-	require.Len(t, reloaded.Steps, 1)
-	step := reloaded.Steps[0]
-
-	// VerifyScriptID
-	require.NotNil(t, step.VerifyScriptID, "VerifyScriptID should be set after import")
-	var verifyFile models.ProjectFile
-	require.NoError(t, db.First(&verifyFile, "id = ?", *step.VerifyScriptID).Error)
-	assert.Equal(t, "verify.sh", verifyFile.Name)
-	assert.Equal(t, "script", verifyFile.ContentType)
-	assert.Equal(t, "#!/bin/bash\ntest -d /tmp", verifyFile.Content)
-	assert.Equal(t, "step1/verify.sh", verifyFile.RelPath)
-
-	// TextFileID
-	require.NotNil(t, step.TextFileID, "TextFileID should be set after import")
-	var textFile models.ProjectFile
-	require.NoError(t, db.First(&textFile, "id = ?", *step.TextFileID).Error)
-	assert.Equal(t, "text.md", textFile.Name)
-	assert.Equal(t, "markdown", textFile.ContentType)
-	assert.Equal(t, "Navigate to /tmp", textFile.Content)
-	assert.Equal(t, "step1/text.md", textFile.RelPath)
-
-	// HintFileID
-	require.NotNil(t, step.HintFileID, "HintFileID should be set after import")
-	var hintFile models.ProjectFile
-	require.NoError(t, db.First(&hintFile, "id = ?", *step.HintFileID).Error)
-	assert.Equal(t, "hint.md", hintFile.Name)
-	assert.Equal(t, "markdown", hintFile.ContentType)
-	assert.Equal(t, "Try using cd", hintFile.Content)
-	assert.Equal(t, "step1/hint.md", hintFile.RelPath)
-
-	// BackgroundScriptID
-	require.NotNil(t, step.BackgroundScriptID, "BackgroundScriptID should be set after import")
-	var bgFile models.ProjectFile
-	require.NoError(t, db.First(&bgFile, "id = ?", *step.BackgroundScriptID).Error)
-	assert.Equal(t, "background.sh", bgFile.Name)
-	assert.Equal(t, "script", bgFile.ContentType)
-	assert.Equal(t, "#!/bin/bash\nmkdir -p /tmp/test", bgFile.Content)
-	assert.Equal(t, "step1/background.sh", bgFile.RelPath)
-
-	// Verify total count of ProjectFiles in DB
-	var fileCount int64
-	db.Model(&models.ProjectFile{}).Count(&fileCount)
-	assert.Equal(t, int64(6), fileCount) // intro + finish + verify + text + hint + background
+	}`)
 }
 
-// ---------------------------------------------------------------------------
-// 6. Re-import cleans up old ProjectFiles and creates new ones
-// ---------------------------------------------------------------------------
+func assertInlineOnly(t *testing.T, db *gorm.DB, scenarioID uuid.UUID, version string) {
+	t.Helper()
+	var stored models.Scenario
+	require.NoError(t, db.Preload("Steps").First(&stored, "id = ?", scenarioID).Error)
+	assert.Equal(t, "# Intro "+version+"\n![diagram](diagram.png)", stored.IntroText)
+	assert.Nil(t, stored.IntroFileID)
+	assert.Nil(t, stored.SetupScriptID)
+	require.Len(t, stored.Steps, 1)
+	assert.Equal(t, "Text "+version, stored.Steps[0].TextContent)
+	assert.Equal(t, "#!/bin/bash\nverify "+version, stored.Steps[0].VerifyScript)
+	assert.Nil(t, stored.Steps[0].TextFileID)
+	assert.Nil(t, stored.Steps[0].VerifyScriptID)
+	assert.Nil(t, stored.Steps[0].HintFileID)
 
-func TestImport_ReimportCleansUpOldProjectFiles(t *testing.T) {
+	var files []models.ProjectFile
+	require.NoError(t, db.Find(&files).Error)
+	require.Len(t, files, 1, "the only file an import writes is the image")
+	assert.Equal(t, "image", files[0].ContentType)
+	assert.Equal(t, "diagram.png", files[0].RelPath)
+	require.NotNil(t, files[0].ScenarioID)
+	assert.Equal(t, scenarioID, *files[0].ScenarioID)
+}
+
+func TestImport_StoresContentInlineAndOnlyImagesAsFiles(t *testing.T) {
+	db := freshTestDB(t)
+	dir := t.TempDir()
+	writeInlineOnlyScenario(t, dir, "v1")
+
+	scenario, err := services.NewScenarioImporterService(db).ImportFromDirectory(dir, "user-inline", nil, "builtin")
+	require.NoError(t, err)
+
+	assertInlineOnly(t, db, scenario.ID, "v1")
+}
+
+func TestImport_Reimport_ReplacesContentAndImages(t *testing.T) {
 	db := freshTestDB(t)
 	importer := services.NewScenarioImporterService(db)
-
-	tmpDir := t.TempDir()
-
-	// --- First import ---
-	writeTestFile(t, tmpDir, "intro.md", "# Original intro")
-	writeTestFile(t, tmpDir, "finish.md", "# Original finish")
-	os.MkdirAll(filepath.Join(tmpDir, "step1"), 0755)
-	writeTestFile(t, tmpDir, "step1/text.md", "Original step text")
-	writeTestFile(t, tmpDir, "step1/verify.sh", "#!/bin/bash\noriginal verify")
-
-	indexJSON := `{
-		"title": "Reimport Cleanup Test",
-		"description": "Testing reimport cleans old ProjectFiles",
-		"difficulty": "beginner",
-		"time": "10m",
-		"details": {
-			"intro": {"text": "intro.md"},
-			"steps": [
-				{"title": "Step One", "text": "step1/text.md", "verify": "step1/verify.sh", "background": "", "foreground": "", "hint": ""}
-			],
-			"finish": {"text": "finish.md"}
-		},
-		"backend": {"imageid": "ubuntu:22.04"}
-	}`
-	writeTestFile(t, tmpDir, "index.json", indexJSON)
-
-	scenario1, err := importer.ImportFromDirectory(tmpDir, "user-reimport", nil, "builtin")
+	dir := t.TempDir()
+	writeInlineOnlyScenario(t, dir, "v1")
+	first, err := importer.ImportFromDirectory(dir, "user-inline", nil, "builtin")
 	require.NoError(t, err)
 
-	// Collect old ProjectFile IDs
-	var oldScenario models.Scenario
-	err = db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).First(&oldScenario, "id = ?", scenario1.ID).Error
+	writeInlineOnlyScenario(t, dir, "v2")
+	second, err := importer.ImportFromDirectory(dir, "user-inline", nil, "builtin")
 	require.NoError(t, err)
 
-	oldIDs := make([]uuid.UUID, 0)
-	if oldScenario.IntroFileID != nil {
-		oldIDs = append(oldIDs, *oldScenario.IntroFileID)
-	}
-	if oldScenario.FinishFileID != nil {
-		oldIDs = append(oldIDs, *oldScenario.FinishFileID)
-	}
-	for _, step := range oldScenario.Steps {
-		if step.VerifyScriptID != nil {
-			oldIDs = append(oldIDs, *step.VerifyScriptID)
-		}
-		if step.TextFileID != nil {
-			oldIDs = append(oldIDs, *step.TextFileID)
-		}
-	}
-	require.NotEmpty(t, oldIDs, "first import should have created ProjectFile records")
-
-	// --- Second import (same scenario name = upsert) ---
-	writeTestFile(t, tmpDir, "intro.md", "# Updated intro")
-	writeTestFile(t, tmpDir, "finish.md", "# Updated finish")
-	writeTestFile(t, tmpDir, "step1/text.md", "Updated step text")
-	writeTestFile(t, tmpDir, "step1/verify.sh", "#!/bin/bash\nupdated verify")
-
-	scenario2, err := importer.ImportFromDirectory(tmpDir, "user-reimport", nil, "builtin")
-	require.NoError(t, err)
-	assert.Equal(t, scenario1.ID, scenario2.ID, "should reuse the same scenario ID on upsert")
-
-	// Old ProjectFile IDs should no longer exist (soft-deleted)
-	for _, oldID := range oldIDs {
-		var pf models.ProjectFile
-		err := db.First(&pf, "id = ?", oldID).Error
-		assert.Error(t, err, "old ProjectFile %s should be deleted after reimport", oldID)
-	}
-
-	// New ProjectFile records should exist with updated content
-	var newScenario models.Scenario
-	err = db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).First(&newScenario, "id = ?", scenario2.ID).Error
-	require.NoError(t, err)
-
-	require.NotNil(t, newScenario.IntroFileID, "IntroFileID should be set after reimport")
-	var introFile models.ProjectFile
-	require.NoError(t, db.First(&introFile, "id = ?", *newScenario.IntroFileID).Error)
-	assert.Equal(t, "# Updated intro", introFile.Content)
-
-	require.NotNil(t, newScenario.FinishFileID, "FinishFileID should be set after reimport")
-	var finishFile models.ProjectFile
-	require.NoError(t, db.First(&finishFile, "id = ?", *newScenario.FinishFileID).Error)
-	assert.Equal(t, "# Updated finish", finishFile.Content)
-
-	require.Len(t, newScenario.Steps, 1)
-	step := newScenario.Steps[0]
-	require.NotNil(t, step.TextFileID)
-	var textFile models.ProjectFile
-	require.NoError(t, db.First(&textFile, "id = ?", *step.TextFileID).Error)
-	assert.Equal(t, "Updated step text", textFile.Content)
-
-	require.NotNil(t, step.VerifyScriptID)
-	var verifyFile models.ProjectFile
-	require.NoError(t, db.First(&verifyFile, "id = ?", *step.VerifyScriptID).Error)
-	assert.Equal(t, "#!/bin/bash\nupdated verify", verifyFile.Content)
-
-	// FKs should point to NEW IDs (not old ones)
-	for _, oldID := range oldIDs {
-		assert.NotEqual(t, oldID, *newScenario.IntroFileID, "FK should not point to old ProjectFile")
-		assert.NotEqual(t, oldID, *newScenario.FinishFileID, "FK should not point to old ProjectFile")
-	}
+	require.Equal(t, first.ID, second.ID)
+	assertInlineOnly(t, db, second.ID, "v2")
 }
 
 // ---------------------------------------------------------------------------
