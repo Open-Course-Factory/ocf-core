@@ -111,3 +111,37 @@ func TestImportedScenario_PatchProse_RuntimeUsesTheEdit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "echo edited setup", exported.SetupScript)
 }
+
+func TestImportedStep_PatchHint_RebuildsProgressiveHints(t *testing.T) {
+	db := freshTestDB(t)
+	_, step := seedImportedScenario(t, db)
+	require.Equal(t, []string{"imported first", "imported second"}, hintContents(t, db, step.ID))
+	router := setupArchiveRouter(t, db, importedContentAuthor, []string{"member"})
+
+	resp := sendJSON(t, router, http.MethodPatch, "/scenario-steps/"+step.ID.String(), map[string]any{
+		"hint_content": "### Hint 1\nedited first\n### Hint 2\nedited second\n### Hint 3\nedited third",
+	})
+	require.Equal(t, http.StatusNoContent, resp.Code, "body=%s", resp.Body.String())
+	assert.Equal(t, []string{"edited first", "edited second", "edited third"}, hintContents(t, db, step.ID),
+		"the hints a learner reveals are the rows, so they must follow the edited hint")
+
+	resp = sendJSON(t, router, http.MethodPatch, "/scenario-steps/"+step.ID.String(),
+		map[string]any{"hint_content": ""})
+	require.Equal(t, http.StatusNoContent, resp.Code, "body=%s", resp.Body.String())
+	assert.Empty(t, hintContents(t, db, step.ID), "clearing the hint removes every progressive hint")
+}
+
+// A save resending the stored hint leaves the rows alone, including rows an
+// administrator edited one by one.
+func TestImportedStep_PatchSameHint_KeepsHintRows(t *testing.T) {
+	db := freshTestDB(t)
+	_, step := seedImportedScenario(t, db)
+	require.NoError(t, db.Model(&models.ScenarioStepHint{}).Where("step_id = ? AND level = 1", step.ID).
+		Update("content", "hand-edited first").Error)
+	router := setupArchiveRouter(t, db, importedContentAuthor, []string{"member"})
+
+	resp := sendJSON(t, router, http.MethodPatch, "/scenario-steps/"+step.ID.String(),
+		map[string]any{"title": "Renamed", "hint_content": step.HintContent})
+	require.Equal(t, http.StatusNoContent, resp.Code, "body=%s", resp.Body.String())
+	assert.Equal(t, []string{"hand-edited first", "imported second"}, hintContents(t, db, step.ID))
+}
