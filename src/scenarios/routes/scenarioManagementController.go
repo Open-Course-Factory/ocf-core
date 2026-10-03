@@ -97,23 +97,42 @@ func (sc *scenarioManagementController) GroupExportScenario(ctx *gin.Context) {
 // @Success 201 {object} dto.ScenarioOutput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
+// @Failure 413 {object} errors.APIError
+// @Failure 422 {object} errors.APIError
 // @Failure 500 {object} errors.APIError
 // @Router /groups/{groupId}/scenarios/import-json [post]
 // @Security BearerAuth
 func (sc *scenarioManagementController) GroupImportJSON(ctx *gin.Context) {
+	group, ok := sc.loadImportTargetGroup(ctx)
+	if !ok {
+		return
+	}
+
+	sc.importScenarioJSON(ctx, group.OrganizationID, &group.ID)
+}
+
+// loadImportTargetGroup loads the class a group-level import targets and
+// answers the request itself when it cannot be used. A legacy class with no
+// organization is refused: importing with a nil org makes the by-name upsert
+// platform-wide, so a class manager could overwrite a platform scenario.
+func (sc *scenarioManagementController) loadImportTargetGroup(ctx *gin.Context) (*groupModels.ClassGroup, bool) {
 	groupID, err := uuid.Parse(ctx.Param("groupId"))
 	if err != nil {
 		errors.Respond(ctx, http.StatusBadRequest, "Invalid group ID")
-		return
+		return nil, false
 	}
 
 	var group groupModels.ClassGroup
 	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
 		errors.Respond(ctx, http.StatusNotFound, "Group not found")
-		return
+		return nil, false
 	}
 
-	sc.importScenarioJSON(ctx, group.OrganizationID, &groupID)
+	if group.OrganizationID == nil {
+		errors.Respond(ctx, http.StatusUnprocessableEntity, "This class belongs to no organization; scenarios cannot be imported into it")
+		return nil, false
+	}
+	return &group, true
 }
 
 // GroupUploadScenario godoc
@@ -127,23 +146,17 @@ func (sc *scenarioManagementController) GroupImportJSON(ctx *gin.Context) {
 // @Success 200 {object} dto.ScenarioOutput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
+// @Failure 422 {object} errors.APIError
 // @Failure 500 {object} errors.APIError
 // @Router /groups/{groupId}/scenarios/upload [post]
 // @Security BearerAuth
 func (sc *scenarioManagementController) GroupUploadScenario(ctx *gin.Context) {
-	groupID, err := uuid.Parse(ctx.Param("groupId"))
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid group ID")
+	group, ok := sc.loadImportTargetGroup(ctx)
+	if !ok {
 		return
 	}
 
-	var group groupModels.ClassGroup
-	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
-		errors.Respond(ctx, http.StatusNotFound, "Group not found")
-		return
-	}
-
-	sc.importUploadedArchive(ctx, group.OrganizationID, &groupID)
+	sc.importUploadedArchive(ctx, group.OrganizationID, &group.ID)
 }
 
 // OrgListScenarios godoc
