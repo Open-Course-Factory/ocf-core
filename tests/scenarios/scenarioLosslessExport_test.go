@@ -254,3 +254,32 @@ func extractArchiveForTest(t *testing.T, zipBytes []byte) string {
 	require.NoError(t, err)
 	return scenarioDir
 }
+
+// A platform import looks for its namesake among platform scenarios only: an
+// organisation's scenario with the same title is someone else's and must not
+// be overwritten.
+func TestPlatformImport_SameTitleAsAnOrgScenario_CreatesASeparateOne(t *testing.T) {
+	db := freshTestDB(t)
+	org := uuid.New()
+	input := fullyPopulatedScenarioInput()
+	orgScenario, _, err := services.NewScenarioSeedService(db).SeedScenario(input, "org-author", &org)
+	require.NoError(t, err)
+
+	platformJSON, isUpdate, err := services.NewScenarioSeedService(db).SeedScenario(input, "admin", nil)
+	require.NoError(t, err)
+	assert.False(t, isUpdate)
+	assert.NotEqual(t, orgScenario.ID, platformJSON.ID)
+
+	zipBytes, _, err := services.NewScenarioExportService(db).ExportAsArchive(orgScenario.ID)
+	require.NoError(t, err)
+	db.Unscoped().Delete(&models.Scenario{}, "id = ?", platformJSON.ID)
+	platformArchive, err := services.NewScenarioImporterService(db).ImportFromDirectory(extractArchiveForTest(t, zipBytes), "admin", nil, "upload")
+	require.NoError(t, err)
+	assert.NotEqual(t, orgScenario.ID, platformArchive.ID)
+
+	var stored models.Scenario
+	require.NoError(t, db.First(&stored, "id = ?", orgScenario.ID).Error)
+	assert.Equal(t, &org, stored.OrganizationID)
+	assert.Equal(t, "org-author", stored.CreatedByID)
+	assert.Nil(t, platformArchive.OrganizationID)
+}

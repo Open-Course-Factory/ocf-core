@@ -190,15 +190,8 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 		return nil, fmt.Errorf("failed to build scenario: %w", err)
 	}
 
-	// Upsert: check if scenario with same name already exists
-	// When orgID is set (group-level import), scope lookup to the same organization
-	// to prevent cross-tenant overwrites.
-	var existing models.Scenario
-	upsertQuery := s.db.Where("name = ?", scenario.Name)
-	if orgID != nil {
-		upsertQuery = upsertQuery.Where("organization_id = ?", *orgID)
-	}
-	if err := upsertQuery.First(&existing).Error; err == nil {
+	// Upsert: an import replaces the namesake it owns, and only that one.
+	if existing, err := findScenarioToReplace(s.db, scenario.Name, orgID); err == nil {
 		// Update existing scenario
 		scenario.FlagSecret = existing.FlagSecret // preserve flag secret
 
@@ -551,6 +544,22 @@ func readStepExtensions(dirPath string, stepDir string) (*stepExtensions, error)
 	// A sidecar that declares no step_type is left blank on purpose: the caller
 	// runs it through models.NormalizeFlagStep, which decides it from has_flag.
 	return &sidecar, nil
+}
+
+// findScenarioToReplace finds the scenario an import of this name replaces:
+// same name, same owner exactly — the organization, or the platform when orgID
+// is nil. Without the platform half, an admin's platform import overwrote an
+// organization's scenario that happened to share its title.
+func findScenarioToReplace(db *gorm.DB, name string, orgID *uuid.UUID) (models.Scenario, error) {
+	var existing models.Scenario
+	query := db.Where("name = ?", name)
+	if orgID != nil {
+		query = query.Where("organization_id = ?", *orgID)
+	} else {
+		query = query.Where("organization_id IS NULL")
+	}
+	err := query.First(&existing).Error
+	return existing, err
 }
 
 // deleteScenarioImages removes the images a previous import stored for the

@@ -33,12 +33,8 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 	built.CreatedByID = userID
 	built.OrganizationID = orgID
 
-	var existing models.Scenario
-	query := s.db.Where("name = ?", built.Name)
-	if orgID != nil {
-		query = query.Where("organization_id = ?", *orgID)
-	}
-	if err := query.First(&existing).Error; err != nil {
+	existing, err := findScenarioToReplace(s.db, built.Name, orgID)
+	if err != nil {
 		created, err := s.createSeededScenario(built, input)
 		return created, false, err
 	}
