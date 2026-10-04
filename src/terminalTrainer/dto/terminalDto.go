@@ -540,6 +540,9 @@ type SessionOptionFeature struct {
 	Description string `json:"description,omitempty"`
 	Allowed     bool   `json:"allowed"`
 	Reason      string `json:"reason,omitempty"`
+	// MinSizeKey is the catalogue's smallest size the feature runs on, so a
+	// size_too_small refusal can name the size to pick.
+	MinSizeKey string `json:"min_size_key,omitempty"`
 }
 
 // CommandHistoryEntry represents a single command from a terminal session

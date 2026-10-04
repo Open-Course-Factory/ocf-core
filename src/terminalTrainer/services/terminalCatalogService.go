@@ -323,6 +323,7 @@ func ComputeSessionOptions(
 			Name:        f.Name,
 			Description: f.Description,
 			Allowed:     true,
+			MinSizeKey:  f.MinSizeKey,
 		}
 
 		if !f.AlwaysAvailable && !supportedFeatures[f.Key] {
