@@ -48,11 +48,6 @@ func EncodeRequiredFeatures(names []string) (string, error) {
 	return string(encoded), nil
 }
 
-const (
-	StepTypeTerminal = models.StepTypeTerminal
-	StepTypeFlag     = models.StepTypeFlag
-)
-
 // BuildCompatibleInstanceTypes turns an authored, preference-ordered list of
 // distribution names into ScenarioInstanceType rows.
 //
