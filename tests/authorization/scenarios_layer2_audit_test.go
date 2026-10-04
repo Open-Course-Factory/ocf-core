@@ -23,7 +23,7 @@ package authorization_tests
 //       Teacher dashboard (6 routes under /api/v1/teacher/groups/:groupId/...)
 //       Group scenario management (4 routes under /api/v1/groups/:groupId/scenarios/...)
 //
-//   - OrgRole (6 routes, MinRole="manager", Param="id",
+//   - OrgRole (6 routes, MinRole=access.RoleMinimumForClassrooms, Param="id",
 //             under /api/v1/organizations/:id/scenarios/...)
 //
 // Enforcement scenarios (Outsider, InsufficientRole, Authorized, AdminBypass)
@@ -115,15 +115,15 @@ var scenariosAuditGroupRoutes = []scenariosAuditRoute{
 	{method: "GET", registeredPath: "/api/v1/groups/:groupId/scenarios/:scenarioId/export", requestPath: "/api/v1/groups/grp-audit-exp/scenarios/scn-1/export", scopeID: "grp-audit-exp", ruleType: access.GroupRole, minRole: "manager", paramName: "groupId"},
 }
 
-// scenariosAuditOrgRoutes — 6 OrgRole(manager) routes. All key off the
+// scenariosAuditOrgRoutes — 6 OrgRole(teacher) routes. All key off the
 // `id` URL parameter.
 var scenariosAuditOrgRoutes = []scenariosAuditRoute{
-	{method: "GET", registeredPath: "/api/v1/organizations/:id/scenarios", requestPath: "/api/v1/organizations/org-audit-list/scenarios", scopeID: "org-audit-list", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
-	{method: "POST", registeredPath: "/api/v1/organizations/:id/scenarios/upload", requestPath: "/api/v1/organizations/org-audit-up/scenarios/upload", scopeID: "org-audit-up", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
-	{method: "POST", registeredPath: "/api/v1/organizations/:id/scenarios/import-json", requestPath: "/api/v1/organizations/org-audit-imp/scenarios/import-json", scopeID: "org-audit-imp", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
-	{method: "GET", registeredPath: "/api/v1/organizations/:id/scenarios/:scenarioId/export", requestPath: "/api/v1/organizations/org-audit-exp/scenarios/scn-1/export", scopeID: "org-audit-exp", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
-	{method: "DELETE", registeredPath: "/api/v1/organizations/:id/scenarios/:scenarioId", requestPath: "/api/v1/organizations/org-audit-del/scenarios/scn-1", scopeID: "org-audit-del", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
-	{method: "POST", registeredPath: "/api/v1/organizations/:id/scenarios/:scenarioId/duplicate", requestPath: "/api/v1/organizations/org-audit-dup/scenarios/scn-1/duplicate", scopeID: "org-audit-dup", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
+	{method: "GET", registeredPath: "/api/v1/organizations/:id/scenarios", requestPath: "/api/v1/organizations/org-audit-list/scenarios", scopeID: "org-audit-list", ruleType: access.OrgRole, minRole: access.RoleMinimumForClassrooms, paramName: "id"},
+	{method: "POST", registeredPath: "/api/v1/organizations/:id/scenarios/upload", requestPath: "/api/v1/organizations/org-audit-up/scenarios/upload", scopeID: "org-audit-up", ruleType: access.OrgRole, minRole: access.RoleMinimumForClassrooms, paramName: "id"},
+	{method: "POST", registeredPath: "/api/v1/organizations/:id/scenarios/import-json", requestPath: "/api/v1/organizations/org-audit-imp/scenarios/import-json", scopeID: "org-audit-imp", ruleType: access.OrgRole, minRole: access.RoleMinimumForClassrooms, paramName: "id"},
+	{method: "GET", registeredPath: "/api/v1/organizations/:id/scenarios/:scenarioId/export", requestPath: "/api/v1/organizations/org-audit-exp/scenarios/scn-1/export", scopeID: "org-audit-exp", ruleType: access.OrgRole, minRole: access.RoleMinimumForClassrooms, paramName: "id"},
+	{method: "DELETE", registeredPath: "/api/v1/organizations/:id/scenarios/:scenarioId", requestPath: "/api/v1/organizations/org-audit-del/scenarios/scn-1", scopeID: "org-audit-del", ruleType: access.OrgRole, minRole: access.RoleMinimumForClassrooms, paramName: "id"},
+	{method: "POST", registeredPath: "/api/v1/organizations/:id/scenarios/:scenarioId/duplicate", requestPath: "/api/v1/organizations/org-audit-dup/scenarios/scn-1/duplicate", scopeID: "org-audit-dup", ruleType: access.OrgRole, minRole: access.RoleMinimumForClassrooms, paramName: "id"},
 }
 
 // allScenariosAuditRoutes returns every Layer 2-enforced route in scope.

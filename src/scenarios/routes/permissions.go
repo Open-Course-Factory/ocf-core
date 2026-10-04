@@ -184,40 +184,43 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Export a scenario from a group",
 		},
-		// Organization scenario routes
+		// Organization scenario routes open at the rank that runs classes:
+		// teachers write the labs their classes run. Replacing and deleting one
+		// scenario stay with its author and the org's managers — the handlers
+		// check CanManageScenario (CanRunScenario for export).
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios", Method: "GET",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
-			Description: "List scenarios in an organization (manager+)",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: access.RoleMinimumForClassrooms},
+			Description: "List scenarios in an organization (teacher+)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
-			Description: "Create a blank scenario in an organization (manager+)",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: access.RoleMinimumForClassrooms},
+			Description: "Create a blank scenario in an organization (teacher+)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/upload", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: access.RoleMinimumForClassrooms},
 			Description: "Upload a scenario to an organization",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/import-json", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: access.RoleMinimumForClassrooms},
 			Description: "Import a scenario from JSON into an organization",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/:scenarioId/export", Method: "GET",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
-			Description: "Export a scenario from an organization",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: access.RoleMinimumForClassrooms},
+			Description: "Export a scenario from an organization (teacher+; controller verifies CanRunScenario)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/:scenarioId", Method: "DELETE",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
-			Description: "Delete a scenario from an organization",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: access.RoleMinimumForClassrooms},
+			Description: "Delete a scenario from an organization (teacher+; controller verifies CanManageScenario)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/:scenarioId/duplicate", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: access.RoleMinimumForClassrooms},
 			Description: "Duplicate a scenario within an organization",
 		},
 		// Admin scenario routes
@@ -239,12 +242,12 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/export", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Export a scenario at platform level (controller verifies CanManageScenario: creator, org manager, group manager, or admin)",
+			Description: "Export a scenario at platform level (controller verifies CanRunScenario: creator, org manager, org teacher, or admin)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/export", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Bulk export scenarios at platform level (controller verifies CanManageScenario for every requested ID)",
+			Description: "Bulk export scenarios at platform level (controller verifies CanRunScenario for every requested ID)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/import-json", Method: "POST",
@@ -264,7 +267,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/translation-coverage", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Report translation coverage per locale (controller verifies CanManageScenario: creator, org manager, group manager, or admin)",
+			Description: "Report translation coverage per locale (controller verifies CanManageScenario: creator, org manager, or admin)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/health", Method: "GET",

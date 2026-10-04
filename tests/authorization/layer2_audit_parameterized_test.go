@@ -371,8 +371,10 @@ func TestLayer2Audit_InsufficientRole_Denied(t *testing.T) {
 			// Pick the role one rung below the declared minimum.
 			var insufficientRole string
 			switch route.minRole {
-			case "manager":
+			case access.RoleTeacher:
 				insufficientRole = "member"
+			case "manager":
+				insufficientRole = access.RoleTeacher
 			case "owner":
 				insufficientRole = "manager"
 			default:

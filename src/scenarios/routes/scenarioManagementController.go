@@ -165,14 +165,13 @@ func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 	}
 
 	// In-handler check (defense in depth — do not rely solely on Layer 2's
-	// OrgRole gate). Admins bypass; everyone else must be an active manager
-	// or owner of this org, the same threshold Layer 2 enforces.
+	// OrgRole gate). Admins bypass; everyone else must teach in this org.
 	userID := ctx.GetString("userId")
 	userRoles, _ := ctx.Get("userRoles")
 	roles, _ := userRoles.([]string)
 	if !access.IsAdmin(roles) {
-		canManage, err := scenarioHooks.CanUserManageOrg(sc.db, orgID, userID)
-		if err != nil || !canManage {
+		teaches, err := scenarioHooks.CanTeachInOrg(sc.db, orgID, userID)
+		if err != nil || !teaches {
 			errors.Respond(ctx, http.StatusForbidden, "Access denied")
 			return
 		}
@@ -522,10 +521,7 @@ func (sc *scenarioManagementController) OrgExportScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Verify scenario belongs to this organization
-	var scenario models.Scenario
-	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
-		errors.Respond(ctx, http.StatusNotFound, "Scenario not found in this organization")
+	if _, ok := sc.orgScenarioIf(ctx, orgID, scenarioID, sc.canRunScenarioByID, "export"); !ok {
 		return
 	}
 
@@ -557,10 +553,8 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Verify scenario belongs to this organization
-	var scenario models.Scenario
-	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
-		errors.Respond(ctx, http.StatusNotFound, "Scenario not found in this organization")
+	scenario, ok := sc.orgScenarioIf(ctx, orgID, scenarioID, sc.canManageScenarioByID, "delete")
+	if !ok {
 		return
 	}
 
@@ -577,7 +571,7 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 		if err := tx.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioAssignment{}).Error; err != nil {
 			return fmt.Errorf("delete assignments: %w", err)
 		}
-		if err := tx.Delete(&scenario).Error; err != nil {
+		if err := tx.Delete(scenario).Error; err != nil {
 			return fmt.Errorf("delete scenario: %w", err)
 		}
 		return nil
@@ -754,4 +748,24 @@ func (sc *scenarioManagementController) OrgDuplicateScenario(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, scenarioRegistration.ScenarioToOutput(newScenario))
+}
+
+// orgScenarioIf loads a scenario of the organization and checks it against
+// allowed (canRunScenarioByID or canManageScenarioByID): the org routes open
+// at the teacher rank, so the scenario-level rule is the handler's to apply.
+// It answers the request itself when it returns false.
+func (sc *scenarioManagementController) orgScenarioIf(ctx *gin.Context, orgID, scenarioID uuid.UUID, allowed func(*gin.Context, uuid.UUID) (*models.Scenario, bool, error), action string) (*models.Scenario, bool) {
+	scenario, ok, err := allowed(ctx, scenarioID)
+	if err != nil || scenario.OrganizationID == nil || *scenario.OrganizationID != orgID {
+		if err != nil && err != gorm.ErrRecordNotFound {
+			slog.Error("failed to check scenario access", "err", err)
+		}
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found in this organization")
+		return nil, false
+	}
+	if !ok {
+		errors.Respond(ctx, http.StatusForbidden, "You do not have permission to "+action+" this scenario")
+		return nil, false
+	}
+	return scenario, true
 }

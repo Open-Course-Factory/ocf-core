@@ -1,11 +1,13 @@
 package scenarioController
 
 import (
+	stderrors "errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	access "soli/formations/src/auth/access"
@@ -50,9 +52,9 @@ func newScenarioControllerBase(db *gorm.DB) scenarioControllerBase {
 // canManageScenarioByID loads the scenario and answers whether the caller may
 // manage it: a platform admin always may, anyone else through
 // CanManageScenario (creator, org manager). It is the one rule behind PATCH,
-// DELETE and archive, so a handler that must refuse on its own (defense in
-// depth behind Layer 2) calls this rather than restating a narrower check. A
-// missing scenario comes back as gorm.ErrRecordNotFound.
+// DELETE, archive and replacing by import, so a handler that must refuse on
+// its own (defense in depth behind Layer 2) calls this rather than restating
+// a narrower check. A missing scenario comes back as gorm.ErrRecordNotFound.
 func (b *scenarioControllerBase) canManageScenarioByID(ctx *gin.Context, scenarioID uuid.UUID) (*models.Scenario, bool, error) {
 	return b.scenarioByIDIf(ctx, scenarioID, scenarioHooks.CanManageScenario)
 }
@@ -194,6 +196,20 @@ func (b *scenarioControllerBase) importUploadedArchive(ctx *gin.Context, orgID *
 		return
 	}
 
+	indexData, err := os.ReadFile(filepath.Join(scenarioDir, "index.json"))
+	if err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, "Archive must contain an index.json file")
+		return
+	}
+	index, err := b.importerService.ParseIndexJSON(indexData)
+	if err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, fmt.Sprintf("Failed to import scenario: %s", err.Error()))
+		return
+	}
+	if !b.mayImportOver(ctx, index.Title, orgID) {
+		return
+	}
+
 	scenario, err := b.importerService.ImportFromDirectory(scenarioDir, userID, orgID, "upload")
 	if err != nil {
 		slog.Error("failed to import scenario from upload", "err", err)
@@ -273,6 +289,10 @@ func (b *scenarioControllerBase) importScenarioJSON(ctx *gin.Context, orgID *uui
 		return
 	}
 
+	if !b.mayImportOver(ctx, input.Title, orgID) {
+		return
+	}
+
 	userID := ctx.GetString("userId")
 
 	scenario, isUpdate, err := b.seedService.SeedScenario(input, userID, orgID)
@@ -291,4 +311,38 @@ func (b *scenarioControllerBase) importScenarioJSON(ctx *gin.Context, orgID *uui
 		statusCode = http.StatusOK
 	}
 	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
+}
+
+// mayImportOver refuses an import into an organization that would replace a
+// scenario the caller may not manage. The importers upsert by name inside the
+// organization (utils.GenerateSlug of the title, in SeedScenario and
+// BuildScenarioFromIndex alike), so an import bearing a colleague's title
+// rewrites the colleague's lab — editing it, which CanManageScenario owns.
+// Platform imports (orgID nil) are admin-only and pass. It answers the request
+// itself when it returns false.
+func (b *scenarioControllerBase) mayImportOver(ctx *gin.Context, title string, orgID *uuid.UUID) bool {
+	if orgID == nil {
+		return true
+	}
+	var existing models.Scenario
+	err := b.db.Select("id").Where("name = ? AND organization_id = ?", utils.GenerateSlug(title), *orgID).First(&existing).Error
+	if stderrors.Is(err, gorm.ErrRecordNotFound) {
+		return true
+	}
+	if err != nil {
+		slog.Error("failed to look up the scenario an import would replace", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
+		return false
+	}
+	_, allowed, err := b.canManageScenarioByID(ctx, existing.ID)
+	if err != nil {
+		slog.Error("failed to check scenario management access", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
+		return false
+	}
+	if !allowed {
+		errors.Respond(ctx, http.StatusForbidden, "A scenario with this title already exists in the organization and you may not replace it")
+		return false
+	}
+	return true
 }
