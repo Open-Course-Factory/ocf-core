@@ -30,7 +30,7 @@ func NewScenarioDuplicateService(db *gorm.DB) *ScenarioDuplicateService {
 //
 // Step fields are copied field by field, which makes an omission silent — the
 // copy saves cleanly and nothing fails. Adding a column to ScenarioStep means
-// adding it here too; TestDuplicateScenario_StepsAreFieldCompleteAgainstSource
+// adding it to copyStepInto too; TestDuplicateScenario_StepsAreFieldCompleteAgainstSource
 // compares every field by reflection so a forgotten one fails a test instead of
 // shipping.
 func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID string, orgID *uuid.UUID) (*models.Scenario, error) {
@@ -118,62 +118,10 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			}
 		}
 
-		// 3. Copy Steps
+		// 3. Copy Steps, with their hints and quiz questions
 		for _, srcStep := range source.Steps {
-			newStep := models.ScenarioStep{
-				ScenarioID:               newScenario.ID,
-				Order:                    srcStep.Order,
-				Title:                    srcStep.Title,
-				StepType:                 srcStep.StepType,
-				ShowImmediateFeedback:    srcStep.ShowImmediateFeedback,
-				TextContent:              srcStep.TextContent,
-				HintContent:              srcStep.HintContent,
-				VerifyScript:             srcStep.VerifyScript,
-				BackgroundScript:         srcStep.BackgroundScript,
-				ForegroundScript:         srcStep.ForegroundScript,
-				BackgroundTimeoutSeconds: srcStep.BackgroundTimeoutSeconds,
-				BackgroundAsync:          srcStep.BackgroundAsync,
-				IntroEffect:              srcStep.IntroEffect,
-				IntroText:                srcStep.IntroText,
-				OutroEffect:              srcStep.OutroEffect,
-				OutroText:                srcStep.OutroText,
-				HasFlag:                  srcStep.HasFlag,
-				FlagPath:                 srcStep.FlagPath,
-				FlagLevel:                srcStep.FlagLevel,
-			}
-
-			if err := tx.Create(&newStep).Error; err != nil {
-				return fmt.Errorf("failed to create step copy: %w", err)
-			}
-
-			// 4. Copy Hints (linked to new step ID)
-			for _, srcHint := range srcStep.Hints {
-				newHint := models.ScenarioStepHint{
-					StepID:  newStep.ID,
-					Level:   srcHint.Level,
-					Content: srcHint.Content,
-				}
-				if err := tx.Create(&newHint).Error; err != nil {
-					return fmt.Errorf("failed to create hint copy: %w", err)
-				}
-			}
-
-			// 5. Copy quiz Questions (linked to new step ID). Without these a
-			// duplicated quiz step renders as an exam with nothing in it.
-			for _, srcQuestion := range srcStep.Questions {
-				newQuestion := models.ScenarioStepQuestion{
-					StepID:        newStep.ID,
-					Order:         srcQuestion.Order,
-					QuestionText:  srcQuestion.QuestionText,
-					QuestionType:  srcQuestion.QuestionType,
-					Options:       srcQuestion.Options,
-					CorrectAnswer: srcQuestion.CorrectAnswer,
-					Explanation:   srcQuestion.Explanation,
-					Points:        srcQuestion.Points,
-				}
-				if err := tx.Create(&newQuestion).Error; err != nil {
-					return fmt.Errorf("failed to create question copy: %w", err)
-				}
+			if _, err := copyStepInto(tx, srcStep, newScenario.ID, srcStep.Order); err != nil {
+				return err
 			}
 		}
 
@@ -214,4 +162,59 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 	}
 
 	return &result, nil
+}
+
+// copyStepInto writes a copy of src, with its hint rows and quiz questions
+// (src must have them loaded), as the step at order in scenarioID. Shared by
+// DuplicateScenario and CopySteps, so one field list serves both.
+func copyStepInto(tx *gorm.DB, src models.ScenarioStep, scenarioID uuid.UUID, order int) (models.ScenarioStep, error) {
+	step := models.ScenarioStep{
+		ScenarioID:               scenarioID,
+		Order:                    order,
+		Title:                    src.Title,
+		StepType:                 src.StepType,
+		ShowImmediateFeedback:    src.ShowImmediateFeedback,
+		TextContent:              src.TextContent,
+		HintContent:              src.HintContent,
+		VerifyScript:             src.VerifyScript,
+		BackgroundScript:         src.BackgroundScript,
+		ForegroundScript:         src.ForegroundScript,
+		BackgroundTimeoutSeconds: src.BackgroundTimeoutSeconds,
+		BackgroundAsync:          src.BackgroundAsync,
+		IntroEffect:              src.IntroEffect,
+		IntroText:                src.IntroText,
+		OutroEffect:              src.OutroEffect,
+		OutroText:                src.OutroText,
+		HasFlag:                  src.HasFlag,
+		FlagPath:                 src.FlagPath,
+		FlagLevel:                src.FlagLevel,
+	}
+	if err := tx.Create(&step).Error; err != nil {
+		return step, fmt.Errorf("failed to create step copy: %w", err)
+	}
+
+	for _, srcHint := range src.Hints {
+		hint := models.ScenarioStepHint{StepID: step.ID, Level: srcHint.Level, Content: srcHint.Content}
+		if err := tx.Create(&hint).Error; err != nil {
+			return step, fmt.Errorf("failed to create hint copy: %w", err)
+		}
+	}
+
+	// Without its questions a copied quiz step renders as an exam with nothing in it.
+	for _, srcQuestion := range src.Questions {
+		question := models.ScenarioStepQuestion{
+			StepID:        step.ID,
+			Order:         srcQuestion.Order,
+			QuestionText:  srcQuestion.QuestionText,
+			QuestionType:  srcQuestion.QuestionType,
+			Options:       srcQuestion.Options,
+			CorrectAnswer: srcQuestion.CorrectAnswer,
+			Explanation:   srcQuestion.Explanation,
+			Points:        srcQuestion.Points,
+		}
+		if err := tx.Create(&question).Error; err != nil {
+			return step, fmt.Errorf("failed to create question copy: %w", err)
+		}
+	}
+	return step, nil
 }
