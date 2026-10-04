@@ -462,17 +462,17 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 type PreviewOption func(*previewConfig)
 
 type previewConfig struct {
-	isOrgManager func(userID string, orgID uuid.UUID) bool
+	teachesInOrg func(userID string, orgID uuid.UUID) bool
 	isAdmin      bool
 	// startAtStep is the Order of the step the preview starts on; nil means
 	// the first step, as a launch does.
 	startAtStep *int
 }
 
-// WithOrgManagerCheck injects a callback to check if a user is an org manager.
-func WithOrgManagerCheck(fn func(userID string, orgID uuid.UUID) bool) PreviewOption {
+// WithOrgTeacherCheck injects a callback to check if a user teaches in an org.
+func WithOrgTeacherCheck(fn func(userID string, orgID uuid.UUID) bool) PreviewOption {
 	return func(c *previewConfig) {
-		c.isOrgManager = fn
+		c.teachesInOrg = fn
 	}
 }
 
@@ -492,18 +492,18 @@ func WithStartAtStep(order int) PreviewOption {
 }
 
 // ErrPreviewNotAuthorized refuses a preview to anyone but the scenario's
-// creator, a manager of its organization, or a platform admin.
+// creator, a teacher of its organization, or a platform admin.
 var ErrPreviewNotAuthorized = errors.New("not authorized to preview this scenario")
 
 // AuthorizePreview is the one rule for who may preview a scenario: its
-// creator, a manager of its organization, or a platform admin. The controller
+// creator, a teacher of its organization, or a platform admin. The controller
 // asks it before creating a terminal, so a refusal costs nothing;
 // PreviewScenario asks it again for callers that go straight to the service.
 func AuthorizePreview(userID string, scenario *models.Scenario, opts ...PreviewOption) error {
 	cfg := newPreviewConfig(opts)
 	authorized := cfg.isAdmin || scenario.CreatedByID == userID
-	if !authorized && scenario.OrganizationID != nil && cfg.isOrgManager != nil {
-		authorized = cfg.isOrgManager(userID, *scenario.OrganizationID)
+	if !authorized && scenario.OrganizationID != nil && cfg.teachesInOrg != nil {
+		authorized = cfg.teachesInOrg(userID, *scenario.OrganizationID)
 	}
 	if !authorized {
 		return ErrPreviewNotAuthorized
@@ -520,8 +520,8 @@ func newPreviewConfig(opts []PreviewOption) *previewConfig {
 }
 
 // PreviewScenario creates a preview session for testing a scenario without group assignment.
-// Only the scenario creator, an org manager (if the scenario belongs to an org), or a
-// platform admin may preview.
+// Only the scenario creator, a teacher of its org (if the scenario belongs to an org),
+// or a platform admin may preview.
 func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.UUID, terminalSessionID string, opts ...PreviewOption) (*models.ScenarioSession, error) {
 	scenario, err := s.loadScenarioWithSteps(scenarioID)
 	if err != nil {

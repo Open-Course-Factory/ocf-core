@@ -408,3 +408,18 @@ func TestTeacherAuthoring_Assign_TeacherAssignsAColleaguesLabToTheirClass(t *tes
 	})
 	assert.NoError(t, err)
 }
+
+func TestTeacherAuthoring_Preview_TeacherPreviewsStudentRefused(t *testing.T) {
+	db := freshTestDB(t)
+	f := buildTeacherAuthoringFixture(t, db)
+
+	for _, user := range []string{"ta-teacher-a", "ta-teacher-b"} {
+		w := previewScenario(t, db, user, f.byTeacherB.ID, map[string]any{})
+		assert.NotContains(t, w.Body.String(), "not authorized to preview",
+			"%s teaches in the org and may preview its labs; body=%s", user, w.Body.String())
+	}
+
+	w := previewScenario(t, db, "ta-student", f.byTeacherB.ID, map[string]any{})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "not authorized to preview")
+}

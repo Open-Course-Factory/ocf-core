@@ -94,7 +94,7 @@ func TestPreviewScenario_OrgManagerCanPreview(t *testing.T) {
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, nil)
 
 	// Org manager tries to preview — should succeed
-	session, err := sessionSvc.PreviewScenario("org-manager-1", scenario.ID, "terminal-preview-3", services.WithOrgManagerCheck(func(userID string, orgID uuid.UUID) bool {
+	session, err := sessionSvc.PreviewScenario("org-manager-1", scenario.ID, "terminal-preview-3", services.WithOrgTeacherCheck(func(userID string, orgID uuid.UUID) bool {
 		return userID == "org-manager-1"
 	}))
 	require.NoError(t, err)

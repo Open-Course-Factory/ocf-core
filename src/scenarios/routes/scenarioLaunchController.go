@@ -19,6 +19,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
+	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
@@ -824,13 +825,14 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	if isAdmin {
 		previewOpts = append(previewOpts, services.WithAdminBypass())
 	}
-	// Inject org manager check
-	previewOpts = append(previewOpts, services.WithOrgManagerCheck(func(uid string, orgID uuid.UUID) bool {
-		var count int64
-		sc.db.Model(&orgModels.OrganizationMember{}).
-			Where("user_id = ? AND organization_id = ? AND is_active = true AND role IN ?", uid, orgID, []string{"manager", "owner"}).
-			Count(&count)
-		return count > 0
+	// Teachers preview every lab of their organisation, as they run them
+	// (CanRunScenario): it is how they choose what to assign.
+	previewOpts = append(previewOpts, services.WithOrgTeacherCheck(func(uid string, orgID uuid.UUID) bool {
+		teaches, err := scenarioHooks.CanTeachInOrg(sc.db, orgID, uid)
+		if err != nil {
+			slog.Error("failed to check whether the user teaches in the organization", "err", err)
+		}
+		return teaches
 	}))
 
 	// Every refusal below comes before a terminal exists: a refused preview
