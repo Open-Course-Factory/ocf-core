@@ -218,9 +218,9 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 						Updates(&newSteps[i]).Error; err != nil {
 						return fmt.Errorf("failed to update step: %w", err)
 					}
-					// Updates never writes associations, and the old hint rows
-					// were deleted above.
-					if err := recreateStepHints(tx, &newSteps[i]); err != nil {
+					// Updates never writes associations, and the old hint and
+					// question rows were deleted above.
+					if err := recreateStepChildren(tx, &newSteps[i]); err != nil {
 						return err
 					}
 					continue
@@ -303,16 +303,24 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 	return &scenario, isUpdate, nil
 }
 
-// recreateStepHints writes the hint rows of a step whose row was reused.
-func recreateStepHints(tx *gorm.DB, step *models.ScenarioStep) error {
-	if len(step.Hints) == 0 {
-		return nil
-	}
+// recreateStepChildren writes the hint and quiz question rows of a step whose
+// row was reused.
+func recreateStepChildren(tx *gorm.DB, step *models.ScenarioStep) error {
 	for i := range step.Hints {
 		step.Hints[i].StepID = step.ID
 	}
-	if err := tx.Create(&step.Hints).Error; err != nil {
-		return fmt.Errorf("failed to create step hints: %w", err)
+	for i := range step.Questions {
+		step.Questions[i].StepID = step.ID
+	}
+	if len(step.Hints) > 0 {
+		if err := tx.Create(&step.Hints).Error; err != nil {
+			return fmt.Errorf("failed to create step hints: %w", err)
+		}
+	}
+	if len(step.Questions) > 0 {
+		if err := tx.Create(&step.Questions).Error; err != nil {
+			return fmt.Errorf("failed to create step questions: %w", err)
+		}
 	}
 	return nil
 }

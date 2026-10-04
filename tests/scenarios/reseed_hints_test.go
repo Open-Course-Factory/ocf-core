@@ -65,3 +65,26 @@ func TestReseed_KeepsProgressiveHints(t *testing.T) {
 		})
 	}
 }
+
+// Quiz questions are deleted and lost the same way.
+func TestReseed_KeepsQuizQuestions(t *testing.T) {
+	db := freshTestDB(t)
+	input := dto.SeedScenarioInput{
+		Title:        "reseed-quiz",
+		InstanceType: "debian",
+		Steps: []dto.SeedStepInput{{Title: "Quiz", StepType: "quiz", Questions: []dto.SeedQuestionInput{
+			{Order: 0, QuestionText: "2+2?", QuestionType: "text", CorrectAnswer: "4", Points: 1},
+		}}},
+	}
+	seeder := services.NewScenarioSeedService(db)
+	_, _, err := seeder.SeedScenario(input, "reseed-user", nil)
+	require.NoError(t, err)
+	scenario, _, err := seeder.SeedScenario(input, "reseed-user", nil)
+	require.NoError(t, err)
+
+	var count int64
+	require.NoError(t, db.Model(&models.ScenarioStepQuestion{}).
+		Joins("JOIN scenario_steps s ON s.id = scenario_step_questions.step_id AND s.deleted_at IS NULL").
+		Where("s.scenario_id = ?", scenario.ID).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
