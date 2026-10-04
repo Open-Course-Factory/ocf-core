@@ -470,3 +470,55 @@ func TestTeacherAuthoring_CanManage_OwnTrueColleaguesFalse(t *testing.T) {
 		})
 	}
 }
+
+// can_run is CanRunScenario for the caller: an org teacher runs a colleague's
+// lab (reads it, previews, assigns, exports) without managing it; a learner
+// runs nothing.
+func TestTeacherAuthoring_CanRun_TeacherRunsColleaguesLabLearnerDoesNot(t *testing.T) {
+	db := freshTestDB(t)
+	f := buildTeacherAuthoringFixture(t, db)
+	createScenarioAssignment(t, db, f.byTeacherB.ID, &f.class, nil, "group")
+
+	type card struct {
+		Title     string `json:"title"`
+		CanRun    *bool  `json:"can_run"`
+		CanManage bool   `json:"can_manage"`
+	}
+	runVerdicts := func(t *testing.T, cards []card) map[string]bool {
+		got := map[string]bool{}
+		for _, c := range cards {
+			require.NotNil(t, c.CanRun, "%s: can_run must always be present", c.Title)
+			got[c.Title] = *c.CanRun
+		}
+		return got
+	}
+	teacherRunsBoth := map[string]bool{f.byTeacherA.Title: true, f.byTeacherB.Title: true}
+
+	t.Run("GET /scenarios", func(t *testing.T) {
+		w := serve(setupScenarioReadAuthzTest(t, db, "ta-teacher-a", []string{"member"}, "/scenarios"), http.MethodGet, "/api/v1/scenarios", nil, "")
+		require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+		var page struct {
+			Data []card `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
+		assert.Equal(t, teacherRunsBoth, runVerdicts(t, page.Data))
+	})
+	t.Run("GET /organizations/:id/scenarios", func(t *testing.T) {
+		w := serve(authoringRouter(t, db, "ta-teacher-a"), http.MethodGet, "/api/v1/organizations/"+f.org.String()+"/scenarios", nil, "")
+		require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+		var cards []card
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &cards))
+		assert.Equal(t, teacherRunsBoth, runVerdicts(t, cards))
+	})
+	for user, want := range map[string]bool{"ta-teacher-a": true, "ta-student": false} {
+		t.Run("GET /scenario-sessions/available as "+user, func(t *testing.T) {
+			w := serve(setupAvailableRouter(db, user, []string{"member"}), http.MethodGet, "/api/v1/scenario-sessions/available?organization_id="+f.org.String(), nil, "")
+			require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+			var cards []card
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &cards))
+			got := runVerdicts(t, cards)
+			require.Contains(t, got, f.byTeacherB.Title)
+			assert.Equal(t, want, got[f.byTeacherB.Title])
+		})
+	}
+}

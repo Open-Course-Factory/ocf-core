@@ -228,6 +228,7 @@ func ScenarioToOutput(model *models.Scenario) dto.ScenarioOutput {
 		OrganizationID: model.OrganizationID,
 		IsPublic:       model.IsPublic,
 		CanManage:      true, // settled by scenarioRedactor and OrgListScenarios
+		CanRun:         true, // cleared by scenarioRedactor when it strips the row
 		SetupScript:    model.SetupScript,
 		ArchivedAt:     model.ArchivedAt,
 		CreatedAt:      model.CreatedAt,

@@ -109,6 +109,9 @@ type ScenarioOutput struct {
 	// show edit and retire controls exactly where the write would succeed
 	// instead of guessing from memberships. The redactor settles it.
 	CanManage      bool               `json:"can_manage"`
+	// CanRun is the backend's CanRunScenario verdict for the caller: they may
+	// read the scenario in full, preview, assign, export and copy it.
+	CanRun         bool               `json:"can_run"`
 	SetupScript    string             `json:"setup_script,omitempty"`
 	ArchivedAt     *time.Time         `json:"archived_at,omitempty"`
 	CreatedAt      time.Time          `json:"created_at"`

@@ -400,6 +400,9 @@ type AvailableScenarioOutput struct {
 	// CanManage says whether the caller may edit this scenario, by the rule
 	// GET /scenarios/:id applies, so a card can offer Edit without asking.
 	CanManage bool `json:"can_manage"`
+	// CanRun says whether the caller may run this scenario with a class — read
+	// it in full, preview, assign, export — by CanRunScenario.
+	CanRun bool `json:"can_run"`
 
 	// AvailableLocales are the languages this scenario can actually be started
 	// in — the ones whose translation is complete and current, never merely

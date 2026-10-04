@@ -84,6 +84,20 @@ func (b *scenarioControllerBase) scenarioByIDIf(ctx *gin.Context, scenarioID uui
 	return &scenario, allowed, nil
 }
 
+// scenarioVerdicts applies a page rule (CanManageScenarios, CanRunScenarios)
+// to the caller: a platform admin passes every rule.
+func (b *scenarioControllerBase) scenarioVerdicts(ctx *gin.Context, scenarios []models.Scenario,
+	rule func(*gorm.DB, groupServices.GroupService, []models.Scenario, string) (map[uuid.UUID]bool, error)) (map[uuid.UUID]bool, error) {
+	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		all := make(map[uuid.UUID]bool, len(scenarios))
+		for _, s := range scenarios {
+			all[s.ID] = true
+		}
+		return all, nil
+	}
+	return rule(b.db, b.groupService, scenarios, ctx.GetString("userId"))
+}
+
 // getSessionIfOwned loads a session by ID and checks that the authenticated user owns it.
 func (b *scenarioControllerBase) getSessionIfOwned(ctx *gin.Context) (*models.ScenarioSession, error) {
 	sessionID, err := uuid.Parse(ctx.Param("id"))

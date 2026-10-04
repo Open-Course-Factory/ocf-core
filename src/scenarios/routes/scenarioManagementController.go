@@ -197,18 +197,22 @@ func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 		return
 	}
 
-	// ponytail: one CanManageScenario per row; batch per organisation if org
-	// catalogues grow past a few hundred labs.
+	manageable, err := sc.scenarioVerdicts(ctx, scenarios, scenarioHooks.CanManageScenarios)
+	if err != nil {
+		slog.Error("failed to check scenario management access", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to list scenarios")
+		return
+	}
+	runnable, err := sc.scenarioVerdicts(ctx, scenarios, scenarioHooks.CanRunScenarios)
+	if err != nil {
+		slog.Error("failed to check scenario run access", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to list scenarios")
+		return
+	}
 	output := make([]dto.ScenarioOutput, 0, len(scenarios))
 	for i := range scenarios {
 		out := scenarioRegistration.ScenarioToOutput(&scenarios[i])
-		if !access.IsAdmin(roles) {
-			if out.CanManage, err = scenarioHooks.CanManageScenario(sc.db, sc.groupService, &scenarios[i], userID); err != nil {
-				slog.Error("failed to check scenario management access", "err", err)
-				errors.Respond(ctx, http.StatusInternalServerError, "Failed to list scenarios")
-				return
-			}
-		}
+		out.CanManage, out.CanRun = manageable[scenarios[i].ID], runnable[scenarios[i].ID]
 		output = append(output, out)
 	}
 	ctx.JSON(http.StatusOK, output)

@@ -270,11 +270,15 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		slog.Warn("could not load existing scenario sessions", "err", resumableErr)
 	}
 
-	manageable, manageErr := sc.manageableScenarios(ctx, scenarios)
+	manageable, manageErr := sc.scenarioVerdicts(ctx, scenarios, scenarioHooks.CanManageScenarios)
 	if manageErr != nil {
 		// Not fatal: the card only loses its Edit offer, and every edit route
 		// still checks for itself.
 		slog.Warn("could not decide which scenarios the caller manages", "err", manageErr)
+	}
+	runnable, runErr := sc.scenarioVerdicts(ctx, scenarios, scenarioHooks.CanRunScenarios)
+	if runErr != nil {
+		slog.Warn("could not decide which scenarios the caller runs", "err", runErr)
 	}
 
 	// Convert to enriched output with launchability info
@@ -291,6 +295,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			OsType:        s.OsType,
 			IsPublic:      s.IsPublic,
 			CanManage:     manageable[s.ID],
+			CanRun:        runnable[s.ID],
 		}
 
 		// A scenario offered in more than one language says so here, so the card
@@ -1157,15 +1162,3 @@ func (sc *scenarioLaunchController) resolveTerminalPlan(ctx *gin.Context, userID
 	return planResult, true
 }
 
-// manageableScenarios answers canManageScenarioByID for a whole page: a
-// platform admin manages everything, anyone else by CanManageScenarios.
-func (sc *scenarioLaunchController) manageableScenarios(ctx *gin.Context, scenarios []models.Scenario) (map[uuid.UUID]bool, error) {
-	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-		all := make(map[uuid.UUID]bool, len(scenarios))
-		for _, s := range scenarios {
-			all[s.ID] = true
-		}
-		return all, nil
-	}
-	return scenarioHooks.CanManageScenarios(sc.db, sc.groupService, scenarios, ctx.GetString("userId"))
-}

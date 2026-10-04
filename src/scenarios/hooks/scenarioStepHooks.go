@@ -85,11 +85,23 @@ func CanCopyScenarioInto(db *gorm.DB, groupSvc groupServices.GroupService, sourc
 }
 
 // CanManageScenarios is CanManageScenario for a page of scenarios, keyed by
-// scenario ID. It asks CanManageScenario itself, once per distinct
-// organisation rather than once per scenario: beyond authorship, the verdict
-// depends only on the scenario's organisation, so a catalogue page costs a
-// query or two instead of two per card.
+// scenario ID.
 func CanManageScenarios(db *gorm.DB, groupSvc groupServices.GroupService, scenarios []models.Scenario, userID string) (map[uuid.UUID]bool, error) {
+	return verdictsPerOrganisation(db, groupSvc, scenarios, userID, CanManageScenario)
+}
+
+// CanRunScenarios is CanRunScenario for a page of scenarios, keyed by
+// scenario ID.
+func CanRunScenarios(db *gorm.DB, groupSvc groupServices.GroupService, scenarios []models.Scenario, userID string) (map[uuid.UUID]bool, error) {
+	return verdictsPerOrganisation(db, groupSvc, scenarios, userID, CanRunScenario)
+}
+
+// verdictsPerOrganisation asks rule once per distinct organisation rather than
+// once per scenario: beyond authorship, CanManageScenario and CanRunScenario
+// depend only on the scenario's organisation, so a catalogue page costs a
+// query or two instead of two per card.
+func verdictsPerOrganisation(db *gorm.DB, groupSvc groupServices.GroupService, scenarios []models.Scenario, userID string,
+	rule func(*gorm.DB, groupServices.GroupService, *models.Scenario, string) (bool, error)) (map[uuid.UUID]bool, error) {
 	verdicts := make(map[uuid.UUID]bool, len(scenarios))
 	byOrg := map[uuid.UUID]bool{}
 	for i := range scenarios {
@@ -101,7 +113,7 @@ func CanManageScenarios(db *gorm.DB, groupSvc groupServices.GroupService, scenar
 				continue
 			}
 		}
-		verdict, err := CanManageScenario(db, groupSvc, scenario, userID)
+		verdict, err := rule(db, groupSvc, scenario, userID)
 		if err != nil {
 			return nil, err
 		}
