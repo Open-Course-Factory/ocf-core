@@ -22,7 +22,9 @@ import (
 	"gorm.io/gorm"
 
 	groupModels "soli/formations/src/groups/models"
+	groupServices "soli/formations/src/groups/services"
 	orgModels "soli/formations/src/organizations/models"
+	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 )
 
@@ -189,6 +191,52 @@ func TestOrgDuplicateScenario_StillRefusesAPrivateScenarioOfAnotherOrg(t *testin
 
 	router := setupDuplicateTestRouter(t, db, "org-manager", []string{"member"})
 	w := postOrgDuplicate(t, router, orgID, source.ID)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// A private platform scenario assigned to a class the caller manages is one
+// they can see, so they can copy it into their organisation to adapt it — the
+// same rule the class picker's duplicate route applies.
+func TestOrgDuplicateScenario_CopiesAPlatformScenarioAssignedToTheirClass(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "org-manager")
+	addOrgMember(t, db, orgID, "org-manager", orgModels.OrgRoleManager)
+	class := groupModels.ClassGroup{Name: "dup-class", DisplayName: "Class", OwnerUserID: "org-manager", OrganizationID: &orgID}
+	require.NoError(t, db.Omit("Metadata").Create(&class).Error)
+	source := createTestScenarioNoOrg(t, db, "assigned-platform")
+	createScenarioAssignment(t, db, source.ID, &class.ID, nil, "group")
+
+	router := setupDuplicateTestRouter(t, db, "org-manager", []string{"member"})
+	w := postOrgDuplicate(t, router, orgID, source.ID)
+
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body.String())
+	var copied models.Scenario
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NoError(t, db.First(&copied, "id = ?", resp["id"]).Error)
+	assert.Equal(t, orgID, *copied.OrganizationID)
+	assert.False(t, copied.IsPublic)
+	assert.Equal(t, "org-manager", copied.CreatedByID)
+	assert.Empty(t, copied.FlagSecret, "the copy gets its own flag secret at its first run")
+
+	editable, err := scenarioHooks.CanManageScenario(db, groupServices.NewGroupService(db), &copied, "org-manager")
+	require.NoError(t, err)
+	assert.True(t, editable, "the copy is the caller's to edit")
+}
+
+// A scenario never leaves its organisation, even for the person who wrote it:
+// its author, now managing another organisation, cannot copy it across.
+func TestOrgDuplicateScenario_AuthorCannotCarryAnOrgScenarioIntoAnotherOrg(t *testing.T) {
+	db := freshTestDB(t)
+	homeOrg := createTestOrg(t, db, "home-owner")
+	otherOrg := createTestOrg(t, db, "org-manager")
+	addOrgMember(t, db, otherOrg, "org-manager", orgModels.OrgRoleManager)
+	source := createTestScenarioForOrg(t, db, homeOrg, "authored-at-home")
+	require.NoError(t, db.Model(source).Update("created_by_id", "org-manager").Error)
+
+	router := setupDuplicateTestRouter(t, db, "org-manager", []string{"member"})
+	w := postOrgDuplicate(t, router, otherOrg, source.ID)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }

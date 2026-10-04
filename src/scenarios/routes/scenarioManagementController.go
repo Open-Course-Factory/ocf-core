@@ -446,26 +446,10 @@ func (sc *scenarioManagementController) GroupDuplicateScenario(ctx *gin.Context)
 
 	userID := ctx.GetString("userId")
 
-	// A source the caller cannot see is reported as absent, like the org route.
-	var source models.Scenario
-	if err := sc.db.First(&source, "id = ?", scenarioID).Error; err != nil {
-		errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
-		return
-	}
-	visible, err := scenarioHooks.CanSeeScenario(sc.db, sc.groupService, &source, userID)
-	if err != nil {
-		slog.Error("failed to check scenario visibility", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to duplicate scenario")
-		return
-	}
-	userRoles, _ := ctx.Get("userRoles")
-	roles, _ := userRoles.([]string)
-	if !visible && !access.IsAdmin(roles) {
-		errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
-		return
-	}
-
 	// The copy lives where the class lives (path-derived org, like GroupCreateScenario).
+	if !sc.mayCopyScenarioInto(ctx, scenarioID, group.OrganizationID) {
+		return
+	}
 	newScenario, err := sc.duplicateService.DuplicateScenario(scenarioID, userID, group.OrganizationID)
 	if err != nil {
 		slog.Error("failed to duplicate scenario for group", "err", err, "group_id", groupID)
@@ -748,12 +732,9 @@ func (sc *scenarioManagementController) OrgDuplicateScenario(ctx *gin.Context) {
 		return
 	}
 
-	// The source is either the organisation's own scenario or one from the
-	// public catalogue — an org may copy the seeded catalogue to adapt it
-	var scenario models.Scenario
-	ownedOrPublic := sc.db.Where("organization_id = ?", orgID).Or(models.PublicCatalogue(sc.db))
-	if err := sc.db.Where("id = ?", scenarioID).Where(ownedOrPublic).First(&scenario).Error; err != nil {
-		errors.Respond(ctx, http.StatusNotFound, "Scenario not found in this organization")
+	// The source is the organisation's own scenario or a platform one the
+	// caller can see — an org may copy the seeded catalogue to adapt it.
+	if !sc.mayCopyScenarioInto(ctx, scenarioID, &orgID) {
 		return
 	}
 
@@ -787,4 +768,30 @@ func (sc *scenarioManagementController) orgScenarioIf(ctx *gin.Context, orgID, s
 		return nil, false
 	}
 	return scenario, true
+}
+
+// mayCopyScenarioInto applies CanCopyScenarioInto to the caller, platform
+// admins excepted, for both duplicate routes. A source the caller may not copy
+// is reported as absent, so the route is no probe for other organisations'
+// scenarios. It answers the request itself when it returns false.
+func (sc *scenarioManagementController) mayCopyScenarioInto(ctx *gin.Context, scenarioID uuid.UUID, targetOrgID *uuid.UUID) bool {
+	var source models.Scenario
+	if err := sc.db.First(&source, "id = ?", scenarioID).Error; err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
+		return false
+	}
+	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		return true
+	}
+	allowed, err := scenarioHooks.CanCopyScenarioInto(sc.db, sc.groupService, &source, targetOrgID, ctx.GetString("userId"))
+	if err != nil {
+		slog.Error("failed to check whether the scenario may be copied", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to duplicate scenario")
+		return false
+	}
+	if !allowed {
+		errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
+		return false
+	}
+	return true
 }

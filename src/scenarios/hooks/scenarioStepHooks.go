@@ -71,6 +71,19 @@ func CanAssignScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 	return CanRunScenario(db, groupSvc, scenario, userID)
 }
 
+// CanCopyScenarioInto is what duplicating a scenario into an organisation
+// requires: the user can see the source (CanSeeScenario), and the copy stays
+// in the source's organisation. A scenario never leaves its organisation, not
+// even with its author, so only a platform scenario — public, or assigned to a
+// class the user manages — may be copied into another one. targetOrgID nil
+// means the platform.
+func CanCopyScenarioInto(db *gorm.DB, groupSvc groupServices.GroupService, source *models.Scenario, targetOrgID *uuid.UUID, userID string) (bool, error) {
+	if source.OrganizationID != nil && (targetOrgID == nil || *source.OrganizationID != *targetOrgID) {
+		return false, nil
+	}
+	return CanSeeScenario(db, groupSvc, source, userID)
+}
+
 // CanManageScenarios is CanManageScenario for a page of scenarios, keyed by
 // scenario ID. It asks CanManageScenario itself, once per distinct
 // organisation rather than once per scenario: beyond authorship, the verdict
