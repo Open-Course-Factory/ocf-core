@@ -34,6 +34,8 @@ type ScenarioController interface {
 	GetOneScenarioHealth(ctx *gin.Context)
 	GetLexicon(ctx *gin.Context)
 	ReplaceLexicon(ctx *gin.Context)
+	GetStepOutline(ctx *gin.Context)
+	CopySteps(ctx *gin.Context)
 }
 
 type scenarioController struct {

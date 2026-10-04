@@ -715,3 +715,17 @@ func TestSetupScenarioPermissions_ScenarioHealthForManagers(t *testing.T) {
 	assertPolicy(t, ps, "member", "/api/v1/scenarios/:id/health", "GET")
 	assertPolicy(t, ps, "administrator", "/api/v1/scenarios/:id/health", "GET")
 }
+
+// Authors outline other scenarios' steps and copy them into their own; the
+// controller checks visibility, authorship and the copy rule. Operators keep
+// the gateway too.
+func TestSetupScenarioPermissions_StepLibrary(t *testing.T) {
+	mock := mocks.NewMockEnforcer()
+	scenarioController.RegisterScenarioPermissions(mock)
+	ps := collectPolicies(mock)
+
+	for _, role := range []string{"member", "administrator"} {
+		assertPolicy(t, ps, role, "/api/v1/scenarios/:id/step-outline", "GET")
+		assertPolicy(t, ps, role, "/api/v1/scenarios/:id/steps/copy", "POST")
+	}
+}

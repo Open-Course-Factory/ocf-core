@@ -78,3 +78,35 @@ type ScenarioStepOutput struct {
 	UpdatedAt          time.Time  `json:"updated_at"`
 	Questions          []ScenarioStepQuestionOutput `json:"questions,omitempty"`
 }
+
+// ScenarioStepOutline is what an author may see of a step in a scenario they
+// can look at but not edit, to decide whether to copy it: what the step is,
+// never how it is graded. It is an allow-list — a field added to ScenarioStep
+// stays out of the outline until it is added here on purpose.
+type ScenarioStepOutline struct {
+	ID            uuid.UUID                        `json:"id"`
+	Order         int                              `json:"order"`
+	Title         string                           `json:"title"`
+	StepType      string                           `json:"step_type"`
+	TextContent   string                           `json:"text_content,omitempty"`
+	HasFlag       bool                             `json:"has_flag"`
+	HintCount     int                              `json:"hint_count"`
+	QuestionCount int                              `json:"question_count"`
+	Translations  []ScenarioStepOutlineTranslation `json:"translations,omitempty"`
+}
+
+// ScenarioStepOutlineTranslation carries a translated title and text, never a
+// translated hint.
+type ScenarioStepOutlineTranslation struct {
+	Locale      string `json:"locale"`
+	Title       string `json:"title,omitempty"`
+	TextContent string `json:"text_content,omitempty"`
+}
+
+// CopyStepsInput names the steps to copy, in the order they are inserted, and
+// where: Position is the index the first copy takes in the target, nil to
+// append.
+type CopyStepsInput struct {
+	SourceStepIDs []uuid.UUID `json:"source_step_ids"`
+	Position      *int        `json:"position,omitempty"`
+}

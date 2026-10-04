@@ -280,6 +280,16 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Report what one scenario claims but cannot deliver (controller verifies CanManageScenario: creator, org manager, or admin)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/scenarios/:id/step-outline", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Outline a scenario's steps without scripts, hints or answers (controller verifies CanSeeScenario and TeachesAnywhere)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/scenarios/:id/steps/copy", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Copy steps from other scenarios into this one (controller verifies CanManageScenario on the target and CanCopyScenarioInto on every source)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/duplicate", Method: "POST",
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Duplicate a scenario at platform level (admin only)",
@@ -326,6 +336,8 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/scenarios/:id/translation-coverage", "GET"},
 		{"/api/v1/scenarios/health", "GET"},
 		{"/api/v1/scenarios/:id/health", "GET"},
+		{"/api/v1/scenarios/:id/step-outline", "GET"},
+		{"/api/v1/scenarios/:id/steps/copy", "POST"},
 	} {
 		access.ReconcilePolicy(enforcer, access.RoleAdministrator, route.path, route.method)
 	}
