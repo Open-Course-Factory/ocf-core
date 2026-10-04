@@ -508,6 +508,9 @@ type stepExtensionsQuestion struct {
 // while scenarios written against a 0-based level numbering ship step0..stepN
 // and had their sidecars silently read from the neighbouring step's directory.
 // The index-derived name stays as the fallback for steps that declare no paths.
+//
+// ocf-challenges' seed-scenario.sh resolves step directories the same way
+// (step_dir); change both together.
 func stepDirFor(kcStep KillerCodaStep, index int) string {
 	for _, declared := range []string{kcStep.Text, kcStep.Verify, kcStep.Background, kcStep.Foreground, kcStep.Hint} {
 		if declared == "" {
