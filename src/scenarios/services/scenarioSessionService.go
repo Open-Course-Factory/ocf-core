@@ -1555,13 +1555,7 @@ func (s *ScenarioSessionService) buildStepResponse(session *models.ScenarioSessi
 	}
 	if len(hints) > 0 {
 		response.HintsTotalCount = len(hints)
-		// Find hints_revealed from step progress
-		for _, sp := range session.StepProgress {
-			if sp.StepOrder == step.Order {
-				response.HintsRevealed = sp.HintsRevealed
-				break
-			}
-		}
+		response.HintsRevealed = hintsRevealedAt(session.StepProgress, step.Order, len(hints))
 		// Don't leak single hint content when progressive hints exist
 		response.Hint = ""
 	}
@@ -2099,6 +2093,18 @@ func (s *ScenarioSessionService) tryDeleteTerminal(terminalSessionID string, ses
 		slog.Error("failed to delete terminal — container may be orphaned",
 			"terminal_session_id", terminalSessionID, "session_id", sessionID, "err", err)
 	}
+}
+
+// hintsRevealedAt returns how many hints the learner has revealed on a step,
+// capped at the step's current hint count: editing a step's hint can leave
+// fewer hints than the learner had already revealed.
+func hintsRevealedAt(progress []models.ScenarioStepProgress, stepOrder, totalHints int) int {
+	for _, sp := range progress {
+		if sp.StepOrder == stepOrder {
+			return min(sp.HintsRevealed, totalHints)
+		}
+	}
+	return 0
 }
 
 // RevealHint reveals a progressive hint for a given step in a session.

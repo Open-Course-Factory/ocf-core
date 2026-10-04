@@ -416,3 +416,39 @@ func TestSessionStepDetail_IncludesHintsRevealed(t *testing.T) {
 	require.Len(t, detail.Steps, 1)
 	assert.Equal(t, 2, detail.Steps[0].HintsRevealed)
 }
+
+// An edited hint can leave a learner who revealed more hints than the step now
+// has. The step reports at most every hint revealed, and re-reading one works.
+func TestHints_RevealedBeyondEditedCount_Clamped(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := models.Scenario{
+		Name: "hint-shrunk", Title: "Hint Shrunk", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	step := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Step 1", TextContent: "Do something"}
+	require.NoError(t, db.Create(&step).Error)
+	for i := 1; i <= 2; i++ {
+		require.NoError(t, db.Create(&models.ScenarioStepHint{StepID: step.ID, Level: i, Content: "Hint"}).Error)
+	}
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-1", CurrentStep: 0, Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 0, Status: "active", HintsRevealed: 5,
+	}).Error)
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+
+	current, err := sessionSvc.GetCurrentStep(session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, current.HintsTotalCount)
+	assert.Equal(t, 2, current.HintsRevealed)
+
+	byOrder, err := sessionSvc.GetStepByOrder(session.ID, 0)
+	require.NoError(t, err)
+	assert.Equal(t, 2, byOrder.HintsRevealed)
+
+	revealed, err := sessionSvc.RevealHint(session.ID, 0, 2)
+	require.NoError(t, err)
+	assert.Equal(t, 2, revealed.Total)
+}
