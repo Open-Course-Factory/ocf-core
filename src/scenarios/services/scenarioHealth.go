@@ -85,7 +85,7 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 	report.DeclaredLocales = declared
 
 	var steps []models.ScenarioStep
-	if err := db.Where("scenario_id = ?", scenario.ID).Order("\"order\" ASC").Find(&steps).Error; err != nil {
+	if err := db.Preload("Questions").Where("scenario_id = ?", scenario.ID).Order("\"order\" ASC").Find(&steps).Error; err != nil {
 		return report, fmt.Errorf("cannot read the steps: %w", err)
 	}
 
@@ -107,7 +107,7 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 	// costs more than not having it.
 	stranded := []string{}
 	for _, step := range steps {
-		if stepHasAWayThrough(db, step) {
+		if stepHasAWayThrough(step) {
 			continue
 		}
 		stranded = append(stranded, fmt.Sprintf("%d", step.Order))
@@ -181,24 +181,19 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 }
 
 // stepHasAWayThrough answers the only question that matters about a step: can
-// the learner get past it?
+// the learner get past it? Questions must be loaded.
 //
 // Each kind of step answers differently, and the answer belongs with the kinds
 // rather than with the health check — a second opinion about what makes a quiz
-// passable is exactly the drift this report exists to catch.
-func stepHasAWayThrough(db *gorm.DB, step models.ScenarioStep) bool {
+// passable is exactly the drift this report exists to catch. The import
+// validator asks it too, so content the health check would call a dead end is
+// refused at the door instead.
+func stepHasAWayThrough(step models.ScenarioStep) bool {
 	switch step.StepType {
 	case "quiz":
 		// Answering is the way through, so a quiz needs questions and nothing
 		// else. One with none is a dead end wearing a different hat.
-		var questions int64
-		if err := db.Model(&models.ScenarioStepQuestion{}).
-			Where("step_id = ?", step.ID).Count(&questions).Error; err != nil {
-			// Unreadable is not the same as absent: say nothing rather than
-			// accuse a step on the strength of a failed query.
-			return true
-		}
-		return questions > 0
+		return len(step.Questions) > 0
 	case "info":
 		// Nothing to do but read it.
 		return true
