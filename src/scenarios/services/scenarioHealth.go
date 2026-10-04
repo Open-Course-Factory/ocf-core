@@ -105,20 +105,22 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 	// catalogue a dead end — six questions each, all answerable. A report that
 	// cries wolf on working content is one people learn to scroll past, which
 	// costs more than not having it.
-	stranded := []string{}
+	//
+	// A terminal step without a verify script is not a dead end — Verify
+	// passes it — but nothing checks the learner's work either, which is worth
+	// a warning.
+	stranded, unchecked := []string{}, []string{}
 	for _, step := range steps {
-		if stepHasAWayThrough(step) {
-			continue
+		order := fmt.Sprintf("%d", step.Order)
+		switch {
+		case !stepHasAWayThrough(step):
+			stranded = append(stranded, order)
+		case step.StepType == models.StepTypeTerminal && step.VerifyScript == "":
+			unchecked = append(unchecked, order)
 		}
-		stranded = append(stranded, fmt.Sprintf("%d", step.Order))
 	}
-	if len(stranded) > 0 {
-		report.Findings = append(report.Findings, ScenarioHealthFinding{
-			Code:     HealthNoVerification,
-			Severity: HealthBlocking,
-			Detail:   strings.Join(stranded, ", "),
-		})
-	}
+	report.Findings = appendStepFinding(report.Findings, HealthBlocking, stranded)
+	report.Findings = appendStepFinding(report.Findings, HealthWarning, unchecked)
 
 	if len(declared) == 0 {
 		return report, nil
@@ -180,11 +182,24 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 	return report, nil
 }
 
+// appendStepFinding reports the listed steps under HealthNoVerification, or
+// nothing when there are none.
+func appendStepFinding(findings []ScenarioHealthFinding, severity string, orders []string) []ScenarioHealthFinding {
+	if len(orders) == 0 {
+		return findings
+	}
+	return append(findings, ScenarioHealthFinding{
+		Code:     HealthNoVerification,
+		Severity: severity,
+		Detail:   strings.Join(orders, ", "),
+	})
+}
+
 // stepHasAWayThrough answers the only question that matters about a step: can
 // the learner get past it? Questions must be loaded.
 //
 // Each kind of step answers differently, and the answer belongs with the kinds
-// rather than with the health check — a second opinion about what makes a quiz
+// rather than with the health check — a second opinion about what makes a step
 // passable is exactly the drift this report exists to catch. The import
 // validator asks it too, so content the health check would call a dead end is
 // refused at the door instead.
@@ -201,7 +216,9 @@ func stepHasAWayThrough(step models.ScenarioStep) bool {
 		// Every flag step gets a flag to find.
 		return true
 	}
-	return step.VerifyScript != ""
+	// A terminal step passes on Verify, with or without a verify script
+	// (ScenarioSessionService.VerifyCurrentStep), as KillerCoda's do.
+	return true
 }
 
 // coverageDetail says, in numbers, why a language is not offered.

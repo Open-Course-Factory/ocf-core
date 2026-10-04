@@ -92,7 +92,9 @@ func TestScenarioHealth_ScenarioWithNoSteps(t *testing.T) {
 		"an empty scenario is one fault, not one fault per question that cannot be asked of it")
 }
 
-func TestScenarioHealth_StepWithNoWayToPassIt(t *testing.T) {
+// A terminal step without a verify script passes on Verify, as KillerCoda's
+// do, so it is reported as a warning: playable, but nothing is checked.
+func TestScenarioHealth_TerminalStepWithoutVerifyIsAWarning(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -106,7 +108,7 @@ func TestScenarioHealth_StepWithNoWayToPassIt(t *testing.T) {
 
 	health, err := services.CheckScenarioHealth(db, scenario)
 	require.NoError(t, err)
-	assert.Contains(t, findingCodes(health), services.HealthNoVerification)
+	assert.Equal(t, []string{services.HealthWarning}, severitiesOf(health, services.HealthNoVerification))
 }
 
 // A step that carries a flag needs no check: the flag is the check.
@@ -172,7 +174,17 @@ func TestScenarioHealth_QuizWithNoQuestionsIsADeadEnd(t *testing.T) {
 
 	health, err := services.CheckScenarioHealth(db, scenario)
 	require.NoError(t, err)
-	assert.Contains(t, findingCodes(health), services.HealthNoVerification)
+	assert.Equal(t, []string{services.HealthBlocking}, severitiesOf(health, services.HealthNoVerification))
+}
+
+func severitiesOf(health services.ScenarioHealth, code string) []string {
+	var severities []string
+	for _, finding := range health.Findings {
+		if finding.Code == code {
+			severities = append(severities, finding.Severity)
+		}
+	}
+	return severities
 }
 
 // An info step is read, not solved.

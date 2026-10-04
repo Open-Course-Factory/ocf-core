@@ -74,10 +74,7 @@ func stepContentProblems(number int, step models.ScenarioStep) []string {
 		return append(problems, fmt.Sprintf("%s: step_type %q is not one of %s",
 			label, step.StepType, strings.Join(knownStepTypes, ", ")))
 	}
-	// Only a quiz can be a dead end at import. A terminal step without a
-	// verify_script passes on Verify (ScenarioSessionService.VerifyCurrentStep),
-	// as KillerCoda's do, so refusing one would refuse ordinary content.
-	if step.StepType == "quiz" && !stepHasAWayThrough(step) {
+	if !stepHasAWayThrough(step) {
 		problems = append(problems, label+": a quiz step needs at least one question")
 	}
 	for i, q := range step.Questions {
