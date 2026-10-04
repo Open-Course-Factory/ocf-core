@@ -393,6 +393,9 @@ type AvailableScenarioOutput struct {
 	ResolvedSize         string `json:"resolved_size,omitempty"`
 	IsPublic             bool   `json:"is_public"`
 	AdminOnly            bool   `json:"admin_only,omitempty"`
+	// CanManage says whether the caller may edit this scenario, by the rule
+	// GET /scenarios/:id applies, so a card can offer Edit without asking.
+	CanManage bool `json:"can_manage"`
 
 	// AvailableLocales are the languages this scenario can actually be started
 	// in — the ones whose translation is complete and current, never merely

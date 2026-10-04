@@ -71,6 +71,35 @@ func CanAssignScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 	return CanRunScenario(db, groupSvc, scenario, userID)
 }
 
+// CanManageScenarios is CanManageScenario for a page of scenarios, keyed by
+// scenario ID. It asks CanManageScenario itself, once per distinct
+// organisation rather than once per scenario: beyond authorship, the verdict
+// depends only on the scenario's organisation, so a catalogue page costs a
+// query or two instead of two per card.
+func CanManageScenarios(db *gorm.DB, groupSvc groupServices.GroupService, scenarios []models.Scenario, userID string) (map[uuid.UUID]bool, error) {
+	verdicts := make(map[uuid.UUID]bool, len(scenarios))
+	byOrg := map[uuid.UUID]bool{}
+	for i := range scenarios {
+		scenario := &scenarios[i]
+		decidedByOrg := scenario.OrganizationID != nil && scenario.CreatedByID != userID
+		if decidedByOrg {
+			if verdict, known := byOrg[*scenario.OrganizationID]; known {
+				verdicts[scenario.ID] = verdict
+				continue
+			}
+		}
+		verdict, err := CanManageScenario(db, groupSvc, scenario, userID)
+		if err != nil {
+			return nil, err
+		}
+		verdicts[scenario.ID] = verdict
+		if decidedByOrg {
+			byOrg[*scenario.OrganizationID] = verdict
+		}
+	}
+	return verdicts, nil
+}
+
 // managesAnAssignedClass reports whether the user manages a class the
 // scenario is assigned to. Only consulted for platform scenarios, and only
 // for seeing them: a private catalogue scenario assigned to a class is shown

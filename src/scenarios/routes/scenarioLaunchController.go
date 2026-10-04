@@ -19,6 +19,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
+	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
@@ -269,6 +270,13 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		slog.Warn("could not load existing scenario sessions", "err", resumableErr)
 	}
 
+	manageable, manageErr := sc.manageableScenarios(ctx, scenarios)
+	if manageErr != nil {
+		// Not fatal: the card only loses its Edit offer, and every edit route
+		// still checks for itself.
+		slog.Warn("could not decide which scenarios the caller manages", "err", manageErr)
+	}
+
 	// Convert to enriched output with launchability info
 	output := make([]dto.AvailableScenarioOutput, 0, len(scenarios))
 	for _, s := range scenarios {
@@ -282,6 +290,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			InstanceType:  s.InstanceType,
 			OsType:        s.OsType,
 			IsPublic:      s.IsPublic,
+			CanManage:     manageable[s.ID],
 		}
 
 		// A scenario offered in more than one language says so here, so the card
@@ -1146,4 +1155,17 @@ func (sc *scenarioLaunchController) resolveTerminalPlan(ctx *gin.Context, userID
 		return nil, false
 	}
 	return planResult, true
+}
+
+// manageableScenarios answers canManageScenarioByID for a whole page: a
+// platform admin manages everything, anyone else by CanManageScenarios.
+func (sc *scenarioLaunchController) manageableScenarios(ctx *gin.Context, scenarios []models.Scenario) (map[uuid.UUID]bool, error) {
+	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		all := make(map[uuid.UUID]bool, len(scenarios))
+		for _, s := range scenarios {
+			all[s.ID] = true
+		}
+		return all, nil
+	}
+	return scenarioHooks.CanManageScenarios(sc.db, sc.groupService, scenarios, ctx.GetString("userId"))
 }
