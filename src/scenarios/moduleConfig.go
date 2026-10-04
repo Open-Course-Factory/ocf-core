@@ -35,5 +35,15 @@ func (s *ScenariosModuleConfig) GetFeatures() []models.FeatureDefinition {
 			Category:    "modules",
 			Module:      "scenarios",
 		},
+		{
+			// Gates the editor tab only: banners a step already declares keep
+			// playing for learners.
+			Key:         "scenario_step_effects",
+			Name:        "Scenario step effects",
+			Description: "Show the Effects tab (intro/outro terminal banners) in the scenario step editor",
+			Enabled:     false,
+			Category:    "modules",
+			Module:      "scenarios",
+		},
 	}
 }
