@@ -466,6 +466,9 @@ type MySessionResponse struct {
 	StartedAt         time.Time  `json:"started_at"`
 	CompletedAt       *time.Time `json:"completed_at,omitempty"`
 	TerminalSessionID *string    `json:"terminal_session_id,omitempty"`
+	// IsPreview marks an author's preview: the scenario editor finds the run it
+	// may test verify scripts on by it.
+	IsPreview bool `json:"is_preview"`
 	// Resumable answers the only question the launcher actually asks of this
 	// list: can the learner still return to this run? Status alone cannot say
 	// so — a session stays "active" in the database until something notices its

@@ -2006,6 +2006,7 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			StartedAt:         session.StartedAt,
 			CompletedAt:       session.CompletedAt,
 			TerminalSessionID: session.TerminalSessionID,
+			IsPreview:         session.IsPreview,
 			Resumable:         mode != ResumeModeNone,
 			ResumeMode:        string(mode),
 			OrganizationID:    RunOrganization(terminal, &session.Scenario),

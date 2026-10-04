@@ -691,6 +691,36 @@ func TestGetMySessions_ReturnsOnlyCallersSessions(t *testing.T) {
 	assert.Len(t, sessions, 1, "GetMySessions must return only the caller's sessions")
 }
 
+// TestGetMySessions_ReportsIsPreview lets the scenario editor tell an author's
+// preview from their own learner run of the same scenario: only a preview
+// accepts POST /scenario-sessions/:id/test-verify.
+func TestGetMySessions_ReportsIsPreview(t *testing.T) {
+	db := freshTestDB(t)
+
+	scenarioA := models.Scenario{Name: "my-sessions-preview-A", Title: "A", CreatedByID: "author-1"}
+	scenarioB := models.Scenario{Name: "my-sessions-preview-B", Title: "B", CreatedByID: "author-1"}
+	require.NoError(t, db.Create(&scenarioA).Error)
+	require.NoError(t, db.Create(&scenarioB).Error)
+	preview := models.ScenarioSession{ScenarioID: scenarioA.ID, UserID: "author-1", Status: "active", StartedAt: time.Now(), IsPreview: true}
+	run := models.ScenarioSession{ScenarioID: scenarioB.ID, UserID: "author-1", Status: "active", StartedAt: time.Now()}
+	require.NoError(t, db.Create(&preview).Error)
+	require.NoError(t, db.Create(&run).Error)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/my", nil)
+	setupMySessionsRouter(db, "author-1").ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var sessions []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &sessions))
+	isPreview := map[string]any{}
+	for _, s := range sessions {
+		isPreview[s["id"].(string)] = s["is_preview"]
+	}
+	assert.Equal(t, true, isPreview[preview.ID.String()])
+	assert.Equal(t, false, isPreview[run.ID.String()], "is_preview must be present and false on a learner run")
+}
+
 // myRun returns the fixture's run as GET /scenario-sessions/my reports it.
 func myRun(t *testing.T, f resumeFixture) map[string]any {
 	t.Helper()
