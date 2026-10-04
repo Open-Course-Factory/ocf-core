@@ -118,6 +118,8 @@ func MigrateFlagStepConsistency(db *gorm.DB) {
 	repairs := []struct{ what, sql string }{
 		{"terminal steps with a flag promoted to flag steps",
 			"UPDATE scenario_steps SET step_type = 'flag' WHERE has_flag = true AND (step_type = 'terminal' OR step_type = '' OR step_type IS NULL)"},
+		{"untyped steps given the terminal type",
+			"UPDATE scenario_steps SET step_type = 'terminal' WHERE step_type = '' OR step_type IS NULL"},
 		{"flag steps given their flag",
 			"UPDATE scenario_steps SET has_flag = true WHERE step_type = 'flag' AND has_flag = false"},
 		{"non-flag steps cleared of a flag",

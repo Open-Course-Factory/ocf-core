@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
@@ -196,6 +197,17 @@ func TestFlagRule_StartupRepair_FixesRowsWrittenBeforeTheRule(t *testing.T) {
 		require.NoError(t, raw.Create(&step).Error)
 		ids[name] = step.ID
 	}
+	// The column default stores 'terminal' for an empty type; only raw SQL
+	// reaches the untyped rows legacy data may hold.
+	untyped := map[string]string{"untyped-empty": "''", "untyped-null": "NULL"}
+	for name, value := range untyped {
+		id := uuid.New()
+		require.NoError(t, raw.Create(&models.ScenarioStep{BaseModel: entityManagementModels.BaseModel{ID: id},
+			ScenarioID: scenario.ID, Title: name, Order: order}).Error)
+		order++
+		require.NoError(t, db.Exec("UPDATE scenario_steps SET step_type = "+value+" WHERE id = ?", id).Error)
+		ids[name] = id
+	}
 	require.True(t, reloadStep(t, db, ids["terminal+flag"]).HasFlag, "fixture must bypass the rule")
 	require.False(t, reloadStep(t, db, ids["flag-noflag"]).HasFlag, "fixture must bypass the rule")
 
@@ -211,6 +223,8 @@ func TestFlagRule_StartupRepair_FixesRowsWrittenBeforeTheRule(t *testing.T) {
 		"flag-noflag":   {"flag", true},
 		"quiz+flag":     {"quiz", false},
 		"terminal":      {"terminal", false},
+		"untyped-empty": {"terminal", false},
+		"untyped-null":  {"terminal", false},
 	}
 	for name, w := range want {
 		stored := reloadStep(t, db, ids[name])
