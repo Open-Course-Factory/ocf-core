@@ -160,9 +160,6 @@ func (s *ScenarioDuplicateService) CopySteps(targetID uuid.UUID, sourceStepIDs [
 			if err != nil {
 				return err
 			}
-			if err := copyStepTranslations(tx, src.ID, step.ID); err != nil {
-				return err
-			}
 			copies = append(copies, step)
 		}
 		return nil
@@ -206,29 +203,6 @@ func renumberAroundInsertion(tx *gorm.DB, existing []models.ScenarioStep, at, wi
 		}
 		if err := tx.Model(&models.ScenarioStep{}).Where("id = ?", step.ID).Update("order", order).Error; err != nil {
 			return fmt.Errorf("renumber step %s: %w", step.ID, err)
-		}
-	}
-	return nil
-}
-
-func copyStepTranslations(tx *gorm.DB, sourceStepID, targetStepID uuid.UUID) error {
-	var translations []models.ScenarioStepTranslation
-	if err := tx.Where("step_id = ?", sourceStepID).Find(&translations).Error; err != nil {
-		return fmt.Errorf("load translations of step %s: %w", sourceStepID, err)
-	}
-	for _, src := range translations {
-		translation := models.ScenarioStepTranslation{
-			StepID:      targetStepID,
-			Locale:      src.Locale,
-			Title:       src.Title,
-			TextContent: src.TextContent,
-			HintContent: src.HintContent,
-			IntroText:   src.IntroText,
-			OutroText:   src.OutroText,
-			SourceHash:  src.SourceHash,
-		}
-		if err := tx.Create(&translation).Error; err != nil {
-			return fmt.Errorf("copy %s translation of step %s: %w", src.Locale, sourceStepID, err)
 		}
 	}
 	return nil

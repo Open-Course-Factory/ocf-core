@@ -178,3 +178,118 @@ func TestDuplicateScenario_PreservesExamMode(t *testing.T) {
 	assert.False(t, copiedSteps[0].ShowImmediateFeedback,
 		"a duplicated exam must stay an exam — flipping this on reveals the answers to learners")
 }
+
+var scenarioFieldsNotCopiedVerbatim = map[string]string{
+	"Name":                    "a fresh unique slug",
+	"Title":                   "marked as the copy",
+	"FlagSecret":              "the copy must not share the source's flags; minted at its first run",
+	"CreatedByID":             "the duplicating user",
+	"OrganizationID":          "the organisation the copy is made for",
+	"SetupScriptID":           "deprecated file pointer into the source's files; content is inline",
+	"IntroFileID":             "deprecated file pointer into the source's files; content is inline",
+	"FinishFileID":            "deprecated file pointer into the source's files; content is inline",
+	"Steps":                   "separate rows — compared by TestDuplicateScenario_StepsAreFieldCompleteAgainstSource",
+	"CompatibleInstanceTypes": "separate rows with their own IDs",
+}
+
+// A scenario field the duplicate forgets saves cleanly and fails nobody: a
+// copy that dropped Locales silently stopped being offered in French.
+func TestDuplicateScenario_ScenarioIsFieldCompleteAgainstSource(t *testing.T) {
+	db := freshTestDB(t)
+	source := createFullSourceScenario(t, db, nil)
+	sessionUser := 1000
+	require.NoError(t, db.Model(&models.Scenario{}).Where("id = ?", source.ID).Updates(map[string]any{
+		"required_features":     `["docker"]`,
+		"build_features":        `["network"]`,
+		"session_user":          sessionUser,
+		"default_locale":        "en",
+		"locales":               `["en","fr"]`,
+		"allowed_flag_paths":    "/srv",
+		"port_exposure_allowed": true,
+		"git_repository":        "https://example.org/lab.git",
+		"git_branch":            "main",
+		"source_path":           "labs/one",
+	}).Error)
+	var reloaded models.Scenario
+	require.NoError(t, db.First(&reloaded, "id = ?", source.ID).Error)
+
+	copied, err := services.NewScenarioDuplicateService(db).DuplicateScenario(source.ID, "duplicating-user", nil)
+	require.NoError(t, err)
+
+	scenarioType := reflect.TypeOf(models.Scenario{})
+	src, dst := reflect.ValueOf(reloaded), reflect.ValueOf(*copied)
+	for f := 0; f < scenarioType.NumField(); f++ {
+		field := scenarioType.Field(f)
+		if field.Anonymous {
+			continue
+		}
+		if _, excluded := scenarioFieldsNotCopiedVerbatim[field.Name]; excluded {
+			continue
+		}
+		assert.Equal(t, src.Field(f).Interface(), dst.Field(f).Interface(),
+			"scenario field %s was not carried over by duplication. Copy it in DuplicateScenario, or list it in scenarioFieldsNotCopiedVerbatim with the reason it differs.",
+			field.Name)
+	}
+}
+
+// A duplicate of a bilingual scenario must stay bilingual: its translations,
+// with the source hashes that keep them current, and the lexicon its scripts
+// name the world with.
+func TestDuplicateScenario_CopiesTranslationsAndLexicon(t *testing.T) {
+	db := freshTestDB(t)
+	source := createFullSourceScenario(t, db, nil)
+	require.NoError(t, db.Create(&models.ScenarioTranslation{
+		ScenarioID: source.ID, Locale: "fr", Title: "Scénario", Description: "Desc FR",
+		Objectives: "Obj FR", Prerequisites: "Pré FR", IntroText: "Intro FR", FinishText: "Fin FR",
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepTranslation{
+		StepID: source.Steps[0].ID, Locale: "fr", Title: "Étape 1", TextContent: "Texte FR",
+		HintContent: "Indice FR", IntroText: "Bienvenue", OutroText: "Bravo", SourceHash: "hash-of-the-english",
+	}).Error)
+	castle := models.ScenarioLexiconEntry{ScenarioID: source.ID, Key: "CASTLE", Kind: "place", Position: 1,
+		Names: []models.ScenarioLexiconName{{Locale: "en", Name: "castle"}, {Locale: "fr", Name: "chateau"}}}
+	require.NoError(t, db.Create(&castle).Error)
+	cellar := models.ScenarioLexiconEntry{ScenarioID: source.ID, Key: "CELLAR", ParentKey: "CASTLE", Kind: "place", Position: 2,
+		Names: []models.ScenarioLexiconName{{Locale: "en", Name: "cellar"}, {Locale: "fr", Name: "cave"}}}
+	require.NoError(t, db.Create(&cellar).Error)
+
+	copied, err := services.NewScenarioDuplicateService(db).DuplicateScenario(source.ID, "duplicating-user", nil)
+	require.NoError(t, err)
+
+	var translations []models.ScenarioTranslation
+	require.NoError(t, db.Where("scenario_id = ?", copied.ID).Find(&translations).Error)
+	require.Len(t, translations, 1)
+	assert.Equal(t, models.ScenarioTranslation{
+		BaseModel: translations[0].BaseModel, ScenarioID: copied.ID, Locale: "fr", Title: "Scénario", Description: "Desc FR",
+		Objectives: "Obj FR", Prerequisites: "Pré FR", IntroText: "Intro FR", FinishText: "Fin FR",
+	}, translations[0])
+
+	copiedSteps := loadStepsWithRelations(t, db, copied.ID)
+	var stepTranslations []models.ScenarioStepTranslation
+	require.NoError(t, db.Where("step_id = ?", copiedSteps[0].ID).Find(&stepTranslations).Error)
+	require.Len(t, stepTranslations, 1)
+	assert.Equal(t, models.ScenarioStepTranslation{
+		BaseModel: stepTranslations[0].BaseModel, StepID: copiedSteps[0].ID, Locale: "fr", Title: "Étape 1", TextContent: "Texte FR",
+		HintContent: "Indice FR", IntroText: "Bienvenue", OutroText: "Bravo", SourceHash: "hash-of-the-english",
+	}, stepTranslations[0], "the source hash keeps the translation current")
+
+	var entries []models.ScenarioLexiconEntry
+	require.NoError(t, db.Preload("Names", func(db *gorm.DB) *gorm.DB { return db.Order("locale ASC") }).
+		Where("scenario_id = ?", copied.ID).Order("position ASC").Find(&entries).Error)
+	require.Len(t, entries, 2)
+	for i, want := range []models.ScenarioLexiconEntry{castle, cellar} {
+		assert.Equal(t, want.Key, entries[i].Key)
+		assert.Equal(t, want.ParentKey, entries[i].ParentKey)
+		assert.Equal(t, want.Kind, entries[i].Kind)
+		assert.Equal(t, want.Position, entries[i].Position)
+		require.Len(t, entries[i].Names, 2)
+		for n := range want.Names {
+			assert.Equal(t, want.Names[n].Locale, entries[i].Names[n].Locale)
+			assert.Equal(t, want.Names[n].Name, entries[i].Names[n].Name)
+		}
+	}
+
+	var sourceEntries int64
+	require.NoError(t, db.Model(&models.ScenarioLexiconEntry{}).Where("scenario_id = ?", source.ID).Count(&sourceEntries).Error)
+	assert.EqualValues(t, 2, sourceEntries, "the source keeps its lexicon")
+}
