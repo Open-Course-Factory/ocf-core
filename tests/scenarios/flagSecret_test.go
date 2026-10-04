@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 )
@@ -67,4 +68,39 @@ func TestFlagSecret_ScenarioWithoutFlagSteps_GetsNoSecret(t *testing.T) {
 
 	assert.Empty(t, startRunWithRealFlags(t, db, scenario.ID))
 	assert.Empty(t, reloadScenario(t, db, scenario.ID).FlagSecret)
+}
+
+// The secret is minted at the first run, so a re-seed or re-import must keep
+// whatever secret the scenario already has, whatever flags_enabled says.
+func TestFlagSecret_ReseedAfterARun_KeepsTheSecret(t *testing.T) {
+	db := freshTestDB(t)
+	input := dto.SeedScenarioInput{
+		Title: "Reseed Keeps Secret", OsType: "deb",
+		Steps: []dto.SeedStepInput{{Title: "find it", StepType: "flag"}},
+	}
+	seeder := services.NewScenarioSeedService(db)
+	scenario, _, err := seeder.SeedScenario(input, "seed-author", nil)
+	require.NoError(t, err)
+	require.Len(t, startRunWithRealFlags(t, db, scenario.ID), 1)
+	minted := reloadScenario(t, db, scenario.ID).FlagSecret
+	require.Len(t, minted, 64)
+
+	_, _, err = seeder.SeedScenario(input, "seed-author", nil)
+	require.NoError(t, err)
+	assert.Equal(t, minted, reloadScenario(t, db, scenario.ID).FlagSecret)
+}
+
+func TestFlagSecret_ReimportAfterARun_KeepsTheSecret(t *testing.T) {
+	db := freshTestDB(t)
+	importer := services.NewScenarioImporterService(db)
+	dir := writeFlagScenarioDir(t, true)
+	scenario, err := importer.ImportFromDirectory(dir, "importer-author", nil, "")
+	require.NoError(t, err)
+	require.Len(t, startRunWithRealFlags(t, db, scenario.ID), 1)
+	minted := reloadScenario(t, db, scenario.ID).FlagSecret
+	require.Len(t, minted, 64)
+
+	_, err = importer.ImportFromDirectory(dir, "importer-author", nil, "")
+	require.NoError(t, err)
+	assert.Equal(t, minted, reloadScenario(t, db, scenario.ID).FlagSecret)
 }

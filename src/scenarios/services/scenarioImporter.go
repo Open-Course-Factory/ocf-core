@@ -200,7 +200,7 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 	}
 	if err := upsertQuery.First(&existing).Error; err == nil {
 		// Update existing scenario
-		if existing.FlagSecret != "" && scenario.FlagsEnabled {
+		if existing.FlagSecret != "" {
 			scenario.FlagSecret = existing.FlagSecret // preserve flag secret
 		}
 
