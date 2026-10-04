@@ -21,7 +21,7 @@ import (
 
 // GetReadOnlySteps godoc
 // @Summary Read a scenario's steps without editing rights
-// @Description Every step as the editor reads it — scripts, hints and hint rows, quiz questions with answers, flag settings, effects, translations — and the setup script, for an author who may see the scenario but not edit it. Anyone allowed here may duplicate the scenario and read it all anyway. A learner is refused, to whom the steps are a walkthrough. The flag secret is never sent.
+// @Description Every step as the editor reads it — scripts, hints and hint rows, quiz questions with answers, flag settings, effects, translations — and the setup script, for a user who may see the scenario but not edit it. Gated on CanSeeScenario and TeachesAnywhere, which every user with a personal organisation passes: any registered user reads a public scenario in full, as they could by duplicating it (accepted 2026-10-04 — public scenarios are public). Other organisations' private scenarios stay 404. The flag secret is never sent.
 // @Tags scenarios
 // @Produce json
 // @Param id path string true "Scenario ID"

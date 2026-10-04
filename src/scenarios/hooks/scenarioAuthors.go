@@ -10,10 +10,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// TeachesAnywhere reports whether the user writes scenarios somewhere: they
-// hold at least the classroom rank (access.RoleMinimumForClassrooms) in an
-// organisation, or they manage a class. It separates an author browsing other
-// scenarios' steps from a learner, to whom those steps are a walkthrough.
+// TeachesAnywhere reports whether the user holds at least the classroom rank
+// (access.RoleMinimumForClassrooms) in some organisation, or manages a class.
+//
+// In practice it does NOT separate authors from learners: every registered
+// user owns their personal organisation, and owner ranks above teacher, so it
+// holds for everyone. A learner can therefore read a public scenario's full
+// content through GET /scenarios/:id/steps/read-only — as they already could
+// by duplicating it into their personal organisation. Accepted on 2026-10-04:
+// public scenarios are public. Restricting it would take a plan-based authoring
+// rule, not a rank. TestReadOnlySteps_LearnerWithPersonalOrgReadsPublicScenario
+// pins this; change it only with that decision.
 func TeachesAnywhere(db *gorm.DB, userID string) (bool, error) {
 	if userID == "" {
 		return false, nil

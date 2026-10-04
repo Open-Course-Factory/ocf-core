@@ -199,8 +199,10 @@ func TestReadOnlySteps_TeacherReadsTheFullSteps(t *testing.T) {
 	assert.Equal(t, "SECRET-EXPLANATION", quiz.Questions[0].Explanation)
 }
 
-// To a learner the steps are a walkthrough: they are for authors only.
-func TestReadOnlySteps_LearnerRefused(t *testing.T) {
+// A user who holds no rank anywhere is refused. Every real user owns a
+// personal organisation, so this guards the rule, not real learners — see
+// TestReadOnlySteps_LearnerWithPersonalOrgReadsPublicScenario.
+func TestReadOnlySteps_UserWithoutAnyRankRefused(t *testing.T) {
 	db := freshTestDB(t)
 	f := buildStepLibraryFixture(t, db)
 
@@ -335,4 +337,25 @@ func TestCopySteps_BadRequests(t *testing.T) {
 		})
 	}
 	assert.Len(t, targetSteps(t, db, f.target.ID), 2)
+}
+
+// Accepted 2026-10-04: public scenarios are public. A learner owns their
+// personal organisation, which passes TeachesAnywhere, so they read a public
+// scenario in full — as they could by duplicating it there. This pins the
+// decision; do not "fix" it without revisiting it.
+func TestReadOnlySteps_LearnerWithPersonalOrgReadsPublicScenario(t *testing.T) {
+	db := freshTestDB(t)
+	f := buildStepLibraryFixture(t, db)
+	const learner = "lib-solo-learner"
+	personal := orgModels.Organization{Name: "personal-" + learner, DisplayName: "Personal", OwnerUserID: learner,
+		OrganizationType: orgModels.OrgTypePersonal, MaxMembers: 1, IsActive: true}
+	require.NoError(t, db.Omit("Metadata").Create(&personal).Error)
+	addOrgMember(t, db, personal.ID, learner, orgModels.OrgRoleOwner)
+
+	w := stepLibraryRequest(stepLibraryRouter(t, db, learner), http.MethodGet, "/api/v1/scenarios/"+f.public.ID.String()+"/steps/read-only", nil)
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	assert.Contains(t, w.Body.String(), "SECRET-VERIFY")
+
+	w = stepLibraryRequest(stepLibraryRouter(t, db, learner), http.MethodGet, "/api/v1/scenarios/"+f.foreign.ID.String()+"/steps/read-only", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code, "another organisation's private scenario stays out of reach")
 }
