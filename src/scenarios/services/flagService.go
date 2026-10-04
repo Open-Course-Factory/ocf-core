@@ -82,8 +82,8 @@ func (s *FlagService) computeFlag(secret string, sessionID uuid.UUID, stepOrder 
 	return fmt.Sprintf("%s%s}", generatedFlagPrefix, hexStr[:16])
 }
 
-// NewFlagSecret returns a fresh HMAC key for a scenario's flags.
-func NewFlagSecret() (string, error) {
+// newFlagSecret returns a fresh HMAC key for a scenario's flags.
+func newFlagSecret() (string, error) {
 	secretBytes := make([]byte, 32)
 	if _, err := rand.Read(secretBytes); err != nil {
 		return "", fmt.Errorf("failed to generate flag secret: %w", err)
@@ -99,7 +99,7 @@ func ensureFlagSecret(tx *gorm.DB, scenario *models.Scenario) error {
 	if scenario.FlagSecret != "" || !slices.ContainsFunc(scenario.Steps, func(st models.ScenarioStep) bool { return st.HasFlag }) {
 		return nil
 	}
-	secret, err := NewFlagSecret()
+	secret, err := newFlagSecret()
 	if err != nil {
 		return err
 	}

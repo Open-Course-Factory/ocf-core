@@ -200,9 +200,7 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 	}
 	if err := upsertQuery.First(&existing).Error; err == nil {
 		// Update existing scenario
-		if existing.FlagSecret != "" {
-			scenario.FlagSecret = existing.FlagSecret // preserve flag secret
-		}
+		scenario.FlagSecret = existing.FlagSecret // preserve flag secret
 
 		err = s.db.Transaction(func(tx *gorm.DB) error {
 			// Collect old ProjectFile IDs from scenario and steps
@@ -379,15 +377,6 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		}
 	}
 
-	// Generate flag secret if flags are enabled
-	var flagSecret string
-	if flagsEnabled {
-		var err error
-		if flagSecret, err = NewFlagSecret(); err != nil {
-			return nil, err
-		}
-	}
-
 	// Read intro and finish markdown (support both details-level and top-level locations)
 	introFile := index.Details.Intro.Text
 	if introFile == "" {
@@ -417,7 +406,6 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		BuildFeatures:    buildFeatures,
 		SourceType:     sourceType,
 		FlagsEnabled:   flagsEnabled,
-		FlagSecret:     flagSecret,
 		CrashTraps:     crashTraps,
 		SessionUser:    sessionUser,
 		Hostname:       hostname,

@@ -328,7 +328,7 @@ func TestSeedService_Create_Success(t *testing.T) {
 	assert.Equal(t, "ubuntu:22.04", scenario.InstanceType)
 	assert.Equal(t, "deb", scenario.OsType)
 	assert.True(t, scenario.FlagsEnabled)
-	assert.NotEmpty(t, scenario.FlagSecret)
+	assert.Empty(t, scenario.FlagSecret, "the secret is minted at the first run")
 	assert.Equal(t, "seed", scenario.SourceType)
 	assert.Equal(t, "user-1", scenario.CreatedByID)
 	assert.Nil(t, scenario.OrganizationID)
@@ -360,8 +360,8 @@ func TestSeedService_Upsert_Updates(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, isUpdate1)
 	originalID := scenario1.ID
-	originalSecret := scenario1.FlagSecret
-	assert.NotEmpty(t, originalSecret)
+	const originalSecret = "secret-minted-by-a-run"
+	require.NoError(t, db.Model(scenario1).Update("flag_secret", originalSecret).Error)
 
 	// Update with same title (same slug -> same name -> upsert)
 	input2 := dto.SeedScenarioInput{

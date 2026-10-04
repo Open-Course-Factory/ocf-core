@@ -342,11 +342,11 @@ func TestDuplicateScenario_FlagSecretRegenerated(t *testing.T) {
 	result, err := svc.DuplicateScenario(source.ID, "user1", nil)
 	require.NoError(t, err)
 
-	// FlagSecret should be regenerated (not copied from source)
+	// FlagSecret is not copied from the source; the copy gets its own at its
+	// first run.
 	var newScenario models.Scenario
 	require.NoError(t, db.First(&newScenario, "id = ?", result.ID).Error)
-	assert.NotEmpty(t, newScenario.FlagSecret)
-	assert.NotEqual(t, "original-secret-that-should-not-be-copied", newScenario.FlagSecret)
+	assert.Empty(t, newScenario.FlagSecret)
 }
 
 func TestDuplicateScenario_AssignmentsNotCopied(t *testing.T) {

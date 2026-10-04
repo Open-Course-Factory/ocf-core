@@ -198,8 +198,7 @@ func TestScenarioImporter_BuildScenarioFromIndex(t *testing.T) {
 	assert.Equal(t, "ubuntu:22.04", scenario.InstanceType)
 	assert.Equal(t, "builtin", scenario.SourceType)
 	assert.True(t, scenario.FlagsEnabled)
-	assert.NotEmpty(t, scenario.FlagSecret)
-	assert.Len(t, scenario.FlagSecret, 64) // 32 bytes hex = 64 chars
+	assert.Empty(t, scenario.FlagSecret, "the secret is minted at the first run")
 	assert.False(t, scenario.CrashTraps)
 	assert.Equal(t, "# Welcome to the lab", scenario.IntroText)
 	assert.Equal(t, "# Congratulations!", scenario.FinishText)

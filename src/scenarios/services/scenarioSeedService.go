@@ -40,14 +40,9 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 		isUpdate = true
 	}
 
-	// Keep existing flag secret on update so active sessions remain valid
+	// Keep existing flag secret on update so active sessions remain valid; a
+	// new scenario gets one at its first run (ensureFlagSecret).
 	flagSecret := existing.FlagSecret
-	if flagSecret == "" && input.FlagsEnabled {
-		var err error
-		if flagSecret, err = NewFlagSecret(); err != nil {
-			return nil, false, err
-		}
-	}
 
 	compatibleInstanceTypes := BuildCompatibleInstanceTypes(input.CompatibleInstanceTypes)
 

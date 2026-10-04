@@ -81,14 +81,6 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 	var newScenario *models.Scenario
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// 1. Create new scenario (copy fields, new ID)
-		var flagSecret string
-		if source.FlagsEnabled {
-			var err error
-			if flagSecret, err = NewFlagSecret(); err != nil {
-				return err
-			}
-		}
-
 		// Generate a short random suffix to ensure unique slug on repeated duplication
 		suffixBytes := make([]byte, 3)
 		rand.Read(suffixBytes)
@@ -109,7 +101,8 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			SourcePath:     source.SourcePath,
 			FlagsEnabled:     source.FlagsEnabled,
 			AllowedFlagPaths: source.AllowedFlagPaths,
-			FlagSecret:       flagSecret,
+			// No FlagSecret: the copy must not share the source's flags; it
+			// gets its own at its first run (ensureFlagSecret).
 			CrashTraps:     source.CrashTraps,
 			PortExposureAllowed: source.PortExposureAllowed,
 			Objectives:     source.Objectives,
