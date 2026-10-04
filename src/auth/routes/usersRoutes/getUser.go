@@ -1,6 +1,7 @@
 package userController
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	organizationModels "soli/formations/src/organizations/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // Get User godoc
@@ -92,10 +94,10 @@ func (u UserController) GetUser(ctx *gin.Context) {
 		}
 
 		if include == "group_memberships" {
-			var groupMemberships []groupModels.GroupMember
-			err := sqldb.DB.Where("user_id = ? AND is_active = ?", userID, true).
-				Preload("ClassGroup").
-				Find(&groupMemberships).Error
+			groupMemberships, err := ActiveGroupMemberships(sqldb.DB, userID)
+			if err != nil {
+				log.Printf("[ERROR] Failed to load group memberships for user %s: %v", userID, err)
+			}
 
 			if err == nil {
 				if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps("GroupMember"); ok {
@@ -115,4 +117,16 @@ func (u UserController) GetUser(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, extendedUser)
+}
+
+// ActiveGroupMemberships loads the user's active class memberships with their
+// class. The relation is GroupMember.Group: preloading a "ClassGroup" relation
+// that does not exist failed the whole query, and the include came back empty,
+// so the front believed nobody managed any class.
+func ActiveGroupMemberships(db *gorm.DB, userID string) ([]groupModels.GroupMember, error) {
+	var memberships []groupModels.GroupMember
+	err := db.Where("user_id = ? AND is_active = ?", userID, true).
+		Preload("Group").
+		Find(&memberships).Error
+	return memberships, err
 }
