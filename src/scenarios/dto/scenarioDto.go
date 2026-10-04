@@ -107,9 +107,10 @@ type ScenarioOutput struct {
 	CreatedByID    string             `json:"created_by_id"`
 	OrganizationID *uuid.UUID         `json:"organization_id,omitempty"`
 	IsPublic       bool               `json:"is_public"`
-	// CanManage is the backend's own CanManageScenario verdict for the caller,
-	// so the editor shows edit controls exactly where a write would succeed
-	// instead of guessing from memberships. The redactor clears it.
+	// CanManage is the backend's own CanManageScenario verdict for the caller —
+	// the one rule behind PATCH, archive, unarchive and delete — so clients
+	// show edit and retire controls exactly where the write would succeed
+	// instead of guessing from memberships. The redactor settles it.
 	CanManage      bool               `json:"can_manage"`
 	SetupScript    string             `json:"setup_script,omitempty"`
 	SetupScriptID  *uuid.UUID         `json:"setup_script_id,omitempty"`

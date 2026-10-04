@@ -34,7 +34,32 @@ import (
 // the client sends — fixing the leak even when default preloads or explicit
 // includes have already populated the steps in the model.
 func scenarioRedactor(c *gin.Context, dtoPtr any, db *gorm.DB) error {
-	return redactUnlessManager(c, dtoPtr, db, "scenarioRedactor", scenarioFromOutput, stripScenarioDto)
+	if err := redactUnlessManager(c, dtoPtr, db, "scenarioRedactor", scenarioFromOutput, stripScenarioDto); err != nil {
+		return err
+	}
+	return settleCanManage(c, dtoPtr, db)
+}
+
+// settleCanManage replaces the CanManage default left on a row the caller may
+// run (redactUnlessManager kept its content) with CanManageScenario: running
+// a colleague's lab is not editing, archiving or deleting it.
+func settleCanManage(c *gin.Context, dtoPtr any, db *gorm.DB) error {
+	wrapper, ok := dtoPtr.(*any)
+	if !ok {
+		return nil
+	}
+	output, ok := (*wrapper).(dto.ScenarioOutput)
+	if !ok || !output.CanManage || access.IsAdmin(readRoles(c)) {
+		return nil
+	}
+	scenario, _ := scenarioFromOutput(db, &output)
+	canManage, err := scenarioHooks.CanManageScenario(db, groupServices.NewGroupService(db), scenario, c.GetString("userId"))
+	if err != nil {
+		return fmt.Errorf("scenarioRedactor: check manage permission: %w", err)
+	}
+	output.CanManage = canManage
+	*wrapper = output
+	return nil
 }
 
 // scenarioFromOutput builds a thin Scenario for the manage check from the

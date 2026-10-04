@@ -423,3 +423,50 @@ func TestTeacherAuthoring_Preview_TeacherPreviewsStudentRefused(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.Contains(t, w.Body.String(), "not authorized to preview")
 }
+
+// --- the can_manage verdict -------------------------------------------------------
+
+// can_manage is CanManageScenario for the caller: the one rule behind PATCH,
+// archive and delete. A teacher runs a colleague's lab (its steps come back)
+// but may not retire it.
+func TestTeacherAuthoring_CanManage_OwnTrueColleaguesFalse(t *testing.T) {
+	db := freshTestDB(t)
+	f := buildTeacherAuthoringFixture(t, db)
+
+	type card struct {
+		Title     string           `json:"title"`
+		CanManage bool             `json:"can_manage"`
+		Steps     []map[string]any `json:"steps"`
+	}
+	verdicts := func(t *testing.T, cards []card) map[string]bool {
+		got := map[string]bool{}
+		for _, c := range cards {
+			got[c.Title] = c.CanManage
+			assert.NotEmpty(t, c.Steps, "%s: a teacher of the org reads the full lab", c.Title)
+		}
+		return got
+	}
+	want := map[string]map[string]bool{
+		"ta-teacher-a": {f.byTeacherA.Title: true, f.byTeacherB.Title: false},
+		"ta-manager":   {f.byTeacherA.Title: true, f.byTeacherB.Title: true},
+	}
+
+	for user, expected := range want {
+		t.Run("GET /scenarios as "+user, func(t *testing.T) {
+			w := serve(setupScenarioReadAuthzTest(t, db, user, []string{"member"}, "/scenarios"), http.MethodGet, "/api/v1/scenarios", nil, "")
+			require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+			var page struct {
+				Data []card `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
+			assert.Equal(t, expected, verdicts(t, page.Data))
+		})
+		t.Run("GET /organizations/:id/scenarios as "+user, func(t *testing.T) {
+			w := serve(authoringRouter(t, db, user), http.MethodGet, "/api/v1/organizations/"+f.org.String()+"/scenarios", nil, "")
+			require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+			var cards []card
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &cards))
+			assert.Equal(t, expected, verdicts(t, cards))
+		})
+	}
+}

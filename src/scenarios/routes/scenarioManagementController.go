@@ -184,9 +184,19 @@ func (sc *scenarioManagementController) OrgListScenarios(ctx *gin.Context) {
 		return
 	}
 
+	// ponytail: one CanManageScenario per row; batch per organisation if org
+	// catalogues grow past a few hundred labs.
 	output := make([]dto.ScenarioOutput, 0, len(scenarios))
 	for i := range scenarios {
-		output = append(output, scenarioRegistration.ScenarioToOutput(&scenarios[i]))
+		out := scenarioRegistration.ScenarioToOutput(&scenarios[i])
+		if !access.IsAdmin(roles) {
+			if out.CanManage, err = scenarioHooks.CanManageScenario(sc.db, sc.groupService, &scenarios[i], userID); err != nil {
+				slog.Error("failed to check scenario management access", "err", err)
+				errors.Respond(ctx, http.StatusInternalServerError, "Failed to list scenarios")
+				return
+			}
+		}
+		output = append(output, out)
 	}
 	ctx.JSON(http.StatusOK, output)
 }
