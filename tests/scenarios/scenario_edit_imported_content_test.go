@@ -7,6 +7,7 @@ package scenarios_test
 // and then read what the runtime and the export read.
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
@@ -144,4 +146,27 @@ func TestImportedStep_PatchSameHint_KeepsHintRows(t *testing.T) {
 		map[string]any{"title": "Renamed", "hint_content": step.HintContent})
 	require.Equal(t, http.StatusNoContent, resp.Code, "body=%s", resp.Body.String())
 	assert.Equal(t, []string{"hand-edited first", "imported second"}, hintContents(t, db, step.ID))
+}
+
+type rejectStepUpdateHook struct{ hooks.BaseHook }
+
+func (rejectStepUpdateHook) Execute(*hooks.HookContext) error { return errors.New("rejected") }
+
+// A PATCH that fails after the hint sync ran must not leave the hint rows
+// rebuilt from a hint_content that was never saved.
+func TestImportedStep_PatchHintRejected_KeepsHintRows(t *testing.T) {
+	db := freshTestDB(t)
+	_, step := seedImportedScenario(t, db)
+	router := setupArchiveRouter(t, db, importedContentAuthor, []string{"member"})
+	require.NoError(t, hooks.GlobalHookRegistry.RegisterHook(&rejectStepUpdateHook{hooks.BaseHook{
+		Name: "test_reject_step_update", EntityName: "ScenarioStep",
+		HookTypes: []hooks.HookType{hooks.BeforeUpdate}, Enabled: true, Priority: 1000,
+	}}))
+
+	resp := sendJSON(t, router, http.MethodPatch, "/scenario-steps/"+step.ID.String(),
+		map[string]any{"hint_content": "### Hint 1\nnever saved"})
+	require.NotEqual(t, http.StatusNoContent, resp.Code)
+
+	assert.Equal(t, step.HintContent, reloadStep(t, db, step.ID).HintContent)
+	assert.Equal(t, []string{"imported first", "imported second"}, hintContents(t, db, step.ID))
 }

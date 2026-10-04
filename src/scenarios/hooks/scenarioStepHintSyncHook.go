@@ -16,6 +16,10 @@ import (
 //
 // It compares against the stored hint so a save that resends the same text
 // leaves the rows alone, including rows an administrator edited one by one.
+//
+// It runs after the update: the generic update exposes no transaction, and a
+// rebuild done before it would survive a PATCH that then failed, leaving rows
+// for a hint_content that was never saved.
 type ScenarioStepHintSyncHook struct {
 	db *gorm.DB
 	hooks.BaseHook
@@ -24,12 +28,10 @@ type ScenarioStepHintSyncHook struct {
 func NewScenarioStepHintSyncHook(db *gorm.DB) *ScenarioStepHintSyncHook {
 	return &ScenarioStepHintSyncHook{
 		db: db,
-		// After the authorization hook (priority 10): nothing is rewritten for
-		// a caller who may not edit the step.
 		BaseHook: hooks.BaseHook{
 			Name:       "scenario_step_hint_sync",
 			EntityName: "ScenarioStep",
-			HookTypes:  []hooks.HookType{hooks.BeforeUpdate},
+			HookTypes:  []hooks.HookType{hooks.AfterUpdate},
 			Enabled:    true,
 			Priority:   20,
 		},
@@ -37,20 +39,16 @@ func NewScenarioStepHintSyncHook(db *gorm.DB) *ScenarioStepHintSyncHook {
 }
 
 func (h *ScenarioStepHintSyncHook) Execute(ctx *hooks.HookContext) error {
-	updates, ok := ctx.NewEntity.(map[string]any)
-	if !ok {
-		return nil
-	}
-	hint, written := updates["hint_content"].(string)
-	old, ok := ctx.OldEntity.(*models.ScenarioStep)
-	if !written || !ok || hint == old.HintContent {
+	old, okOld := ctx.OldEntity.(*models.ScenarioStep)
+	saved, okSaved := ctx.NewEntity.(*models.ScenarioStep)
+	if !okOld || !okSaved || saved.HintContent == old.HintContent {
 		return nil
 	}
 	return h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("step_id = ?", old.ID).Delete(&models.ScenarioStepHint{}).Error; err != nil {
 			return fmt.Errorf("delete hints of step %s: %w", old.ID, err)
 		}
-		hints := services.BuildStepHints(hint)
+		hints := services.BuildStepHints(saved.HintContent)
 		for i := range hints {
 			hints[i].StepID = old.ID
 		}
