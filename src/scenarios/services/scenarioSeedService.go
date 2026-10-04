@@ -33,7 +33,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 	built.CreatedByID = userID
 	built.OrganizationID = orgID
 
-	existing, err := findScenarioToReplace(s.db, built.Name, orgID)
+	existing, err := FindScenarioToReplace(s.db, built.Name, orgID)
 	if err != nil {
 		created, err := s.createSeededScenario(built, input)
 		return created, false, err

@@ -346,18 +346,17 @@ func (b *scenarioControllerBase) importScenarioJSON(ctx *gin.Context, orgID *uui
 }
 
 // mayImportOver refuses an import into an organization that would replace a
-// scenario the caller may not manage. The importers upsert by name inside the
-// organization (utils.GenerateSlug of the title, in SeedScenario and
-// BuildScenarioFromIndex alike), so an import bearing a colleague's title
-// rewrites the colleague's lab — editing it, which CanManageScenario owns.
+// scenario the caller may not manage. The importers upsert on
+// services.FindScenarioToReplace (the slug of the title), so an import bearing
+// a colleague's title rewrites the colleague's lab — editing it, which
+// CanManageScenario owns.
 // Platform imports (orgID nil) are admin-only and pass. It answers the request
 // itself when it returns false.
 func (b *scenarioControllerBase) mayImportOver(ctx *gin.Context, title string, orgID *uuid.UUID) bool {
 	if orgID == nil {
 		return true
 	}
-	var existing models.Scenario
-	err := b.db.Select("id").Where("name = ? AND organization_id = ?", utils.GenerateSlug(title), *orgID).First(&existing).Error
+	existing, err := services.FindScenarioToReplace(b.db, utils.GenerateSlug(title), orgID)
 	if stderrors.Is(err, gorm.ErrRecordNotFound) {
 		return true
 	}

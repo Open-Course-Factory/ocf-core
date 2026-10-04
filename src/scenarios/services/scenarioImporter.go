@@ -193,7 +193,7 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 	}
 
 	// Upsert: an import replaces the namesake it owns, and only that one.
-	if existing, err := findScenarioToReplace(s.db, scenario.Name, orgID); err == nil {
+	if existing, err := FindScenarioToReplace(s.db, scenario.Name, orgID); err == nil {
 		// Update existing scenario
 		scenario.FlagSecret = existing.FlagSecret // preserve flag secret
 
@@ -556,11 +556,12 @@ func readStepExtensions(dirPath string, stepDir string) (*stepExtensions, error)
 	return &sidecar, nil
 }
 
-// findScenarioToReplace finds the scenario an import of this name replaces:
+// FindScenarioToReplace finds the scenario an import of this name replaces:
 // same name, same owner exactly — the organization, or the platform when orgID
-// is nil. Without the platform half, an admin's platform import overwrote an
+// is nil. The one upsert key: the importers and the import routes'
+// authorization (mayImportOver) all ask it. Without the platform half, an admin's platform import overwrote an
 // organization's scenario that happened to share its title.
-func findScenarioToReplace(db *gorm.DB, name string, orgID *uuid.UUID) (models.Scenario, error) {
+func FindScenarioToReplace(db *gorm.DB, name string, orgID *uuid.UUID) (models.Scenario, error) {
 	var existing models.Scenario
 	query := db.Where("name = ?", name)
 	if orgID != nil {
