@@ -312,6 +312,12 @@ func (b *scenarioControllerBase) importScenarioJSON(ctx *gin.Context, orgID *uui
 		return
 	}
 
+	// Only the platform routes may publish. A file says what a scenario is,
+	// not who may see it, and an organisation's scenario is never public.
+	if orgID != nil || assignToGroup != nil {
+		input.IsPublic = nil
+	}
+
 	userID := ctx.GetString("userId")
 
 	scenario, isUpdate, err := b.seedService.SeedScenario(input, userID, orgID)

@@ -126,6 +126,31 @@ func TestOrgImportJSON_InvalidContent_Answers400WithDetails(t *testing.T) {
 	}, response.Details)
 }
 
+// A file says what a scenario is, not who may see it: an organisation's
+// import never publishes, whatever the file claims.
+func TestOrgImportJSON_IgnoresIsPublic(t *testing.T) {
+	db := freshTestDB(t)
+	ownerID := "org-owner-public-import"
+	orgID := createTestOrg(t, db, ownerID)
+	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
+
+	body, _ := json.Marshal(map[string]any{
+		"title":     "Wants to be public",
+		"is_public": true,
+		"steps":     []map[string]any{{"title": "Read", "step_type": "info"}},
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/organizations/"+orgID.String()+"/scenarios/import-json", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	var stored models.Scenario
+	require.NoError(t, db.Where("organization_id = ?", orgID).First(&stored).Error)
+	assert.False(t, stored.IsPublic)
+}
+
 // Every real scenario in the challenges repository must still import. The
 // validator is only worth having if it refuses broken content and nothing else.
 func TestChallengesContent_PassesImportValidation(t *testing.T) {
