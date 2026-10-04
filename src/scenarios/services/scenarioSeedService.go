@@ -68,10 +68,13 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 	// Build new steps
 	newSteps := make([]models.ScenarioStep, len(input.Steps))
 	for i, st := range input.Steps {
+		// Applied here, not left to BeforeSave: a re-seed writes reused steps
+		// through Updates on an empty model, which BeforeSave never sees.
+		stepType, hasFlag := models.NormalizeFlagStep(st.StepType, st.HasFlag)
 		newSteps[i] = models.ScenarioStep{
 			Order:                    i,
 			Title:                    st.Title,
-			StepType:                 ResolveStepType(st.StepType, st.HasFlag),
+			StepType:                 stepType,
 			ShowImmediateFeedback:    st.ShowImmediateFeedback,
 			TextContent:              st.TextContent,
 			HintContent:              st.HintContent,
@@ -84,7 +87,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			OutroText:                st.OutroText,
 			BackgroundTimeoutSeconds: st.BackgroundTimeoutSeconds,
 			BackgroundAsync:          st.BackgroundAsync,
-			HasFlag:                  st.HasFlag,
+			HasFlag:                  hasFlag,
 			FlagPath:                 st.FlagPath,
 		}
 

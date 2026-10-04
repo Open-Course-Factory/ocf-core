@@ -218,3 +218,30 @@ func TestFlagRule_StartupRepair_FixesRowsWrittenBeforeTheRule(t *testing.T) {
 		assert.Equal(t, w.hasFlag, stored.HasFlag, name)
 	}
 }
+
+// A re-seed writes reused steps through Updates on an empty model, so
+// BeforeSave never sees the step: the seed builder must apply the rule itself.
+func TestFlagRule_ReseededFlagStepWithoutHasFlag_KeepsItsFlag(t *testing.T) {
+	db := freshTestDB(t)
+	input := dto.SeedScenarioInput{
+		Title:  "Reseeded Flag Scenario",
+		OsType: "deb",
+		Steps: []dto.SeedStepInput{
+			{Title: "Find the day", StepType: "flag", BackgroundScript: "echo OCF_ANSWER: tuesday"},
+		},
+	}
+	seeder := services.NewScenarioSeedService(db)
+	_, _, err := seeder.SeedScenario(input, "seed-author", nil)
+	require.NoError(t, err)
+	scenario, _, err := seeder.SeedScenario(input, "seed-author", nil)
+	require.NoError(t, err)
+
+	var step models.ScenarioStep
+	require.NoError(t, db.First(&step, "scenario_id = ?", scenario.ID).Error)
+	assert.Equal(t, "flag", step.StepType)
+	assert.True(t, step.HasFlag, "a re-seeded flag step keeps has_flag")
+
+	flags := startRunWithRealFlags(t, db, scenario.ID)
+	require.Len(t, flags, 1, "the re-seeded flag step gets its flag")
+	assert.Equal(t, step.Order, flags[0].StepOrder)
+}
