@@ -277,7 +277,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/health", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Report what one scenario claims but cannot deliver (controller verifies CanManageScenario: creator, org manager, class manager, or admin)",
+			Description: "Report what one scenario claims but cannot deliver (controller verifies CanManageScenario: creator, org manager, or admin)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/duplicate", Method: "POST",
