@@ -21,12 +21,11 @@ import (
 
 // GetReadOnlySteps godoc
 // @Summary Read a scenario's steps without editing rights
-// @Description Every step as the editor reads it — scripts, hints and hint rows, quiz questions with answers, flag settings, effects, translations — and the setup script, for a user who may see the scenario but not edit it. Gated on CanSeeScenario and TeachesAnywhere, which every user with a personal organisation passes: any registered user reads a public scenario in full, as they could by duplicating it (accepted 2026-10-04 — public scenarios are public). Other organisations' private scenarios stay 404. The flag secret is never sent.
+// @Description Every step as the editor reads it — scripts, hints and hint rows, quiz questions with answers, flag settings, effects, translations — and the setup script, for a user who may see the scenario but not edit it. Gated on CanSeeScenario alone: any registered user reads a public scenario in full, as they could by duplicating it into their personal organisation (accepted 2026-10-04 — public scenarios are public). Other organisations' private scenarios stay 404. The flag secret is never sent.
 // @Tags scenarios
 // @Produce json
 // @Param id path string true "Scenario ID"
 // @Success 200 {object} dto.ReadOnlyStepsOutput
-// @Failure 403 {object} errors.APIError
 // @Failure 404 {object} errors.APIError
 // @Router /scenarios/{id}/steps/read-only [get]
 // @Security BearerAuth
@@ -35,19 +34,6 @@ func (sc *scenarioController) GetReadOnlySteps(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-		teaches, err := scenarioHooks.TeachesAnywhere(sc.db, ctx.GetString("userId"))
-		if err != nil {
-			slog.Error("failed to check whether the user teaches", "err", err)
-			errors.Respond(ctx, http.StatusInternalServerError, "Internal error")
-			return
-		}
-		if !teaches {
-			errors.Respond(ctx, http.StatusForbidden, "Only authors may read a scenario's steps")
-			return
-		}
-	}
-
 	steps, err := sc.readOnlySteps(scenario.ID, nil)
 	if err != nil {
 		slog.Error("failed to read scenario steps", "scenario_id", scenario.ID, "err", err)

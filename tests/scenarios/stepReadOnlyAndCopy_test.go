@@ -199,16 +199,15 @@ func TestReadOnlySteps_TeacherReadsTheFullSteps(t *testing.T) {
 	assert.Equal(t, "SECRET-EXPLANATION", quiz.Questions[0].Explanation)
 }
 
-// A user who holds no rank anywhere is refused. Every real user owns a
-// personal organisation, so this guards the rule, not real learners — see
-// TestReadOnlySteps_LearnerWithPersonalOrgReadsPublicScenario.
-func TestReadOnlySteps_UserWithoutAnyRankRefused(t *testing.T) {
+// Any logged-in user reads a public scenario in full, whatever rank they hold
+// — even none: see TestReadOnlySteps_LearnerWithPersonalOrgReadsPublicScenario
+// for why.
+func TestReadOnlySteps_AnyUserReadsAPublicScenario(t *testing.T) {
 	db := freshTestDB(t)
 	f := buildStepLibraryFixture(t, db)
 
 	w := stepLibraryRequest(stepLibraryRouter(t, db, libLearner), http.MethodGet, "/api/v1/scenarios/"+f.public.ID.String()+"/steps/read-only", nil)
-	assert.Equal(t, http.StatusForbidden, w.Code, "body=%s", w.Body.String())
-	assert.NotContains(t, w.Body.String(), "SECRET")
+	assert.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 }
 
 func TestReadOnlySteps_UnseenScenarioIsNotFound(t *testing.T) {
@@ -339,10 +338,10 @@ func TestCopySteps_BadRequests(t *testing.T) {
 	assert.Len(t, targetSteps(t, db, f.target.ID), 2)
 }
 
-// Accepted 2026-10-04: public scenarios are public. A learner owns their
-// personal organisation, which passes TeachesAnywhere, so they read a public
-// scenario in full — as they could by duplicating it there. This pins the
-// decision; do not "fix" it without revisiting it.
+// Accepted 2026-10-04: public scenarios are public. A learner reads a public
+// scenario in full — as they could by duplicating it into the personal
+// organisation every user owns — and the route asks nothing beyond
+// CanSeeScenario. This pins the decision; do not "fix" it without revisiting it.
 func TestReadOnlySteps_LearnerWithPersonalOrgReadsPublicScenario(t *testing.T) {
 	db := freshTestDB(t)
 	f := buildStepLibraryFixture(t, db)

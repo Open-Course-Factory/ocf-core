@@ -282,7 +282,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/steps/read-only", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Read a scenario's full steps without editing rights (controller verifies CanSeeScenario and TeachesAnywhere)",
+			Description: "Read a scenario's full steps without editing rights (controller verifies CanSeeScenario)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/steps/copy", Method: "POST",
