@@ -370,6 +370,7 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/scenario-sessions/:id/current-step", "GET"},
 		{"/api/v1/scenario-sessions/:id/step/:stepOrder", "GET"},
 		{"/api/v1/scenario-sessions/:id/verify", "POST"},
+		{"/api/v1/scenario-sessions/:id/test-verify", "POST"},
 		{"/api/v1/scenario-sessions/:id/submit-flag", "POST"},
 		{"/api/v1/scenario-sessions/:id/abandon", "POST"},
 		{"/api/v1/scenario-sessions/:id/reprovision-step", "POST"},

@@ -88,6 +88,19 @@ type VerifyStepResponse struct {
 	StepProvisioningStatus
 }
 
+// TestVerifyScriptInput - DTO for trying a candidate verify script on a preview
+type TestVerifyScriptInput struct {
+	Script string `json:"script"`
+}
+
+// TestVerifyScriptResponse - DTO for the result of a candidate verify script
+type TestVerifyScriptResponse struct {
+	Passed     bool   `json:"passed"`
+	ExitCode   int    `json:"exit_code"`
+	Output     string `json:"output"`
+	DurationMs int64  `json:"duration_ms"`
+}
+
 // ReprovisionStepInput - DTO for re-running the current step's setup
 type ReprovisionStepInput struct {
 	// Force tells the step script to redo work its idempotency markers would

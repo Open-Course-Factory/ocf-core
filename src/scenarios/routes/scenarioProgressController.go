@@ -24,6 +24,7 @@ type ScenarioProgressController interface {
 	GetCurrentStep(ctx *gin.Context)
 	GetStepByOrder(ctx *gin.Context)
 	VerifyStep(ctx *gin.Context)
+	TestVerifyScript(ctx *gin.Context)
 	SubmitFlag(ctx *gin.Context)
 	SubmitQuiz(ctx *gin.Context)
 	RevealHint(ctx *gin.Context)
@@ -175,6 +176,91 @@ func (pc *scenarioProgressController) VerifyStep(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, result)
+}
+
+// testVerifyScriptLimit caps a candidate verify script. Real ones are a few
+// lines; the cap only keeps an oversized body away from tt-backend.
+const testVerifyScriptLimit = 64 * 1024
+
+// TestVerifyScript godoc
+// @Summary Test a verify script on a preview
+// @Description Run a candidate verify script in the caller's own preview session and return its result, without changing the session. The caller must be able to manage the scenario.
+// @Tags scenario-sessions
+// @Accept json
+// @Produce json
+// @Param id path string true "Preview session ID"
+// @Param body body dto.TestVerifyScriptInput true "Candidate verify script"
+// @Success 200 {object} dto.TestVerifyScriptResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 409 {object} errors.APIError
+// @Failure 413 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/test-verify [post]
+// @Security BearerAuth
+func (pc *scenarioProgressController) TestVerifyScript(ctx *gin.Context) {
+	session, err := pc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+	if pc.refuseTestVerify(ctx, session) {
+		return
+	}
+
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 2*testVerifyScriptLimit)
+	var input dto.TestVerifyScriptInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		var tooLarge *http.MaxBytesError
+		if stderrors.As(err, &tooLarge) {
+			errors.Respond(ctx, http.StatusRequestEntityTooLarge, "Script is too large")
+			return
+		}
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+	if input.Script == "" {
+		errors.Respond(ctx, http.StatusBadRequest, "Script is required")
+		return
+	}
+	if len(input.Script) > testVerifyScriptLimit {
+		errors.Respond(ctx, http.StatusRequestEntityTooLarge, "Script is too large")
+		return
+	}
+
+	result, err := pc.sessionService.TestVerifyScript(session, input.Script)
+	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
+		slog.Error("failed to test verify script", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to run the script")
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+// refuseTestVerify answers the request and reports true unless the session is
+// a preview and the caller may manage its scenario. A preview keeps the
+// author's work away from any learner's container; managing is required
+// because a teacher who may only run the scenario has no script to author.
+func (pc *scenarioProgressController) refuseTestVerify(ctx *gin.Context, session *models.ScenarioSession) bool {
+	if !session.IsPreview {
+		errors.Respond(ctx, http.StatusForbidden, "Scripts can only be tested on a preview session")
+		return true
+	}
+	_, allowed, err := pc.canManageScenarioByID(ctx, session.ScenarioID)
+	if err != nil {
+		slog.Error("failed to check scenario manage access", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check scenario access")
+		return true
+	}
+	if !allowed {
+		errors.Respond(ctx, http.StatusForbidden, "not authorized to edit this scenario")
+		return true
+	}
+	return false
 }
 
 // SubmitFlag godoc

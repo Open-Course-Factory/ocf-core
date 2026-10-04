@@ -55,6 +55,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Verify step completion (must own the session)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/scenario-sessions/:id/test-verify", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Description: "Test a candidate verify script on a preview session without changing it (must own the session; controller requires a preview and scenario management rights)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/submit-flag", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Submit a flag answer (must own the session)",

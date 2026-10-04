@@ -1659,6 +1659,39 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	return response, nil
 }
 
+// testVerifyOutputLimit caps the output returned to the author: a runaway
+// script must not turn into a megabyte JSON response.
+const testVerifyOutputLimit = 16 * 1024
+
+// TestVerifyScript runs a candidate verify script in the session's container
+// and reports how it went. It writes nothing — no attempt counted, no step
+// completed — so an author can try a check on their preview as often as they
+// like without moving it.
+func (s *ScenarioSessionService) TestVerifyScript(session *models.ScenarioSession, script string) (*dto.TestVerifyScriptResponse, error) {
+	if err := requireActiveSession(session); err != nil {
+		return nil, err
+	}
+	if session.TerminalSessionID == nil {
+		return nil, fmt.Errorf("%w: no terminal session attached", ErrSessionNotActive)
+	}
+
+	started := time.Now()
+	exitCode, output, err := RunVerifyScript(s.verificationService, *session.TerminalSessionID, script)
+	if err != nil {
+		return nil, err
+	}
+	if len(output) > testVerifyOutputLimit {
+		output = output[:testVerifyOutputLimit] + "\n[output truncated]"
+	}
+
+	return &dto.TestVerifyScriptResponse{
+		Passed:     exitCode == 0,
+		ExitCode:   exitCode,
+		Output:     output,
+		DurationMs: time.Since(started).Milliseconds(),
+	}, nil
+}
+
 // completeInfoStep auto-marks an info step as completed and advances the
 // session to the next step. Info steps have no verification script — the
 // "verify" call is the equivalent of clicking "next".

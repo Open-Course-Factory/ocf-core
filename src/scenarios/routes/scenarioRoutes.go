@@ -58,6 +58,7 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	sessionRoutes.GET("/:id/current-step", middleware.AuthManagement(), progressController.GetCurrentStep)
 	sessionRoutes.GET("/:id/step/:stepOrder", middleware.AuthManagement(), progressController.GetStepByOrder)
 	sessionRoutes.POST("/:id/verify", middleware.AuthManagement(), rateLimiter, progressController.VerifyStep)
+	sessionRoutes.POST("/:id/test-verify", middleware.AuthManagement(), rateLimiter, progressController.TestVerifyScript)
 	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), rateLimiter, progressController.SubmitFlag)
 	sessionRoutes.POST("/:id/submit-quiz", middleware.AuthManagement(), rateLimiter, progressController.SubmitQuiz)
 	sessionRoutes.POST("/:id/steps/:stepOrder/hints/:level/reveal", middleware.AuthManagement(), progressController.RevealHint)
