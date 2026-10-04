@@ -119,6 +119,13 @@ var ErrSessionNotActive = errors.New("session is not active")
 // back to relaunch, which fails again for the same reason.
 var ErrActiveSessionExists = errors.New("active session already exists for this scenario")
 
+// ErrVerifyFlagStep and ErrVerifyQuizStep reject /verify on a step answered
+// through its own endpoint: the caller's mistake, answered 400, not a failure.
+var (
+	ErrVerifyFlagStep = errors.New("this step requires flag submission via /submit-flag, not /verify")
+	ErrVerifyQuizStep = errors.New("this step requires quiz submission via /submit-quiz, not /verify")
+)
+
 // sqliteActiveSessionUniqueViolation is how SQLite (the test database) reports
 // models.UniqueActiveSessionIndex refusing an insert: it names the columns,
 // not the index.
@@ -1628,9 +1635,9 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	// endpoints; calling /verify on them is a client error.
 	switch stepType {
 	case "flag":
-		return nil, fmt.Errorf("this step requires flag submission via /submit-flag, not /verify")
+		return nil, ErrVerifyFlagStep
 	case "quiz":
-		return nil, fmt.Errorf("this step requires quiz submission via /submit-quiz, not /verify")
+		return nil, ErrVerifyQuizStep
 	case "info":
 		// Info steps have no script — clicking "next" advances the session.
 		return s.completeInfoStep(&session)

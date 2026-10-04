@@ -165,6 +165,10 @@ func (pc *scenarioProgressController) VerifyStep(ctx *gin.Context) {
 		if pc.abortIfSessionNotActive(ctx, err) {
 			return
 		}
+		if stderrors.Is(err, services.ErrVerifyFlagStep) || stderrors.Is(err, services.ErrVerifyQuizStep) {
+			errors.Respond(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
 		slog.Error("failed to verify step", "err", err)
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify step")
 		return
