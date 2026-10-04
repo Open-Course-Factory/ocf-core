@@ -13,7 +13,7 @@ import (
 // TeachesAnywhere reports whether the user writes scenarios somewhere: they
 // hold at least the classroom rank (access.RoleMinimumForClassrooms) in an
 // organisation, or they manage a class. It separates an author browsing other
-// scenarios' steps from a learner, to whom a step outline is a walkthrough.
+// scenarios' steps from a learner, to whom those steps are a walkthrough.
 func TeachesAnywhere(db *gorm.DB, userID string) (bool, error) {
 	if userID == "" {
 		return false, nil

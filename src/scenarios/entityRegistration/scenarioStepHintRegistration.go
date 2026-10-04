@@ -17,14 +17,7 @@ func RegisterScenarioStepHint(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[models.ScenarioStepHint, dto.CreateScenarioStepHintInput, dto.EditScenarioStepHintInput, dto.ScenarioStepHintOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.ScenarioStepHint, dto.CreateScenarioStepHintInput, dto.EditScenarioStepHintInput, dto.ScenarioStepHintOutput]{
 				ModelToDto: func(model *models.ScenarioStepHint) (dto.ScenarioStepHintOutput, error) {
-					return dto.ScenarioStepHintOutput{
-						ID:        model.ID,
-						StepID:    model.StepID,
-						Level:     model.Level,
-						Content:   model.Content,
-						CreatedAt: model.CreatedAt,
-						UpdatedAt: model.UpdatedAt,
-					}, nil
+					return ScenarioStepHintToOutput(model), nil
 				},
 				DtoToModel: func(input dto.CreateScenarioStepHintInput) *models.ScenarioStepHint {
 					return &models.ScenarioStepHint{
@@ -85,4 +78,16 @@ func RegisterScenarioStepHint(service *ems.EntityRegistrationService) {
 			},
 		},
 	)
+}
+
+// ScenarioStepHintToOutput is a progressive hint row as the editor reads it.
+func ScenarioStepHintToOutput(model *models.ScenarioStepHint) dto.ScenarioStepHintOutput {
+	return dto.ScenarioStepHintOutput{
+		ID:        model.ID,
+		StepID:    model.StepID,
+		Level:     model.Level,
+		Content:   model.Content,
+		CreatedAt: model.CreatedAt,
+		UpdatedAt: model.UpdatedAt,
+	}
 }

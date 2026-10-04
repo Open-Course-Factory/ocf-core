@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 )
 
@@ -19,84 +18,6 @@ var (
 	// ErrSourceStepNotFound reports a source step id that names no step.
 	ErrSourceStepNotFound = errors.New("source step not found")
 )
-
-// StepOutline lists a scenario's steps as ScenarioStepOutline: what each step
-// is, never how it is graded. The step columns are selected by name, so a
-// script or a flag path is never even loaded.
-func StepOutline(db *gorm.DB, scenarioID uuid.UUID) ([]dto.ScenarioStepOutline, error) {
-	var steps []models.ScenarioStep
-	if err := db.Select("id", "\"order\"", "title", "step_type", "text_content", "has_flag").
-		Where("scenario_id = ?", scenarioID).Order("\"order\" ASC").Find(&steps).Error; err != nil {
-		return nil, fmt.Errorf("load steps: %w", err)
-	}
-	stepIDs := make([]uuid.UUID, len(steps))
-	for i := range steps {
-		stepIDs[i] = steps[i].ID
-	}
-	hintCounts, err := countPerStep(db, &models.ScenarioStepHint{}, stepIDs)
-	if err != nil {
-		return nil, err
-	}
-	questionCounts, err := countPerStep(db, &models.ScenarioStepQuestion{}, stepIDs)
-	if err != nil {
-		return nil, err
-	}
-	translations, err := outlineTranslations(db, stepIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	outline := make([]dto.ScenarioStepOutline, len(steps))
-	for i, step := range steps {
-		outline[i] = dto.ScenarioStepOutline{
-			ID:            step.ID,
-			Order:         step.Order,
-			Title:         step.Title,
-			StepType:      step.StepType,
-			TextContent:   step.TextContent,
-			HasFlag:       step.HasFlag,
-			HintCount:     hintCounts[step.ID],
-			QuestionCount: questionCounts[step.ID],
-			Translations:  translations[step.ID],
-		}
-	}
-	return outline, nil
-}
-
-func countPerStep(db *gorm.DB, model any, stepIDs []uuid.UUID) (map[uuid.UUID]int, error) {
-	var rows []struct {
-		StepID uuid.UUID
-		Count  int
-	}
-	if len(stepIDs) > 0 {
-		if err := db.Model(model).Select("step_id, COUNT(*) AS count").
-			Where("step_id IN ?", stepIDs).Group("step_id").Scan(&rows).Error; err != nil {
-			return nil, fmt.Errorf("count per step: %w", err)
-		}
-	}
-	counts := make(map[uuid.UUID]int, len(rows))
-	for _, row := range rows {
-		counts[row.StepID] = row.Count
-	}
-	return counts, nil
-}
-
-func outlineTranslations(db *gorm.DB, stepIDs []uuid.UUID) (map[uuid.UUID][]dto.ScenarioStepOutlineTranslation, error) {
-	var rows []models.ScenarioStepTranslation
-	if len(stepIDs) > 0 {
-		if err := db.Select("step_id", "locale", "title", "text_content").
-			Where("step_id IN ?", stepIDs).Order("locale ASC").Find(&rows).Error; err != nil {
-			return nil, fmt.Errorf("load step translations: %w", err)
-		}
-	}
-	byStep := map[uuid.UUID][]dto.ScenarioStepOutlineTranslation{}
-	for _, row := range rows {
-		byStep[row.StepID] = append(byStep[row.StepID], dto.ScenarioStepOutlineTranslation{
-			Locale: row.Locale, Title: row.Title, TextContent: row.TextContent,
-		})
-	}
-	return byStep, nil
-}
 
 // SourceScenarioIDsOfSteps returns the scenario of every named step, so the
 // caller can authorise each before CopySteps. A step id that names no step is

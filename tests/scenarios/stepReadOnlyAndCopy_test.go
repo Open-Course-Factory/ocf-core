@@ -1,10 +1,10 @@
 package scenarios_test
 
-// The step library: a teacher browsing another scenario sees what its steps
-// are (GET /scenarios/:id/step-outline) without seeing how they are graded,
-// and copies the steps they want into a scenario of theirs
-// (POST /scenarios/:id/steps/copy). The copy is made server-side, so the
-// scripts and answers it carries never pass through the client.
+// The step library: a teacher reads another scenario's steps in full, read-only
+// (GET /scenarios/:id/steps/read-only) — anyone allowed there may duplicate the
+// scenario and read it all anyway — and copies the steps they want into a
+// scenario of theirs (POST /scenarios/:id/steps/copy). Learners are refused:
+// to them the steps are a walkthrough.
 
 import (
 	"bytes"
@@ -47,7 +47,8 @@ func buildStepLibraryFixture(t *testing.T, db *gorm.DB) stepLibraryFixture {
 	addOrgMember(t, db, f.org, libColleague, orgModels.OrganizationMemberRole(access.RoleTeacher))
 	addOrgMember(t, db, f.org, libLearner, orgModels.OrgRoleMember)
 
-	f.public = &models.Scenario{Name: "lib-public", Title: "Public lab", InstanceType: "debian", CreatedByID: "platform-admin", IsPublic: true}
+	f.public = &models.Scenario{Name: "lib-public", Title: "Public lab", InstanceType: "debian", CreatedByID: "platform-admin", IsPublic: true,
+		SetupScript: "SECRET-SETUP", FlagsEnabled: true, FlagSecret: "FLAG-SECRET-NEVER-SENT"}
 	require.NoError(t, db.Create(f.public).Error)
 	f.publicStep = []models.ScenarioStep{
 		{ScenarioID: f.public.ID, Order: 0, Title: "Find the file", StepType: "flag", TextContent: "Look around /srv.",
@@ -106,7 +107,7 @@ func stepLibraryRouter(t *testing.T, db *gorm.DB, userID string, roles ...string
 	})
 	api.Use(access.Layer2Enforcement())
 	ctrl := scenarioController.NewScenarioController(db)
-	api.GET("/scenarios/:id/step-outline", ctrl.GetStepOutline)
+	api.GET("/scenarios/:id/steps/read-only", ctrl.GetReadOnlySteps)
 	api.POST("/scenarios/:id/steps/copy", ctrl.CopySteps)
 	return r
 }
@@ -126,64 +127,93 @@ func stepLibraryRequest(router *gin.Engine, method, path string, body any) *http
 	return w
 }
 
-// --- outline ----------------------------------------------------------------------
+// --- read-only steps ---------------------------------------------------------------
 
-func TestStepOutline_TeacherSeesWhatTheStepsAreNotHowTheyAreGraded(t *testing.T) {
-	db := freshTestDB(t)
-	f := buildStepLibraryFixture(t, db)
-
-	w := stepLibraryRequest(stepLibraryRouter(t, db, libTeacher), http.MethodGet, "/api/v1/scenarios/"+f.public.ID.String()+"/step-outline", nil)
-	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
-	assert.NotContains(t, w.Body.String(), "SECRET", "no script, hint, flag path or answer may reach the outline")
-
-	var outline []struct {
-		ID            uuid.UUID `json:"id"`
-		Order         int       `json:"order"`
-		Title         string    `json:"title"`
-		StepType      string    `json:"step_type"`
-		TextContent   string    `json:"text_content"`
-		HasFlag       bool      `json:"has_flag"`
-		HintCount     int       `json:"hint_count"`
-		QuestionCount int       `json:"question_count"`
-		Translations  []struct {
+type readOnlyStepsResponse struct {
+	SetupScript string `json:"setup_script"`
+	Steps       []struct {
+		ID                    uuid.UUID `json:"id"`
+		Order                 int       `json:"order"`
+		Title                 string    `json:"title"`
+		StepType              string    `json:"step_type"`
+		ShowImmediateFeedback bool      `json:"show_immediate_feedback"`
+		TextContent           string    `json:"text_content"`
+		HintContent           string    `json:"hint_content"`
+		VerifyScript          string    `json:"verify_script"`
+		BackgroundScript      string    `json:"background_script"`
+		ForegroundScript      string    `json:"foreground_script"`
+		IntroEffect           string    `json:"intro_effect"`
+		HasFlag               bool      `json:"has_flag"`
+		FlagPath              string    `json:"flag_path"`
+		FlagLevel             int       `json:"flag_level"`
+		Questions             []struct {
+			CorrectAnswer string `json:"correct_answer"`
+			Explanation   string `json:"explanation"`
+		} `json:"questions"`
+		Hints []struct {
+			Level   int    `json:"level"`
+			Content string `json:"content"`
+		} `json:"hints"`
+		Translations []struct {
 			Locale      string `json:"locale"`
 			Title       string `json:"title"`
-			TextContent string `json:"text_content"`
+			HintContent string `json:"hint_content"`
 		} `json:"translations"`
-	}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &outline))
-	require.Len(t, outline, 2)
-
-	assert.Equal(t, f.publicStep[0].ID, outline[0].ID)
-	assert.Equal(t, "Find the file", outline[0].Title)
-	assert.Equal(t, "flag", outline[0].StepType)
-	assert.Equal(t, "Look around /srv.", outline[0].TextContent)
-	assert.True(t, outline[0].HasFlag)
-	assert.Equal(t, 2, outline[0].HintCount)
-	require.Len(t, outline[0].Translations, 1)
-	assert.Equal(t, "fr", outline[0].Translations[0].Locale)
-	assert.Equal(t, "Trouver le fichier", outline[0].Translations[0].Title)
-	assert.Equal(t, "Cherchez dans /srv.", outline[0].Translations[0].TextContent)
-
-	assert.Equal(t, 1, outline[1].Order)
-	assert.Equal(t, "quiz", outline[1].StepType)
-	assert.Equal(t, 2, outline[1].QuestionCount)
+	} `json:"steps"`
 }
 
-// A learner would read the outline as a walkthrough: it is for authors only.
-func TestStepOutline_LearnerRefused(t *testing.T) {
+func TestReadOnlySteps_TeacherReadsTheFullSteps(t *testing.T) {
 	db := freshTestDB(t)
 	f := buildStepLibraryFixture(t, db)
 
-	w := stepLibraryRequest(stepLibraryRouter(t, db, libLearner), http.MethodGet, "/api/v1/scenarios/"+f.public.ID.String()+"/step-outline", nil)
+	w := stepLibraryRequest(stepLibraryRouter(t, db, libTeacher), http.MethodGet, "/api/v1/scenarios/"+f.public.ID.String()+"/steps/read-only", nil)
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	assert.NotContains(t, w.Body.String(), "FLAG-SECRET-NEVER-SENT", "the flag secret never leaves the server")
+
+	var got readOnlyStepsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	assert.Equal(t, "SECRET-SETUP", got.SetupScript)
+	require.Len(t, got.Steps, 2)
+
+	flag := got.Steps[0]
+	assert.Equal(t, f.publicStep[0].ID, flag.ID)
+	assert.Equal(t, "Find the file", flag.Title)
+	assert.Equal(t, "SECRET-VERIFY", flag.VerifyScript)
+	assert.Equal(t, "SECRET-BACKGROUND", flag.BackgroundScript)
+	assert.Equal(t, "SECRET-FOREGROUND", flag.ForegroundScript)
+	assert.Equal(t, "SECRET-HINT", flag.HintContent)
+	assert.Equal(t, "matrix", flag.IntroEffect)
+	assert.True(t, flag.HasFlag)
+	assert.Equal(t, "/srv/SECRET-FLAG-PATH", flag.FlagPath)
+	assert.Equal(t, 2, flag.FlagLevel)
+	require.Len(t, flag.Hints, 2)
+	assert.Equal(t, "SECRET-HINT-1", flag.Hints[0].Content)
+	require.Len(t, flag.Translations, 1)
+	assert.Equal(t, "Trouver le fichier", flag.Translations[0].Title)
+	assert.Equal(t, "SECRET-HINT-FR", flag.Translations[0].HintContent)
+
+	quiz := got.Steps[1]
+	assert.Equal(t, "quiz", quiz.StepType)
+	require.Len(t, quiz.Questions, 2)
+	assert.Equal(t, "SECRET-ANSWER", quiz.Questions[0].CorrectAnswer)
+	assert.Equal(t, "SECRET-EXPLANATION", quiz.Questions[0].Explanation)
+}
+
+// To a learner the steps are a walkthrough: they are for authors only.
+func TestReadOnlySteps_LearnerRefused(t *testing.T) {
+	db := freshTestDB(t)
+	f := buildStepLibraryFixture(t, db)
+
+	w := stepLibraryRequest(stepLibraryRouter(t, db, libLearner), http.MethodGet, "/api/v1/scenarios/"+f.public.ID.String()+"/steps/read-only", nil)
 	assert.Equal(t, http.StatusForbidden, w.Code, "body=%s", w.Body.String())
+	assert.NotContains(t, w.Body.String(), "SECRET")
 }
 
-func TestStepOutline_UnseenScenarioIsNotFound(t *testing.T) {
+func TestReadOnlySteps_UnseenScenarioIsNotFound(t *testing.T) {
 	db := freshTestDB(t)
 	f := buildStepLibraryFixture(t, db)
 
-	w := stepLibraryRequest(stepLibraryRouter(t, db, libTeacher), http.MethodGet, "/api/v1/scenarios/"+f.foreign.ID.String()+"/step-outline", nil)
+	w := stepLibraryRequest(stepLibraryRouter(t, db, libTeacher), http.MethodGet, "/api/v1/scenarios/"+f.foreign.ID.String()+"/steps/read-only", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code, "body=%s", w.Body.String())
 }
 
@@ -208,7 +238,10 @@ func TestCopySteps_FromPublicScenario_InsertsCompleteStepsAtPosition(t *testing.
 		"position":        1,
 	})
 	require.Equal(t, http.StatusCreated, w.Code, "body=%s", w.Body.String())
-	assert.NotContains(t, w.Body.String(), "SECRET", "the copy is made server-side; its scripts and answers are not echoed back")
+	var created readOnlyStepsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &created))
+	require.Len(t, created.Steps, 2, "the response lists the new steps")
+	assert.Equal(t, []int{1, 2}, []int{created.Steps[0].Order, created.Steps[1].Order})
 
 	steps := targetSteps(t, db, f.target.ID)
 	titles := make([]string, len(steps))

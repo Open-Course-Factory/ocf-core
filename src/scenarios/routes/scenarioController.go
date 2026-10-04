@@ -34,7 +34,7 @@ type ScenarioController interface {
 	GetOneScenarioHealth(ctx *gin.Context)
 	GetLexicon(ctx *gin.Context)
 	ReplaceLexicon(ctx *gin.Context)
-	GetStepOutline(ctx *gin.Context)
+	GetReadOnlySteps(ctx *gin.Context)
 	CopySteps(ctx *gin.Context)
 }
 

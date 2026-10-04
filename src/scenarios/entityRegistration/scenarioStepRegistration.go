@@ -18,58 +18,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[models.ScenarioStep, dto.CreateScenarioStepInput, dto.EditScenarioStepInput, dto.ScenarioStepOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.ScenarioStep, dto.CreateScenarioStepInput, dto.EditScenarioStepInput, dto.ScenarioStepOutput]{
 				ModelToDto: func(model *models.ScenarioStep) (dto.ScenarioStepOutput, error) {
-					output := dto.ScenarioStepOutput{
-						ID:                 model.ID,
-						ScenarioID:         model.ScenarioID,
-						Order:              model.Order,
-						Title:              model.Title,
-						StepType:           model.StepType,
-						ShowImmediateFeedback: model.ShowImmediateFeedback,
-						TextContent:        model.TextContent,
-						HintContent:        model.HintContent,
-						VerifyScript:       model.VerifyScript,
-						BackgroundScript:   model.BackgroundScript,
-						ForegroundScript:   model.ForegroundScript,
-						IntroEffect:        model.IntroEffect,
-						IntroText:          model.IntroText,
-						OutroEffect:        model.OutroEffect,
-						OutroText:          model.OutroText,
-						BackgroundTimeoutSeconds: model.BackgroundTimeoutSeconds,
-						BackgroundAsync:    model.BackgroundAsync,
-						HasFlag:            model.HasFlag,
-						FlagPath:           model.FlagPath,
-						FlagLevel:          model.FlagLevel,
-						CreatedAt:          model.CreatedAt,
-						UpdatedAt:          model.UpdatedAt,
-					}
-					if len(model.Questions) > 0 {
-						// GORM's Preload doesn't apply ordering by default —
-						// sort here so the editor and player always see
-						// questions in author-defined order.
-						sortedQuestions := make([]models.ScenarioStepQuestion, len(model.Questions))
-						copy(sortedQuestions, model.Questions)
-						sort.SliceStable(sortedQuestions, func(i, j int) bool {
-							return sortedQuestions[i].Order < sortedQuestions[j].Order
-						})
-						questions := make([]dto.ScenarioStepQuestionOutput, 0, len(sortedQuestions))
-						for _, q := range sortedQuestions {
-							questions = append(questions, dto.ScenarioStepQuestionOutput{
-								ID:            q.ID,
-								StepID:        q.StepID,
-								Order:         q.Order,
-								QuestionText:  q.QuestionText,
-								QuestionType:  q.QuestionType,
-								Options:       q.Options,
-								CorrectAnswer: q.CorrectAnswer,
-								Explanation:   q.Explanation,
-								Points:        q.Points,
-								CreatedAt:     q.CreatedAt,
-								UpdatedAt:     q.UpdatedAt,
-							})
-						}
-						output.Questions = questions
-					}
-					return output, nil
+					return ScenarioStepToOutput(model), nil
 				},
 				DtoToModel: func(input dto.CreateScenarioStepInput) *models.ScenarioStep {
 					stepType := input.StepType
@@ -208,4 +157,61 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 	// sensitive step + embedded question content from non-managers (issue #293).
 	service.RegisterDtoRedactor("ScenarioStep", scenarioStepRedactor)
 	service.RegisterListScope("ScenarioStep", scenarioStepListScope)
+}
+
+// ScenarioStepToOutput is a step as the editor reads it: every field, the
+// scripts included, with its quiz questions in author order.
+func ScenarioStepToOutput(model *models.ScenarioStep) dto.ScenarioStepOutput {
+	output := dto.ScenarioStepOutput{
+		ID:                 model.ID,
+		ScenarioID:         model.ScenarioID,
+		Order:              model.Order,
+		Title:              model.Title,
+		StepType:           model.StepType,
+		ShowImmediateFeedback: model.ShowImmediateFeedback,
+		TextContent:        model.TextContent,
+		HintContent:        model.HintContent,
+		VerifyScript:       model.VerifyScript,
+		BackgroundScript:   model.BackgroundScript,
+		ForegroundScript:   model.ForegroundScript,
+		IntroEffect:        model.IntroEffect,
+		IntroText:          model.IntroText,
+		OutroEffect:        model.OutroEffect,
+		OutroText:          model.OutroText,
+		BackgroundTimeoutSeconds: model.BackgroundTimeoutSeconds,
+		BackgroundAsync:    model.BackgroundAsync,
+		HasFlag:            model.HasFlag,
+		FlagPath:           model.FlagPath,
+		FlagLevel:          model.FlagLevel,
+		CreatedAt:          model.CreatedAt,
+		UpdatedAt:          model.UpdatedAt,
+	}
+	if len(model.Questions) > 0 {
+		// GORM's Preload doesn't apply ordering by default —
+		// sort here so the editor and player always see
+		// questions in author-defined order.
+		sortedQuestions := make([]models.ScenarioStepQuestion, len(model.Questions))
+		copy(sortedQuestions, model.Questions)
+		sort.SliceStable(sortedQuestions, func(i, j int) bool {
+			return sortedQuestions[i].Order < sortedQuestions[j].Order
+		})
+		questions := make([]dto.ScenarioStepQuestionOutput, 0, len(sortedQuestions))
+		for _, q := range sortedQuestions {
+			questions = append(questions, dto.ScenarioStepQuestionOutput{
+				ID:            q.ID,
+				StepID:        q.StepID,
+				Order:         q.Order,
+				QuestionText:  q.QuestionText,
+				QuestionType:  q.QuestionType,
+				Options:       q.Options,
+				CorrectAnswer: q.CorrectAnswer,
+				Explanation:   q.Explanation,
+				Points:        q.Points,
+				CreatedAt:     q.CreatedAt,
+				UpdatedAt:     q.UpdatedAt,
+			})
+		}
+		output.Questions = questions
+	}
+	return output
 }

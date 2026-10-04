@@ -20,19 +20,7 @@ func RegisterScenarioStepTranslation(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[models.ScenarioStepTranslation, dto.CreateScenarioStepTranslationInput, dto.EditScenarioStepTranslationInput, dto.ScenarioStepTranslationOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.ScenarioStepTranslation, dto.CreateScenarioStepTranslationInput, dto.EditScenarioStepTranslationInput, dto.ScenarioStepTranslationOutput]{
 				ModelToDto: func(model *models.ScenarioStepTranslation) (dto.ScenarioStepTranslationOutput, error) {
-					return dto.ScenarioStepTranslationOutput{
-						ID:          model.ID,
-						StepID:      model.StepID,
-						Locale:      model.Locale,
-						Title:       model.Title,
-						TextContent: model.TextContent,
-						HintContent: model.HintContent,
-						IntroText:   model.IntroText,
-						OutroText:   model.OutroText,
-						SourceHash:  model.SourceHash,
-						CreatedAt:   model.CreatedAt,
-						UpdatedAt:   model.UpdatedAt,
-					}, nil
+					return ScenarioStepTranslationToOutput(model), nil
 				},
 				DtoToModel: func(input dto.CreateScenarioStepTranslationInput) *models.ScenarioStepTranslation {
 					// SourceHash is absent on purpose: the stamp hook sets it.
@@ -163,4 +151,21 @@ func RegisterScenarioTranslation(service *ems.EntityRegistrationService) {
 		},
 	)
 	service.RegisterDtoRedactor("ScenarioTranslation", scenarioTranslationRedactor)
+}
+
+// ScenarioStepTranslationToOutput is a step translation as the editor reads it.
+func ScenarioStepTranslationToOutput(model *models.ScenarioStepTranslation) dto.ScenarioStepTranslationOutput {
+	return dto.ScenarioStepTranslationOutput{
+		ID:          model.ID,
+		StepID:      model.StepID,
+		Locale:      model.Locale,
+		Title:       model.Title,
+		TextContent: model.TextContent,
+		HintContent: model.HintContent,
+		IntroText:   model.IntroText,
+		OutroText:   model.OutroText,
+		SourceHash:  model.SourceHash,
+		CreatedAt:   model.CreatedAt,
+		UpdatedAt:   model.UpdatedAt,
+	}
 }

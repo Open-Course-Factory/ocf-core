@@ -79,28 +79,20 @@ type ScenarioStepOutput struct {
 	Questions          []ScenarioStepQuestionOutput `json:"questions,omitempty"`
 }
 
-// ScenarioStepOutline is what an author may see of a step in a scenario they
-// can look at but not edit, to decide whether to copy it: what the step is,
-// never how it is graded. It is an allow-list — a field added to ScenarioStep
-// stays out of the outline until it is added here on purpose.
-type ScenarioStepOutline struct {
-	ID            uuid.UUID                        `json:"id"`
-	Order         int                              `json:"order"`
-	Title         string                           `json:"title"`
-	StepType      string                           `json:"step_type"`
-	TextContent   string                           `json:"text_content,omitempty"`
-	HasFlag       bool                             `json:"has_flag"`
-	HintCount     int                              `json:"hint_count"`
-	QuestionCount int                              `json:"question_count"`
-	Translations  []ScenarioStepOutlineTranslation `json:"translations,omitempty"`
+// ReadOnlyStepOutput is a step as the editor reads it, with its progressive
+// hint rows and its translations, for an author who may read the scenario but
+// not edit it.
+type ReadOnlyStepOutput struct {
+	ScenarioStepOutput
+	Hints        []ScenarioStepHintOutput        `json:"hints,omitempty"`
+	Translations []ScenarioStepTranslationOutput `json:"translations,omitempty"`
 }
 
-// ScenarioStepOutlineTranslation carries a translated title and text, never a
-// translated hint.
-type ScenarioStepOutlineTranslation struct {
-	Locale      string `json:"locale"`
-	Title       string `json:"title,omitempty"`
-	TextContent string `json:"text_content,omitempty"`
+// ReadOnlyStepsOutput is a scenario's steps read-only, with the setup script
+// that runs before the first one.
+type ReadOnlyStepsOutput struct {
+	SetupScript string               `json:"setup_script,omitempty"`
+	Steps       []ReadOnlyStepOutput `json:"steps"`
 }
 
 // CopyStepsInput names the steps to copy, in the order they are inserted, and

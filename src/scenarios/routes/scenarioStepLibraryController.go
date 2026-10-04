@@ -2,32 +2,35 @@ package scenarioController
 
 import (
 	stderrors "errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/scenarios/dto"
+	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-// GetStepOutline godoc
-// @Summary Outline a scenario's steps for an author
-// @Description What each step of a scenario is (title, type, text, translations, hint and question counts) without how it is graded: no script, hint, flag path or answer. For authors deciding which steps to copy; a learner is refused, to whom the outline is a walkthrough.
+// GetReadOnlySteps godoc
+// @Summary Read a scenario's steps without editing rights
+// @Description Every step as the editor reads it — scripts, hints and hint rows, quiz questions with answers, flag settings, effects, translations — and the setup script, for an author who may see the scenario but not edit it. Anyone allowed here may duplicate the scenario and read it all anyway. A learner is refused, to whom the steps are a walkthrough. The flag secret is never sent.
 // @Tags scenarios
 // @Produce json
 // @Param id path string true "Scenario ID"
-// @Success 200 {array} dto.ScenarioStepOutline
+// @Success 200 {object} dto.ReadOnlyStepsOutput
 // @Failure 403 {object} errors.APIError
 // @Failure 404 {object} errors.APIError
-// @Router /scenarios/{id}/step-outline [get]
+// @Router /scenarios/{id}/steps/read-only [get]
 // @Security BearerAuth
-func (sc *scenarioController) GetStepOutline(ctx *gin.Context) {
+func (sc *scenarioController) GetReadOnlySteps(ctx *gin.Context) {
 	scenario, ok := sc.loadVisibleScenario(ctx, ctx.Param("id"))
 	if !ok {
 		return
@@ -40,29 +43,29 @@ func (sc *scenarioController) GetStepOutline(ctx *gin.Context) {
 			return
 		}
 		if !teaches {
-			errors.Respond(ctx, http.StatusForbidden, "Only authors may outline a scenario's steps")
+			errors.Respond(ctx, http.StatusForbidden, "Only authors may read a scenario's steps")
 			return
 		}
 	}
 
-	outline, err := services.StepOutline(sc.db, scenario.ID)
+	steps, err := sc.readOnlySteps(scenario.ID, nil)
 	if err != nil {
-		slog.Error("failed to outline scenario steps", "scenario_id", scenario.ID, "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to outline the steps")
+		slog.Error("failed to read scenario steps", "scenario_id", scenario.ID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read the steps")
 		return
 	}
-	ctx.JSON(http.StatusOK, outline)
+	ctx.JSON(http.StatusOK, dto.ReadOnlyStepsOutput{SetupScript: scenario.SetupScript, Steps: steps})
 }
 
 // CopySteps godoc
 // @Summary Copy steps from other scenarios into this one
-// @Description Copies the named steps — content, scripts, hints, quiz questions, translations — into the scenario, in the order given, starting at position (omitted: appended). The copy is made server-side; the response outlines the new steps without their scripts or answers. The caller must manage the target and be allowed to copy every source scenario into the target's organisation.
+// @Description Copies the named steps — content, scripts, hints, quiz questions, translations — into the scenario, in the order given, starting at position (omitted: appended), and answers with the new steps. The caller must manage the target and be allowed to copy every source scenario into the target's organisation.
 // @Tags scenarios
 // @Accept json
 // @Produce json
 // @Param id path string true "Target scenario ID"
 // @Param body body dto.CopyStepsInput true "Steps to copy and where"
-// @Success 201 {array} dto.ScenarioStepOutline
+// @Success 201 {object} dto.ReadOnlyStepsOutput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Failure 404 {object} errors.APIError
@@ -96,13 +99,17 @@ func (sc *scenarioController) CopySteps(ctx *gin.Context) {
 		return
 	}
 
-	outline, err := services.StepOutline(sc.db, target.ID)
+	copied := make([]uuid.UUID, len(copies))
+	for i := range copies {
+		copied[i] = copies[i].ID
+	}
+	steps, err := sc.readOnlySteps(target.ID, copied)
 	if err != nil {
-		slog.Error("failed to outline copied steps", "target_id", target.ID, "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to outline the copied steps")
+		slog.Error("failed to read copied steps", "target_id", target.ID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to read the copied steps")
 		return
 	}
-	ctx.JSON(http.StatusCreated, outlineOf(outline, copies))
+	ctx.JSON(http.StatusCreated, dto.ReadOnlyStepsOutput{Steps: steps})
 }
 
 // mayCopyStepsInto applies CanCopyScenarioInto — the duplicate rule — to the
@@ -174,17 +181,47 @@ func (sc *scenarioController) loadVisibleScenario(ctx *gin.Context, idParam stri
 	return &scenario, true
 }
 
-// outlineOf keeps the outline entries of the given steps.
-func outlineOf(outline []dto.ScenarioStepOutline, steps []models.ScenarioStep) []dto.ScenarioStepOutline {
-	wanted := make(map[uuid.UUID]bool, len(steps))
-	for _, step := range steps {
-		wanted[step.ID] = true
+// readOnlySteps converts a scenario's steps — all of them, or only stepIDs —
+// with the editor's converters, adding each step's hint rows and translations.
+func (sc *scenarioController) readOnlySteps(scenarioID uuid.UUID, stepIDs []uuid.UUID) ([]dto.ReadOnlyStepOutput, error) {
+	query := sc.db.
+		Preload("Hints", func(db *gorm.DB) *gorm.DB { return db.Order("level ASC") }).
+		Preload("Questions").
+		Where("scenario_id = ?", scenarioID)
+	if stepIDs != nil {
+		query = query.Where("id IN ?", stepIDs)
 	}
-	kept := make([]dto.ScenarioStepOutline, 0, len(steps))
-	for _, entry := range outline {
-		if wanted[entry.ID] {
-			kept = append(kept, entry)
+	var steps []models.ScenarioStep
+	if err := query.Order("\"order\" ASC").Find(&steps).Error; err != nil {
+		return nil, fmt.Errorf("load steps: %w", err)
+	}
+	ids := make([]uuid.UUID, len(steps))
+	for i := range steps {
+		ids[i] = steps[i].ID
+	}
+	var translations []models.ScenarioStepTranslation
+	if len(ids) > 0 {
+		if err := sc.db.Where("step_id IN ?", ids).Order("locale ASC").Find(&translations).Error; err != nil {
+			return nil, fmt.Errorf("load step translations: %w", err)
 		}
 	}
-	return kept
+	translationsByStep := map[uuid.UUID][]dto.ScenarioStepTranslationOutput{}
+	for i := range translations {
+		translationsByStep[translations[i].StepID] = append(translationsByStep[translations[i].StepID],
+			scenarioRegistration.ScenarioStepTranslationToOutput(&translations[i]))
+	}
+
+	out := make([]dto.ReadOnlyStepOutput, len(steps))
+	for i := range steps {
+		hints := make([]dto.ScenarioStepHintOutput, len(steps[i].Hints))
+		for h := range steps[i].Hints {
+			hints[h] = scenarioRegistration.ScenarioStepHintToOutput(&steps[i].Hints[h])
+		}
+		out[i] = dto.ReadOnlyStepOutput{
+			ScenarioStepOutput: scenarioRegistration.ScenarioStepToOutput(&steps[i]),
+			Hints:              hints,
+			Translations:       translationsByStep[steps[i].ID],
+		}
+	}
+	return out, nil
 }
