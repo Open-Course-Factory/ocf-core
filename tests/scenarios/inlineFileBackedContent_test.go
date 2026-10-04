@@ -6,6 +6,10 @@ package scenarios_test
 // and the file is deleted unless something else still needs it.
 
 import (
+	"bytes"
+	"log"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -172,4 +176,30 @@ func TestInlineFileBackedContent_KeepsTranslations(t *testing.T) {
 	var translation models.ScenarioStepTranslation
 	require.NoError(t, db.First(&translation, "step_id = ? AND locale = ?", step.ID, "fr").Error)
 	assert.Equal(t, "texte français", translation.TextContent)
+}
+
+// The migration says what it changed, and nothing once there is nothing left.
+func TestInlineFileBackedContent_LogsOnlyWhatItChanged(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := models.Scenario{Name: "inline-log", Title: "Log", InstanceType: "ubuntu:22.04", SourceType: "seed"}
+	require.NoError(t, db.Create(&scenario).Error)
+	shared := createContentFile(t, db, "markdown", "shared text", nil)
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Step", StepType: "terminal",
+		TextFileID: &shared, HintFileID: &shared,
+	}).Error)
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	initialization.InlineFileBackedContent(db)
+
+	assert.Contains(t, logs.String(), "[INLINE-CONTENT-MIGRATION] 1 scenario_steps.text_file_id pointers cleared")
+	assert.Contains(t, logs.String(), "[INLINE-CONTENT-MIGRATION] 1 scenario_steps.hint_file_id pointers cleared")
+	assert.Contains(t, logs.String(), "[INLINE-CONTENT-MIGRATION] 1 content files soft-deleted")
+	assert.Equal(t, 3, strings.Count(logs.String(), "[INLINE-CONTENT-MIGRATION]"))
+
+	logs.Reset()
+	initialization.InlineFileBackedContent(db)
+	assert.NotContains(t, logs.String(), "[INLINE-CONTENT-MIGRATION]")
 }

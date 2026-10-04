@@ -1110,23 +1110,39 @@ var fileBackedColumns = map[string][][2]string{
 // columns share must be copied into both before it goes. One transaction, and
 // idempotent: a second run finds no pointer left.
 func InlineFileBackedContent(db *gorm.DB) {
+	// Collected and logged after the commit, so a rolled-back run reports nothing.
+	var changes []string
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := forEachFileBackedColumn(func(table, pointer, inline string) error {
 			return copyLiveFileContentInline(tx, table, pointer, inline)
 		}); err != nil {
 			return err
 		}
+		var deleted int64
 		if err := forEachFileBackedColumn(func(table, pointer, _ string) error {
-			return deleteContentFilesBehind(tx, table, pointer)
+			n, err := deleteContentFilesBehind(tx, table, pointer)
+			deleted += n
+			return err
 		}); err != nil {
 			return err
 		}
+		if deleted > 0 {
+			changes = append(changes, fmt.Sprintf("%d content files soft-deleted", deleted))
+		}
 		return forEachFileBackedColumn(func(table, pointer, _ string) error {
-			return tx.Exec("UPDATE " + table + " SET " + pointer + " = NULL WHERE " + pointer + " IS NOT NULL").Error
+			res := tx.Exec("UPDATE " + table + " SET " + pointer + " = NULL WHERE " + pointer + " IS NOT NULL")
+			if res.RowsAffected > 0 {
+				changes = append(changes, fmt.Sprintf("%d %s.%s pointers cleared", res.RowsAffected, table, pointer))
+			}
+			return res.Error
 		})
 	})
 	if err != nil {
-		log.Printf("[MIGRATION] Failed to inline file-backed scenario content: %v", err)
+		log.Printf("[INLINE-CONTENT-MIGRATION] Failed to inline file-backed scenario content: %v", err)
+		return
+	}
+	for _, change := range changes {
+		log.Printf("[INLINE-CONTENT-MIGRATION] %s", change)
 	}
 }
 
@@ -1149,8 +1165,9 @@ func copyLiveFileContentInline(tx *gorm.DB, table, pointer, inline string) error
 
 // deleteContentFilesBehind deletes the files a pointer column references,
 // sparing images and files linked to a scenario: those are still served.
-func deleteContentFilesBehind(tx *gorm.DB, table, pointer string) error {
+func deleteContentFilesBehind(tx *gorm.DB, table, pointer string) (int64, error) {
 	pointed := tx.Table(table).Select(pointer).Where(pointer + " IS NOT NULL")
-	return tx.Where("id IN (?) AND content_type <> ? AND scenario_id IS NULL", pointed, "image").
-		Delete(&scenarioModels.ProjectFile{}).Error
+	res := tx.Where("id IN (?) AND content_type <> ? AND scenario_id IS NULL", pointed, "image").
+		Delete(&scenarioModels.ProjectFile{})
+	return res.RowsAffected, res.Error
 }
