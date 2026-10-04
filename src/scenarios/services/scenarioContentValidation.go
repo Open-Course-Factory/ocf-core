@@ -42,6 +42,9 @@ var (
 // build a models.Scenario first and all call this, so a file means the same
 // thing however it arrives.
 //
+// ocf-front's src/utils/scenarioAiPrompt.ts documents the rules below for
+// teachers' AI assistants; update it with any change here.
+//
 // Steps must already be through models.NormalizeFlagStep, which every builder
 // does: the type checked here is the type that would be stored.
 func ScenarioContentProblems(scenario *models.Scenario) []string {

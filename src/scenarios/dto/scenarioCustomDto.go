@@ -195,6 +195,9 @@ type RevealHintResponse struct {
 // import is an identity, so a scenario can leave the platform, be edited by
 // hand or by an assistant, and come back without losing anything.
 //
+// ocf-front's src/utils/scenarioAiPrompt.ts documents this contract for
+// teachers' AI assistants; update it with any change here.
+//
 // Ownership is not part of it: the organization, the author and whether the
 // scenario is public come from the route that imports it, never from the file.
 //
