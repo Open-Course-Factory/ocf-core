@@ -204,21 +204,12 @@ func appendStepFinding(findings []ScenarioHealthFinding, severity string, orders
 // validator asks it too, so content the health check would call a dead end is
 // refused at the door instead.
 func stepHasAWayThrough(step models.ScenarioStep) bool {
-	switch step.StepType {
-	case "quiz":
-		// Answering is the way through, so a quiz needs questions and nothing
-		// else. One with none is a dead end wearing a different hat.
-		return len(step.Questions) > 0
-	case "info":
-		// Nothing to do but read it.
-		return true
-	case "flag":
-		// Every flag step gets a flag to find.
-		return true
-	}
-	// A terminal step passes on Verify, with or without a verify script
-	// (ScenarioSessionService.VerifyCurrentStep), as KillerCoda's do.
-	return true
+	// Answering is a quiz's way through, so it needs questions: one with none
+	// is a dead end wearing a different hat. Every other kind passes — info by
+	// reading, flag by the flag it always gets, terminal on Verify with or
+	// without a verify script (ScenarioSessionService.VerifyCurrentStep), as
+	// KillerCoda's do.
+	return step.StepType != "quiz" || len(step.Questions) > 0
 }
 
 // coverageDetail says, in numbers, why a language is not offered.
