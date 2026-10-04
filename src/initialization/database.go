@@ -1071,14 +1071,14 @@ func migrateHintContentToHints(db *gorm.DB) {
 		if count > 0 {
 			continue
 		}
-		parts := scenarioServices.SplitHintContent(step.HintContent)
-		for i, part := range parts {
-			db.Create(&scenarioModels.ScenarioStepHint{
-				StepID:  step.ID,
-				Level:   i + 1,
-				Content: part,
-			})
+		hints := scenarioServices.BuildStepHints(step.HintContent)
+		if len(hints) == 0 {
+			continue
 		}
+		for i := range hints {
+			hints[i].StepID = step.ID
+		}
+		db.Create(&hints)
 	}
 }
 
