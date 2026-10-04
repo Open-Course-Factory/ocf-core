@@ -144,18 +144,35 @@ func (s *VerificationService) VerifyStep(terminalSessionID string, step *models.
 		return false, "", fmt.Errorf("step %d has no verify script", step.Order)
 	}
 
+	exitCode, output, err := RunVerifyScript(s, terminalSessionID, step.VerifyScript)
+	if err != nil {
+		return false, "", err
+	}
+	return exitCode == 0, output, nil
+}
+
+// containerExecer is the one call RunVerifyScript needs from tt-backend.
+type containerExecer interface {
+	ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (exitCode int, stdout string, stderr string, err error)
+}
+
+// RunVerifyScript runs a verify script in a session's container exactly as a
+// learner's verify does, and returns its exit code and combined output. It is
+// shared by VerifyStep and the author's "test this check", so a script that
+// passes the test passes for the learner.
+func RunVerifyScript(execer containerExecer, terminalSessionID string, script string) (exitCode int, output string, err error) {
 	// Execute the verify script inline with a 10s timeout.
 	// Parse the shebang to use the correct interpreter (e.g., bash vs sh).
 	// No env: a verify script checks the learner's work, so handing it the
 	// step's flag would only widen the flag's exposure for nothing.
-	exitCode, stdout, stderr, err := s.ExecInContainer(
+	exitCode, stdout, stderr, err := execer.ExecInContainer(
 		terminalSessionID,
-		[]string{parseShebang(step.VerifyScript), "-c", step.VerifyScript},
+		[]string{parseShebang(script), "-c", script},
 		nil,
 		10,
 	)
 	if err != nil {
-		return false, "", fmt.Errorf("failed to execute verify script: %w", err)
+		return -1, "", fmt.Errorf("failed to execute verify script: %w", err)
 	}
 
 	// Surface stdout AND stderr so the learner sees what actually failed when
@@ -169,5 +186,5 @@ func (s *VerificationService) VerifyStep(terminalSessionID string, step *models.
 		output += stderr
 	}
 
-	return exitCode == 0, output, nil
+	return exitCode, output, nil
 }
