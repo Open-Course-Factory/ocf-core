@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"soli/formations/src/scenarios/models"
+	"soli/formations/src/scenarios/services"
 )
 
 // The model refuses a public organisation scenario on every write that knows
@@ -37,4 +38,26 @@ func assertStoredPublic(t *testing.T, scenario models.Scenario, want bool, how s
 	var stored models.Scenario
 	require.NoError(t, sharedTestDB.First(&stored, "id = ?", scenario.ID).Error)
 	assert.Equal(t, want, stored.IsPublic, how)
+}
+
+// An import into an organisation never publishes, whatever the file says, on
+// first import and on re-import alike: the model owns that rule, the import
+// routes do not restate it.
+func TestScenarioModel_OrgImportClaimingPublicIsStoredPrivate(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "vis-import-owner")
+	input := fullyPopulatedScenarioInput()
+	public := true
+	input.IsPublic = &public
+	seeder := services.NewScenarioSeedService(db)
+
+	created, isUpdate, err := seeder.SeedScenario(input, "vis-import-owner", &orgID)
+	require.NoError(t, err)
+	require.False(t, isUpdate)
+	assertStoredPublic(t, *created, false, "first import")
+
+	_, isUpdate, err = seeder.SeedScenario(input, "vis-import-owner", &orgID)
+	require.NoError(t, err)
+	require.True(t, isUpdate)
+	assertStoredPublic(t, *created, false, "re-import")
 }
