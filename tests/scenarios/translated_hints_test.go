@@ -102,3 +102,40 @@ func TestRevealHint_StepWithoutHintRows_TranslationAddsNone(t *testing.T) {
 	_, err = svc.RevealHint(sessionID, 0, 1)
 	assert.Error(t, err)
 }
+
+// Reviewing a past step reads it in the session's language, as the current
+// step does: same prose, same hints.
+func TestGetStepByOrder_PastStepInAFrenchSession_ServesTheTranslation(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := models.Scenario{Name: "review-fr", Title: "Review FR", InstanceType: "ubuntu:22.04", CreatedByID: "c1"}
+	require.NoError(t, db.Create(&scenario).Error)
+	past := models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Down to the Cellar", TextContent: "Go down.",
+		HintContent: "### Hint 1\nTry cd\n### Hint 2\nTry cd /cellar",
+		Hints:       services.BuildStepHints("### Hint 1\nTry cd\n### Hint 2\nTry cd /cellar"),
+	}
+	require.NoError(t, db.Create(&past).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Next"}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepTranslation{
+		StepID: past.ID, Locale: "fr", Title: "Descendre à la Cave", TextContent: "Descendez.",
+		HintContent: "### Indice 1\nEssayez cd\n### Indice 2\nEssayez cd /cave\n### Indice 3\nls",
+	}).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-1", CurrentStep: 1, Status: "active",
+		StartedAt: time.Now(), Locale: "fr",
+	}
+	require.NoError(t, db.Create(&session).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 0, Status: "completed", HintsRevealed: 1}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 1, Status: "active"}).Error)
+	svc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+
+	step, err := svc.GetStepByOrder(session.ID, 0)
+	require.NoError(t, err)
+	assert.Equal(t, "Descendre à la Cave", step.Title)
+	assert.Equal(t, "Descendez.", step.Text)
+	assert.Equal(t, "Descendez.", step.TextContent)
+	assert.Equal(t, 3, step.HintsTotalCount)
+	assert.Equal(t, 1, step.HintsRevealed)
+	assert.Empty(t, step.Hint, "progressive hints replace the single hint")
+}

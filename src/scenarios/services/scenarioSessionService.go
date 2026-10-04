@@ -1433,51 +1433,7 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 		}
 	}
 
-	// Resolve the step's prose in the language this session was started in.
-	stepText := ResolveStepText(s.db, *currentStep, session.Locale)
-	textContent := stepText.Text
-	hintContent := stepText.Hint
-
-	position, stepOrders := stepPositionInfo(session.Scenario.Steps, currentStep.Order)
-	response := &dto.CurrentStepResponse{
-		StepOrder:             currentStep.Order,
-		Position:              position,
-		StepOrders:            stepOrders,
-		TotalSteps:            len(session.Scenario.Steps),
-		Title:                 stepText.Title,
-		Text:                  textContent,
-		Hint:                  hintContent,
-		Status:                stepStatus,
-		HasFlag:               currentStep.HasFlag,
-		StepType:              currentStep.StepType,
-		TextContent:           textContent,
-		ShowImmediateFeedback: currentStep.ShowImmediateFeedback,
-	}
-
-	// Quiz steps: populate the sanitized question list (no correct_answer/explanation)
-	if response.StepType == "quiz" {
-		response.Questions = loadSanitizedQuestions(s.db, currentStep.ID)
-	}
-
-	// Add progressive hint metadata
-	hints, err := StepHints(s.db, *currentStep, session.Locale)
-	if err != nil {
-		return nil, err
-	}
-	if len(hints) > 0 {
-		response.HintsTotalCount = len(hints)
-		// Find hints_revealed from step progress
-		for _, sp := range session.StepProgress {
-			if sp.StepOrder == session.CurrentStep {
-				response.HintsRevealed = sp.HintsRevealed
-				break
-			}
-		}
-		// Don't leak single hint content when progressive hints exist
-		response.Hint = ""
-	}
-
-	return response, nil
+	return s.buildStepResponse(&session, currentStep, stepStatus)
 }
 
 // StepPosition returns the 1-based display position of the step with the given
@@ -1561,43 +1517,54 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 		return nil, fmt.Errorf("step is locked")
 	}
 
-	// Resolve text/hint content from ProjectFile if available
-	textContent := ResolveScriptContent(s.db, targetStep.TextFileID, targetStep.TextContent)
-	hintContent := ResolveScriptContent(s.db, targetStep.HintFileID, targetStep.HintContent)
+	return s.buildStepResponse(&session, targetStep, stepStatus)
+}
 
-	position, stepOrders := stepPositionInfo(session.Scenario.Steps, targetStep.Order)
+// buildStepResponse is the one way a learner reads a step, current or past: its
+// prose and progressive hints in the session's language, its quiz questions
+// without their answers, and how many hints were already revealed.
+func (s *ScenarioSessionService) buildStepResponse(session *models.ScenarioSession, step *models.ScenarioStep, stepStatus string) (*dto.CurrentStepResponse, error) {
+	// Resolve the step's prose in the language this session was started in.
+	stepText := ResolveStepText(s.db, *step, session.Locale)
+	textContent := stepText.Text
+	hintContent := stepText.Hint
+
+	position, stepOrders := stepPositionInfo(session.Scenario.Steps, step.Order)
 	response := &dto.CurrentStepResponse{
-		StepOrder:             targetStep.Order,
+		StepOrder:             step.Order,
 		Position:              position,
 		StepOrders:            stepOrders,
 		TotalSteps:            len(session.Scenario.Steps),
-		Title:                 targetStep.Title,
+		Title:                 stepText.Title,
 		Text:                  textContent,
 		Hint:                  hintContent,
 		Status:                stepStatus,
-		HasFlag:               targetStep.HasFlag,
-		StepType:              targetStep.StepType,
+		HasFlag:               step.HasFlag,
+		StepType:              step.StepType,
 		TextContent:           textContent,
-		ShowImmediateFeedback: targetStep.ShowImmediateFeedback,
+		ShowImmediateFeedback: step.ShowImmediateFeedback,
 	}
 
+	// Quiz steps: populate the sanitized question list (no correct_answer/explanation)
 	if response.StepType == "quiz" {
-		response.Questions = loadSanitizedQuestions(s.db, targetStep.ID)
+		response.Questions = loadSanitizedQuestions(s.db, step.ID)
 	}
 
 	// Add progressive hint metadata
-	hints, err := StepHints(s.db, *targetStep, session.Locale)
+	hints, err := StepHints(s.db, *step, session.Locale)
 	if err != nil {
 		return nil, err
 	}
 	if len(hints) > 0 {
 		response.HintsTotalCount = len(hints)
+		// Find hints_revealed from step progress
 		for _, sp := range session.StepProgress {
-			if sp.StepOrder == stepOrder {
+			if sp.StepOrder == step.Order {
 				response.HintsRevealed = sp.HintsRevealed
 				break
 			}
 		}
+		// Don't leak single hint content when progressive hints exist
 		response.Hint = ""
 	}
 
