@@ -283,3 +283,34 @@ func TestPlatformImport_SameTitleAsAnOrgScenario_CreatesASeparateOne(t *testing.
 	assert.Equal(t, "org-author", stored.CreatedByID)
 	assert.Nil(t, platformArchive.OrganizationID)
 }
+
+// An archive that does not declare session_user or port_exposure_allowed —
+// one from KillerCoda, or exported before they existed — must not reset them
+// on re-import: absent keeps, as for a hostname.
+func TestScenarioArchiveReimport_WithoutSessionUserOrExposure_KeepsThem(t *testing.T) {
+	db := freshTestDB(t)
+	org := uuid.New()
+	sessionUser := 1000
+	existing := models.Scenario{Name: "keeps-console-settings", Title: "Keeps Console Settings", InstanceType: "debian",
+		CreatedByID: "author", OrganizationID: &org, SessionUser: &sessionUser, PortExposureAllowed: true}
+	require.NoError(t, db.Create(&existing).Error)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "step.md"), []byte("Do it"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"), []byte(`{
+		"title": "Keeps Console Settings",
+		"details": {"steps": [{"title": "Step", "text": "step.md"}]},
+		"backend": {"imageid": "debian"},
+		"extensions": {"ocf": {"flags": false}}
+	}`), 0o644))
+
+	reimported, err := services.NewScenarioImporterService(db).ImportFromDirectory(dir, "author", &org, "upload")
+	require.NoError(t, err)
+	require.Equal(t, existing.ID, reimported.ID, "the archive replaces its namesake")
+
+	var stored models.Scenario
+	require.NoError(t, db.First(&stored, "id = ?", existing.ID).Error)
+	require.NotNil(t, stored.SessionUser)
+	assert.Equal(t, 1000, *stored.SessionUser)
+	assert.True(t, stored.PortExposureAllowed)
+}

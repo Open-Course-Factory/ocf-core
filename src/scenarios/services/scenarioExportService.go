@@ -457,7 +457,9 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		RequiredFeatures:        requiredFeatures,
 		BuildFeatures:           buildFeatures,
 		SessionUser:             scenario.SessionUser,
-		PortExposureAllowed:     scenario.PortExposureAllowed,
+	}
+	if scenario.PortExposureAllowed {
+		ocf.PortExposureAllowed = &scenario.PortExposureAllowed
 	}
 	// Export the hostname so an exported archive re-imports with the same
 	// terminal name instead of falling back to the generated one.

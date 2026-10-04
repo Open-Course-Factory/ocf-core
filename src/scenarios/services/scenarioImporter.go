@@ -120,15 +120,17 @@ type KillerCodaOCF struct {
 	BuildFeatures    []string `json:"build_features,omitempty"`
 	// SessionUser is the uid the learner's console runs as. Absent leaves the
 	// distribution's own, which is root: a scenario only names one when being
-	// root would defeat what it teaches, as it does for file permissions.
+	// root would defeat what it teaches, as it does for file permissions. On a
+	// re-import, absent keeps the scenario's current one.
 	SessionUser      *int     `json:"session_user,omitempty"`
 	// Hostname is the name the learner's terminal gets (it shows in the shell
 	// prompt). Absent leaves the scenario's current hostname untouched, so a
 	// re-import of an older index.json does not wipe one set through the API.
 	Hostname *string `json:"hostname,omitempty"`
 	// PortExposureAllowed lets learners publish a port of the lab at a public
-	// URL, when their plan allows it too.
-	PortExposureAllowed bool `json:"port_exposure_allowed,omitempty"`
+	// URL, when their plan allows it too. Absent keeps the scenario's current
+	// setting on re-import, as for SessionUser.
+	PortExposureAllowed *bool `json:"port_exposure_allowed,omitempty"`
 }
 
 // hostnamePattern is an RFC 1123 host label: lowercase letters, digits and
@@ -208,8 +210,6 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				"flag_secret":        scenario.FlagSecret,
 				"crash_traps":     scenario.CrashTraps,
 				"build_features":  scenario.BuildFeatures,
-				"session_user":    scenario.SessionUser,
-				"port_exposure_allowed": scenario.PortExposureAllowed,
 				"intro_text":      scenario.IntroText,
 				"finish_text":     scenario.FinishText,
 				"setup_script":    scenario.SetupScript,
@@ -217,6 +217,16 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 			// Only a declared hostname replaces the current one (see KillerCodaOCF.Hostname).
 			if scenario.Hostname != "" {
 				updates["hostname"] = scenario.Hostname
+			}
+			// Absent keeps, as for the hostname: an archive from KillerCoda, or
+			// exported before these existed, does not reset the console settings.
+			if ocf := index.Extensions; ocf != nil && ocf.OCF != nil {
+				if ocf.OCF.SessionUser != nil {
+					updates["session_user"] = scenario.SessionUser
+				}
+				if ocf.OCF.PortExposureAllowed != nil {
+					updates["port_exposure_allowed"] = scenario.PortExposureAllowed
+				}
 			}
 			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
 				return fmt.Errorf("failed to update scenario: %w", err)
@@ -339,7 +349,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		}
 		flagsEnabled = index.Extensions.OCF.Flags
 		crashTraps = index.Extensions.OCF.CrashTraps
-		portExposureAllowed = index.Extensions.OCF.PortExposureAllowed
+		portExposureAllowed = index.Extensions.OCF.PortExposureAllowed != nil && *index.Extensions.OCF.PortExposureAllowed
 		sessionUser = index.Extensions.OCF.SessionUser
 		compatibleInstanceTypes = BuildCompatibleInstanceTypes(index.Extensions.OCF.CompatibleInstanceTypes)
 
