@@ -24,14 +24,15 @@ func SortInstanceTypesByPriority(types []models.ScenarioInstanceType) []models.S
 	return sorted
 }
 
-// EncodeRequiredFeatures renders authored feature names into the JSON-array
-// text that Scenario.RequiredFeatures stores and GetRequiredFeatures parses.
+// EncodeNameList renders an authored list of names — required or build
+// features, locales — into the JSON-array text the scenario's list columns
+// store and their Get* accessors parse.
 //
 // Empty in, empty out — and deliberately so: "" is the column's "requires
 // nothing" value, whereas "[]" would parse to an empty slice and read the same
 // downstream while making every export noisier. Blank names are dropped so a
 // trailing comma in authored content cannot produce a feature called "".
-func EncodeRequiredFeatures(names []string) (string, error) {
+func EncodeNameList(names []string) (string, error) {
 	cleaned := make([]string, 0, len(names))
 	for _, name := range names {
 		if trimmed := strings.TrimSpace(name); trimmed != "" {
@@ -43,7 +44,7 @@ func EncodeRequiredFeatures(names []string) (string, error) {
 	}
 	encoded, err := json.Marshal(cleaned)
 	if err != nil {
-		return "", fmt.Errorf("failed to encode required_features: %w", err)
+		return "", fmt.Errorf("failed to encode name list: %w", err)
 	}
 	return string(encoded), nil
 }

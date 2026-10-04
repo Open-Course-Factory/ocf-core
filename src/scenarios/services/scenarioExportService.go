@@ -40,13 +40,16 @@ func withExportAssociations(db *gorm.DB) *gorm.DB {
 }
 
 // ExportAsJSON loads a scenario with steps and returns the export DTO
-func (s *ScenarioExportService) ExportAsJSON(scenarioID uuid.UUID) (*dto.ScenarioExportOutput, error) {
+// ExportAsJSON returns the scenario in the shape import-json accepts, so that
+// importing the result recreates it. Nothing secret or owner-specific is in
+// it: no flag secret, no organization, no author, no visibility.
+func (s *ScenarioExportService) ExportAsJSON(scenarioID uuid.UUID) (*dto.SeedScenarioInput, error) {
 	var scenario models.Scenario
 	if err := withExportAssociations(s.db).First(&scenario, "id = ?", scenarioID).Error; err != nil {
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
 
-	return s.buildExportOutput(&scenario), nil
+	return s.buildExportOutput(&scenario)
 }
 
 // ExportAsArchive loads a scenario with steps and returns a KillerCoda-compatible zip archive.
@@ -67,7 +70,7 @@ func (s *ScenarioExportService) ExportAsArchive(scenarioID uuid.UUID) ([]byte, s
 }
 
 // ExportMultipleAsJSON loads multiple scenarios with steps and returns export DTOs
-func (s *ScenarioExportService) ExportMultipleAsJSON(scenarioIDs []uuid.UUID) ([]dto.ScenarioExportOutput, error) {
+func (s *ScenarioExportService) ExportMultipleAsJSON(scenarioIDs []uuid.UUID) ([]dto.SeedScenarioInput, error) {
 	var scenarios []models.Scenario
 	if err := withExportAssociations(s.db).Where("id IN ?", scenarioIDs).Find(&scenarios).Error; err != nil {
 		return nil, fmt.Errorf("failed to load scenarios: %w", err)
@@ -77,86 +80,198 @@ func (s *ScenarioExportService) ExportMultipleAsJSON(scenarioIDs []uuid.UUID) ([
 		return nil, fmt.Errorf("no scenarios found for the given IDs")
 	}
 
-	outputs := make([]dto.ScenarioExportOutput, 0, len(scenarios))
+	outputs := make([]dto.SeedScenarioInput, 0, len(scenarios))
 	for i := range scenarios {
-		outputs = append(outputs, *s.buildExportOutput(&scenarios[i]))
+		output, err := s.buildExportOutput(&scenarios[i])
+		if err != nil {
+			return nil, err
+		}
+		outputs = append(outputs, *output)
 	}
 	return outputs, nil
 }
 
-// buildExportOutput converts a Scenario model to a ScenarioExportOutput DTO.
-func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dto.ScenarioExportOutput {
-	steps := make([]dto.ScenarioExportStepOutput, 0, len(scenario.Steps))
+// buildExportOutput converts a Scenario model, with its steps, questions and
+// declared images loaded, into the import shape.
+func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*dto.SeedScenarioInput, error) {
+	requiredFeatures, err := scenario.GetRequiredFeatures()
+	if err != nil {
+		return nil, err
+	}
+	buildFeatures, err := scenario.GetBuildFeatures()
+	if err != nil {
+		return nil, err
+	}
+	locales, err := scenario.GetLocales()
+	if err != nil {
+		return nil, err
+	}
+	translations, err := s.exportScenarioTranslations(scenario.ID)
+	if err != nil {
+		return nil, err
+	}
+	stepTranslations, err := s.exportStepTranslations(scenario.Steps)
+	if err != nil {
+		return nil, err
+	}
+	lexicon, err := s.exportLexicon(scenario.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	steps := make([]dto.SeedStepInput, 0, len(scenario.Steps))
 	for _, step := range scenario.Steps {
-		stepType := step.StepType
-		if stepType == "" {
-			stepType = "terminal"
-		}
-
-		var questions []dto.ScenarioExportStepQuestionOutput
-		if len(step.Questions) > 0 {
-			questions = make([]dto.ScenarioExportStepQuestionOutput, 0, len(step.Questions))
-			for _, q := range step.Questions {
-				questions = append(questions, dto.ScenarioExportStepQuestionOutput{
-					Order:         q.Order,
-					QuestionText:  q.QuestionText,
-					QuestionType:  q.QuestionType,
-					Options:       q.Options,
-					CorrectAnswer: q.CorrectAnswer,
-					Explanation:   q.Explanation,
-					Points:        q.Points,
-				})
-			}
-		}
-
-		steps = append(steps, dto.ScenarioExportStepOutput{
-			Order:                 step.Order,
-			Title:                 step.Title,
-			StepType:              stepType,
-			ShowImmediateFeedback: step.ShowImmediateFeedback,
-			TextContent:           step.TextContent,
-			HintContent:           step.HintContent,
-			VerifyScript:          step.VerifyScript,
-			BackgroundScript:      step.BackgroundScript,
-			ForegroundScript:      step.ForegroundScript,
-			IntroEffect:           step.IntroEffect,
-			IntroText:             step.IntroText,
-			OutroEffect:           step.OutroEffect,
-			OutroText:             step.OutroText,
+		steps = append(steps, dto.SeedStepInput{
+			Title:                    step.Title,
+			StepType:                 step.StepType,
+			ShowImmediateFeedback:    step.ShowImmediateFeedback,
+			TextContent:              step.TextContent,
+			HintContent:              step.HintContent,
+			VerifyScript:             step.VerifyScript,
+			BackgroundScript:         step.BackgroundScript,
+			ForegroundScript:         step.ForegroundScript,
+			IntroEffect:              step.IntroEffect,
+			IntroText:                step.IntroText,
+			OutroEffect:              step.OutroEffect,
+			OutroText:                step.OutroText,
 			BackgroundTimeoutSeconds: step.BackgroundTimeoutSeconds,
-			BackgroundAsync:       step.BackgroundAsync,
-			HasFlag:               step.HasFlag,
-			FlagPath:              step.FlagPath,
-			FlagLevel:             step.FlagLevel,
-			Questions:             questions,
+			BackgroundAsync:          step.BackgroundAsync,
+			HasFlag:                  step.HasFlag,
+			FlagPath:                 step.FlagPath,
+			FlagLevel:                step.FlagLevel,
+			Questions:                exportQuestions(step.Questions),
+			Translations:             stepTranslations[step.ID],
 		})
 	}
 
-	return &dto.ScenarioExportOutput{
-		Title:         scenario.Title,
-		Description:   scenario.Description,
-		Difficulty:    scenario.Difficulty,
-		EstimatedTimeMinutes: scenario.EstimatedTimeMinutes,
-		InstanceType:  scenario.InstanceType,
-		OsType:        scenario.OsType,
-		FlagsEnabled:     scenario.FlagsEnabled,
-		AllowedFlagPaths: scenario.AllowedFlagPaths,
-		CrashTraps:    scenario.CrashTraps,
-		PortExposureAllowed: scenario.PortExposureAllowed,
-		// Without this, exporting a scenario and importing it back changes what
-		// it is: the copy runs its console as root, and every permission
-		// mission in it goes quiet. Import has always read this field; only
-		// export was not writing it.
-		SessionUser:   scenario.SessionUser,
-		IsPublic:      scenario.IsPublic,
-		IntroText:     scenario.IntroText,
-		FinishText:    scenario.FinishText,
-		SetupScript:   scenario.SetupScript,
-		Steps:         steps,
-	}
+	declaredImages := declaredImageNames(scenario)
+	portExposureAllowed := scenario.PortExposureAllowed
+
+	return &dto.SeedScenarioInput{
+		Title:                   scenario.Title,
+		Description:             scenario.Description,
+		Difficulty:              scenario.Difficulty,
+		EstimatedTimeMinutes:    scenario.EstimatedTimeMinutes,
+		InstanceType:            scenario.InstanceType,
+		Hostname:                scenario.Hostname,
+		OsType:                  scenario.OsType,
+		FlagsEnabled:            scenario.FlagsEnabled,
+		AllowedFlagPaths:        scenario.AllowedFlagPaths,
+		CrashTraps:              scenario.CrashTraps,
+		PortExposureAllowed:     &portExposureAllowed,
+		SessionUser:             scenario.SessionUser,
+		IntroText:               scenario.IntroText,
+		FinishText:              scenario.FinishText,
+		SetupScript:             scenario.SetupScript,
+		Objectives:              scenario.Objectives,
+		Prerequisites:           scenario.Prerequisites,
+		DefaultLocale:           scenario.DefaultLocale,
+		Locales:                 locales,
+		CompatibleInstanceTypes: declaredImages,
+		RequiredFeatures:        requiredFeatures,
+		BuildFeatures:           buildFeatures,
+		Translations:            translations,
+		Lexicon:                 lexicon,
+		Steps:                   steps,
+	}, nil
 }
 
-// buildArchive generates a KillerCoda-compatible zip archive from a scenario
+// declaredImageNames lists the scenario's compatible distributions in the
+// author's order of preference.
+func declaredImageNames(scenario *models.Scenario) []string {
+	names := make([]string, 0, len(scenario.CompatibleInstanceTypes))
+	for _, cit := range SortInstanceTypesByPriority(scenario.CompatibleInstanceTypes) {
+		names = append(names, cit.InstanceType)
+	}
+	return names
+}
+
+func exportQuestions(questions []models.ScenarioStepQuestion) []dto.SeedQuestionInput {
+	if len(questions) == 0 {
+		return nil
+	}
+	out := make([]dto.SeedQuestionInput, 0, len(questions))
+	for _, q := range questions {
+		out = append(out, dto.SeedQuestionInput{
+			Order:         q.Order,
+			QuestionText:  q.QuestionText,
+			QuestionType:  q.QuestionType,
+			Options:       q.Options,
+			CorrectAnswer: q.CorrectAnswer,
+			Explanation:   q.Explanation,
+			Points:        q.Points,
+		})
+	}
+	return out
+}
+
+func (s *ScenarioExportService) exportScenarioTranslations(scenarioID uuid.UUID) ([]dto.SeedScenarioTranslationInput, error) {
+	var rows []models.ScenarioTranslation
+	if err := s.db.Where("scenario_id = ?", scenarioID).Order("locale ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to load scenario translations: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	out := make([]dto.SeedScenarioTranslationInput, 0, len(rows))
+	for _, t := range rows {
+		out = append(out, dto.SeedScenarioTranslationInput{
+			Locale:        t.Locale,
+			Title:         t.Title,
+			Description:   t.Description,
+			Objectives:    t.Objectives,
+			Prerequisites: t.Prerequisites,
+			IntroText:     t.IntroText,
+			FinishText:    t.FinishText,
+		})
+	}
+	return out, nil
+}
+
+// exportStepTranslations reads every step's translations in one query.
+func (s *ScenarioExportService) exportStepTranslations(steps []models.ScenarioStep) (map[uuid.UUID][]dto.SeedStepTranslationInput, error) {
+	if len(steps) == 0 {
+		return nil, nil
+	}
+	ids := make([]uuid.UUID, len(steps))
+	for i, step := range steps {
+		ids[i] = step.ID
+	}
+	var rows []models.ScenarioStepTranslation
+	if err := s.db.Where("step_id IN ?", ids).Order("locale ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to load step translations: %w", err)
+	}
+	byStep := make(map[uuid.UUID][]dto.SeedStepTranslationInput, len(steps))
+	for _, t := range rows {
+		byStep[t.StepID] = append(byStep[t.StepID], dto.SeedStepTranslationInput{
+			Locale:      t.Locale,
+			Title:       t.Title,
+			TextContent: t.TextContent,
+			HintContent: t.HintContent,
+			IntroText:   t.IntroText,
+			OutroText:   t.OutroText,
+		})
+	}
+	return byStep, nil
+}
+
+func (s *ScenarioExportService) exportLexicon(scenarioID uuid.UUID) ([]dto.LexiconEntryInput, error) {
+	entries, names, err := loadLexicon(s.db, scenarioID)
+	if err != nil || len(entries) == 0 {
+		return nil, err
+	}
+	out := make([]dto.LexiconEntryInput, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, dto.LexiconEntryInput{
+			Key:       entry.Key,
+			ParentKey: entry.ParentKey,
+			Kind:      entry.Kind,
+			Names:     names[entry.ID],
+		})
+	}
+	return out, nil
+}
+
 func (s *ScenarioExportService) buildArchive(scenario *models.Scenario) ([]byte, error) {
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
@@ -321,17 +436,13 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 	// distribution and fails provisioning on its first apt-get. Export is how a
 	// scenario moves between environments, so a lossy one is a silent
 	// downgrade, not a cosmetic gap.
-	declaredImages := make([]string, 0, len(scenario.CompatibleInstanceTypes))
-	for _, cit := range SortInstanceTypesByPriority(scenario.CompatibleInstanceTypes) {
-		declaredImages = append(declaredImages, cit.InstanceType)
-	}
+	declaredImages := declaredImageNames(scenario)
 	requiredFeatures, featErr := scenario.GetRequiredFeatures()
 	if featErr != nil {
 		slog.Warn("scenario has unparseable required_features, exporting without them",
 			"scenario_id", scenario.ID, "err", featErr)
 		requiredFeatures = nil
 	}
-
 	if scenario.FlagsEnabled || scenario.CrashTraps ||
 		len(declaredImages) > 0 || len(requiredFeatures) > 0 || scenario.Hostname != "" {
 		ocf := &KillerCodaOCF{

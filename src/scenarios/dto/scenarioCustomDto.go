@@ -190,27 +190,51 @@ type RevealHintResponse struct {
 	Total   int    `json:"total"`
 }
 
-// SeedScenarioInput - DTO for seeding a scenario with inline content (admin/testing)
+// SeedScenarioInput is the one JSON shape of a scenario: what the seed and
+// import-json endpoints accept, and what the JSON export produces. Export then
+// import is an identity, so a scenario can leave the platform, be edited by
+// hand or by an assistant, and come back without losing anything.
+//
+// Ownership is not part of it: the organization, the author and whether the
+// scenario is public come from the route that imports it, never from the file.
+//
+// On a re-import over an existing scenario, the optional fields below that say
+// "absent keeps" leave the stored value alone when they are missing, because
+// older files and the challenges seeder do not carry them.
 type SeedScenarioInput struct {
-	Title            string `json:"title" binding:"required,max=1000"`
-	Description      string `json:"description" binding:"max=1000"`
-	Difficulty       string `json:"difficulty"`
-	EstimatedTimeMinutes int `json:"estimated_time_minutes"`
-	InstanceType     string `json:"instance_type"`
+	Title                string `json:"title" binding:"required,max=1000"`
+	Description          string `json:"description,omitempty" binding:"max=1000"`
+	Difficulty           string `json:"difficulty,omitempty"`
+	EstimatedTimeMinutes int    `json:"estimated_time_minutes,omitempty"`
+	InstanceType         string `json:"instance_type"`
+	// Hostname is the terminal's name. Absent keeps.
 	Hostname         string `json:"hostname,omitempty"`
-	OsType           string `json:"os_type"`
+	OsType           string `json:"os_type,omitempty"`
 	FlagsEnabled     bool   `json:"flags_enabled"`
 	AllowedFlagPaths string `json:"allowed_flag_paths,omitempty"`
 	CrashTraps       bool   `json:"crash_traps"`
-	PortExposureAllowed bool `json:"port_exposure_allowed"`
+	// PortExposureAllowed is a pointer so that absent keeps: a re-seed that
+	// does not mention it must not switch exposure off.
+	PortExposureAllowed *bool `json:"port_exposure_allowed,omitempty"`
 	// SessionUser is the uid the learner's console runs as. Absent means the
 	// distribution decides, which is root — fine for every scenario whose
 	// lesson is not "the kernel said no".
-	SessionUser      *int   `json:"session_user,omitempty"`
-	IsPublic         bool   `json:"is_public"`
-	IntroText        string `json:"intro_text" binding:"max=65536"`
-	FinishText       string `json:"finish_text" binding:"max=65536"`
-	SetupScript      string `json:"setup_script,omitempty"`
+	SessionUser *int `json:"session_user,omitempty"`
+	// IsPublic is honoured only on the platform-level seed and import routes,
+	// and never exported. Absent keeps: a bool that decoded as false used to
+	// unpublish a catalogue scenario on every re-seed that forgot it.
+	IsPublic    *bool  `json:"is_public,omitempty"`
+	IntroText   string `json:"intro_text,omitempty" binding:"max=65536"`
+	FinishText  string `json:"finish_text,omitempty" binding:"max=65536"`
+	SetupScript string `json:"setup_script,omitempty"`
+	// Objectives and Prerequisites are markdown shown on the scenario card.
+	// Absent keeps.
+	Objectives    string `json:"objectives,omitempty"`
+	Prerequisites string `json:"prerequisites,omitempty"`
+	// DefaultLocale names the language the fields above are written in, and
+	// Locales every language the scenario is offered in. Absent keeps.
+	DefaultLocale string   `json:"default_locale,omitempty"`
+	Locales       []string `json:"locales,omitempty"`
 	// CompatibleInstanceTypes names the distributions this scenario is built
 	// for, most preferred first. Leave empty to keep matching on os_type alone.
 	CompatibleInstanceTypes []string `json:"compatible_instance_types,omitempty"`
@@ -225,31 +249,53 @@ type SeedScenarioInput struct {
 	RequiredFeatures []string `json:"required_features,omitempty"`
 	// BuildFeatures names features held only while the container is
 	// provisioned, then removed. Same meaning as the archive importer's field.
-	BuildFeatures []string        `json:"build_features,omitempty"`
-	Steps         []SeedStepInput `json:"steps" binding:"required,min=1"`
+	BuildFeatures []string `json:"build_features,omitempty"`
+	// Translations carry the scenario's own text in other languages. Absent
+	// keeps; present replaces every scenario-level translation.
+	Translations []SeedScenarioTranslationInput `json:"translations,omitempty"`
+	// Lexicon is the scenario's vocabulary, in the shape PUT /lexicon takes.
+	// Absent keeps; present replaces it.
+	Lexicon []LexiconEntryInput `json:"lexicon,omitempty"`
+	Steps   []SeedStepInput     `json:"steps" binding:"required,min=1"`
+}
+
+// SeedScenarioTranslationInput is one language's wording of the scenario's
+// own text. An empty field falls back to the default locale.
+type SeedScenarioTranslationInput struct {
+	Locale        string `json:"locale"`
+	Title         string `json:"title,omitempty"`
+	Description   string `json:"description,omitempty"`
+	Objectives    string `json:"objectives,omitempty"`
+	Prerequisites string `json:"prerequisites,omitempty"`
+	IntroText     string `json:"intro_text,omitempty"`
+	FinishText    string `json:"finish_text,omitempty"`
 }
 
 // SeedQuestionInput - DTO for a quiz question inside a SeedStepInput
 type SeedQuestionInput struct {
-	Order         int    `json:"order"`
-	QuestionText  string `json:"question_text"`
-	QuestionType  string `json:"question_type"`
+	Order        int    `json:"order"`
+	QuestionText string `json:"question_text"`
+	QuestionType string `json:"question_type"`
+	// Options is a JSON array of strings, encoded as a string — the column's
+	// own format. For multiple_choice, CorrectAnswer is the 0-based index of
+	// the right option ("0", "1", …); for true_false it is "true" or "false".
 	Options       string `json:"options,omitempty"`
 	CorrectAnswer string `json:"correct_answer,omitempty"`
 	Explanation   string `json:"explanation,omitempty"`
 	Points        int    `json:"points,omitempty"`
 }
 
-// SeedStepInput - DTO for a single step in a seed scenario
+// SeedStepInput - DTO for a single step in a seed scenario. Steps are
+// ordered by their position in the list.
 type SeedStepInput struct {
 	Title                    string              `json:"title" binding:"required,max=1000"`
 	StepType                 string              `json:"step_type,omitempty"`
 	ShowImmediateFeedback    bool                `json:"show_immediate_feedback,omitempty"`
-	TextContent              string              `json:"text_content" binding:"max=65536"`
-	HintContent              string              `json:"hint_content" binding:"max=65536"`
-	VerifyScript             string              `json:"verify_script"`
-	BackgroundScript         string              `json:"background_script"`
-	ForegroundScript         string              `json:"foreground_script"`
+	TextContent              string              `json:"text_content,omitempty" binding:"max=65536"`
+	HintContent              string              `json:"hint_content,omitempty" binding:"max=65536"`
+	VerifyScript             string              `json:"verify_script,omitempty"`
+	BackgroundScript         string              `json:"background_script,omitempty"`
+	ForegroundScript         string              `json:"foreground_script,omitempty"`
 	IntroEffect              string              `json:"intro_effect,omitempty"`
 	IntroText                string              `json:"intro_text,omitempty" binding:"max=500"`
 	OutroEffect              string              `json:"outro_effect,omitempty"`
@@ -257,63 +303,23 @@ type SeedStepInput struct {
 	BackgroundTimeoutSeconds int                 `json:"background_timeout_seconds,omitempty"`
 	BackgroundAsync          bool                `json:"background_async,omitempty"`
 	HasFlag                  bool                `json:"has_flag"`
-	FlagPath                 string              `json:"flag_path"`
+	FlagPath                 string              `json:"flag_path,omitempty"`
+	FlagLevel                int                 `json:"flag_level,omitempty"`
 	Questions                []SeedQuestionInput `json:"questions,omitempty"`
+	// Translations carry this step's text in other languages. Absent keeps;
+	// present replaces every translation of the step.
+	Translations []SeedStepTranslationInput `json:"translations,omitempty"`
 }
 
-// ScenarioExportStepQuestionOutput — quiz question shape inside a scenario export
-type ScenarioExportStepQuestionOutput struct {
-	Order         int    `json:"order"`
-	QuestionText  string `json:"question_text"`
-	QuestionType  string `json:"question_type"`
-	Options       string `json:"options,omitempty"`
-	CorrectAnswer string `json:"correct_answer,omitempty"`
-	Explanation   string `json:"explanation,omitempty"`
-	Points        int    `json:"points,omitempty"`
-}
-
-// ScenarioExportStepOutput — full step data including scripts (for export only)
-type ScenarioExportStepOutput struct {
-	Order                    int                                `json:"order"`
-	Title                    string                             `json:"title"`
-	StepType                 string                             `json:"step_type,omitempty"`
-	ShowImmediateFeedback    bool                               `json:"show_immediate_feedback,omitempty"`
-	TextContent              string                             `json:"text_content,omitempty"`
-	HintContent              string                             `json:"hint_content,omitempty"`
-	VerifyScript             string                             `json:"verify_script,omitempty"`
-	BackgroundScript         string                             `json:"background_script,omitempty"`
-	ForegroundScript         string                             `json:"foreground_script,omitempty"`
-	IntroEffect              string                             `json:"intro_effect,omitempty"`
-	IntroText                string                             `json:"intro_text,omitempty"`
-	OutroEffect              string                             `json:"outro_effect,omitempty"`
-	OutroText                string                             `json:"outro_text,omitempty"`
-	BackgroundTimeoutSeconds int                                `json:"background_timeout_seconds,omitempty"`
-	BackgroundAsync          bool                               `json:"background_async,omitempty"`
-	HasFlag                  bool                               `json:"has_flag"`
-	FlagPath                 string                             `json:"flag_path,omitempty"`
-	FlagLevel                int                                `json:"flag_level,omitempty"`
-	Questions                []ScenarioExportStepQuestionOutput `json:"questions,omitempty"`
-}
-
-// ScenarioExportOutput — full scenario data for JSON export/re-import
-// Designed to match SeedScenarioInput so the exported JSON can be re-imported directly
-type ScenarioExportOutput struct {
-	Title            string                     `json:"title"`
-	Description      string                     `json:"description,omitempty"`
-	Difficulty       string                     `json:"difficulty,omitempty"`
-	EstimatedTimeMinutes int                    `json:"estimated_time_minutes,omitempty"`
-	InstanceType     string                     `json:"instance_type"`
-	OsType           string                     `json:"os_type,omitempty"`
-	FlagsEnabled     bool                       `json:"flags_enabled"`
-	AllowedFlagPaths string                     `json:"allowed_flag_paths,omitempty"`
-	CrashTraps       bool                       `json:"crash_traps"`
-	PortExposureAllowed bool                    `json:"port_exposure_allowed"`
-	SessionUser      *int                       `json:"session_user,omitempty"`
-	IsPublic         bool                       `json:"is_public"`
-	IntroText        string                     `json:"intro_text,omitempty"`
-	FinishText       string                     `json:"finish_text,omitempty"`
-	SetupScript      string                     `json:"setup_script,omitempty"`
-	Steps            []ScenarioExportStepOutput `json:"steps"`
+// SeedStepTranslationInput is one language's wording of a step. Scripts are
+// never translated: they are one logic for every locale.
+type SeedStepTranslationInput struct {
+	Locale      string `json:"locale"`
+	Title       string `json:"title,omitempty"`
+	TextContent string `json:"text_content,omitempty"`
+	HintContent string `json:"hint_content,omitempty"`
+	IntroText   string `json:"intro_text,omitempty"`
+	OutroText   string `json:"outro_text,omitempty"`
 }
 
 // ExportScenariosInput — request body for bulk export

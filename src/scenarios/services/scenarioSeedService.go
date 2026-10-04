@@ -11,58 +11,57 @@ import (
 	"soli/formations/src/scenarios/utils"
 )
 
-// ScenarioSeedService handles creating or updating scenarios from JSON input
 type ScenarioSeedService struct {
 	db *gorm.DB
 }
 
-// NewScenarioSeedService creates a new seed service
 func NewScenarioSeedService(db *gorm.DB) *ScenarioSeedService {
 	return &ScenarioSeedService{db: db}
 }
 
-// SeedScenario creates or updates a scenario with all its steps from a SeedScenarioInput.
-// orgID is optional — set for group-level imports. userID is the creating user.
-// Returns (scenario, isUpdate, error).
+// SeedScenario creates or updates a scenario with all its steps from a
+// SeedScenarioInput.
 func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID string, orgID *uuid.UUID) (*models.Scenario, bool, error) {
-	name := utils.GenerateSlug(input.Title)
+	built, err := buildSeedScenario(input)
+	if err != nil {
+		return nil, false, err
+	}
+	built.CreatedByID = userID
+	built.OrganizationID = orgID
 
-	// Check if a scenario with this name already exists (upsert)
-	// When orgID is set (group-level import), scope lookup to the same organization
-	// to prevent cross-tenant overwrites. Admin imports (orgID == nil) match globally.
 	var existing models.Scenario
-	isUpdate := false
-	query := s.db.Where("name = ?", name)
+	query := s.db.Where("name = ?", built.Name)
 	if orgID != nil {
 		query = query.Where("organization_id = ?", *orgID)
 	}
-	if err := query.First(&existing).Error; err == nil {
-		isUpdate = true
+	if err := query.First(&existing).Error; err != nil {
+		created, err := s.createSeededScenario(built, input)
+		return created, false, err
+	}
+	updated, err := s.updateSeededScenario(existing, built, input)
+	return updated, true, err
+}
+
+// buildSeedScenario turns the input into an unsaved scenario, with the same
+// normalisation every import path applies.
+func buildSeedScenario(input dto.SeedScenarioInput) (*models.Scenario, error) {
+	requiredFeatures, err := EncodeNameList(input.RequiredFeatures)
+	if err != nil {
+		return nil, err
+	}
+	buildFeatures, err := EncodeNameList(input.BuildFeatures)
+	if err != nil {
+		return nil, err
+	}
+	locales, err := EncodeNameList(input.Locales)
+	if err != nil {
+		return nil, err
 	}
 
-	// Keep existing flag secret on update so active sessions remain valid; a
-	// new scenario gets one at its first run (ensureFlagSecret).
-	flagSecret := existing.FlagSecret
-
-	compatibleInstanceTypes := BuildCompatibleInstanceTypes(input.CompatibleInstanceTypes)
-
-	requiredFeatures, featErr := EncodeRequiredFeatures(input.RequiredFeatures)
-	if featErr != nil {
-		return nil, false, featErr
-	}
-
-	buildFeatures, buildFeatErr := EncodeRequiredFeatures(input.BuildFeatures)
-	if buildFeatErr != nil {
-		return nil, false, buildFeatErr
-	}
-
-	// Build new steps
-	newSteps := make([]models.ScenarioStep, len(input.Steps))
+	steps := make([]models.ScenarioStep, len(input.Steps))
 	for i, st := range input.Steps {
-		// Applied here, not left to BeforeSave: a re-seed writes reused steps
-		// through Updates on an empty model, which BeforeSave never sees.
 		stepType, hasFlag := models.NormalizeFlagStep(st.StepType, st.HasFlag)
-		newSteps[i] = models.ScenarioStep{
+		steps[i] = models.ScenarioStep{
 			Order:                    i,
 			Title:                    st.Title,
 			StepType:                 stepType,
@@ -80,202 +79,296 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			BackgroundAsync:          st.BackgroundAsync,
 			HasFlag:                  hasFlag,
 			FlagPath:                 st.FlagPath,
+			FlagLevel:                st.FlagLevel,
+			Hints:                    BuildStepHints(st.HintContent),
+			Questions:                buildSeedQuestions(st.Questions),
+		}
+	}
+
+	return &models.Scenario{
+		Name:                    utils.GenerateSlug(input.Title),
+		Title:                   input.Title,
+		Description:             input.Description,
+		Difficulty:              input.Difficulty,
+		EstimatedTimeMinutes:    input.EstimatedTimeMinutes,
+		InstanceType:            input.InstanceType,
+		Hostname:                input.Hostname,
+		OsType:                  input.OsType,
+		SourceType:              "seed",
+		IsPublic:                input.IsPublic != nil && *input.IsPublic,
+		FlagsEnabled:            input.FlagsEnabled,
+		AllowedFlagPaths:        input.AllowedFlagPaths,
+		RequiredFeatures:        requiredFeatures,
+		BuildFeatures:           buildFeatures,
+		CrashTraps:              input.CrashTraps,
+		PortExposureAllowed:     input.PortExposureAllowed != nil && *input.PortExposureAllowed,
+		SessionUser:             input.SessionUser,
+		Objectives:              input.Objectives,
+		Prerequisites:           input.Prerequisites,
+		DefaultLocale:           input.DefaultLocale,
+		Locales:                 locales,
+		IntroText:               input.IntroText,
+		FinishText:              input.FinishText,
+		SetupScript:             input.SetupScript,
+		CompatibleInstanceTypes: BuildCompatibleInstanceTypes(input.CompatibleInstanceTypes),
+		Steps:                   steps,
+	}, nil
+}
+
+func buildSeedQuestions(inputs []dto.SeedQuestionInput) []models.ScenarioStepQuestion {
+	if len(inputs) == 0 {
+		return nil
+	}
+	questions := make([]models.ScenarioStepQuestion, len(inputs))
+	for i, q := range inputs {
+		questions[i] = models.ScenarioStepQuestion{
+			Order:         q.Order,
+			QuestionText:  q.QuestionText,
+			QuestionType:  q.QuestionType,
+			Options:       q.Options,
+			CorrectAnswer: q.CorrectAnswer,
+			Explanation:   q.Explanation,
+			Points:        q.Points,
+		}
+	}
+	return questions
+}
+
+func (s *ScenarioSeedService) createSeededScenario(scenario *models.Scenario, input dto.SeedScenarioInput) (*models.Scenario, error) {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(scenario).Error; err != nil {
+			return fmt.Errorf("failed to create scenario: %w", err)
+		}
+		return replaceSeededLanguageContent(tx, scenario.ID, scenario.Steps, input)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return scenario, nil
+}
+
+func (s *ScenarioSeedService) updateSeededScenario(existing models.Scenario, built *models.Scenario, input dto.SeedScenarioInput) (*models.Scenario, error) {
+	newSteps := built.Steps
+	compatibleInstanceTypes := built.CompatibleInstanceTypes
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&existing).Updates(seedScenarioUpdates(built, input)).Error; err != nil {
+			return fmt.Errorf("failed to update scenario: %w", err)
 		}
 
-		newSteps[i].Hints = BuildStepHints(st.HintContent)
+		if err := tx.Where("step_id IN (?)",
+			tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
+		).Delete(&models.ScenarioStepHint{}).Error; err != nil {
+			return fmt.Errorf("failed to delete old hints: %w", err)
+		}
+		if err := tx.Where("step_id IN (?)",
+			tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
+		).Delete(&models.ScenarioStepQuestion{}).Error; err != nil {
+			return fmt.Errorf("failed to delete old questions: %w", err)
+		}
+		var previous []models.ScenarioStep
+		if err := tx.Where("scenario_id = ?", existing.ID).
+			Order("\"order\" ASC").Find(&previous).Error; err != nil {
+			return fmt.Errorf("failed to load existing steps: %w", err)
+		}
+		reusable := make(map[int]models.ScenarioStep, len(previous))
+		for _, step := range previous {
+			reusable[step.Order] = step
+		}
 
-		// Build quiz questions; GORM cascade-creates them with the step
-		if len(st.Questions) > 0 {
-			questions := make([]models.ScenarioStepQuestion, len(st.Questions))
-			for j, q := range st.Questions {
-				questions[j] = models.ScenarioStepQuestion{
-					Order:         q.Order,
-					QuestionText:  q.QuestionText,
-					QuestionType:  q.QuestionType,
-					Options:       q.Options,
-					CorrectAnswer: q.CorrectAnswer,
-					Explanation:   q.Explanation,
-					Points:        q.Points,
-				}
+		keep := make(map[int]bool, len(newSteps))
+		for i := range newSteps {
+			keep[newSteps[i].Order] = true
+		}
+		for order, step := range reusable {
+			if keep[order] {
+				continue
 			}
-			newSteps[i].Questions = questions
+			if err := tx.Where("step_id = ?", step.ID).
+				Delete(&models.ScenarioStepTranslation{}).Error; err != nil {
+				return fmt.Errorf("failed to delete translations of a removed step: %w", err)
+			}
+			if err := tx.Delete(&models.ScenarioStep{}, "id = ?", step.ID).Error; err != nil {
+				return fmt.Errorf("failed to delete a removed step: %w", err)
+			}
+			delete(reusable, order)
 		}
+		if err := tx.Unscoped().Where("scenario_id = ?", existing.ID).
+			Delete(&models.ScenarioInstanceType{}).Error; err != nil {
+			return fmt.Errorf("failed to delete old instance types: %w", err)
+		}
+		for i := range compatibleInstanceTypes {
+			compatibleInstanceTypes[i].ScenarioID = existing.ID
+			if err := tx.Create(&compatibleInstanceTypes[i]).Error; err != nil {
+				return fmt.Errorf("failed to create instance type: %w", err)
+			}
+		}
+		if err := deleteScenarioImages(tx, existing.ID); err != nil {
+			return err
+		}
+
+		for i := range newSteps {
+			newSteps[i].ScenarioID = existing.ID
+			if kept, ok := reusable[newSteps[i].Order]; ok {
+				newSteps[i].ID = kept.ID
+				newSteps[i].CreatedAt = kept.CreatedAt
+				if err := tx.Model(&models.ScenarioStep{}).Where("id = ?", kept.ID).
+					Select("*").Omit("id", "created_at", "deleted_at", "scenario_id").
+					Updates(&newSteps[i]).Error; err != nil {
+					return fmt.Errorf("failed to update step: %w", err)
+				}
+				if err := recreateStepChildren(tx, &newSteps[i]); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := tx.Create(&newSteps[i]).Error; err != nil {
+				return fmt.Errorf("failed to create step: %w", err)
+			}
+		}
+
+		return replaceSeededLanguageContent(tx, existing.ID, newSteps, input)
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	var scenario models.Scenario
-	if isUpdate {
-		// Update existing scenario in a transaction
-		err := s.db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Model(&existing).Updates(map[string]any{
-				"title":              input.Title,
-				"description":        input.Description,
-				"difficulty":         input.Difficulty,
-				"estimated_time_minutes": input.EstimatedTimeMinutes,
-				"instance_type":      input.InstanceType,
-				"os_type":            input.OsType,
-				"is_public":          input.IsPublic,
-				"flags_enabled":      input.FlagsEnabled,
-				"allowed_flag_paths": input.AllowedFlagPaths,
-				"flag_secret":        flagSecret,
-				"required_features":  requiredFeatures,
-				"build_features":     buildFeatures,
-				"crash_traps":        input.CrashTraps,
-				"session_user":       input.SessionUser,
-				"intro_text":         input.IntroText,
-				"finish_text":        input.FinishText,
-				"setup_script":       input.SetupScript,
-			}).Error; err != nil {
-				return fmt.Errorf("failed to update scenario: %w", err)
-			}
-
-			// Delete old hints before steps (soft-delete won't cascade)
-			if err := tx.Where("step_id IN (?)",
-				tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
-			).Delete(&models.ScenarioStepHint{}).Error; err != nil {
-				return fmt.Errorf("failed to delete old hints: %w", err)
-			}
-			// Delete old quiz questions before steps (soft-delete won't cascade)
-			if err := tx.Where("step_id IN (?)",
-				tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
-			).Delete(&models.ScenarioStepQuestion{}).Error; err != nil {
-				return fmt.Errorf("failed to delete old questions: %w", err)
-			}
-			// Steps keep their identity across a re-seed, matched by order.
-			//
-			// Content is authored in files and pushed repeatedly; a translation
-			// is written once, by hand, and may live only here. Replacing every
-			// step would detach them all silently — the work still stored,
-			// attached to a row nothing reads, and the scenario simply reading
-			// untranslated again.
-			//
-			// Reusing the row also makes an edit behave the way it should: the
-			// translation survives and its source hash no longer matches, so it
-			// reports as stale rather than disappearing.
-			var previous []models.ScenarioStep
-			if err := tx.Where("scenario_id = ?", existing.ID).
-				Order("\"order\" ASC").Find(&previous).Error; err != nil {
-				return fmt.Errorf("failed to load existing steps: %w", err)
-			}
-			reusable := make(map[int]models.ScenarioStep, len(previous))
-			for _, step := range previous {
-				reusable[step.Order] = step
-			}
-
-			// Steps the scenario no longer has go, and their translations with
-			// them: a language reporting work for a step nobody can reach is
-			// worse than one honestly short.
-			keep := make(map[int]bool, len(newSteps))
-			for i := range newSteps {
-				keep[newSteps[i].Order] = true
-			}
-			for order, step := range reusable {
-				if keep[order] {
-					continue
-				}
-				if err := tx.Where("step_id = ?", step.ID).
-					Delete(&models.ScenarioStepTranslation{}).Error; err != nil {
-					return fmt.Errorf("failed to delete translations of a removed step: %w", err)
-				}
-				if err := tx.Delete(&models.ScenarioStep{}, "id = ?", step.ID).Error; err != nil {
-					return fmt.Errorf("failed to delete a removed step: %w", err)
-				}
-				delete(reusable, order)
-			}
-			// Replace the image declaration rather than adding to it, so a
-			// re-seed converges on what the scenario now says instead of
-			// leaving a corrected scenario still matching its old image.
-			if err := tx.Unscoped().Where("scenario_id = ?", existing.ID).
-				Delete(&models.ScenarioInstanceType{}).Error; err != nil {
-				return fmt.Errorf("failed to delete old instance types: %w", err)
-			}
-			for i := range compatibleInstanceTypes {
-				compatibleInstanceTypes[i].ScenarioID = existing.ID
-				if err := tx.Create(&compatibleInstanceTypes[i]).Error; err != nil {
-					return fmt.Errorf("failed to create instance type: %w", err)
-				}
-			}
-			// A seed carries no images: those a previous import stored no
-			// longer belong to the content this replaces it with.
-			if err := deleteScenarioImages(tx, existing.ID); err != nil {
-				return err
-			}
-
-			// Write the steps, reusing the row that already held each order.
-			for i := range newSteps {
-				newSteps[i].ScenarioID = existing.ID
-				if kept, ok := reusable[newSteps[i].Order]; ok {
-					newSteps[i].ID = kept.ID
-					newSteps[i].CreatedAt = kept.CreatedAt
-					if err := tx.Model(&models.ScenarioStep{}).Where("id = ?", kept.ID).
-						Select("*").Omit("id", "created_at", "deleted_at", "scenario_id").
-						Updates(&newSteps[i]).Error; err != nil {
-						return fmt.Errorf("failed to update step: %w", err)
-					}
-					// Updates never writes associations, and the old hint and
-					// question rows were deleted above.
-					if err := recreateStepChildren(tx, &newSteps[i]); err != nil {
-						return err
-					}
-					continue
-				}
-				if err := tx.Create(&newSteps[i]).Error; err != nil {
-					return fmt.Errorf("failed to create step: %w", err)
-				}
-			}
-
-			return nil
-		})
-		if err != nil {
-			return nil, false, err
-		}
-
-		// Reload with steps and hints
-		if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-			return db.Order("\"order\" ASC")
-		}).Preload("Steps.Hints", func(db *gorm.DB) *gorm.DB {
-			return db.Order("level ASC")
-		}).First(&scenario, "id = ?", existing.ID).Error; err != nil {
-			return nil, false, fmt.Errorf("failed to reload scenario: %w", err)
-		}
-	} else {
-		// Create new scenario
-		scenario = models.Scenario{
-			Name:             name,
-			Title:            input.Title,
-			Description:      input.Description,
-			Difficulty:       input.Difficulty,
-			EstimatedTimeMinutes:    input.EstimatedTimeMinutes,
-			InstanceType:     input.InstanceType,
-			OsType:           input.OsType,
-			SourceType:       "seed",
-			IsPublic:         input.IsPublic,
-			FlagsEnabled:     input.FlagsEnabled,
-			AllowedFlagPaths: input.AllowedFlagPaths,
-			FlagSecret:       flagSecret,
-			RequiredFeatures: requiredFeatures,
-			BuildFeatures:    buildFeatures,
-			CrashTraps:       input.CrashTraps,
-			PortExposureAllowed: input.PortExposureAllowed,
-			SessionUser:      input.SessionUser,
-			IntroText:        input.IntroText,
-			FinishText:       input.FinishText,
-			SetupScript:      input.SetupScript,
-			CreatedByID:      userID,
-			OrganizationID:   orgID,
-		}
-		scenario.Steps = newSteps
-		scenario.CompatibleInstanceTypes = compatibleInstanceTypes
-
-		if err := s.db.Create(&scenario).Error; err != nil {
-			return nil, false, fmt.Errorf("failed to create scenario: %w", err)
-		}
+	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("Steps.Hints", func(db *gorm.DB) *gorm.DB {
+		return db.Order("level ASC")
+	}).First(&scenario, "id = ?", existing.ID).Error; err != nil {
+		return nil, fmt.Errorf("failed to reload scenario: %w", err)
 	}
-
-	return &scenario, isUpdate, nil
+	return &scenario, nil
 }
 
-// recreateStepChildren writes the hint and quiz question rows of a step whose
-// row was reused.
+// seedScenarioUpdates is the column map a re-seed writes. The fields the input
+// documents as "absent keeps" are written only when present: older files and
+// the challenges seeder do not send them, and a re-seed must not wipe what the
+// editor set.
+func seedScenarioUpdates(built *models.Scenario, input dto.SeedScenarioInput) map[string]any {
+	updates := map[string]any{
+		"title":                  built.Title,
+		"description":            built.Description,
+		"difficulty":             built.Difficulty,
+		"estimated_time_minutes": built.EstimatedTimeMinutes,
+		"instance_type":          built.InstanceType,
+		"os_type":                built.OsType,
+		"flags_enabled":          built.FlagsEnabled,
+		"allowed_flag_paths":     built.AllowedFlagPaths,
+		"required_features":      built.RequiredFeatures,
+		"build_features":         built.BuildFeatures,
+		"crash_traps":            built.CrashTraps,
+		"session_user":           built.SessionUser,
+		"intro_text":             built.IntroText,
+		"finish_text":            built.FinishText,
+		"setup_script":           built.SetupScript,
+	}
+	if input.Hostname != "" {
+		updates["hostname"] = built.Hostname
+	}
+	if input.IsPublic != nil {
+		updates["is_public"] = built.IsPublic
+	}
+	if input.PortExposureAllowed != nil {
+		updates["port_exposure_allowed"] = built.PortExposureAllowed
+	}
+	if input.Objectives != "" {
+		updates["objectives"] = built.Objectives
+	}
+	if input.Prerequisites != "" {
+		updates["prerequisites"] = built.Prerequisites
+	}
+	if input.DefaultLocale != "" {
+		updates["default_locale"] = built.DefaultLocale
+	}
+	if input.Locales != nil {
+		updates["locales"] = built.Locales
+	}
+	return updates
+}
+
+// replaceSeededLanguageContent writes the translations and the lexicon the
+// input carries. Each part the input leaves out is left as it is.
+//
+// steps are the saved steps, in input order, so a step's translations land on
+// the step they were written for.
+func replaceSeededLanguageContent(tx *gorm.DB, scenarioID uuid.UUID, steps []models.ScenarioStep, input dto.SeedScenarioInput) error {
+	if input.Translations != nil {
+		if err := replaceScenarioTranslations(tx, scenarioID, input.Translations); err != nil {
+			return err
+		}
+	}
+	for i, st := range input.Steps {
+		if st.Translations == nil {
+			continue
+		}
+		if err := replaceStepTranslations(tx, steps[i], st.Translations); err != nil {
+			return err
+		}
+	}
+	if input.Lexicon != nil {
+		if err := ReplaceLexicon(tx, scenarioID, input.Lexicon); err != nil {
+			return fmt.Errorf("failed to store the lexicon: %w", err)
+		}
+	}
+	return nil
+}
+
+// Unscoped deletes, because a soft-deleted row still holds its place in the
+// one-translation-per-locale unique index.
+func replaceScenarioTranslations(tx *gorm.DB, scenarioID uuid.UUID, inputs []dto.SeedScenarioTranslationInput) error {
+	if err := tx.Unscoped().Where("scenario_id = ?", scenarioID).
+		Delete(&models.ScenarioTranslation{}).Error; err != nil {
+		return fmt.Errorf("failed to delete scenario translations: %w", err)
+	}
+	for _, t := range inputs {
+		row := models.ScenarioTranslation{
+			ScenarioID:    scenarioID,
+			Locale:        t.Locale,
+			Title:         t.Title,
+			Description:   t.Description,
+			Objectives:    t.Objectives,
+			Prerequisites: t.Prerequisites,
+			IntroText:     t.IntroText,
+			FinishText:    t.FinishText,
+		}
+		if err := tx.Create(&row).Error; err != nil {
+			return fmt.Errorf("failed to create %s scenario translation: %w", t.Locale, err)
+		}
+	}
+	return nil
+}
+
+// replaceStepTranslations stamps each translation as written against the step
+// being imported, the same stamp the translation API applies on save: an
+// imported translation is as current as the text it arrived with.
+func replaceStepTranslations(tx *gorm.DB, step models.ScenarioStep, inputs []dto.SeedStepTranslationInput) error {
+	if err := tx.Unscoped().Where("step_id = ?", step.ID).
+		Delete(&models.ScenarioStepTranslation{}).Error; err != nil {
+		return fmt.Errorf("failed to delete step translations: %w", err)
+	}
+	hash := StepSourceHash(step)
+	for _, t := range inputs {
+		row := models.ScenarioStepTranslation{
+			StepID:      step.ID,
+			Locale:      t.Locale,
+			Title:       t.Title,
+			TextContent: t.TextContent,
+			HintContent: t.HintContent,
+			IntroText:   t.IntroText,
+			OutroText:   t.OutroText,
+			SourceHash:  hash,
+		}
+		if err := tx.Create(&row).Error; err != nil {
+			return fmt.Errorf("failed to create %s translation of step %q: %w", t.Locale, step.Title, err)
+		}
+	}
+	return nil
+}
+
 func recreateStepChildren(tx *gorm.DB, step *models.ScenarioStep) error {
 	for i := range step.Hints {
 		step.Hints[i].StepID = step.ID

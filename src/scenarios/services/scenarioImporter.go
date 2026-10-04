@@ -343,12 +343,12 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		compatibleInstanceTypes = BuildCompatibleInstanceTypes(index.Extensions.OCF.CompatibleInstanceTypes)
 
 		var featErr error
-		requiredFeatures, featErr = EncodeRequiredFeatures(index.Extensions.OCF.RequiredFeatures)
+		requiredFeatures, featErr = EncodeNameList(index.Extensions.OCF.RequiredFeatures)
 		if featErr != nil {
 			return nil, featErr
 		}
 
-		buildFeatures, featErr = EncodeRequiredFeatures(index.Extensions.OCF.BuildFeatures)
+		buildFeatures, featErr = EncodeNameList(index.Extensions.OCF.BuildFeatures)
 		if featErr != nil {
 			return nil, featErr
 		}

@@ -228,7 +228,7 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 // @Produce application/zip
 // @Param id path string true "Scenario ID"
 // @Param format query string false "Export format: json (default) or killerkoda"
-// @Success 200 {object} dto.ScenarioExportOutput
+// @Success 200 {object} dto.SeedScenarioInput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Failure 404 {object} errors.APIError
@@ -267,7 +267,7 @@ func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body dto.ExportScenariosInput true "Scenario IDs to export"
-// @Success 200 {array} dto.ScenarioExportOutput
+// @Success 200 {array} dto.SeedScenarioInput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Router /scenarios/export [post]

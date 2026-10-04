@@ -45,7 +45,7 @@ func NewScenarioManagementController(db *gorm.DB) *scenarioManagementController 
 // @Param groupId path string true "Group ID"
 // @Param scenarioId path string true "Scenario ID"
 // @Param format query string false "Export format: json (default) or killerkoda"
-// @Success 200 {object} dto.ScenarioExportOutput
+// @Success 200 {object} dto.SeedScenarioInput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Failure 404 {object} errors.APIError
@@ -521,7 +521,7 @@ func (sc *scenarioManagementController) OrgUploadScenario(ctx *gin.Context) {
 // @Param id path string true "Organization ID"
 // @Param scenarioId path string true "Scenario ID"
 // @Param format query string false "Export format: json (default) or killerkoda"
-// @Success 200 {object} dto.ScenarioExportOutput
+// @Success 200 {object} dto.SeedScenarioInput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Failure 404 {object} errors.APIError

@@ -85,7 +85,6 @@ func TestExportService_ExportAsJSON_Success(t *testing.T) {
 	// Verify steps include scripts (which are json:"-" on the model, but GORM loads them)
 	require.Len(t, export.Steps, 2)
 
-	assert.Equal(t, 0, export.Steps[0].Order)
 	assert.Equal(t, "Step 1", export.Steps[0].Title)
 	assert.Equal(t, "Do step 1", export.Steps[0].TextContent)
 	assert.Equal(t, "Hint for step 1", export.Steps[0].HintContent)
@@ -96,7 +95,6 @@ func TestExportService_ExportAsJSON_Success(t *testing.T) {
 	assert.Equal(t, "/tmp/flag", export.Steps[0].FlagPath)
 	assert.Equal(t, 1, export.Steps[0].FlagLevel)
 
-	assert.Equal(t, 1, export.Steps[1].Order)
 	assert.Equal(t, "Step 2", export.Steps[1].Title)
 	assert.Equal(t, "#!/bin/bash\ncheck", export.Steps[1].VerifyScript)
 	assert.Equal(t, "#!/bin/bash\nfg", export.Steps[1].ForegroundScript)
@@ -252,7 +250,7 @@ func TestExportService_ExportMultiple_Success(t *testing.T) {
 	require.Len(t, exports, 2)
 
 	// Order may vary, find each by title
-	titles := map[string]dto.ScenarioExportOutput{}
+	titles := map[string]dto.SeedScenarioInput{}
 	for _, e := range exports {
 		titles[e.Title] = e
 	}
