@@ -31,6 +31,7 @@ type ScenarioController interface {
 	DuplicateScenario(ctx *gin.Context)
 	GetTranslationCoverage(ctx *gin.Context)
 	GetScenarioHealth(ctx *gin.Context)
+	GetOneScenarioHealth(ctx *gin.Context)
 	GetLexicon(ctx *gin.Context)
 	ReplaceLexicon(ctx *gin.Context)
 }
@@ -516,4 +517,33 @@ func (sc *scenarioController) GetScenarioHealth(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, report)
+}
+
+// GetOneScenarioHealth godoc
+// @Summary Report what one scenario claims but cannot deliver
+// @Description The health check of the operators' report, for a single scenario
+// @Description and for anyone who may manage it. A healthy scenario answers with
+// @Description an empty findings list.
+// @Tags scenarios
+// @Produce json
+// @Param id path string true "Scenario ID"
+// @Success 200 {object} services.ScenarioHealth
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenarios/{id}/health [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetOneScenarioHealth(ctx *gin.Context) {
+	scenario := sc.loadManageableScenario(ctx)
+	if scenario == nil {
+		return
+	}
+
+	health, err := services.CheckScenarioHealth(sc.db, *scenario)
+	if err != nil {
+		slog.Error("failed to check a scenario's health", "scenario_id", scenario.ID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check the scenario's health")
+		return
+	}
+	ctx.JSON(http.StatusOK, health)
 }

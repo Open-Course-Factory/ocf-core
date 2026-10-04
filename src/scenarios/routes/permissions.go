@@ -275,6 +275,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Report what every scenario claims but cannot deliver (platform operators)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/scenarios/:id/health", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Report what one scenario claims but cannot deliver (controller verifies CanManageScenario: creator, org manager, class manager, or admin)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/duplicate", Method: "POST",
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Duplicate a scenario at platform level (admin only)",
@@ -320,6 +325,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/scenarios/:id/lexicon", "PUT"},
 		{"/api/v1/scenarios/:id/translation-coverage", "GET"},
 		{"/api/v1/scenarios/health", "GET"},
+		{"/api/v1/scenarios/:id/health", "GET"},
 	} {
 		access.ReconcilePolicy(enforcer, access.RoleAdministrator, route.path, route.method)
 	}

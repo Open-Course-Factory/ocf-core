@@ -34,6 +34,7 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	// them: the faults it reports are the kind nobody goes looking for on a
 	// scenario they already believe is fine.
 	scenarioRoutes.GET("/health", middleware.AuthManagement(), controller.GetScenarioHealth)
+	scenarioRoutes.GET("/:id/health", middleware.AuthManagement(), controller.GetOneScenarioHealth)
 	scenarioRoutes.GET("/:id/lexicon", middleware.AuthManagement(), controller.GetLexicon)
 	scenarioRoutes.PUT("/:id/lexicon", middleware.AuthManagement(), controller.ReplaceLexicon)
 

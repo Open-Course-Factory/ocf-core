@@ -704,3 +704,14 @@ func TestSetupScenarioPermissions_OperatorCanWriteTheVocabulary(t *testing.T) {
 		})
 	}
 }
+
+// A teacher reads their own scenario's health; the controller checks they may
+// manage it. Operators keep the gateway too, as for translation coverage.
+func TestSetupScenarioPermissions_ScenarioHealthForManagers(t *testing.T) {
+	mock := mocks.NewMockEnforcer()
+	scenarioController.RegisterScenarioPermissions(mock)
+	ps := collectPolicies(mock)
+
+	assertPolicy(t, ps, "member", "/api/v1/scenarios/:id/health", "GET")
+	assertPolicy(t, ps, "administrator", "/api/v1/scenarios/:id/health", "GET")
+}
