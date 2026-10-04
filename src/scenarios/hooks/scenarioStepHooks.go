@@ -99,10 +99,11 @@ func managesAnAssignedClass(db *gorm.DB, groupSvc groupServices.GroupService, sc
 	return false, nil
 }
 
-// CanSeeScenario is what assigning and copying require, and what the editor
-// lists (ListableScenarioIDs applies it to the whole table): the user may
-// assign the scenario (CanAssignScenario), or it is a platform scenario
-// assigned to a class the user manages (read-only, to be copied).
+// CanSeeScenario is what the editor lists (ListableScenarioIDs applies it to
+// the whole table) and what copying a scenario requires; assigning one
+// requires CanAssignScenario. The user may assign the scenario, or it is a
+// platform scenario assigned to a class the user manages (read-only, to be
+// copied).
 func CanSeeScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
 	if ok, err := CanAssignScenario(db, groupSvc, scenario, userID); ok || err != nil {
 		return ok, err
