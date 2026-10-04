@@ -226,6 +226,7 @@ func ScenarioToOutput(model *models.Scenario) dto.ScenarioOutput {
 		GitBranch:      model.GitBranch,
 		SourcePath:     model.SourcePath,
 		FlagsEnabled:     model.FlagsEnabled,
+		HasFlagSteps:     model.HasFlagSteps(),
 		AllowedFlagPaths: model.AllowedFlagPaths,
 		CrashTraps:     model.CrashTraps,
 		PortExposureAllowed: model.PortExposureAllowed,

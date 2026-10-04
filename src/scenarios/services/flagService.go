@@ -7,7 +7,6 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
-	"slices"
 	"strings"
 
 	"soli/formations/src/scenarios/models"
@@ -96,7 +95,7 @@ func newFlagSecret() (string, error) {
 // HMAC under an empty key is a flag the learner can compute from their own
 // session id.
 func ensureFlagSecret(tx *gorm.DB, scenario *models.Scenario) error {
-	if scenario.FlagSecret != "" || !slices.ContainsFunc(scenario.Steps, func(st models.ScenarioStep) bool { return st.HasFlag }) {
+	if scenario.FlagSecret != "" || !scenario.HasFlagSteps() {
 		return nil
 	}
 	secret, err := newFlagSecret()

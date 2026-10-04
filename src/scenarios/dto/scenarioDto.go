@@ -90,6 +90,9 @@ type ScenarioOutput struct {
 	GitBranch      string             `json:"git_branch"`
 	SourcePath     string             `json:"source_path,omitempty"`
 	FlagsEnabled     bool               `json:"flags_enabled"`
+	// HasFlagSteps tells a learner, whose copy has no steps, that the scenario
+	// has flags to find: flags_enabled alone misses editor-built flag steps.
+	HasFlagSteps     bool               `json:"has_flag_steps"`
 	AllowedFlagPaths string             `json:"allowed_flag_paths,omitempty"`
 	CrashTraps     bool               `json:"crash_traps"`
 	// No omitempty: the learner view reads this to decide whether to show

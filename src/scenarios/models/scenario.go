@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
@@ -121,6 +122,13 @@ func (s Scenario) GetLocales() ([]string, error) {
 		return nil, fmt.Errorf("invalid locales format (must be JSON array): %w", err)
 	}
 	return locales, nil
+}
+
+// HasFlagSteps reports whether any of the loaded steps is a flag step, by the
+// NormalizeFlagStep rule. Steps must be loaded: a scenario read without them
+// reports false.
+func (s Scenario) HasFlagSteps() bool {
+	return slices.ContainsFunc(s.Steps, func(st ScenarioStep) bool { return st.StepType == StepTypeFlag })
 }
 
 // GetBuildFeatures parses the BuildFeatures JSON array field
