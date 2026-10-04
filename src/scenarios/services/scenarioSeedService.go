@@ -218,6 +218,11 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 						Updates(&newSteps[i]).Error; err != nil {
 						return fmt.Errorf("failed to update step: %w", err)
 					}
+					// Updates never writes associations, and the old hint rows
+					// were deleted above.
+					if err := recreateStepHints(tx, &newSteps[i]); err != nil {
+						return err
+					}
 					continue
 				}
 				if err := tx.Create(&newSteps[i]).Error; err != nil {
@@ -296,4 +301,18 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 	}
 
 	return &scenario, isUpdate, nil
+}
+
+// recreateStepHints writes the hint rows of a step whose row was reused.
+func recreateStepHints(tx *gorm.DB, step *models.ScenarioStep) error {
+	if len(step.Hints) == 0 {
+		return nil
+	}
+	for i := range step.Hints {
+		step.Hints[i].StepID = step.ID
+	}
+	if err := tx.Create(&step.Hints).Error; err != nil {
+		return fmt.Errorf("failed to create step hints: %w", err)
+	}
+	return nil
 }
