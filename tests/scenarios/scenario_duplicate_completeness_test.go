@@ -293,3 +293,19 @@ func TestDuplicateScenario_CopiesTranslationsAndLexicon(t *testing.T) {
 	require.NoError(t, db.Model(&models.ScenarioLexiconEntry{}).Where("scenario_id = ?", source.ID).Count(&sourceEntries).Error)
 	assert.EqualValues(t, 2, sourceEntries, "the source keeps its lexicon")
 }
+
+// Public is a platform notion: a copy of a public catalogue scenario made for
+// an organisation is that organisation's own, never public.
+func TestDuplicateScenario_IntoAnOrganisation_IsNotPublic(t *testing.T) {
+	db := freshTestDB(t)
+	source := createFullSourceScenario(t, db, nil)
+	require.True(t, source.IsPublic)
+	orgID := createTestOrg(t, db, "dup-org-owner")
+
+	copied, err := services.NewScenarioDuplicateService(db).DuplicateScenario(source.ID, "duplicating-user", &orgID)
+	require.NoError(t, err)
+
+	var stored models.Scenario
+	require.NoError(t, db.First(&stored, "id = ?", copied.ID).Error)
+	assert.False(t, stored.IsPublic)
+}

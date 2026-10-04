@@ -23,9 +23,14 @@ func (s *Scenario) InPublicCatalogue() bool {
 // (imports, uploads, copies, the org and group create routes): an
 // organisation's scenario is never public. Explicit attempts through the API
 // are refused earlier, with a message, by ScenarioAuthorizationHook.
-func (s *Scenario) BeforeSave(*gorm.DB) error {
+// BeforeSave keeps an organisation's scenario out of the public catalogue on
+// every write that knows the row's organisation. Setting the field covers a
+// struct save; a column-map update (a re-seed, a generic PATCH) writes its map,
+// not the struct, so the column is set on the statement too.
+func (s *Scenario) BeforeSave(tx *gorm.DB) error {
 	if s.OrganizationID != nil {
 		s.IsPublic = false
+		tx.Statement.SetColumn("is_public", false, true)
 	}
 	return nil
 }
