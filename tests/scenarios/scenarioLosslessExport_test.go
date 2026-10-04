@@ -198,6 +198,7 @@ func TestScenarioJSONReimport_WithoutOptionalFields_KeepsThem(t *testing.T) {
 	bare := full
 	bare.Hostname, bare.Objectives, bare.Prerequisites, bare.DefaultLocale = "", "", "", ""
 	bare.Locales, bare.PortExposureAllowed, bare.Translations, bare.Lexicon = nil, nil, nil, nil
+	bare.SessionUser = nil
 	bare.Steps = append([]dto.SeedStepInput(nil), full.Steps...)
 	bare.Steps[0].Translations = nil
 	_, isUpdate, err := seeder.SeedScenario(bare, "author", &org)

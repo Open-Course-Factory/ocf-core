@@ -305,7 +305,6 @@ func seedScenarioUpdates(built *models.Scenario, input dto.SeedScenarioInput) ma
 		"required_features":      built.RequiredFeatures,
 		"build_features":         built.BuildFeatures,
 		"crash_traps":            built.CrashTraps,
-		"session_user":           built.SessionUser,
 		"intro_text":             built.IntroText,
 		"finish_text":            built.FinishText,
 		"setup_script":           built.SetupScript,
@@ -318,6 +317,9 @@ func seedScenarioUpdates(built *models.Scenario, input dto.SeedScenarioInput) ma
 	}
 	if input.PortExposureAllowed != nil {
 		updates["port_exposure_allowed"] = built.PortExposureAllowed
+	}
+	if input.SessionUser != nil {
+		updates["session_user"] = built.SessionUser
 	}
 	if input.Objectives != "" {
 		updates["objectives"] = built.Objectives

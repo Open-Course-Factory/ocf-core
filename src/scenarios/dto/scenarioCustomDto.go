@@ -221,7 +221,8 @@ type SeedScenarioInput struct {
 	PortExposureAllowed *bool `json:"port_exposure_allowed,omitempty"`
 	// SessionUser is the uid the learner's console runs as. Absent means the
 	// distribution decides, which is root — fine for every scenario whose
-	// lesson is not "the kernel said no".
+	// lesson is not "the kernel said no". On a re-seed, absent keeps the
+	// scenario's current one, as for the archive.
 	SessionUser *int `json:"session_user,omitempty"`
 	// IsPublic is honoured only on the platform-level seed and import routes,
 	// and never exported. Absent keeps: a bool that decoded as false used to
