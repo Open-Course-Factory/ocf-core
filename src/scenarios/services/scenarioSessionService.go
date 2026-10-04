@@ -1460,10 +1460,12 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 	}
 
 	// Add progressive hint metadata
-	var totalHints int64
-	s.db.Model(&models.ScenarioStepHint{}).Where("step_id = ?", currentStep.ID).Count(&totalHints)
-	if totalHints > 0 {
-		response.HintsTotalCount = int(totalHints)
+	hints, err := StepHints(s.db, *currentStep, session.Locale)
+	if err != nil {
+		return nil, err
+	}
+	if len(hints) > 0 {
+		response.HintsTotalCount = len(hints)
 		// Find hints_revealed from step progress
 		for _, sp := range session.StepProgress {
 			if sp.StepOrder == session.CurrentStep {
@@ -1584,10 +1586,12 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 	}
 
 	// Add progressive hint metadata
-	var totalHints int64
-	s.db.Model(&models.ScenarioStepHint{}).Where("step_id = ?", targetStep.ID).Count(&totalHints)
-	if totalHints > 0 {
-		response.HintsTotalCount = int(totalHints)
+	hints, err := StepHints(s.db, *targetStep, session.Locale)
+	if err != nil {
+		return nil, err
+	}
+	if len(hints) > 0 {
+		response.HintsTotalCount = len(hints)
 		for _, sp := range session.StepProgress {
 			if sp.StepOrder == stepOrder {
 				response.HintsRevealed = sp.HintsRevealed
@@ -2163,15 +2167,18 @@ func (s *ScenarioSessionService) RevealHint(sessionID uuid.UUID, stepOrder int, 
 		return nil, fmt.Errorf("step not found: %w", err)
 	}
 
-	// 4. Count total hints for this step
-	var totalHints int64
-	s.db.Model(&models.ScenarioStepHint{}).Where("step_id = ?", step.ID).Count(&totalHints)
+	// 4. Load this step's hints in the session's language
+	hints, err := StepHints(s.db, step, session.Locale)
+	if err != nil {
+		return nil, err
+	}
+	totalHints := len(hints)
 	if totalHints == 0 {
 		return nil, fmt.Errorf("no hints available for this step")
 	}
 
 	// 5. Validate level bounds
-	if level < 1 || level > int(totalHints) {
+	if level < 1 || level > totalHints {
 		return nil, fmt.Errorf("invalid hint level %d (must be between 1 and %d)", level, totalHints)
 	}
 
@@ -2180,11 +2187,8 @@ func (s *ScenarioSessionService) RevealHint(sessionID uuid.UUID, stepOrder int, 
 		return nil, fmt.Errorf("must reveal hint %d before hint %d", progress.HintsRevealed+1, level)
 	}
 
-	// 7. Fetch hint content by step_id + level
-	var hint models.ScenarioStepHint
-	if err := s.db.Where("step_id = ? AND level = ?", step.ID, level).First(&hint).Error; err != nil {
-		return nil, fmt.Errorf("hint not found: %w", err)
-	}
+	// 7. Pick the hint at this level
+	hint := hints[level-1]
 
 	// 8. If level > hints_revealed: update hints_revealed (idempotent for re-reads)
 	if level > progress.HintsRevealed {
@@ -2196,7 +2200,7 @@ func (s *ScenarioSessionService) RevealHint(sessionID uuid.UUID, stepOrder int, 
 	return &dto.RevealHintResponse{
 		Level:   level,
 		Content: hint.Content,
-		Total:   int(totalHints),
+		Total:   totalHints,
 	}, nil
 }
 

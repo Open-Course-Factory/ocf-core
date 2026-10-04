@@ -1,9 +1,12 @@
 package services
 
 import (
+	"fmt"
+
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -34,13 +37,8 @@ func ResolveStepText(db *gorm.DB, step models.ScenarioStep, locale string) StepT
 		Text:  ResolveScriptContent(db, step.TextFileID, step.TextContent),
 		Hint:  ResolveScriptContent(db, step.HintFileID, step.HintContent),
 	}
-	if locale == "" {
-		return text
-	}
-
-	var translation models.ScenarioStepTranslation
-	if err := db.Where("step_id = ? AND locale = ?", step.ID, locale).
-		First(&translation).Error; err != nil {
+	translation, ok := findStepTranslation(db, step.ID, locale)
+	if !ok {
 		return text
 	}
 
@@ -48,6 +46,36 @@ func ResolveStepText(db *gorm.DB, step models.ScenarioStep, locale string) StepT
 	overlay(&text.Text, translation.TextContent)
 	overlay(&text.Hint, translation.HintContent)
 	return text
+}
+
+// StepHints returns the progressive hints a learner reveals on a step, in the
+// session's language. Whether a step has progressive hints is the step's own
+// rows' say; the locale only changes their words: the translation's hint,
+// split by BuildStepHints, replaces them when it has one. An empty translated
+// hint is absence, as in ResolveStepText.
+func StepHints(db *gorm.DB, step models.ScenarioStep, locale string) ([]models.ScenarioStepHint, error) {
+	var hints []models.ScenarioStepHint
+	if err := db.Where("step_id = ?", step.ID).Order("level ASC").Find(&hints).Error; err != nil {
+		return nil, fmt.Errorf("failed to load step hints: %w", err)
+	}
+	if len(hints) == 0 {
+		return nil, nil
+	}
+	if translation, ok := findStepTranslation(db, step.ID, locale); ok && translation.HintContent != "" {
+		return BuildStepHints(translation.HintContent), nil
+	}
+	return hints, nil
+}
+
+// findStepTranslation loads a step's translation for one locale. An empty
+// locale — a session with no language chosen — short-circuits before the query.
+func findStepTranslation(db *gorm.DB, stepID uuid.UUID, locale string) (models.ScenarioStepTranslation, bool) {
+	var translation models.ScenarioStepTranslation
+	if locale == "" {
+		return translation, false
+	}
+	err := db.Where("step_id = ? AND locale = ?", stepID, locale).First(&translation).Error
+	return translation, err == nil
 }
 
 func overlay(field *string, translated string) {
