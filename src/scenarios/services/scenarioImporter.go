@@ -126,6 +126,9 @@ type KillerCodaOCF struct {
 	// prompt). Absent leaves the scenario's current hostname untouched, so a
 	// re-import of an older index.json does not wipe one set through the API.
 	Hostname *string `json:"hostname,omitempty"`
+	// PortExposureAllowed lets learners publish a port of the lab at a public
+	// URL, when their plan allows it too.
+	PortExposureAllowed bool `json:"port_exposure_allowed,omitempty"`
 }
 
 // hostnamePattern is an RFC 1123 host label: lowercase letters, digits and
@@ -211,6 +214,9 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				"allowed_flag_paths": scenario.AllowedFlagPaths,
 				"flag_secret":        scenario.FlagSecret,
 				"crash_traps":     scenario.CrashTraps,
+				"build_features":  scenario.BuildFeatures,
+				"session_user":    scenario.SessionUser,
+				"port_exposure_allowed": scenario.PortExposureAllowed,
 				"intro_text":      scenario.IntroText,
 				"finish_text":     scenario.FinishText,
 				"setup_script":    scenario.SetupScript,
@@ -325,6 +331,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	// Determine OCF extensions
 	flagsEnabled := false
 	crashTraps := false
+	portExposureAllowed := false
 	var sessionUser *int
 	var compatibleInstanceTypes []models.ScenarioInstanceType
 	requiredFeatures := ""
@@ -339,6 +346,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		}
 		flagsEnabled = index.Extensions.OCF.Flags
 		crashTraps = index.Extensions.OCF.CrashTraps
+		portExposureAllowed = index.Extensions.OCF.PortExposureAllowed
 		sessionUser = index.Extensions.OCF.SessionUser
 		compatibleInstanceTypes = BuildCompatibleInstanceTypes(index.Extensions.OCF.CompatibleInstanceTypes)
 
@@ -384,6 +392,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		SourceType:     sourceType,
 		FlagsEnabled:   flagsEnabled,
 		CrashTraps:     crashTraps,
+		PortExposureAllowed: portExposureAllowed,
 		SessionUser:    sessionUser,
 		Hostname:       hostname,
 		IntroText:      introText,

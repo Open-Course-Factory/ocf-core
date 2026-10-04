@@ -1,7 +1,11 @@
 package scenarios_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,6 +16,7 @@ import (
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
+	"soli/formations/src/scenarios/utils"
 )
 
 // fullyPopulatedScenarioInput sets every field the JSON shape carries, already
@@ -200,4 +205,52 @@ func TestScenarioJSONReimport_WithoutOptionalFields_KeepsThem(t *testing.T) {
 	require.True(t, isUpdate)
 
 	assert.Equal(t, full, exportedJSON(t, db, seeded.ID))
+}
+
+// The archive carries less than the JSON — no translations, lexicon, locales,
+// objectives, prerequisites, os_type, allowed_flag_paths or flag_level — but
+// everything it does carry must come back.
+func TestScenarioArchiveExport_ImportedIntoAnotherOrg_KeepsWhatTheArchiveCarries(t *testing.T) {
+	db := freshTestDB(t)
+	orgA, orgB := uuid.New(), uuid.New()
+	original := fullyPopulatedScenarioInput()
+	seeded, _, err := services.NewScenarioSeedService(db).SeedScenario(original, "author-a", &orgA)
+	require.NoError(t, err)
+
+	zipBytes, _, err := services.NewScenarioExportService(db).ExportAsArchive(seeded.ID)
+	require.NoError(t, err)
+	archiveDir := extractArchiveForTest(t, zipBytes)
+
+	imported, err := services.NewScenarioImporterService(db).ImportFromDirectory(archiveDir, "author-b", &orgB, "upload")
+	require.NoError(t, err)
+
+	want := withoutJSONOnlyFields(original)
+	got := withoutJSONOnlyFields(exportedJSON(t, db, imported.ID))
+	assert.Equal(t, want, got)
+}
+
+func withoutJSONOnlyFields(in dto.SeedScenarioInput) dto.SeedScenarioInput {
+	out := in
+	out.Translations, out.Lexicon, out.Locales = nil, nil, nil
+	out.DefaultLocale, out.Objectives, out.Prerequisites, out.OsType, out.AllowedFlagPaths = "", "", "", "", ""
+	out.Steps = make([]dto.SeedStepInput, len(in.Steps))
+	for i, step := range in.Steps {
+		step.Translations = nil
+		step.FlagLevel = 0
+		out.Steps[i] = step
+	}
+	return out
+}
+
+func extractArchiveForTest(t *testing.T, zipBytes []byte) string {
+	t.Helper()
+	_, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	require.NoError(t, err)
+	archivePath := filepath.Join(t.TempDir(), "scenario.zip")
+	require.NoError(t, os.WriteFile(archivePath, zipBytes, 0o644))
+	dir := t.TempDir()
+	require.NoError(t, utils.ExtractArchive(archivePath, dir))
+	scenarioDir, err := utils.FindIndexJSON(dir)
+	require.NoError(t, err)
+	return scenarioDir
 }

@@ -443,20 +443,31 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 			"scenario_id", scenario.ID, "err", featErr)
 		requiredFeatures = nil
 	}
-	if scenario.FlagsEnabled || scenario.CrashTraps ||
-		len(declaredImages) > 0 || len(requiredFeatures) > 0 || scenario.Hostname != "" {
-		ocf := &KillerCodaOCF{
-			Flags:                   scenario.FlagsEnabled,
-			CrashTraps:              scenario.CrashTraps,
-			CompatibleInstanceTypes: declaredImages,
-			RequiredFeatures:        requiredFeatures,
-		}
-		// Export the hostname so an exported archive re-imports with the same
-		// terminal name instead of falling back to the generated one.
-		if scenario.Hostname != "" {
-			hostname := scenario.Hostname
-			ocf.Hostname = &hostname
-		}
+	buildFeatures, featErr := scenario.GetBuildFeatures()
+	if featErr != nil {
+		slog.Warn("scenario has unparseable build_features, exporting without them",
+			"scenario_id", scenario.ID, "err", featErr)
+		buildFeatures = nil
+	}
+
+	ocf := &KillerCodaOCF{
+		Flags:                   scenario.FlagsEnabled,
+		CrashTraps:              scenario.CrashTraps,
+		CompatibleInstanceTypes: declaredImages,
+		RequiredFeatures:        requiredFeatures,
+		BuildFeatures:           buildFeatures,
+		SessionUser:             scenario.SessionUser,
+		PortExposureAllowed:     scenario.PortExposureAllowed,
+	}
+	// Export the hostname so an exported archive re-imports with the same
+	// terminal name instead of falling back to the generated one.
+	if scenario.Hostname != "" {
+		hostname := scenario.Hostname
+		ocf.Hostname = &hostname
+	}
+	if scenario.FlagsEnabled || scenario.CrashTraps || scenario.PortExposureAllowed ||
+		scenario.SessionUser != nil || scenario.Hostname != "" ||
+		len(declaredImages) > 0 || len(requiredFeatures) > 0 || len(buildFeatures) > 0 {
 		index.Extensions = &KillerCodaExtensions{OCF: ocf}
 	}
 
