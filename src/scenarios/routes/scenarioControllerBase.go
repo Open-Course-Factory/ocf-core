@@ -212,8 +212,7 @@ func (b *scenarioControllerBase) importUploadedArchive(ctx *gin.Context, orgID *
 
 	scenario, err := b.importerService.ImportFromDirectory(scenarioDir, userID, orgID, "upload")
 	if err != nil {
-		slog.Error("failed to import scenario from upload", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, fmt.Sprintf("Failed to import scenario: %s", err.Error()))
+		respondImportError(ctx, err)
 		return
 	}
 
@@ -317,8 +316,7 @@ func (b *scenarioControllerBase) importScenarioJSON(ctx *gin.Context, orgID *uui
 
 	scenario, isUpdate, err := b.seedService.SeedScenario(input, userID, orgID)
 	if err != nil {
-		slog.Error("failed to import scenario from JSON", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
+		respondImportError(ctx, err)
 		return
 	}
 
@@ -365,4 +363,21 @@ func (b *scenarioControllerBase) mayImportOver(ctx *gin.Context, title string, o
 		return false
 	}
 	return true
+}
+
+// respondImportError answers a failed import. Content the author got wrong is
+// a 400 listing every problem, so it can be fixed in one pass; anything else
+// is the server's failure.
+func respondImportError(ctx *gin.Context, err error) {
+	var contentErr *services.ScenarioContentError
+	if stderrors.As(err, &contentErr) {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: fmt.Sprintf("The scenario has %d problem(s) to fix before it can be imported", len(contentErr.Problems)),
+			Details:      contentErr.Problems,
+		})
+		return
+	}
+	slog.Error("failed to import scenario", "err", err)
+	errors.Respond(ctx, http.StatusInternalServerError, "Failed to import scenario")
 }

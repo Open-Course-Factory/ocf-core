@@ -181,26 +181,7 @@ func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
 // @Router /scenarios/seed [post]
 // @Security BearerAuth
 func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
-	input, ok := bindSeedScenarioInput(ctx)
-	if !ok {
-		return
-	}
-
-	userID := ctx.GetString("userId")
-
-	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, nil)
-	if err != nil {
-		slog.Error("failed to seed scenario", "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to seed scenario")
-		return
-	}
-
-	statusCode := http.StatusCreated
-	if isUpdate {
-		statusCode = http.StatusOK
-	}
-
-	ctx.JSON(statusCode, scenarioRegistration.ScenarioToOutput(scenario))
+	sc.importScenarioJSON(ctx, nil, nil)
 }
 
 // UploadScenario godoc

@@ -193,7 +193,7 @@ func TestScenarioImporter_ZeroIndexedStepDirs_ReadTheirOwnSidecar(t *testing.T) 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "step0", "text.md"), []byte("level zero"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "step1", "text.md"), []byte("level one"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "step1", "extensions.json"),
-		[]byte(`{"step_type":"quiz","questions":[{"order":1,"question_text":"Which shell?","question_type":"single_choice","correct_answer":"bash"}]}`), 0o644))
+		[]byte(`{"step_type":"quiz","questions":[{"order":1,"question_text":"Which shell?","question_type":"free_text","correct_answer":"bash"}]}`), 0o644))
 
 	index, err := importer.ParseIndexJSON([]byte(`{
 		"title": "Zero indexed layout",

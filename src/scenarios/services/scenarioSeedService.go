@@ -20,10 +20,14 @@ func NewScenarioSeedService(db *gorm.DB) *ScenarioSeedService {
 }
 
 // SeedScenario creates or updates a scenario with all its steps from a
-// SeedScenarioInput.
+// SeedScenarioInput. Content that cannot be played is refused with a
+// *ScenarioContentError before anything is written.
 func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID string, orgID *uuid.UUID) (*models.Scenario, bool, error) {
 	built, err := buildSeedScenario(input)
 	if err != nil {
+		return nil, false, err
+	}
+	if err := validateSeedContent(built, input); err != nil {
 		return nil, false, err
 	}
 	built.CreatedByID = userID
@@ -43,7 +47,8 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 }
 
 // buildSeedScenario turns the input into an unsaved scenario, with the same
-// normalisation every import path applies.
+// normalisation every import path applies, so validation sees what would be
+// stored.
 func buildSeedScenario(input dto.SeedScenarioInput) (*models.Scenario, error) {
 	requiredFeatures, err := EncodeNameList(input.RequiredFeatures)
 	if err != nil {
@@ -132,6 +137,49 @@ func buildSeedQuestions(inputs []dto.SeedQuestionInput) []models.ScenarioStepQue
 		}
 	}
 	return questions
+}
+
+// validateSeedContent adds what only the JSON shape carries — translations and
+// the lexicon — to the checks every import path shares.
+func validateSeedContent(built *models.Scenario, input dto.SeedScenarioInput) error {
+	problems := ScenarioContentProblems(built)
+
+	scenarioLocales := make([]string, len(input.Translations))
+	for i, t := range input.Translations {
+		scenarioLocales[i] = t.Locale
+	}
+	problems = append(problems, translationLocaleProblems("translations", scenarioLocales)...)
+
+	for i, st := range input.Steps {
+		stepLocales := make([]string, len(st.Translations))
+		for j, t := range st.Translations {
+			stepLocales[j] = t.Locale
+		}
+		where := fmt.Sprintf("step %d (%s) translations", i+1, st.Title)
+		problems = append(problems, translationLocaleProblems(where, stepLocales)...)
+	}
+
+	if err := assertResolvable(input.Lexicon); err != nil {
+		problems = append(problems, err.Error())
+	}
+	return contentErrorOrNil(problems)
+}
+
+// translationLocaleProblems refuses what the one-translation-per-locale
+// unique index would otherwise refuse later, as a database error.
+func translationLocaleProblems(where string, locales []string) []string {
+	var problems []string
+	seen := map[string]bool{}
+	for _, locale := range locales {
+		switch {
+		case locale == "":
+			problems = append(problems, where+": a translation has no locale")
+		case seen[locale]:
+			problems = append(problems, fmt.Sprintf("%s: locale %q appears twice", where, locale))
+		}
+		seen[locale] = true
+	}
+	return problems
 }
 
 func (s *ScenarioSeedService) createSeededScenario(scenario *models.Scenario, input dto.SeedScenarioInput) (*models.Scenario, error) {

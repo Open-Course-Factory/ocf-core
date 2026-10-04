@@ -119,7 +119,7 @@ func TestExportService_ExportAsJSON_PreservesStepTypeAndQuiz(t *testing.T) {
 						QuestionText:  "Pick A or B",
 						QuestionType:  "multiple_choice",
 						Options:       `["A","B"]`,
-						CorrectAnswer: "A",
+						CorrectAnswer: "0",
 						Explanation:   "A is correct",
 						Points:        2,
 					},
@@ -177,7 +177,7 @@ func TestExportService_ExportAsJSON_PreservesStepTypeAndQuiz(t *testing.T) {
 	assert.Equal(t, "Pick A or B", q0["question_text"])
 	assert.Equal(t, "multiple_choice", q0["question_type"])
 	assert.Equal(t, `["A","B"]`, q0["options"])
-	assert.Equal(t, "A", q0["correct_answer"])
+	assert.Equal(t, "0", q0["correct_answer"])
 	assert.Equal(t, "A is correct", q0["explanation"])
 	assert.Equal(t, float64(2), q0["points"])
 
@@ -207,7 +207,7 @@ func TestSeedService_SeedScenario_CreatesQuizQuestions(t *testing.T) {
 						QuestionText:  "Q1?",
 						QuestionType:  "multiple_choice",
 						Options:       `["X","Y"]`,
-						CorrectAnswer: "X",
+						CorrectAnswer: "0",
 						Explanation:   "Because",
 						Points:        3,
 					},
@@ -251,7 +251,7 @@ func TestSeedService_SeedScenario_CreatesQuizQuestions(t *testing.T) {
 	assert.Equal(t, "Q1?", q0.QuestionText)
 	assert.Equal(t, "multiple_choice", q0.QuestionType)
 	assert.Equal(t, `["X","Y"]`, q0.Options)
-	assert.Equal(t, "X", q0.CorrectAnswer)
+	assert.Equal(t, "0", q0.CorrectAnswer)
 	assert.Equal(t, "Because", q0.Explanation)
 	assert.Equal(t, 3, q0.Points)
 
@@ -284,7 +284,7 @@ func TestExportImport_JSONRoundtrip_Quiz(t *testing.T) {
 						QuestionText:  "Q?",
 						QuestionType:  "multiple_choice",
 						Options:       `["A","B"]`,
-						CorrectAnswer: "A",
+						CorrectAnswer: "0",
 						Explanation:   "Because A",
 						Points:        2,
 					},
@@ -333,7 +333,7 @@ func TestExportImport_JSONRoundtrip_Quiz(t *testing.T) {
 	assert.Equal(t, "Q?", q.QuestionText)
 	assert.Equal(t, "multiple_choice", q.QuestionType)
 	assert.Equal(t, `["A","B"]`, q.Options)
-	assert.Equal(t, "A", q.CorrectAnswer)
+	assert.Equal(t, "0", q.CorrectAnswer)
 	assert.Equal(t, "Because A", q.Explanation)
 	assert.Equal(t, 2, q.Points)
 }
@@ -368,7 +368,7 @@ func TestExportArchive_AddsQuizFileWithoutChangingIndexJson(t *testing.T) {
 						QuestionText:  "Q1?",
 						QuestionType:  "multiple_choice",
 						Options:       `["A","B"]`,
-						CorrectAnswer: "A",
+						CorrectAnswer: "0",
 						Explanation:   "A is right",
 						Points:        2,
 					},
@@ -445,7 +445,7 @@ func TestExportArchive_AddsQuizFileWithoutChangingIndexJson(t *testing.T) {
 	assert.Equal(t, "Q1?", q0["question_text"])
 	assert.Equal(t, "multiple_choice", q0["question_type"])
 	assert.Equal(t, `["A","B"]`, q0["options"])
-	assert.Equal(t, "A", q0["correct_answer"])
+	assert.Equal(t, "0", q0["correct_answer"])
 	assert.Equal(t, "A is right", q0["explanation"])
 	assert.Equal(t, float64(2), q0["points"])
 }
@@ -488,7 +488,7 @@ func TestImportFromDirectory_ReadsExtensionsJsonForQuizSteps(t *testing.T) {
 				"question_text": "Q?",
 				"question_type": "multiple_choice",
 				"options": "[\"A\",\"B\"]",
-				"correct_answer": "A",
+				"correct_answer": "0",
 				"explanation": "because",
 				"points": 1
 			}
@@ -522,7 +522,7 @@ func TestImportFromDirectory_ReadsExtensionsJsonForQuizSteps(t *testing.T) {
 	assert.Equal(t, "Q?", q.QuestionText)
 	assert.Equal(t, "multiple_choice", q.QuestionType)
 	assert.Equal(t, `["A","B"]`, q.Options)
-	assert.Equal(t, "A", q.CorrectAnswer)
+	assert.Equal(t, "0", q.CorrectAnswer)
 	assert.Equal(t, "because", q.Explanation)
 	assert.Equal(t, 1, q.Points)
 }

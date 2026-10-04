@@ -136,10 +136,10 @@ type KillerCodaOCF struct {
 // column size and the DNS limit).
 var hostnamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// ValidateScenarioHostname checks a hostname declared in index.json.
+// ValidateScenarioHostname checks a scenario's terminal hostname.
 func ValidateScenarioHostname(hostname string) error {
 	if !hostnamePattern.MatchString(hostname) {
-		return fmt.Errorf("invalid hostname %q in extensions.ocf.hostname: use 1 to 63 lowercase letters, digits or hyphens, not starting or ending with a hyphen", hostname)
+		return fmt.Errorf("hostname %q is invalid: use 1 to 63 lowercase letters, digits or hyphens, not starting or ending with a hyphen", hostname)
 	}
 	return nil
 }
@@ -341,7 +341,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		if index.Extensions.OCF.Hostname != nil {
 			hostname = *index.Extensions.OCF.Hostname
 			if err := ValidateScenarioHostname(hostname); err != nil {
-				return nil, err
+				return nil, &ScenarioContentError{Problems: []string{"extensions.ocf.hostname: " + err.Error()}}
 			}
 		}
 		flagsEnabled = index.Extensions.OCF.Flags
@@ -436,7 +436,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		// and adds quiz questions without changing the KillerCoda index.json schema.
 		stepDir := stepDirFor(kcStep, i)
 		if sidecar, err := readStepExtensions(dirPath, stepDir); err != nil {
-			return nil, fmt.Errorf("failed to parse %s/extensions.json: %w", stepDir, err)
+			return nil, &ScenarioContentError{Problems: []string{fmt.Sprintf("%s/extensions.json: %v", stepDir, err)}}
 		} else if sidecar != nil {
 			step.StepType = sidecar.StepType
 			step.ShowImmediateFeedback = sidecar.ShowImmediateFeedback
@@ -471,6 +471,9 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 
 	scenario.Steps = steps
 
+	if err := contentErrorOrNil(ScenarioContentProblems(scenario)); err != nil {
+		return nil, err
+	}
 	return scenario, nil
 }
 

@@ -5,6 +5,9 @@ import "github.com/gin-gonic/gin"
 type APIError struct {
 	ErrorCode    int    `json:"error_code"`
 	ErrorMessage string `json:"error_message"`
+	// Details lists every individual problem when one request has several,
+	// such as an imported file with mistakes in different places.
+	Details []string `json:"details,omitempty"`
 }
 
 func (apiError *APIError) Error() string {

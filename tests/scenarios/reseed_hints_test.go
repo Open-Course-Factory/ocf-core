@@ -73,7 +73,7 @@ func TestReseed_KeepsQuizQuestions(t *testing.T) {
 		Title:        "reseed-quiz",
 		InstanceType: "debian",
 		Steps: []dto.SeedStepInput{{Title: "Quiz", StepType: "quiz", Questions: []dto.SeedQuestionInput{
-			{Order: 0, QuestionText: "2+2?", QuestionType: "text", CorrectAnswer: "4", Points: 1},
+			{Order: 0, QuestionText: "2+2?", QuestionType: "free_text", CorrectAnswer: "4", Points: 1},
 		}}},
 	}
 	seeder := services.NewScenarioSeedService(db)
