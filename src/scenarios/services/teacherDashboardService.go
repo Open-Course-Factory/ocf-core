@@ -1055,7 +1055,7 @@ func (s *TeacherDashboardService) loadScenarioGraph(scenarioIDs []uuid.UUID) (*s
 		if _, exists := stepByOrder[st.ScenarioID][st.Order]; !exists {
 			stepByOrder[st.ScenarioID][st.Order] = st
 		}
-		if ResolveStepType(st.StepType, false) == "quiz" {
+		if st.StepType == "quiz" {
 			allQuizStepIDs = append(allQuizStepIDs, st.ID)
 		}
 	}
@@ -1308,7 +1308,7 @@ func computeSessionCorrectCounts(db *gorm.DB, scenarioID, sessionID uuid.UUID) (
 	// soft-deleted questions).
 	quizStepIDs := make([]uuid.UUID, 0, len(steps))
 	for _, st := range steps {
-		if ResolveStepType(st.StepType, false) == "quiz" {
+		if st.StepType == "quiz" {
 			quizStepIDs = append(quizStepIDs, st.ID)
 		}
 	}

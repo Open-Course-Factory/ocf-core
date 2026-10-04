@@ -79,7 +79,7 @@ func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []mode
 
 	var sum float64
 	for _, step := range steps {
-		stepType := ResolveStepType(step.StepType, false)
+		stepType := step.StepType
 		p, hasProgress := progressByOrder[step.Order]
 
 		switch stepType {
@@ -149,7 +149,7 @@ func ComputeCorrectCountsFromLoaded(
 	}
 
 	for _, step := range steps {
-		stepType := ResolveStepType(step.StepType, false)
+		stepType := step.StepType
 		switch {
 		case stepType == "quiz":
 			n := questionCountByStepID[step.ID]

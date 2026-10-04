@@ -87,11 +87,10 @@ func TestGetCurrentStep_TerminalStep_IncludesStepType(t *testing.T) {
 		"terminal step must expose StepType=\"terminal\" in CurrentStepResponse")
 }
 
-// TestGetCurrentStep_LegacyStepWithoutType_DefaultsToTerminal — when a legacy
-// step has empty step_type (older rows pre-migration default), GetCurrentStep
-// must default the response to "terminal" so the frontend never sees an empty
-// type.
-func TestGetCurrentStep_LegacyStepWithoutType_DefaultsToTerminal(t *testing.T) {
+// TestGetCurrentStep_LegacyStepWithoutType_RepairedToTerminal — a legacy row
+// with an empty step_type is repaired by the startup migration, so the
+// frontend never sees an empty type and readers need no default of their own.
+func TestGetCurrentStep_LegacyStepWithoutType_RepairedToTerminal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -101,6 +100,7 @@ func TestGetCurrentStep_LegacyStepWithoutType_DefaultsToTerminal(t *testing.T) {
 	require.NoError(t, sharedTestDB.Model(&models.ScenarioStep{}).
 		Where("id = ?", step.ID).
 		Update("step_type", "").Error)
+	models.MigrateFlagStepConsistency(sharedTestDB)
 
 	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
 	response, err := svc.GetCurrentStep(sessionID)

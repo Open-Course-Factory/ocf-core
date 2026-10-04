@@ -187,7 +187,7 @@ func CheckScenarioHealth(db *gorm.DB, scenario models.Scenario) (ScenarioHealth,
 // rather than with the health check — a second opinion about what makes a quiz
 // passable is exactly the drift this report exists to catch.
 func stepHasAWayThrough(db *gorm.DB, step models.ScenarioStep) bool {
-	switch ResolveStepType(step.StepType, false) {
+	switch step.StepType {
 	case "quiz":
 		// Answering is the way through, so a quiz needs questions and nothing
 		// else. One with none is a dead end wearing a different hat.

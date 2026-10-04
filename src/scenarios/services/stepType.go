@@ -48,21 +48,6 @@ func EncodeRequiredFeatures(names []string) (string, error) {
 	return string(encoded), nil
 }
 
-// ResolveStepType decides the step_type of an authored step. It is the type
-// half of models.NormalizeFlagStep, which also decides has_flag.
-//
-// It exists because ScenarioStep.StepType carries gorm:"default:'terminal'",
-// so a flag step imported without a type would otherwise be stored as a
-// terminal step and render the Verify UI with nowhere to enter the flag.
-//
-// A terminal step with a flag is a flag step: the learner UI picks its input
-// from step_type alone, so "terminal + has_flag" showed Verify and the
-// backend refused it — a dead end, not an authored shape to preserve.
-func ResolveStepType(declared string, hasFlag bool) string {
-	stepType, _ := models.NormalizeFlagStep(declared, hasFlag)
-	return stepType
-}
-
 const (
 	StepTypeTerminal = models.StepTypeTerminal
 	StepTypeFlag     = models.StepTypeFlag

@@ -30,7 +30,7 @@ import (
 	"soli/formations/src/scenarios/services"
 )
 
-func TestResolveStepType_InfersFlagOnlyWhenNoTypeIsDeclared(t *testing.T) {
+func TestNormalizeFlagStep_PromotesOnlyTerminalOrUndeclaredSteps(t *testing.T) {
 	cases := []struct {
 		name     string
 		declared string
@@ -76,9 +76,10 @@ func TestResolveStepType_InfersFlagOnlyWhenNoTypeIsDeclared(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := services.ResolveStepType(tc.declared, tc.hasFlag)
-			assert.Equal(t, tc.want, got,
-				"ResolveStepType(%q, %v) — %s", tc.declared, tc.hasFlag, tc.why)
+			gotType, gotHasFlag := models.NormalizeFlagStep(tc.declared, tc.hasFlag)
+			assert.Equal(t, tc.want, gotType,
+				"NormalizeFlagStep(%q, %v) — %s", tc.declared, tc.hasFlag, tc.why)
+			assert.Equal(t, tc.want == models.StepTypeFlag, gotHasFlag, "a step carries a flag exactly when it is a flag step")
 		})
 	}
 }

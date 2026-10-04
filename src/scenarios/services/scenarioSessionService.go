@@ -1442,7 +1442,7 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 		Hint:                  hintContent,
 		Status:                stepStatus,
 		HasFlag:               currentStep.HasFlag,
-		StepType:              ResolveStepType(currentStep.StepType, false),
+		StepType:              currentStep.StepType,
 		TextContent:           textContent,
 		ShowImmediateFeedback: currentStep.ShowImmediateFeedback,
 	}
@@ -1567,7 +1567,7 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 		Hint:                  hintContent,
 		Status:                stepStatus,
 		HasFlag:               targetStep.HasFlag,
-		StepType:              ResolveStepType(targetStep.StepType, false),
+		StepType:              targetStep.StepType,
 		TextContent:           textContent,
 		ShowImmediateFeedback: targetStep.ShowImmediateFeedback,
 	}
@@ -1622,7 +1622,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
 	}
 
-	stepType := ResolveStepType(currentStep.StepType, false)
+	stepType := currentStep.StepType
 
 	// Branch on step_type. Flag and quiz steps have dedicated submission
 	// endpoints; calling /verify on them is a client error.
@@ -1755,7 +1755,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
 	}
 
-	if ResolveStepType(currentStep.StepType, false) != "quiz" {
+	if currentStep.StepType != "quiz" {
 		return nil, fmt.Errorf("current step is not a quiz step")
 	}
 
