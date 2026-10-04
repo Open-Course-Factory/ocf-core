@@ -49,12 +49,21 @@ func newScenarioControllerBase(db *gorm.DB) scenarioControllerBase {
 
 // canManageScenarioByID loads the scenario and answers whether the caller may
 // manage it: a platform admin always may, anyone else through
-// CanManageScenario (creator, org manager, manager of an assigned group). It
-// is the one rule behind PATCH, DELETE, archive and every export, so a handler
-// that must refuse on its own (defense in depth behind Layer 2) calls this
-// rather than restating a narrower check. A missing scenario comes back as
-// gorm.ErrRecordNotFound.
+// CanManageScenario (creator, org manager). It is the one rule behind PATCH,
+// DELETE and archive, so a handler that must refuse on its own (defense in
+// depth behind Layer 2) calls this rather than restating a narrower check. A
+// missing scenario comes back as gorm.ErrRecordNotFound.
 func (b *scenarioControllerBase) canManageScenarioByID(ctx *gin.Context, scenarioID uuid.UUID) (*models.Scenario, bool, error) {
+	return b.scenarioByIDIf(ctx, scenarioID, scenarioHooks.CanManageScenario)
+}
+
+// canRunScenarioByID is canManageScenarioByID for CanRunScenario (manager, or
+// teacher of the scenario's organisation): the rule behind every export.
+func (b *scenarioControllerBase) canRunScenarioByID(ctx *gin.Context, scenarioID uuid.UUID) (*models.Scenario, bool, error) {
+	return b.scenarioByIDIf(ctx, scenarioID, scenarioHooks.CanRunScenario)
+}
+
+func (b *scenarioControllerBase) scenarioByIDIf(ctx *gin.Context, scenarioID uuid.UUID, rule func(*gorm.DB, groupServices.GroupService, *models.Scenario, string) (bool, error)) (*models.Scenario, bool, error) {
 	var scenario models.Scenario
 	if err := b.db.Where("id = ?", scenarioID).First(&scenario).Error; err != nil {
 		return nil, false, err
@@ -66,7 +75,7 @@ func (b *scenarioControllerBase) canManageScenarioByID(ctx *gin.Context, scenari
 		return &scenario, true, nil
 	}
 
-	allowed, err := scenarioHooks.CanManageScenario(b.db, b.groupService, &scenario, ctx.GetString("userId"))
+	allowed, err := rule(b.db, b.groupService, &scenario, ctx.GetString("userId"))
 	if err != nil {
 		return nil, false, err
 	}

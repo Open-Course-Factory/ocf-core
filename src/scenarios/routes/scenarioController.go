@@ -242,14 +242,14 @@ func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Aligns export with the PATCH/DELETE rule — see canManageScenarioByID.
-	_, allowed, err := sc.canManageScenarioByID(ctx, scenarioID)
+	// Exporting is running, not editing — see canRunScenarioByID.
+	_, allowed, err := sc.canRunScenarioByID(ctx, scenarioID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			errors.Respond(ctx, http.StatusNotFound, "Scenario not found")
 			return
 		}
-		slog.Error("failed to check scenario manage permission for export", "err", err)
+		slog.Error("failed to check scenario run permission for export", "err", err)
 		errors.Respond(ctx, http.StatusInternalServerError, "Internal error")
 		return
 	}
@@ -281,12 +281,12 @@ func (sc *scenarioController) ExportScenarios(ctx *gin.Context) {
 	}
 
 	// Authorization: admin always allowed; otherwise every scenario in the
-	// list must be manageable by the caller. If ANY id is unauthorized the
+	// list must be runnable by the caller. If ANY id is unauthorized the
 	// whole request is rejected — avoids partial exports leaking data.
 	for _, id := range input.IDs {
-		_, allowed, err := sc.canManageScenarioByID(ctx, id)
+		_, allowed, err := sc.canRunScenarioByID(ctx, id)
 		if err != nil && err != gorm.ErrRecordNotFound {
-			slog.Error("failed to check scenario manage permission for bulk export", "err", err)
+			slog.Error("failed to check scenario run permission for bulk export", "err", err)
 			errors.Respond(ctx, http.StatusInternalServerError, "Internal error")
 			return
 		}
@@ -364,8 +364,8 @@ func (sc *scenarioController) DuplicateScenario(ctx *gin.Context) {
 
 
 // loadManageableScenario loads the scenario named by the :id parameter and
-// checks the caller may manage it — the same rule that guards PATCH, DELETE
-// and export (creator, org manager, group manager, or platform admin). It
+// checks the caller may manage it — the same rule that guards PATCH and DELETE
+// (creator, org manager, or platform admin). It
 // answers the request and returns nil when the caller may not.
 func (sc *scenarioController) loadManageableScenario(ctx *gin.Context) *models.Scenario {
 	scenarioID, err := uuid.Parse(ctx.Param("id"))

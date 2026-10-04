@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
@@ -92,14 +93,11 @@ func (h *ScenarioAssignmentAuthorizationHook) refuseInvisibleScenario(assignment
 	if err != nil {
 		return err
 	}
-	// Assignable = public catalogue, or manageable. Seeing is not enough:
-	// a private catalogue scenario is assigned by admins only, so a class
-	// it was assigned to cannot pass it on to another.
-	allowed := scenario.InPublicCatalogue()
-	if !allowed {
-		if allowed, err = CanManageScenario(h.db, h.groupService, scenario, userID); err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
+	// Seeing is not enough: a private catalogue scenario is assigned by
+	// admins only, so a class it was assigned to cannot pass it on to another.
+	allowed, err := CanAssignScenario(h.db, h.groupService, scenario, userID)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
 	}
 	if !allowed {
 		return utils.PermissionDeniedError("assign", "scenario")
@@ -287,6 +285,25 @@ func CanUserManageOrg(db *gorm.DB, orgID uuid.UUID, userID string) (bool, error)
 		return false, err
 	}
 	return orgMember.IsManager(), nil
+}
+
+// CanTeachInOrg reports whether the user runs classes in the organization:
+// they hold at least the classroom rank there (access.RoleMinimumForClassrooms),
+// or they manage one of its classes. The one owner of that predicate for
+// scenario authoring and running.
+func CanTeachInOrg(db *gorm.DB, orgID uuid.UUID, userID string) (bool, error) {
+	ranked, err := access.NewGormMembershipChecker(db).CheckOrgRole(orgID.String(), userID, access.RoleMinimumForClassrooms)
+	if ranked || err != nil {
+		return ranked, err
+	}
+	var managedClasses int64
+	if err := db.Model(&groupModels.ClassGroup{}).
+		Scopes(groupModels.ManagedByScope(userID)).
+		Where("class_groups.organization_id = ?", orgID).
+		Count(&managedClasses).Error; err != nil {
+		return false, fmt.Errorf("count managed classes in org: %w", err)
+	}
+	return managedClasses > 0, nil
 }
 
 // refuseCrossOrgAssignment: an org scenario is assignable only to that org's

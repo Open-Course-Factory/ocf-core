@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"soli/formations/src/entityManagement/hooks"
-	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/utils"
@@ -19,9 +18,10 @@ import (
 // user is allowed if any of the following holds:
 //
 //   - they are the scenario creator (CreatedByID),
-//   - they are a manager or owner of the scenario's organisation,
-//   - they manage a class of the scenario's organisation (a teacher works
-//     on every lab of their school, not only the ones assigned to them).
+//   - they are a manager or owner of the scenario's organisation.
+//
+// Teaching in the organisation is not enough: one teacher never rewrites,
+// archives or deletes another's lab. They run it instead — see CanRunScenario.
 //
 // A scenario never leaves its organisation: being assigned to a class in
 // another organisation grants nothing (and can no longer happen). A platform
@@ -44,18 +44,31 @@ func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenari
 	if err != nil {
 		return false, fmt.Errorf("load org member: %w", err)
 	}
-	if canManage {
+	return canManage, nil
+}
+
+// CanRunScenario is the one owner of "may this user run this scenario with a
+// class": read its full content (answers included), preview, export and copy
+// it. The user manages it, or it belongs to an organisation the user teaches
+// in (CanTeachInOrg) — a teacher runs every lab of their school, not only the
+// ones they wrote.
+func CanRunScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
+	if ok, err := CanManageScenario(db, groupSvc, scenario, userID); ok || err != nil {
+		return ok, err
+	}
+	if scenario.OrganizationID == nil || userID == "" {
+		return false, nil
+	}
+	return CanTeachInOrg(db, *scenario.OrganizationID, userID)
+}
+
+// CanAssignScenario is what putting a scenario in front of a class requires:
+// it is in the public catalogue, or the user may run it.
+func CanAssignScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
+	if scenario.InPublicCatalogue() {
 		return true, nil
 	}
-
-	var managedClasses int64
-	if err := db.Model(&groupModels.ClassGroup{}).
-		Scopes(groupModels.ManagedByScope(userID)).
-		Where("class_groups.organization_id = ?", *scenario.OrganizationID).
-		Count(&managedClasses).Error; err != nil {
-		return false, fmt.Errorf("count managed classes in org: %w", err)
-	}
-	return managedClasses > 0, nil
+	return CanRunScenario(db, groupSvc, scenario, userID)
 }
 
 // managesAnAssignedClass reports whether the user manages a class the
@@ -87,15 +100,11 @@ func managesAnAssignedClass(db *gorm.DB, groupSvc groupServices.GroupService, sc
 }
 
 // CanSeeScenario is what assigning and copying require, and what the editor
-// lists (ListableScenarioIDs applies it to the whole table): the scenario is
-// manageable by the user, or it is in the public catalogue, or it is a
-// platform scenario assigned to a class the user manages (read-only, to be
-// copied).
+// lists (ListableScenarioIDs applies it to the whole table): the user may
+// assign the scenario (CanAssignScenario), or it is a platform scenario
+// assigned to a class the user manages (read-only, to be copied).
 func CanSeeScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
-	if scenario.InPublicCatalogue() {
-		return true, nil
-	}
-	if ok, err := CanManageScenario(db, groupSvc, scenario, userID); ok || err != nil {
+	if ok, err := CanAssignScenario(db, groupSvc, scenario, userID); ok || err != nil {
 		return ok, err
 	}
 	if scenario.OrganizationID == nil && userID != "" {

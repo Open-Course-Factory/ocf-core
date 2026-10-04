@@ -147,29 +147,26 @@ func TestArchiveScenario_RefusedForSomeoneWhoCannotManageIt(t *testing.T) {
 			"manage rule as PATCH and DELETE. Body: %s", w.Body.String())
 }
 
-// Archiving deliberately follows CanManageScenario, the rule that already
-// guards PATCH, DELETE and step editing. Its group clause is wider than it
-// looks: a manager of any group the scenario is assigned to can retire it for
-// the whole organization, not just for their class. That reach is intended —
-// decided 2026-08-20 — so it is pinned here rather than left to be discovered.
-func TestArchiveScenario_AllowedForAManagerOfAnAssignedGroup(t *testing.T) {
+// Archiving follows CanManageScenario, the rule that guards PATCH, DELETE and
+// step editing. Managing a class the scenario is assigned to used to be part
+// of that rule (decided 2026-08-20) and let one teacher retire a colleague's
+// lab for the whole organization; since teachers author scenarios
+// (2026-10-04), running a class no longer reaches its labs' lifecycle.
+func TestArchiveScenario_RefusedForAManagerOfAnAssignedGroup(t *testing.T) {
 	db := freshTestDB(t)
 	orgID := createTestOrg(t, db, "org-owner")
 	scenario := createTestScenarioForOrg(t, db, orgID, "archive-group-manager")
 
-	// The caller manages one class the scenario reaches. They neither created
-	// it nor belong to the organization that owns it.
+	// The caller manages one class the scenario reaches; they did not write it.
 	groupID := createTestGroupInOrg(t, db, orgID, "org-owner")
 	addGroupMember(t, db, groupID, "class-teacher", groupModels.GroupMemberRoleManager)
 	createScenarioAssignment(t, db, scenario.ID, &groupID, nil, "group")
 
-	router := setupArchiveRouter(t, db, "class-teacher", []string{"member"})
+	w := postArchive(t, setupArchiveRouter(t, db, "class-teacher", []string{"member"}), scenario.ID, "archive")
+	require.Equal(t, http.StatusForbidden, w.Code, "Body: %s", w.Body.String())
 
-	w := postArchive(t, router, scenario.ID, "archive")
-	require.Equal(t, http.StatusOK, w.Code,
-		"a manager of an assigned group archives on the same rule that already "+
-			"lets them PATCH and DELETE the scenario. Body: %s", w.Body.String())
-
+	w = postArchive(t, setupArchiveRouter(t, db, scenario.CreatedByID, []string{"member"}), scenario.ID, "archive")
+	require.Equal(t, http.StatusOK, w.Code, "the author archives their own lab. Body: %s", w.Body.String())
 	var reloaded models.Scenario
 	require.NoError(t, db.First(&reloaded, "id = ?", scenario.ID).Error)
 	assert.True(t, reloaded.IsArchived())

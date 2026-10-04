@@ -15,7 +15,7 @@ import (
 
 // scenarioRedactor strips sensitive scenario fields and step + question
 // content from a ScenarioOutput DTO when the requesting user is NOT
-// authorized to manage the scenario (per scenarioHooks.CanManageScenario,
+// authorized to run the scenario (per scenarioHooks.CanRunScenario,
 // with admin bypass).
 //
 // Sensitive fields exposed by the leak (issue #293):
@@ -50,11 +50,12 @@ func scenarioFromOutput(_ *gorm.DB, output *dto.ScenarioOutput) (*models.Scenari
 // redactUnlessManager is the skeleton shared by the scenario, step and
 // question redactors: unwrap the handler's &entityDto (an interface holding
 // T), let admins through, resolve the parent scenario, and strip the DTO in
-// place unless the user can manage that scenario (scenarioHooks.CanManageScenario).
+// place unless the user can run that scenario (scenarioHooks.CanRunScenario):
+// a teacher running a colleague's lab needs its answers.
 //
 // Fail-closed rules: no identified user, no DB, or an unresolvable parent
 // scenario all strip. A wrapper of an unexpected type is left untouched —
-// this is a redaction layer, not validation. Only a failing manage check
+// this is a redaction layer, not validation. Only a failing run check
 // surfaces as an error, prefixed with name for log attribution.
 func redactUnlessManager[T any](
 	c *gin.Context,
@@ -95,9 +96,9 @@ func redactUnlessManager[T any](
 	}
 
 	groupSvc := groupServices.NewGroupService(db)
-	allowed, err := scenarioHooks.CanManageScenario(db, groupSvc, scenario, userID)
+	allowed, err := scenarioHooks.CanRunScenario(db, groupSvc, scenario, userID)
 	if err != nil {
-		return fmt.Errorf("%s: check manage permission: %w", name, err)
+		return fmt.Errorf("%s: check run permission: %w", name, err)
 	}
 	if allowed {
 		return nil

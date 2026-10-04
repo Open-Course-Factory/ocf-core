@@ -10,7 +10,7 @@ import (
 
 // scenarioStepRedactor strips sensitive step fields and embedded question
 // content from a ScenarioStepOutput DTO when the requesting user is NOT
-// authorized to manage the parent scenario (per scenarioHooks.CanManageScenario,
+// authorized to run the parent scenario (per scenarioHooks.CanRunScenario,
 // with admin bypass).
 //
 // Sensitive step fields (issue #293):

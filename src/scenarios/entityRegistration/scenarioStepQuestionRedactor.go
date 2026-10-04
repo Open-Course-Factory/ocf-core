@@ -10,12 +10,12 @@ import (
 
 // scenarioStepQuestionRedactor strips CorrectAnswer + Explanation from a
 // ScenarioStepQuestionOutput DTO when the requesting user is NOT authorized
-// to manage the parent scenario.
+// to run the parent scenario.
 //
 // Authorization is transitive — same chain as the question authorization
 // hook (scenarioHooks.ScenarioStepQuestionAuthorizationHook):
 //
-//   question.StepID → ScenarioStep.ScenarioID → Scenario → CanManageScenario
+//   question.StepID → ScenarioStep.ScenarioID → Scenario → CanRunScenario
 //
 // The DTO has no parent-scenario field, so two DB lookups are required.
 func scenarioStepQuestionRedactor(c *gin.Context, dtoPtr any, db *gorm.DB) error {

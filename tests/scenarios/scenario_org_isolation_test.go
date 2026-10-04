@@ -2,8 +2,9 @@ package scenarios_test
 
 // Organisation isolation for scenarios (decided 2026-09-19):
 //
-//   - An org scenario is visible, editable and assignable only inside its
-//     organisation: org managers and the managers of that org's classes.
+//   - An org scenario is visible, runnable and assignable only inside its
+//     organisation: org teachers and managers, and the managers of that org's
+//     classes. Editing it is for its author and the org's managers.
 //     Nothing of org B ever reaches a user of org A — not even when an
 //     assignment row says otherwise, and not through `is_public`, which is
 //     refused on an org scenario.
@@ -105,7 +106,7 @@ func TestOrgIsolation_CanManageScenario(t *testing.T) {
 		scenario *models.Scenario
 		want     bool
 	}{
-		{"teacher manages own org scenario", f.teacherA, f.orgAPrivate, true},
+		{"teacher does not manage a colleague's org scenario", f.teacherA, f.orgAPrivate, false},
 		{"teacher does not manage other org scenario", f.teacherA, f.orgBPrivate, false},
 		{"cross-org assignment grants nothing", f.teacherA, f.orgBAssignedToClassA, false},
 		{"public platform scenario is read-only", f.teacherA, f.platformPublic, false},
@@ -115,6 +116,30 @@ func TestOrgIsolation_CanManageScenario(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			got, err := scenarioHooks.CanManageScenario(db, groupSvc, c.scenario, c.user)
+			require.NoError(t, err)
+			assert.Equal(t, c.want, got)
+		})
+	}
+}
+
+func TestOrgIsolation_CanRunScenario(t *testing.T) {
+	db := freshTestDB(t)
+	f := buildOrgIsolationFixture(t, db)
+	groupSvc := groupServices.NewGroupService(db)
+
+	cases := []struct {
+		name     string
+		scenario *models.Scenario
+		want     bool
+	}{
+		{"teacher runs a lab of their org", f.orgAPrivate, true},
+		{"teacher does not run another org's lab", f.orgBPrivate, false},
+		{"cross-org assignment grants nothing", f.orgBAssignedToClassA, false},
+		{"a platform scenario is assigned, not run, through a class", f.platformAssignedToA, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := scenarioHooks.CanRunScenario(db, groupSvc, c.scenario, f.teacherA)
 			require.NoError(t, err)
 			assert.Equal(t, c.want, got)
 		})

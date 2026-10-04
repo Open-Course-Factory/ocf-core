@@ -125,7 +125,7 @@ func TestScenarioStep_CreateAsUnrelatedMember_Forbidden(t *testing.T) {
 	assert.Contains(t, err.Error(), "permission")
 }
 
-func TestScenarioStep_CreateAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) {
+func TestScenarioStep_CreateAsGroupManagerOfAssignedGroup_Refused(t *testing.T) {
 	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepAuthorizationHook(db)
 
@@ -135,8 +135,8 @@ func TestScenarioStep_CreateAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) 
 	// Group owned by groupOwnerID
 	groupID, err := uuid.NewV7()
 	require.NoError(t, err)
-	// A class manager manages the scenarios of the class's organisation
-	// (org isolation, 2026-09-19); the assignment itself grants nothing.
+	// A class manager runs the scenarios of the class's organisation but edits
+	// only their own (teachers author scenarios, 2026-10-04).
 	orgID := createTestOrg(t, db, groupOwnerID)
 	group := &groupModels.ClassGroup{
 		OrganizationID: &orgID,
@@ -189,7 +189,7 @@ func TestScenarioStep_CreateAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) 
 	}
 
 	err = hook.Execute(ctx)
-	assert.NoError(t, err, "Group manager of an assigned group should be allowed to add steps")
+	assert.Error(t, err, "running a class does not let its manager edit a colleague's lab")
 }
 
 func TestScenarioStep_CreateAsAdmin_AllowedWithoutScenarioRelationship(t *testing.T) {
@@ -411,7 +411,7 @@ func TestScenarioStepQuestion_CreateAsUnrelatedMember_Forbidden(t *testing.T) {
 	assert.Contains(t, err.Error(), "permission")
 }
 
-func TestScenarioStepQuestion_DeleteAsGroupManagerOfAssignedGroup_Allowed(t *testing.T) {
+func TestScenarioStepQuestion_DeleteAsGroupManagerOfAssignedGroup_Refused(t *testing.T) {
 	db := freshTestDB(t)
 	hook := scenarioHooks.NewScenarioStepQuestionAuthorizationHook(db)
 
@@ -420,8 +420,8 @@ func TestScenarioStepQuestion_DeleteAsGroupManagerOfAssignedGroup_Allowed(t *tes
 
 	groupID, err := uuid.NewV7()
 	require.NoError(t, err)
-	// A class manager manages the scenarios of the class's organisation
-	// (org isolation, 2026-09-19); the assignment itself grants nothing.
+	// A class manager runs the scenarios of the class's organisation but edits
+	// only their own (teachers author scenarios, 2026-10-04).
 	orgID := createTestOrg(t, db, groupOwnerID)
 	group := &groupModels.ClassGroup{
 		OrganizationID: &orgID,
@@ -486,5 +486,5 @@ func TestScenarioStepQuestion_DeleteAsGroupManagerOfAssignedGroup_Allowed(t *tes
 	}
 
 	err = hook.Execute(ctx)
-	assert.NoError(t, err, "Group manager of an assigned group should be allowed to delete questions on the scenario's steps")
+	assert.Error(t, err, "running a class does not let its manager edit a colleague's lab")
 }

@@ -75,7 +75,7 @@ func (sc *scenarioManagementController) GroupExportScenario(ctx *gin.Context) {
 	// Same rule as every other export (defense in depth behind Layer 2's
 	// GroupRole gate): the assignment says the scenario is here, not that the
 	// caller may take it away.
-	if _, allowed, err := sc.canManageScenarioByID(ctx, scenarioID); err != nil || !allowed {
+	if _, allowed, err := sc.canRunScenarioByID(ctx, scenarioID); err != nil || !allowed {
 		if err != nil {
 			slog.Error("failed to check scenario management access", "err", err)
 		}
