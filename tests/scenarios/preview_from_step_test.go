@@ -623,9 +623,8 @@ func TestPreview_RunIsMarkedPreviewFromTheStart(t *testing.T) {
 		"the preview run's row is inserted with is_preview already true")
 }
 
-// The preview is authorized twice: by the controller before the terminal
-// exists, and by the service when the run is created. When the second one
-// refuses — here the caller lost their manager role while the terminal was
+// The preview is authorized twice: before the terminal exists, and again once
+// it does. When the second one refuses — here the caller lost their manager role while the terminal was
 // being created — that is still a 403, and the terminal it no longer may use
 // is deleted.
 func TestPreview_AuthorisationLostAfterTerminalCreated_403AndTerminalDeleted(t *testing.T) {

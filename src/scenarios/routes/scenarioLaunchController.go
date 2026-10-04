@@ -19,7 +19,6 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
-	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
@@ -760,8 +759,9 @@ func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioI
 }
 
 // PreviewScenario starts the caller's preview of a scenario on a new terminal,
-// from its first step or from the step named by from_step_order. Only the
-// scenario creator, an org manager, or a platform admin can use this endpoint.
+// from its first step or from the step named by from_step_order. Whoever may
+// run the scenario (canRunScenarioByID) may preview it: teachers preview every
+// lab of their organisation, which is how they choose what to assign.
 func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	scenarioID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
@@ -820,27 +820,13 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		previewOrgID = nil
 	}
 
-	// Build preview options
-	var previewOpts []services.PreviewOption
-	if isAdmin {
-		previewOpts = append(previewOpts, services.WithAdminBypass())
-	}
-	// Teachers preview every lab of their organisation, as they run them
-	// (CanRunScenario): it is how they choose what to assign.
-	previewOpts = append(previewOpts, services.WithOrgTeacherCheck(func(uid string, orgID uuid.UUID) bool {
-		teaches, err := scenarioHooks.CanTeachInOrg(sc.db, orgID, uid)
-		if err != nil {
-			slog.Error("failed to check whether the user teaches in the organization", "err", err)
-		}
-		return teaches
-	}))
-
 	// Every refusal below comes before a terminal exists: a refused preview
 	// must not leave one behind holding budget.
-	if err := services.AuthorizePreview(userID, &scenario, previewOpts...); err != nil {
-		errors.Respond(ctx, http.StatusForbidden, err.Error())
+	if sc.refusePreview(ctx, scenarioID) {
 		return
 	}
+
+	var previewOpts []services.PreviewOption
 
 	if sc.rejectIfArchived(ctx, &scenario) {
 		return
@@ -895,6 +881,16 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
+	// Asked again now the terminal exists: the caller may have lost the right
+	// while it was being created, and then the terminal is not theirs to use.
+	if sc.refusePreview(ctx, scenarioID) {
+		if delErr := sc.terminalService.DeleteSession(terminalResp.SessionID); delErr != nil {
+			slog.Warn("failed to delete the terminal of a refused scenario preview",
+				"terminal_session_id", terminalResp.SessionID, "err", delErr)
+		}
+		return
+	}
+
 	// Create preview session (skips assignment check, sets IsPreview)
 	session, startErr := sc.sessionService.PreviewScenario(userID, scenarioID, terminalResp.SessionID, previewOpts...)
 	if startErr != nil {
@@ -908,16 +904,28 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 			respondSessionExists(ctx)
 			return
 		}
-		if stderrors.Is(startErr, services.ErrPreviewNotAuthorized) {
-			errors.Respond(ctx, http.StatusForbidden, startErr.Error())
-			return
-		}
 		slog.Error("failed to start preview session", "userID", userID, "scenarioID", scenarioID, "err", startErr)
 		errors.Respond(ctx, http.StatusInternalServerError, startErr.Error())
 		return
 	}
 
 	ctx.JSON(http.StatusOK, sc.launchResponse(session))
+}
+
+// refusePreview answers the request and reports true unless the caller may
+// run the scenario (canRunScenarioByID), the one rule for previewing.
+func (sc *scenarioLaunchController) refusePreview(ctx *gin.Context, scenarioID uuid.UUID) bool {
+	_, allowed, err := sc.canRunScenarioByID(ctx, scenarioID)
+	if err != nil {
+		slog.Error("failed to check scenario run access", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check preview access")
+		return true
+	}
+	if !allowed {
+		errors.Respond(ctx, http.StatusForbidden, "not authorized to preview this scenario")
+		return true
+	}
+	return false
 }
 
 // respondRunOver refuses a resume because the run cannot be returned to: it

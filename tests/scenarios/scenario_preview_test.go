@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -40,66 +39,6 @@ func TestPreviewScenario_CreatorCanPreview(t *testing.T) {
 	require.NotNil(t, session)
 	assert.True(t, session.IsPreview, "preview session should have IsPreview=true")
 	assert.Equal(t, "creator-1", session.UserID)
-}
-
-func TestPreviewScenario_NonCreatorDenied(t *testing.T) {
-	db := freshTestDB(t)
-
-	scenario := models.Scenario{
-		Name:         "preview-denied-test",
-		Title:        "Preview Denied Test",
-		InstanceType: "ubuntu:22.04",
-		CreatedByID:  "creator-1",
-	}
-	require.NoError(t, db.Create(&scenario).Error)
-
-	steps := []models.ScenarioStep{
-		{ScenarioID: scenario.ID, Order: 0, Title: "Step 1", TextContent: "Do something"},
-	}
-	for i := range steps {
-		require.NoError(t, db.Create(&steps[i]).Error)
-	}
-
-	flagSvc := services.NewFlagService()
-	sessionSvc := services.NewScenarioSessionService(db, flagSvc, nil)
-
-	// Random user tries to preview — should be denied
-	session, err := sessionSvc.PreviewScenario("random-user", scenario.ID, "terminal-preview-2")
-	assert.Error(t, err)
-	assert.Nil(t, session)
-	assert.Contains(t, err.Error(), "not authorized")
-}
-
-func TestPreviewScenario_OrgManagerCanPreview(t *testing.T) {
-	db := freshTestDB(t)
-
-	orgID := uuid.New()
-	scenario := models.Scenario{
-		Name:           "preview-org-test",
-		Title:          "Preview Org Test",
-		InstanceType:   "ubuntu:22.04",
-		CreatedByID:    "creator-1",
-		OrganizationID: &orgID,
-	}
-	require.NoError(t, db.Create(&scenario).Error)
-
-	steps := []models.ScenarioStep{
-		{ScenarioID: scenario.ID, Order: 0, Title: "Step 1", TextContent: "Do something"},
-	}
-	for i := range steps {
-		require.NoError(t, db.Create(&steps[i]).Error)
-	}
-
-	flagSvc := services.NewFlagService()
-	sessionSvc := services.NewScenarioSessionService(db, flagSvc, nil)
-
-	// Org manager tries to preview — should succeed
-	session, err := sessionSvc.PreviewScenario("org-manager-1", scenario.ID, "terminal-preview-3", services.WithOrgTeacherCheck(func(userID string, orgID uuid.UUID) bool {
-		return userID == "org-manager-1"
-	}))
-	require.NoError(t, err)
-	require.NotNil(t, session)
-	assert.True(t, session.IsPreview)
 }
 
 func TestPreviewScenario_IsPreviewFlag(t *testing.T) {
