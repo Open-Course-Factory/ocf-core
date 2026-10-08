@@ -65,6 +65,13 @@ func InitGroupHooks(db *gorm.DB) {
 	}
 
 	// Hook for granting permissions when a member is added
+	memberRoleChangeHook := NewGroupMemberRoleChangeHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(memberRoleChangeHook); err != nil {
+		log.Printf("❌ Failed to register group member role change hook: %v", err)
+	} else {
+		log.Println("✅ Group member role change hook registered")
+	}
+
 	memberPermissionHook := NewGroupMemberPermissionHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(memberPermissionHook); err != nil {
 		log.Printf("❌ Failed to register group member permission hook: %v", err)

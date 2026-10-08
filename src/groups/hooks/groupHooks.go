@@ -221,6 +221,70 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 	return nil
 }
 
+// GroupMemberRoleChangeHook authorizes PATCH /group-members/:id. The patch can
+// only carry a role (see the registration's DtoToMap); the rule itself lives in
+// GroupService.AuthorizeRoleChange.
+type GroupMemberRoleChangeHook struct {
+	groupService services.GroupService
+	hooks.BaseHook
+}
+
+func NewGroupMemberRoleChangeHook(db *gorm.DB) hooks.Hook {
+	return &GroupMemberRoleChangeHook{
+		groupService: services.NewGroupService(db),
+		BaseHook: hooks.BaseHook{
+			Name:       "group_member_role_change",
+			EntityName: "GroupMember",
+			HookTypes:  []hooks.HookType{hooks.BeforeUpdate},
+			Enabled:    true,
+			Priority:   10,
+		},
+	}
+}
+
+func (h *GroupMemberRoleChangeHook) Execute(ctx *hooks.HookContext) error {
+	// The loaded row is the truth for which class and which member; the patch
+	// only supplies the requested role.
+	current, ok := ctx.OldEntity.(*models.GroupMember)
+	if !ok {
+		return fmt.Errorf("expected *models.GroupMember for OldEntity, got %T", ctx.OldEntity)
+	}
+	patch, ok := ctx.NewEntity.(map[string]any)
+	if !ok {
+		return fmt.Errorf("expected map[string]any for BeforeUpdate patch, got %T", ctx.NewEntity)
+	}
+	if ctx.UserID == "" {
+		return utils.PermissionDeniedError("update roles in", "group")
+	}
+
+	raw, present := patch["role"]
+	if !present {
+		if ctx.IsAdmin() {
+			return nil
+		}
+		canManage, err := h.groupService.CanUserManageGroup(current.GroupID, ctx.UserID)
+		if err != nil {
+			return fmt.Errorf("permission check failed: %w", err)
+		}
+		if !canManage {
+			return utils.PermissionDeniedError("update roles in", "group")
+		}
+		return nil
+	}
+	role, ok := raw.(models.GroupMemberRole)
+	if !ok {
+		return fmt.Errorf("unexpected role type in update payload: %T", raw)
+	}
+	// Refused before the authorization, which an administrator bypasses (#429).
+	if err := access.ValidateRole(string(role)); err != nil {
+		return err
+	}
+	if ctx.IsAdmin() {
+		return nil
+	}
+	return h.groupService.AuthorizeRoleChange(current.GroupID, ctx.UserID, current, role)
+}
+
 // GroupMemberPermissionHook grants permissions when a member is added
 type GroupMemberPermissionHook struct {
 	db           *gorm.DB

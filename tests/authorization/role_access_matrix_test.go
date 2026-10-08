@@ -171,7 +171,6 @@ const (
 	gapOrgRoleIgnoresClassManagers      = "Layer 2 OrgRole(teacher) on the copy route ignores class managers, whom CanTeachInOrg counts"
 	gapOrgMemberHooksNoAdminBypass      = "the organization member hooks call CanUserManageOrganization with no administrator bypass"
 	gapGroupMemberHookNoAdminBypass     = "GroupMemberValidationHook calls CanUserManageGroup with no administrator bypass"
-	gapNoClassRoleChangeRoute           = "group-members has no PATCH route (no Update in its SwaggerConfig, no member PATCH policy) and groupService.UpdateMemberRole has no caller, so no one can change a class role"
 	gapSessionInfoNoAdminBypass         = "getSessionIfOwned compares the owner id with no administrator bypass"
 	gapCoTrainerDeletesClass            = "GroupWriteAuthorizationHook authorizes delete with CanUserManageGroup, so a class manager may delete; deleting is the creator's and the org managers' call (decided 2026-10-08)"
 	gapCrossOrgAssignRefusesAdmin       = "refuseCrossOrgAssignment refuses administrators on purpose; the spec's blanket admin bypass is probably what is wrong"
@@ -304,14 +303,13 @@ func classRows() []accessRow {
 			allowed: classManagers},
 		{action: "classA: make the learner a class manager", request: send(http.MethodPatch, entityPath("GroupMember", learnerGrpM),
 			func(matrixWorld) any { return map[string]any{"role": "manager"} }),
-			allowed: classManagers, gaps: gap(gapNoClassRoleChangeRoute, classManagers...)},
+			allowed: classManagers},
 		// A class manager's grant is capped at their own rank. Org managers may
 		// name a class owner: they hand a class over when its teacher leaves
 		// (decided 2026-10-08).
 		{action: "classA: make the learner the class owner", request: send(http.MethodPatch, entityPath("GroupMember", learnerGrpM),
 			func(matrixWorld) any { return map[string]any{"role": "owner"} }),
-			allowed: allow(mxTeacherA, mxOrgOwner, mxOrgManager, mxAdmin),
-			gaps:    gap(gapNoClassRoleChangeRoute, mxTeacherA, mxOrgOwner, mxOrgManager, mxAdmin)},
+			allowed: allow(mxTeacherA, mxOrgOwner, mxOrgManager, mxAdmin)},
 		{action: "classA: listed among my classes", request: get(func(matrixWorld) string { return "/api/v1/teacher/groups" }),
 			// A personal list: the platform admin teaches no class, so is not judged.
 			allowed: classManagers, judged: except(matrixActors, mxAdmin), verdict: listsClassA, gaps: gap(gapManagedByScopeIgnoresOrgManagers, mxOrgOwner, mxOrgManager)},

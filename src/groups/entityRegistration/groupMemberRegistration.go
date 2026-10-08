@@ -98,11 +98,11 @@ func enrichGroupMemberWithUser(output *dto.GroupMemberOutput) *dto.GroupMemberOu
 }
 
 func RegisterGroupMember(service *ems.EntityRegistrationService) {
-	ems.RegisterTypedEntity[models.GroupMember, dto.CreateGroupMemberInput, dto.CreateGroupMemberInput, dto.GroupMemberOutput](
+	ems.RegisterTypedEntity[models.GroupMember, dto.CreateGroupMemberInput, dto.UpdateGroupMemberRoleInput, dto.GroupMemberOutput](
 		service,
 		"GroupMember",
-		entityManagementInterfaces.TypedEntityRegistration[models.GroupMember, dto.CreateGroupMemberInput, dto.CreateGroupMemberInput, dto.GroupMemberOutput]{
-			Converters: entityManagementInterfaces.TypedEntityConverters[models.GroupMember, dto.CreateGroupMemberInput, dto.CreateGroupMemberInput, dto.GroupMemberOutput]{
+		entityManagementInterfaces.TypedEntityRegistration[models.GroupMember, dto.CreateGroupMemberInput, dto.UpdateGroupMemberRoleInput, dto.GroupMemberOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[models.GroupMember, dto.CreateGroupMemberInput, dto.UpdateGroupMemberRoleInput, dto.GroupMemberOutput]{
 				ModelToDto: func(model *models.GroupMember) (dto.GroupMemberOutput, error) {
 					output := dto.GroupMemberModelToGroupMemberOutput(model)
 					output = enrichGroupMemberWithUser(output)
@@ -122,14 +122,20 @@ func RegisterGroupMember(service *ems.EntityRegistrationService) {
 						IsActive:  true,
 					}
 				},
-				DtoToMap: func(input dto.CreateGroupMemberInput) map[string]any {
-					return make(map[string]any)
+				// A role is the only field a PATCH may change; GroupMemberRoleChangeHook
+				// authorizes it.
+				DtoToMap: func(input dto.UpdateGroupMemberRoleInput) map[string]any {
+					updates := make(map[string]any)
+					if input.Role != "" {
+						updates["role"] = input.Role
+					}
+					return updates
 				},
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")",
-					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")",
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},
 			MembershipConfig: &entityManagementInterfaces.MembershipConfig{
@@ -168,6 +174,12 @@ func RegisterGroupMember(service *ems.EntityRegistrationService) {
 				Create: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Ajouter un membre à un groupe",
 					Description: "Ajoute un utilisateur à un groupe avec un rôle spécifique",
+					Tags:        []string{"group-members"},
+					Security:    true,
+				},
+				Update: &entityManagementInterfaces.SwaggerOperation{
+					Summary:     "Changer le rôle d'un membre de groupe",
+					Description: "Change le rôle d'un membre (gestionnaires de la classe ou de son organisation)",
 					Tags:        []string{"group-members"},
 					Security:    true,
 				},

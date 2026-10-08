@@ -45,6 +45,7 @@ type GroupService interface {
 	AddMembersToGroup(groupID uuid.UUID, requestingUserID string, userIDs []string, role models.GroupMemberRole) error
 	RemoveMemberFromGroup(groupID uuid.UUID, requestingUserID string, userID string) error
 	UpdateMemberRole(groupID uuid.UUID, requestingUserID string, userID string, newRole models.GroupMemberRole) error
+	AuthorizeRoleChange(groupID uuid.UUID, requestingUserID string, member *models.GroupMember, newRole models.GroupMemberRole) error
 	GetGroupMembers(groupID uuid.UUID) (*[]models.GroupMember, error)
 	IsUserInGroup(groupID uuid.UUID, userID string) (bool, error)
 	GetUserGroupRole(groupID uuid.UUID, userID string) (models.GroupMemberRole, error)
@@ -250,7 +251,33 @@ func (gs *groupService) RemoveMemberFromGroup(groupID uuid.UUID, requestingUserI
 
 // UpdateMemberRole updates a member's role in a group
 func (gs *groupService) UpdateMemberRole(groupID uuid.UUID, requestingUserID string, userID string, newRole models.GroupMemberRole) error {
-	// Check if user can manage this group
+	member, err := gs.repository.GetGroupMember(groupID, userID)
+	if err != nil || member == nil {
+		return fmt.Errorf("user is not a member of this group")
+	}
+	if err := gs.AuthorizeRoleChange(groupID, requestingUserID, member, newRole); err != nil {
+		return err
+	}
+
+	err = gs.repository.UpdateGroupMemberRole(groupID, userID, newRole)
+	if err != nil {
+		return fmt.Errorf("failed to update member role: %w", err)
+	}
+
+	utils.Info("User %s role updated to %s in group %s", userID, newRole, groupID)
+	return nil
+}
+
+// AuthorizeRoleChange is the one owner of "may this user move this member to
+// newRole". Shared by UpdateMemberRole and the GroupMember BeforeUpdate hook
+// (PATCH /group-members/:id), so the two doors cannot drift.
+//
+// The requester must manage the class (CanUserManageGroup). The class
+// creator's role is fixed. The requester may neither grant a role above their
+// own rank nor touch a member who outranks them. The creator and the
+// organisation's managers rank as owner: they hand a class over when its
+// teacher leaves. Platform administrators are handled by the callers.
+func (gs *groupService) AuthorizeRoleChange(groupID uuid.UUID, requestingUserID string, member *models.GroupMember, newRole models.GroupMemberRole) error {
 	canManage, err := gs.CanUserManageGroup(groupID, requestingUserID)
 	if err != nil {
 		return err
@@ -259,41 +286,36 @@ func (gs *groupService) UpdateMemberRole(groupID uuid.UUID, requestingUserID str
 		return utils.PermissionDeniedError("update roles in", "group")
 	}
 
-	// Get group
 	group, err := gs.repository.GetGroupByID(groupID, false)
 	if err != nil {
 		return err
 	}
-
-	// Cannot change owner role
-	if newRole != models.GroupMemberRoleOwner {
-		if err := utils.ValidateNotOwner(userID, group.OwnerUserID, "Group"); err != nil {
-			return fmt.Errorf("cannot change the owner's role")
-		}
+	if member.UserID == group.OwnerUserID && newRole != models.GroupMemberRoleOwner {
+		return utils.PermissionDeniedError("change the role of the creator of", "group")
 	}
 
-	// Cap the assigned role at the granter's own rank so a manager cannot promote a
-	// member above themselves (e.g. mint an owner). The owner short-circuits the check;
-	// GetUserGroupRole also errors for org-based managers who manage via the org and hold
-	// no group_members row, so treat that miss as manager-equivalent rather than a denial.
-	if requestingUserID != group.OwnerUserID {
-		granterRole, err := gs.GetUserGroupRole(groupID, requestingUserID)
-		if err != nil {
-			granterRole = models.GroupMemberRoleManager
-		}
-		if !access.IsRoleAtLeast(string(granterRole), string(newRole)) {
-			return utils.PermissionDeniedError("assign a role higher than your own in", "group")
-		}
+	granterRole := gs.roleChangeRank(group, requestingUserID)
+	if !access.IsRoleAtLeast(string(granterRole), string(newRole)) ||
+		!access.IsRoleAtLeast(string(granterRole), string(member.Role)) {
+		return utils.PermissionDeniedError("assign a role higher than your own in", "group")
 	}
-
-	// Update role
-	err = gs.repository.UpdateGroupMemberRole(groupID, userID, newRole)
-	if err != nil {
-		return fmt.Errorf("failed to update member role: %w", err)
-	}
-
-	utils.Info("User %s role updated to %s in group %s", userID, newRole, groupID)
 	return nil
+}
+
+// roleChangeRank is the rank a requester grants roles with: owner for the
+// class creator and the organisation's managers, otherwise their own class role.
+func (gs *groupService) roleChangeRank(group *models.ClassGroup, userID string) models.GroupMemberRole {
+	if userID == group.OwnerUserID {
+		return models.GroupMemberRoleOwner
+	}
+	if viaOrg, _ := gs.CanUserAccessGroupViaOrg(group.ID, userID); viaOrg {
+		return models.GroupMemberRoleOwner
+	}
+	role, err := gs.GetUserGroupRole(group.ID, userID)
+	if err != nil {
+		return ""
+	}
+	return role
 }
 
 // GetGroupMembers returns all members of a group

@@ -231,11 +231,12 @@ func TestGroupServiceUpdateMemberRole_OwnerPromotesToOwner_Allowed(t *testing.T)
 
 // --- Org-based manager granter (exercises the failed-lookup fallback to "manager") ---
 
-// TestGroupServiceUpdateMemberRole_OrgBasedManagerPromotesToOwner_Rejected: the granter is
-// a MANAGER of the parent organization but NOT a direct group member. CanUserManageGroup
-// grants access via the org path; GetUserGroupRole errors (no group_members row), so the
-// fix must fall back to "manager" and reject the owner promotion. Expected RED today.
-func TestGroupServiceUpdateMemberRole_OrgBasedManagerPromotesToOwner_Rejected(t *testing.T) {
+// TestGroupServiceUpdateMemberRole_OrgBasedManagerPromotesToOwner_Allowed: the granter is
+// a MANAGER of the parent organization but NOT a direct group member. Organisation
+// managers administer every class of their organisation and may hand one over when its
+// teacher leaves, so they grant with owner rank (decided 2026-10-08; it used to cap them
+// at manager, #410).
+func TestGroupServiceUpdateMemberRole_OrgBasedManagerPromotesToOwner_Allowed(t *testing.T) {
 	const (
 		ownerID     = "group-owner-account"
 		orgManager  = "org-manager-granter"
@@ -252,11 +253,9 @@ func TestGroupServiceUpdateMemberRole_OrgBasedManagerPromotesToOwner_Rejected(t 
 	svc := groupServices.NewGroupService(db)
 	err := svc.UpdateMemberRole(groupID, orgManager, targetID, groupModels.GroupMemberRoleOwner)
 
-	require.Error(t, err,
-		"an org-based manager (no group_members row → role lookup falls back to manager) "+
-			"must not promote a group member to owner; UpdateMemberRole must reject")
-	require.Equal(t, groupModels.GroupMemberRoleMember, readGroupMemberRole(t, db, groupID, targetID),
-		"the rejected promotion must NOT persist — target role must remain member")
+	require.NoError(t, err, "an organisation manager may name a class owner")
+	require.Equal(t, groupModels.GroupMemberRoleOwner, readGroupMemberRole(t, db, groupID, targetID),
+		"the promotion must persist — target role must be owner")
 }
 
 // TestGroupServiceUpdateMemberRole_OrgBasedManagerPromotesToManager_Allowed: same org-based
