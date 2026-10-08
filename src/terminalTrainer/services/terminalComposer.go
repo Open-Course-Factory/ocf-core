@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
@@ -144,14 +145,14 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 				break
 			}
 		}
-		// Check if user is an admin of the group
+		// A manager of the group, on its roster or through its organization:
+		// the same rule as the route's GroupRole gate.
 		if !canManage {
-			for _, member := range group.Members {
-				if member.UserID == requestingUserID && (member.Role == groupModels.GroupMemberRoleManager || member.Role == groupModels.GroupMemberRoleOwner) {
-					canManage = true
-					break
-				}
+			managed, err := access.NewGormMembershipChecker(c.db).CheckGroupRole(group.ID.String(), requestingUserID, access.RoleManager)
+			if err != nil {
+				return nil, fmt.Errorf("permission check failed: %w", err)
 			}
+			canManage = managed
 		}
 	}
 

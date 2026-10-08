@@ -8,7 +8,6 @@ import (
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/groups/models"
 	"soli/formations/src/groups/repositories"
-	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -370,31 +369,12 @@ func (gs *groupService) CanUserManageGroup(groupID uuid.UUID, userID string) (bo
 	return member.IsManager(), nil
 }
 
-// CanUserAccessGroupViaOrg checks if a user can access a group through organization membership
-// NEW: Phase 1 - Organization-based group access
+// CanUserAccessGroupViaOrg reports whether the user manages the group as a
+// manager or owner of its organization. The rule lives in
+// access.GormMembershipChecker.ManagesGroupViaOrg, which the Layer 2 GroupRole
+// gate uses too, so a page and its API cannot disagree.
 func (gs *groupService) CanUserAccessGroupViaOrg(groupID uuid.UUID, userID string) (bool, error) {
-	// Get the group to check its organization
-	group, err := gs.repository.GetGroupByID(groupID, false)
-	if err != nil {
-		return false, err
-	}
-
-	// If group doesn't belong to an organization, no org-based access
-	if group.OrganizationID == nil {
-		return false, nil
-	}
-
-	// Check if user is a manager or owner in the organization
-	var orgMember organizationModels.OrganizationMember
-	result := gs.db.Where("organization_id = ? AND user_id = ? AND is_active = ?",
-		group.OrganizationID, userID, true).First(&orgMember)
-
-	if result.Error != nil {
-		return false, nil
-	}
-
-	// Only managers and owners have cascading access to all org groups
-	return orgMember.IsManager(), nil
+	return access.NewGormMembershipChecker(gs.db).ManagesGroupViaOrg(groupID.String(), userID)
 }
 
 // GrantGroupPermissionsToUser grants group-related permissions to a user via Casbin

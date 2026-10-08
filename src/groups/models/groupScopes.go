@@ -3,6 +3,8 @@ package models
 import (
 	"errors"
 
+	access "soli/formations/src/auth/access"
+
 	"gorm.io/gorm"
 )
 
@@ -79,8 +81,18 @@ func ManagedByScope(callerUserID string) func(*gorm.DB) *gorm.DB {
 				  AND gm.user_id = ?
 				  AND gm.is_active = ?
 				  AND gm.deleted_at IS NULL
-				  AND gm.role IN ?))`,
+				  AND gm.role IN ?) OR EXISTS (
+				SELECT 1 FROM organization_members om
+				JOIN organizations o ON o.id = om.organization_id AND o.deleted_at IS NULL
+				WHERE om.organization_id = class_groups.organization_id
+				  AND om.user_id = ?
+				  AND om.is_active = ?
+				  AND om.deleted_at IS NULL
+				  AND om.role IN ?))`,
 			callerUserID, callerUserID, true, ManagerRoles,
+			// An organization's managers manage every class of it
+			// (access.GormMembershipChecker.ManagesGroupViaOrg).
+			callerUserID, true, access.RolesAtLeast(access.RoleManager),
 		)
 	}
 }
