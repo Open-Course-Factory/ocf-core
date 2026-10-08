@@ -52,11 +52,29 @@ type testOrgMember struct {
 	Role           string    `gorm:"type:varchar(50);default:'member'"`
 	JoinedAt       time.Time `gorm:"not null"`
 	IsActive       bool      `gorm:"default:true"`
+	DeletedAt      gorm.DeletedAt
 }
 
 func (testOrgMember) TableName() string {
 	return "organization_members"
 }
+
+// testClassGroup and testOrganization carry the columns CheckGroupRole reads to
+// find a class's organization and whether it is still live.
+type testClassGroup struct {
+	ID             uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	OrganizationID *uuid.UUID `gorm:"type:uuid"`
+	DeletedAt      gorm.DeletedAt
+}
+
+func (testClassGroup) TableName() string { return "class_groups" }
+
+type testOrganization struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
+	DeletedAt gorm.DeletedAt
+}
+
+func (testOrganization) TableName() string { return "organizations" }
 
 // ============================================================================
 // Helpers
@@ -76,7 +94,7 @@ func setupEntityLoaderDB(t *testing.T) *gorm.DB {
 func setupMembershipDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	err = db.AutoMigrate(&testGroupMember{}, &testOrgMember{})
+	err = db.AutoMigrate(&testGroupMember{}, &testOrgMember{}, &testClassGroup{}, &testOrganization{})
 	require.NoError(t, err)
 	return db
 }
@@ -246,4 +264,47 @@ func TestGormMembershipChecker_CheckOrgRole_MemberFailsManager(t *testing.T) {
 	allowed, err := checker.CheckOrgRole(orgID.String(), "user-member-002", "manager")
 	assert.NoError(t, err)
 	assert.False(t, allowed, "Member should NOT meet the minimum role of manager")
+}
+
+// seedOrgClass creates an organization holding one class, with userID as an
+// active member of the organization in the given role.
+func seedOrgClass(t *testing.T, db *gorm.DB, userID, orgRole string) (groupID, orgID uuid.UUID) {
+	t.Helper()
+	orgID, groupID = uuid.New(), uuid.New()
+	require.NoError(t, db.Create(&testOrganization{ID: orgID}).Error)
+	require.NoError(t, db.Create(&testClassGroup{ID: groupID, OrganizationID: &orgID}).Error)
+	require.NoError(t, db.Create(&testOrgMember{ID: uuid.New(), OrganizationID: orgID, UserID: userID, Role: orgRole, JoinedAt: time.Now(), IsActive: true}).Error)
+	return groupID, orgID
+}
+
+// An organization's managers manage every class of it without a seat on the
+// roster: the Layer 2 GroupRole gate must agree with CanUserManageGroup.
+func TestGormMembershipChecker_CheckGroupRole_OrgManagerOffRosterMeetsManager(t *testing.T) {
+	db := setupMembershipDB(t)
+	groupID, _ := seedOrgClass(t, db, "org-manager", "manager")
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "org-manager", "manager")
+	assert.NoError(t, err)
+	assert.True(t, allowed, "an org manager manages every class of the org")
+}
+
+func TestGormMembershipChecker_CheckGroupRole_OrgTeacherOffRosterRefused(t *testing.T) {
+	db := setupMembershipDB(t)
+	groupID, _ := seedOrgClass(t, db, "org-teacher", "teacher")
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "org-teacher", "manager")
+	assert.NoError(t, err)
+	assert.False(t, allowed, "a teacher manages only the classes they own or were added to")
+}
+
+// Deleting an organization leaves its classes to platform administrators: its
+// former managers must not keep reaching them.
+func TestGormMembershipChecker_CheckGroupRole_ManagerOfDeletedOrgRefused(t *testing.T) {
+	db := setupMembershipDB(t)
+	groupID, orgID := seedOrgClass(t, db, "org-manager", "manager")
+	require.NoError(t, db.Delete(&testOrganization{ID: orgID}).Error)
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "org-manager", "manager")
+	assert.NoError(t, err)
+	assert.False(t, allowed, "a deleted organization grants nothing")
 }

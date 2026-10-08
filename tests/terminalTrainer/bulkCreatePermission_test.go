@@ -43,7 +43,6 @@ func createTestGroup(t *testing.T, db *gorm.DB, ownerUserID string) *groupModels
 
 // addGroupMember adds a member to a group using raw SQL to avoid JSONB issues with SQLite.
 // Members are set as inactive by default to avoid triggering Casdoor API calls during terminal creation.
-// The permission check iterates all members regardless of IsActive, so inactive members still pass the role check.
 func addGroupMember(t *testing.T, db *gorm.DB, groupID uuid.UUID, userID string, role groupModels.GroupMemberRole) {
 	id := uuid.New()
 	err := db.Exec(
@@ -132,6 +131,9 @@ func TestBulkCreate_GroupAdmin_Allowed(t *testing.T) {
 	adminID := "admin-user-id"
 	group := createTestGroup(t, db, ownerID)
 	addGroupMember(t, db, group.ID, adminID, groupModels.GroupMemberRoleManager)
+	// Only an active manager manages the class: a removed one is refused, the
+	// same rule as the route's GroupRole gate.
+	require.NoError(t, db.Exec(`UPDATE group_members SET is_active = ? WHERE user_id = ?`, true, adminID).Error)
 	plan := createTestPlanAndSubscription(t, db, adminID)
 
 	router := setupBulkCreateRouter(db, adminID, []string{"member"}, plan)

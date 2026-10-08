@@ -166,8 +166,6 @@ func except(actors []string, excluded string) []string {
 
 // Every place the code disagrees with the spec. Each names its root cause.
 const (
-	gapGroupRoleIgnoresOrgManagers      = "Layer 2 GroupRole (GormMembershipChecker.CheckGroupRole) reads group_members only, so an org manager off the class roster is refused; CanUserManageGroup lets them in"
-	gapManagedByScopeIgnoresOrgManagers = "ManagedByScope (owner_user_id or a manager row in group_members) leaves out the org's managers, whom CanUserManageGroup counts"
 	gapOrgRoleIgnoresClassManagers      = "Layer 2 OrgRole(teacher) on the copy route ignores class managers, whom CanTeachInOrg counts"
 	gapOrgMemberHooksNoAdminBypass      = "the organization member hooks call CanUserManageOrganization with no administrator bypass"
 	gapGroupMemberHookNoAdminBypass     = "GroupMemberValidationHook calls CanUserManageGroup with no administrator bypass"
@@ -279,7 +277,6 @@ func classRows() []accessRow {
 	teacherGroup := func(suffix string, ids ...func(w matrixWorld) uuid.UUID) func(w matrixWorld) string {
 		return route("/api/v1/teacher/groups/%s"+suffix, append([]func(w matrixWorld) uuid.UUID{classA}, ids...)...)
 	}
-	offRoster := gap(gapGroupRoleIgnoresOrgManagers, mxOrgOwner, mxOrgManager)
 	return []accessRow{
 		{action: "class: create in École", request: send(http.MethodPost, entityPath("ClassGroup", nil),
 			func(w matrixWorld) any {
@@ -312,21 +309,21 @@ func classRows() []accessRow {
 			allowed: allow(mxTeacherA, mxOrgOwner, mxOrgManager, mxAdmin)},
 		{action: "classA: listed among my classes", request: get(func(matrixWorld) string { return "/api/v1/teacher/groups" }),
 			// A personal list: the platform admin teaches no class, so is not judged.
-			allowed: classManagers, judged: except(matrixActors, mxAdmin), verdict: listsClassA, gaps: gap(gapManagedByScopeIgnoresOrgManagers, mxOrgOwner, mxOrgManager)},
-		{action: "classA: live progress", request: get(teacherGroup("/live-progress")), allowed: classManagers, gaps: offRoster},
-		{action: "classA: assignments progress", request: get(teacherGroup("/assignments-progress")), allowed: classManagers, gaps: offRoster},
-		{action: "classA: scenA results", request: get(teacherGroup("/scenarios/%s/results", scenA)), allowed: classManagers, gaps: offRoster},
-		{action: "classA: scenA analytics", request: get(teacherGroup("/scenarios/%s/analytics", scenA)), allowed: classManagers, gaps: offRoster},
-		{action: "classA: a learner's session detail", request: get(teacherGroup("/sessions/%s/detail", learnerRun)), allowed: classManagers, gaps: offRoster},
+			allowed: classManagers, judged: except(matrixActors, mxAdmin), verdict: listsClassA},
+		{action: "classA: live progress", request: get(teacherGroup("/live-progress")), allowed: classManagers},
+		{action: "classA: assignments progress", request: get(teacherGroup("/assignments-progress")), allowed: classManagers},
+		{action: "classA: scenA results", request: get(teacherGroup("/scenarios/%s/results", scenA)), allowed: classManagers},
+		{action: "classA: scenA analytics", request: get(teacherGroup("/scenarios/%s/analytics", scenA)), allowed: classManagers},
+		{action: "classA: a learner's session detail", request: get(teacherGroup("/sessions/%s/detail", learnerRun)), allowed: classManagers},
 		{action: "classA: a learner's terminal commands", request: get(teacherGroup("/sessions/%s/commands", peerRun)),
-			allowed: classManagers, verdict: pastAuthorization, gaps: offRoster},
+			allowed: classManagers, verdict: pastAuthorization},
 		{action: "classA: bulk-start scenA", request: send(http.MethodPost, teacherGroup("/scenarios/%s/bulk-start", scenA), nil),
-			allowed: classManagers, verdict: pastAuthorization, gaps: offRoster},
+			allowed: classManagers, verdict: pastAuthorization},
 		{action: "classA: reset scenA sessions", request: send(http.MethodPost, teacherGroup("/scenarios/%s/reset-sessions", scenA), nil),
-			allowed: classManagers, gaps: offRoster},
-		{action: "classA: list its scenarios", request: get(route("/api/v1/groups/%s/scenarios", classA)), allowed: classManagers, gaps: offRoster},
+			allowed: classManagers},
+		{action: "classA: list its scenarios", request: get(route("/api/v1/groups/%s/scenarios", classA)), allowed: classManagers},
 		{action: "classA: bulk-create terminals (gates only)", request: send(http.MethodPost, route("/api/v1/class-groups/%s/bulk-create-terminals", classA), nil),
-			allowed: classManagers, gaps: offRoster},
+			allowed: classManagers},
 	}
 }
 

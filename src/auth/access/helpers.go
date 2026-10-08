@@ -123,6 +123,18 @@ func GetRoleHierarchy() map[string]int {
 	return copy
 }
 
+// RolesAtLeast lists the roles ranking at least minRole, for SQL IN clauses
+// that must agree with IsRoleAtLeast.
+func RolesAtLeast(minRole string) []string {
+	roles := make([]string, 0, len(roleHierarchy))
+	for role, priority := range roleHierarchy {
+		if priority >= roleHierarchy[minRole] {
+			roles = append(roles, role)
+		}
+	}
+	return roles
+}
+
 // IsRoleAtLeast checks whether userRole has at least the same privilege level
 // as requiredRole within the role hierarchy.
 // Returns false if either role is unknown.
