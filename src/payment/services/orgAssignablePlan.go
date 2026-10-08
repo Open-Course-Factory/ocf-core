@@ -52,7 +52,13 @@ func ValidateOrgAssignablePlan(plan *models.SubscriptionPlan) error {
 // threshold the mapping is exactly where an individual plan belongs: a school
 // holds a pool plan and maps its students to a seat plan that must NOT grant
 // group management. Requiring it here made that model impossible to set up.
+//
+// A role outside the hierarchy is refused: such a mapping matches no member, so
+// it would sit there silently doing nothing.
 func ValidateRolePlan(role string, plan *models.SubscriptionPlan) error {
+	if err := access.ValidateRole(role); err != nil {
+		return err
+	}
 	if plan == nil {
 		return fmt.Errorf("cannot map a role to a missing plan")
 	}

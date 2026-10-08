@@ -11,8 +11,11 @@ package payment_tests
 // FIRST, so that door does not merely match the other one, it outranks it.
 
 import (
+	"errors"
+	"net/http"
 	"testing"
 
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	paymentHooks "soli/formations/src/payment/hooks"
 	"soli/formations/src/payment/models"
@@ -238,4 +241,49 @@ func TestOrgRolePlan_UpdateOntoAnIndividualPlanIsRefused(t *testing.T) {
 	})
 
 	require.Error(t, err)
+}
+
+// A mapping for a role that does not exist matches nobody: its users silently
+// fall back to the org's plan. Struct `oneof` tags never ran on this generic
+// route (#390) and listed only owner/manager/member — refusing teacher the day
+// they would. The role is checked against the hierarchy instead.
+func TestOrgRolePlan_RefusesAnUnknownRole(t *testing.T) {
+	db := freshTestDB(t)
+	seat := seedPlanWithGroupManagement(t, db, "Siège élève — mensuel", false)
+
+	hook := paymentHooks.NewOrganizationRolePlanValidationHook(db)
+	err := hook.Execute(&hooks.HookContext{
+		EntityName: "OrganizationRolePlan",
+		HookType:   hooks.BeforeCreate,
+		NewEntity: &models.OrganizationRolePlan{
+			OrganizationID:     uuid.New(),
+			Role:               "teachr",
+			SubscriptionPlanID: seat.ID,
+		},
+		UserID: "platform-operator",
+	})
+
+	require.Error(t, err, "a mapping no member can ever match must be refused")
+	var structured *entityErrors.EntityError
+	require.True(t, errors.As(err, &structured), "expected a structured entity error, got %T: %v", err, err)
+	assert.Equal(t, http.StatusBadRequest, structured.HTTPStatus, "an unknown role is a client error: %v", err)
+}
+
+func TestOrgRolePlan_AcceptsTheTeacherRole(t *testing.T) {
+	db := freshTestDB(t)
+	school := seedPlanWithGroupManagement(t, db, "École / OF", true)
+
+	hook := paymentHooks.NewOrganizationRolePlanValidationHook(db)
+	err := hook.Execute(&hooks.HookContext{
+		EntityName: "OrganizationRolePlan",
+		HookType:   hooks.BeforeCreate,
+		NewEntity: &models.OrganizationRolePlan{
+			OrganizationID:     uuid.New(),
+			Role:               "teacher",
+			SubscriptionPlanID: school.ID,
+		},
+		UserID: "platform-operator",
+	})
+
+	require.NoError(t, err)
 }
