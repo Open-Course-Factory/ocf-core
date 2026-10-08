@@ -3,6 +3,7 @@ package entityManagement_tests
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	access "soli/formations/src/auth/access"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 )
 
@@ -196,6 +198,8 @@ func TestOwnershipHook_BeforeUpdate_NonOwnerDenied(t *testing.T) {
 	assert.Error(t, err, "Non-owner should be denied from updating another user's entity")
 	assert.Contains(t, err.Error(), "permission",
 		"Error should indicate a permission denial")
+	assert.Equal(t, http.StatusForbidden, entityErrors.WrapHookError("ownership", "TestOwnedEntity", err).HTTPStatus,
+		"a refusal reaches the client as 403, not a 500 hook failure")
 }
 
 // --- Test 5: BeforeUpdate admin bypass ---

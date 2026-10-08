@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -106,7 +107,7 @@ func (h *ownershipHook) verifyOwnership(ctx *HookContext) error {
 	// an ownership check. Without this guard, an entity whose owner column is also ""
 	// would match the empty actor below ("" == "") and be silently allowed.
 	if ctx.UserID == "" {
-		return fmt.Errorf("permission denied: unknown actor cannot modify %s", h.entityName)
+		return entityErrors.NewForbiddenError(fmt.Sprintf("permission denied: unknown actor cannot modify %s", h.entityName))
 	}
 	if ctx.EntityID == nil {
 		return fmt.Errorf("entity ID is empty for %s ownership check", h.entityName)
@@ -118,7 +119,7 @@ func (h *ownershipHook) verifyOwnership(ctx *HookContext) error {
 		return err
 	}
 	if ownerValue != ctx.UserID {
-		return fmt.Errorf("permission denied: you do not own this %s", h.entityName)
+		return entityErrors.NewForbiddenError(fmt.Sprintf("permission denied: you do not own this %s", h.entityName))
 	}
 	return nil
 }

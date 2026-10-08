@@ -1,6 +1,7 @@
 package groupHooks
 
 import (
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"errors"
 	"fmt"
 
@@ -179,7 +180,7 @@ func (h *GroupPlacementValidationHook) validateStructure(
 	// only, collaboration not available" and then accepting classes into it is the
 	// contradiction that started this issue.
 	if org.IsPersonalOrg() {
-		return fmt.Errorf("a personal organization cannot hold groups — convert it to a team organization first")
+		return entityErrors.NewConflictError("a personal organization cannot hold groups — convert it to a team organization first")
 	}
 
 	// Counted live rather than read off a preloaded association: the association is
@@ -233,14 +234,14 @@ func (h *GroupPlacementValidationHook) validateCaller(userID string, org *organi
 
 	switch verdict.Reason {
 	case paymentServices.ClassroomDeniedNotOrgMember:
-		return fmt.Errorf("you are not a member of this organization")
+		return entityErrors.NewForbiddenError("you are not a member of this organization")
 	case paymentServices.ClassroomDeniedInsufficientOrgRole:
-		return fmt.Errorf("only organization teachers and managers can create groups in this organization")
+		return entityErrors.NewForbiddenError("only organization teachers and managers can create groups in this organization")
 	case paymentServices.ClassroomDeniedPersonalOrg:
-		return fmt.Errorf("a personal organization cannot hold groups — convert it to a team organization first")
+		return entityErrors.NewConflictError("a personal organization cannot hold groups — convert it to a team organization first")
 	case paymentServices.ClassroomDeniedNoPlan:
-		return fmt.Errorf("no active subscription plan allows managing groups")
+		return entityErrors.NewForbiddenError("no active subscription plan allows managing groups")
 	default:
-		return fmt.Errorf("your subscription plan does not allow managing groups")
+		return entityErrors.NewForbiddenError("your subscription plan does not allow managing groups")
 	}
 }

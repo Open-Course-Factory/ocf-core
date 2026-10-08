@@ -1,6 +1,7 @@
 package organizationHooks
 
 import (
+	entityErrors "soli/formations/src/entityManagement/errors"
 	entityServices "soli/formations/src/entityManagement/services"
 	"fmt"
 	access "soli/formations/src/auth/access"
@@ -215,7 +216,7 @@ func (h *OrganizationCleanupHook) Execute(ctx *hooks.HookContext) error {
 
 	// Prevent deletion of personal organizations
 	if org.IsPersonalOrg() {
-		return fmt.Errorf("cannot delete personal organization")
+		return entityErrors.NewConflictError("cannot delete personal organization")
 	}
 
 	// Get all members and revoke their permissions
@@ -353,7 +354,7 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 	}
 	isMember, _ := h.organizationService.IsUserInOrganization(org.ID, member.UserID)
 	if isMember {
-		return fmt.Errorf("user is already a member of this organization")
+		return entityErrors.NewConflictError("user is already a member of this organization")
 	}
 
 	// 4. Check if requesting user can manage this organization.

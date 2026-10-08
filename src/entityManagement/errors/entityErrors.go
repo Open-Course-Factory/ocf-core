@@ -234,6 +234,23 @@ func WrapDatabaseError(dbErr error, operation string) *EntityError {
 	return err
 }
 
+// NewForbiddenError is a 403 refusal whose message reaches the user as written.
+// A hook refusing with a plain error would reach the client as the ENT007
+// hook-failure 500, which reads as "we broke" rather than "you may not".
+func NewForbiddenError(message string) *EntityError {
+	err := ErrUnauthorized.with(map[string]any{"reason": message})
+	err.Message = message
+	return err
+}
+
+// NewConflictError is a 409 refusal, for a state that forbids the operation,
+// whose message reaches the user as written.
+func NewConflictError(message string) *EntityError {
+	err := ErrStateConflict.with(map[string]any{"reason": message})
+	err.Message = message
+	return err
+}
+
 // NewUnauthorizedError creates an Unauthorized error with user and resource context.
 func NewUnauthorizedError(userId string, resource string, action string) *EntityError {
 	return ErrUnauthorized.with(map[string]any{"userId": userId, "resource": resource, "action": action})

@@ -14,10 +14,12 @@ package groups_tests
 // TestGroupPlacement_RejectsNonMemberOfTargetOrganization.
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
 	access "soli/formations/src/auth/access"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupHooks "soli/formations/src/groups/hooks"
@@ -144,6 +146,13 @@ func enrol(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID string, role organ
 	}).Error)
 }
 
+// requireClientStatus asserts the status the client receives for a hook's
+// refusal: a refusal is the caller's problem (4xx), never a 500 "hook failed".
+func requireClientStatus(t *testing.T, err error, status int) {
+	t.Helper()
+	require.Equal(t, status, entityErrors.WrapHookError("group_placement_validation", "ClassGroup", err).HTTPStatus, "%v", err)
+}
+
 // runPlacementCreate runs the hook for a create of a group placed in orgID.
 func runPlacementCreate(t *testing.T, db *gorm.DB, userID string, orgID *uuid.UUID, platformRoles ...string) error {
 	t.Helper()
@@ -182,6 +191,7 @@ func TestGroupPlacement_RejectsNonMemberOfTargetOrganization(t *testing.T) {
 
 	require.Error(t, err, "a non-member must not be able to create a group in someone else's organization")
 	require.Contains(t, err.Error(), "not a member")
+	requireClientStatus(t, err, http.StatusForbidden)
 }
 
 func TestGroupPlacement_RejectsPlainMemberOfOrganization(t *testing.T) {
@@ -193,6 +203,7 @@ func TestGroupPlacement_RejectsPlainMemberOfOrganization(t *testing.T) {
 
 	require.Error(t, err, "a plain member must not create groups even with a classroom plan")
 	require.Contains(t, err.Error(), "teachers and managers")
+	requireClientStatus(t, err, http.StatusForbidden)
 }
 
 // --- the school case (#460) -------------------------------------------------
@@ -233,6 +244,7 @@ func TestGroupPlacement_RejectsPersonalOrganization(t *testing.T) {
 
 	require.Error(t, err, "a personal organization must not hold groups")
 	require.Contains(t, err.Error(), "personal organization")
+	requireClientStatus(t, err, http.StatusConflict)
 }
 
 func TestGroupPlacement_RejectsWhenPlanLacksGroupManagement(t *testing.T) {

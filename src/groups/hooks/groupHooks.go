@@ -164,7 +164,7 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 
 	// 2. Check if group is expired
 	if group.IsExpired() {
-		return fmt.Errorf("group has expired")
+		return entityErrors.NewConflictError("group has expired")
 	}
 
 	// 3. Check if group is full
@@ -175,7 +175,7 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 	// 4. Check if user is already a member
 	isMember, _ := h.groupService.IsUserInGroup(member.GroupID, member.UserID)
 	if isMember {
-		return fmt.Errorf("user is already a member of this group")
+		return entityErrors.NewConflictError("user is already a member of this group")
 	}
 
 	// 5. Default role to "member" if not set, then refuse anything that is not a
