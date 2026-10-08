@@ -41,6 +41,13 @@ func InitOrganizationHooks(db *gorm.DB) {
 		log.Println("✅ Organization owner setup hook registered")
 	}
 
+	deleteAuthHook := NewOrganizationDeleteAuthorizationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(deleteAuthHook); err != nil {
+		log.Printf("❌ Failed to register organization delete authorization hook: %v", err)
+	} else {
+		log.Println("✅ Organization delete authorization hook registered")
+	}
+
 	// Hook for cleaning up permissions when an organization is deleted
 	cleanupHook := NewOrganizationCleanupHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(cleanupHook); err != nil {

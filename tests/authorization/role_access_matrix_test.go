@@ -171,7 +171,6 @@ const (
 	gapOrgRoleIgnoresClassManagers      = "Layer 2 OrgRole(teacher) on the copy route ignores class managers, whom CanTeachInOrg counts"
 	gapOrgMemberHooksNoAdminBypass      = "the organization member hooks call CanUserManageOrganization with no administrator bypass"
 	gapGroupMemberHookNoAdminBypass     = "GroupMemberValidationHook calls CanUserManageGroup with no administrator bypass"
-	gapManagerDeletesOrg                = "managers get a Casbin DELETE grant on their organization (GrantManagerPermissions) and no hook keeps deletion to the owner"
 	gapNoClassRoleChangeRoute           = "group-members has no PATCH route (no Update in its SwaggerConfig, no member PATCH policy) and groupService.UpdateMemberRole has no caller, so no one can change a class role"
 	gapSessionInfoNoAdminBypass         = "getSessionIfOwned compares the owner id with no administrator bypass"
 	gapCoTrainerDeletesClass            = "GroupWriteAuthorizationHook authorizes delete with CanUserManageGroup, so a class manager may delete; deleting is the creator's and the org managers' call (decided 2026-10-08)"
@@ -273,7 +272,7 @@ func organizationRows() []accessRow {
 		{action: "org: subscribe to a plan (gates only)", request: send(http.MethodPost, route("/api/v1/organizations/%s/subscribe", ecole), nil),
 			allowed: allow(mxOrgOwner, mxOrgManager, mxAdmin)},
 		{action: "org: delete", request: send(http.MethodDelete, entityPath("Organization", ecole), nil),
-			allowed: allow(mxOrgOwner, mxAdmin), gaps: gap(gapManagerDeletesOrg, mxOrgManager)},
+			allowed: allow(mxOrgOwner, mxAdmin)},
 	}
 }
 

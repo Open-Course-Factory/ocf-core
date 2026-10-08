@@ -143,6 +143,49 @@ func (h *OrganizationOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
 	return nil
 }
 
+// OrganizationDeleteAuthorizationHook keeps deleting an organization to its
+// owners and platform administrators. Managers hold a Casbin DELETE grant on
+// their organization (GrantManagerPermissions grants GET|PATCH|DELETE for
+// editing), so without this hook any manager could delete it, classes and all.
+type OrganizationDeleteAuthorizationHook struct {
+	organizationService services.OrganizationService
+	hooks.BaseHook
+}
+
+func NewOrganizationDeleteAuthorizationHook(db *gorm.DB) hooks.Hook {
+	return &OrganizationDeleteAuthorizationHook{
+		organizationService: services.NewOrganizationService(db),
+		// Before OrganizationCleanupHook (10): nothing is torn down for a
+		// caller who may not delete.
+		BaseHook: hooks.BaseHook{
+			Name:       "organization_delete_authorization",
+			EntityName: "Organization",
+			HookTypes:  []hooks.HookType{hooks.BeforeDelete},
+			Enabled:    true,
+			Priority:   5,
+		},
+	}
+}
+
+func (h *OrganizationDeleteAuthorizationHook) Execute(ctx *hooks.HookContext) error {
+	// No authenticated caller: an internal deletion, nobody to authorize.
+	if ctx.UserID == "" || ctx.IsAdmin() {
+		return nil
+	}
+	org, ok := ctx.NewEntity.(*models.Organization)
+	if !ok {
+		return fmt.Errorf("expected Organization, got %T", ctx.NewEntity)
+	}
+	if org.OwnerUserID == ctx.UserID {
+		return nil
+	}
+	role, err := h.organizationService.GetUserOrganizationRole(org.ID, ctx.UserID)
+	if err == nil && role == models.OrgRoleOwner {
+		return nil
+	}
+	return utils.PermissionDeniedError("delete", "organization")
+}
+
 // OrganizationCleanupHook revokes permissions when an organization is deleted
 type OrganizationCleanupHook struct {
 	db                  *gorm.DB
