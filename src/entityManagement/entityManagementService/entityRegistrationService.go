@@ -268,6 +268,54 @@ func (s *EntityRegistrationService) WarnArchivableEntitiesWithoutBeforeArchiveHo
 	}
 }
 
+// memberWriteRoutes pairs each generic write route with the SwaggerConfig
+// operation that mounts it and the Before hook that runs on it. The generic
+// router mounts no PUT, so PUT is absent.
+var memberWriteRoutes = []struct {
+	method    string
+	hookType  hooks.HookType
+	operation func(*entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation
+}{
+	{"POST", hooks.BeforeCreate, func(c *entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation { return c.Create }},
+	{"PATCH", hooks.BeforeUpdate, func(c *entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation { return c.Update }},
+	{"DELETE", hooks.BeforeDelete, func(c *entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation { return c.Delete }},
+}
+
+// MemberWritesWithoutBeforeHook lists, sorted as "Entity METHOD", every mounted
+// generic write route that a member may call while no Before hook runs on it:
+// its Casbin roles grant member the method, or it is mounted without auth at
+// all (Security false). Layer 2 never enforces entity CRUD routes (#544), so
+// such a route lets any user write any row. An OwnershipConfig counts once
+// RegisterOwnershipHooks has turned it into hooks, so call this after it.
+func (s *EntityRegistrationService) MemberWritesWithoutBeforeHook() []string {
+	var unguarded []string
+	for name, roles := range s.entityRoles {
+		config := s.swaggerConfigs[name]
+		if config == nil {
+			continue // no SwaggerConfig, no generic CRUD route mounted
+		}
+		for _, route := range memberWriteRoutes {
+			op := route.operation(config)
+			if op == nil || (op.Security && !memberHasMethod(roles, route.method)) {
+				continue
+			}
+			if len(hooks.GlobalHookRegistry.GetHooks(name, route.hookType)) == 0 {
+				unguarded = append(unguarded, name+" "+route.method)
+			}
+		}
+	}
+	sort.Strings(unguarded)
+	return unguarded
+}
+
+// WarnMemberWritesWithoutBeforeHook logs one warning per unguarded member write.
+// Call it once at startup, after every module has registered its hooks.
+func (s *EntityRegistrationService) WarnMemberWritesWithoutBeforeHook() {
+	for _, write := range s.MemberWritesWithoutBeforeHook() {
+		appUtils.Warn("%s is open to every member: no Before hook guards it and Layer 2 does not enforce entity CRUD routes", write)
+	}
+}
+
 // SetDefaultEntityAccesses est une version publique pour les tests qui accepte un enforcer
 func (s *EntityRegistrationService) SetDefaultEntityAccesses(entityName string, roles entityManagementInterfaces.EntityRoles, enforcer interfaces.EnforcerInterface) {
 	s.setDefaultEntityAccesses(entityName, roles, enforcer)
@@ -533,7 +581,8 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 	// Set up access policies
 	service.setDefaultEntityAccesses(name, reg.Roles, casdoor.Enforcer)
 
-	// Register CRUD permissions in RouteRegistry for the permission reference page
+	// Describe the CRUD rules on the permission reference page. Documentation
+	// only: Layer 2 does not enforce them, the entity's hooks do.
 	access.RouteRegistry.RegisterEntity(access.EntityCRUDPermissions{
 		Entity: name,
 		Create: deriveAccessRule(reg.Roles, "POST", name, reg.OwnershipConfig),
@@ -555,8 +604,8 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 	service.SetEntityActionAccesses(name, normalizedActions, casdoor.Enforcer)
 }
 
-// deriveAccessRule determines the Layer 2 access rule for an entity CRUD operation
-// based on RBAC role config and optional ownership config.
+// deriveAccessRule describes an entity CRUD operation for the permission
+// reference page, from the RBAC role config and optional ownership config.
 func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method string, entityName string, ownershipConfig *access.OwnershipConfig) access.AccessRule {
 	if !memberHasMethod(roles, method) {
 		return access.AccessRule{Type: access.AdminOnly}

@@ -165,6 +165,7 @@ func main() {
 	// registrations that used to live in the Init*Hooks funcs above.
 	ems.RegisterOwnershipHooks(sqldb.DB)
 	ems.GlobalEntityRegistrationService.WarnArchivableEntitiesWithoutBeforeArchiveHook()
+	ems.GlobalEntityRegistrationService.WarnMemberWritesWithoutBeforeHook()
 
 	// Register module features
 	initialization.RegisterModuleFeatures(sqldb.DB)
