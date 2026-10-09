@@ -166,11 +166,10 @@ func except(actors []string, excluded string) []string {
 
 // Every place the code disagrees with the spec. Each names its root cause.
 const (
-	gapOrgMemberHooksNoAdminBypass      = "the organization member hooks call CanUserManageOrganization with no administrator bypass"
-	gapGroupMemberHookNoAdminBypass     = "GroupMemberValidationHook calls CanUserManageGroup with no administrator bypass"
-	gapSessionInfoNoAdminBypass         = "getSessionIfOwned compares the owner id with no administrator bypass"
-	gapCoTrainerDeletesClass            = "GroupWriteAuthorizationHook authorizes delete with CanUserManageGroup, so a class manager may delete; deleting is the creator's and the org managers' call (decided 2026-10-08)"
-	gapCrossOrgAssignRefusesAdmin       = "refuseCrossOrgAssignment refuses administrators on purpose; the spec's blanket admin bypass is probably what is wrong"
+	gapOrgMemberHooksNoAdminBypass  = "the organization member hooks call CanUserManageOrganization with no administrator bypass"
+	gapGroupMemberHookNoAdminBypass = "GroupMemberValidationHook calls CanUserManageGroup with no administrator bypass"
+	gapSessionInfoNoAdminBypass     = "getSessionIfOwned compares the owner id with no administrator bypass"
+	gapCrossOrgAssignRefusesAdmin   = "refuseCrossOrgAssignment refuses administrators on purpose; the spec's blanket admin bypass is probably what is wrong"
 )
 
 func gap(reason string, actors ...string) map[string]string {
@@ -289,7 +288,7 @@ func classRows() []accessRow {
 			allowed: classManagers},
 		// A co-trainer may archive the class but not delete it (decided 2026-10-08).
 		{action: "classA: delete", request: send(http.MethodDelete, entityPath("ClassGroup", classA), nil),
-			allowed: allow(mxTeacherA, mxOrgOwner, mxOrgManager, mxAdmin), gaps: gap(gapCoTrainerDeletesClass, mxCoTrainer)},
+			allowed: allow(mxTeacherA, mxOrgOwner, mxOrgManager, mxAdmin)},
 		{action: "classA: enrol a member", request: send(http.MethodPost, entityPath("GroupMember", nil),
 			func(w matrixWorld) any {
 				return map[string]any{"group_id": w.classA, "user_id": mxNewcomer, "role": "member"}
