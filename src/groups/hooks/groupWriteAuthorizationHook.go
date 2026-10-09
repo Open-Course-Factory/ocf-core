@@ -29,7 +29,8 @@ import (
 //
 // The authority question therefore has one owner, GroupService.CanUserManageGroup,
 // which already unites the three ways to hold it: the group's owner, a group
-// manager, or a manager of the organization the group belongs to.
+// manager, or a manager of the organization the group belongs to. Delete alone
+// is narrower: a group manager does not hold it (authorizeDelete).
 //
 // Separate from GroupPlacementValidationHook on purpose: that one answers "may a
 // group live in this organization", this one answers "may this user change this
@@ -75,6 +76,10 @@ func (h *GroupWriteAuthorizationHook) Execute(ctx *hooks.HookContext) error {
 		return err
 	}
 
+	if ctx.HookType == hooks.BeforeDelete {
+		return h.authorizeDelete(groupID, ctx.UserID)
+	}
+
 	canManage, err := h.groupService.CanUserManageGroup(groupID, ctx.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to verify group permissions: %w", err)
@@ -86,6 +91,31 @@ func (h *GroupWriteAuthorizationHook) Execute(ctx *hooks.HookContext) error {
 		return entityErrors.NewUnauthorizedError(ctx.UserID, "ClassGroup", string(ctx.HookType))
 	}
 
+	return nil
+}
+
+// authorizeDelete narrows CanUserManageGroup to the group's creator and the
+// managers of its organization: a co-trainer (group manager) runs the class
+// and may archive it, but deleting it is not their call (decided 2026-10-08).
+func (h *GroupWriteAuthorizationHook) authorizeDelete(groupID uuid.UUID, userID string) error {
+	var group models.ClassGroup
+	if err := h.db.Select("id", "owner_user_id", "organization_id").First(&group, "id = ?", groupID).Error; err != nil {
+		return fmt.Errorf("failed to load group: %w", err)
+	}
+	if group.IsOwner(userID) {
+		return nil
+	}
+	refused := entityErrors.NewForbiddenError("Only the class's creator or its organization's managers may delete it")
+	if group.OrganizationID == nil {
+		return refused
+	}
+	managesViaOrg, err := h.groupService.CanUserAccessGroupViaOrg(groupID, userID)
+	if err != nil {
+		return fmt.Errorf("failed to verify group permissions: %w", err)
+	}
+	if !managesViaOrg {
+		return refused
+	}
 	return nil
 }
 
