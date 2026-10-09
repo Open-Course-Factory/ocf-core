@@ -152,7 +152,7 @@ func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) d
 
 // GetSessionInfo godoc
 // @Summary Get session info
-// @Description Get session info for the authenticated user (ownership check)
+// @Description Get session info for the authenticated user (ownership check; platform administrators may read any session)
 // @Tags scenario-sessions
 // @Produce json
 // @Param id path string true "Session ID"
@@ -163,7 +163,7 @@ func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) d
 // @Router /scenario-sessions/{id}/info [get]
 // @Security BearerAuth
 func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
-	session, err := sc.getSessionIfOwned(ctx)
+	session, err := sc.getSessionIfReadable(ctx)
 	if err != nil {
 		return
 	}
