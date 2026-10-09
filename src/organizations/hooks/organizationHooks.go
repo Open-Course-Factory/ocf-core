@@ -357,19 +357,11 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 		return entityErrors.NewConflictError("user is already a member of this organization")
 	}
 
-	// 4. Check if requesting user can manage this organization.
-	// Fail-closed: an unknown actor (empty UserID) reaching this externally-triggered
-	// member-add hook must be denied, never skipped. (Seeding the org creator as owner
-	// goes through the AfterCreate OwnerSetupHook, not this BeforeCreate hook.)
-	if ctx.UserID == "" {
-		return utils.PermissionDeniedError("add members to", "organization")
-	}
-	canManage, err := h.organizationService.CanUserManageOrganization(org.ID, ctx.UserID)
-	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
-	}
-	if !canManage {
-		return utils.PermissionDeniedError("add members to", "organization")
+	// 4. Check if requesting user can manage this organization. (Seeding the org
+	// creator as owner goes through the AfterCreate OwnerSetupHook, not this
+	// BeforeCreate hook, so it never reaches the fail-closed empty-actor check.)
+	if err := authorizeMemberWrite(ctx, h.organizationService, org.ID, "add members to"); err != nil {
+		return err
 	}
 
 	// Set InvitedBy if not already set
@@ -419,12 +411,35 @@ func (h *OrganizationMemberValidationHook) isOffboardedMember(orgID uuid.UUID, u
 	return offboarded > 0, err
 }
 
+// authorizeMemberWrite is the manage check the three member hooks (add, update,
+// remove) share: the caller manages the organization, or is a platform
+// administrator, who holds no membership in it. Fail-closed: an unknown actor
+// (empty UserID) reaching these externally-triggered hooks is denied, never
+// skipped. The role validation, role cap and owner protection stay with each hook.
+func authorizeMemberWrite(ctx *hooks.HookContext, orgSvc services.OrganizationService, orgID uuid.UUID, action string) error {
+	if ctx.UserID == "" {
+		return utils.PermissionDeniedError(action, "organization")
+	}
+	if ctx.IsAdmin() {
+		return nil
+	}
+	canManage, err := orgSvc.CanUserManageOrganization(orgID, ctx.UserID)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
+	}
+	if !canManage {
+		return utils.PermissionDeniedError(action, "organization")
+	}
+	return nil
+}
+
 // OrganizationMemberUpdateAuthorizationHook authorizes a role/status change on an existing
 // OrganizationMember via the generic PATCH route. It mirrors the create-side
 // OrganizationMemberValidationHook (manage check + role cap) and the delete-side
 // OrganizationMemberDeletionHook (owner protection): only an org manager/owner may change a
 // member, no one may raise a member above the granter's own role, and an owner's role may not
-// be changed through this path. Platform administrators bypass the role cap.
+// be changed through this path. Platform administrators bypass the manage check and the
+// role cap, not the owner protection.
 type OrganizationMemberUpdateAuthorizationHook struct {
 	db                  *gorm.DB
 	organizationService services.OrganizationService
@@ -457,17 +472,8 @@ func (h *OrganizationMemberUpdateAuthorizationHook) Execute(ctx *hooks.HookConte
 		return fmt.Errorf("expected map[string]any for BeforeUpdate patch, got %T", ctx.NewEntity)
 	}
 
-	// Fail-closed: an unknown actor (empty UserID) must never reach the manage check as a
-	// skipped case. This mirrors the create/delete member hooks.
-	if ctx.UserID == "" {
-		return utils.PermissionDeniedError("update members of", "organization")
-	}
-	canManage, err := h.organizationService.CanUserManageOrganization(current.OrganizationID, ctx.UserID)
-	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
-	}
-	if !canManage {
-		return utils.PermissionDeniedError("update members of", "organization")
+	if err := authorizeMemberWrite(ctx, h.organizationService, current.OrganizationID, "update members of"); err != nil {
+		return err
 	}
 
 	requestedRole, roleChangeRequested, err := requestedRoleFromPatch(patch)
@@ -647,21 +653,12 @@ func (h *OrganizationMemberDeletionHook) Execute(ctx *hooks.HookContext) error {
 	}
 
 	// 2. Check if requesting user can manage this organization.
-	// Fail-closed: an unknown actor (empty UserID) reaching this externally-triggered
-	// member-removal hook must be denied, never skipped.
-	if ctx.UserID == "" {
-		return utils.PermissionDeniedError("remove members from", "organization")
-	}
-	canManage, err := h.organizationService.CanUserManageOrganization(member.OrganizationID, ctx.UserID)
-	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
-	}
-	if !canManage {
-		return utils.PermissionDeniedError("remove members from", "organization")
+	if err := authorizeMemberWrite(ctx, h.organizationService, member.OrganizationID, "remove members from"); err != nil {
+		return err
 	}
 
 	// 3. Revoke permissions from the member
-	err = h.organizationService.RevokeOrganizationPermissions(member.UserID, member.OrganizationID)
+	err := h.organizationService.RevokeOrganizationPermissions(member.UserID, member.OrganizationID)
 	if err != nil {
 		utils.Warn("Failed to revoke member permissions from user %s: %v", member.UserID, err)
 	}
