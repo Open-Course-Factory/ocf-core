@@ -166,7 +166,6 @@ func except(actors []string, excluded string) []string {
 
 // Every place the code disagrees with the spec. Each names its root cause.
 const (
-	gapOrgMemberHooksNoAdminBypass  = "the organization member hooks call CanUserManageOrganization with no administrator bypass"
 	gapGroupMemberHookNoAdminBypass = "GroupMemberValidationHook calls CanUserManageGroup with no administrator bypass"
 	gapSessionInfoNoAdminBypass     = "getSessionIfOwned compares the owner id with no administrator bypass"
 	gapCrossOrgAssignRefusesAdmin   = "refuseCrossOrgAssignment refuses administrators on purpose; the spec's blanket admin bypass is probably what is wrong"
@@ -252,15 +251,15 @@ func organizationRows() []accessRow {
 			func(w matrixWorld) any {
 				return map[string]any{"organization_id": w.ecole, "user_id": "mx-fresh-member", "role": "member"}
 			}),
-			allowed: allow(mxOrgOwner, mxOrgManager, mxAdmin), gaps: gap(gapOrgMemberHooksNoAdminBypass, mxAdmin)},
+			allowed: allow(mxOrgOwner, mxOrgManager, mxAdmin)},
 		{action: "org: make the learner a teacher", request: send(http.MethodPatch, entityPath("OrganizationMember", learnerOrgM),
 			func(matrixWorld) any { return map[string]any{"role": "teacher"} }),
-			allowed: allow(mxOrgOwner, mxOrgManager, mxAdmin), gaps: gap(gapOrgMemberHooksNoAdminBypass, mxAdmin)},
+			allowed: allow(mxOrgOwner, mxOrgManager, mxAdmin)},
 		{action: "org: make the learner an owner", request: send(http.MethodPatch, entityPath("OrganizationMember", learnerOrgM),
 			func(matrixWorld) any { return map[string]any{"role": "owner"} }),
-			allowed: allow(mxOrgOwner, mxAdmin), gaps: gap(gapOrgMemberHooksNoAdminBypass, mxAdmin)},
+			allowed: allow(mxOrgOwner, mxAdmin)},
 		{action: "org: remove the learner", request: send(http.MethodDelete, entityPath("OrganizationMember", learnerOrgM), nil),
-			allowed: allow(mxOrgOwner, mxOrgManager, mxAdmin), gaps: gap(gapOrgMemberHooksNoAdminBypass, mxAdmin)},
+			allowed: allow(mxOrgOwner, mxOrgManager, mxAdmin)},
 		{action: "org: rename", request: send(http.MethodPatch, entityPath("Organization", ecole),
 			func(matrixWorld) any { return map[string]any{"display_name": "École renamed"} }),
 			allowed: allow(mxOrgOwner, mxOrgManager, mxAdmin)},
