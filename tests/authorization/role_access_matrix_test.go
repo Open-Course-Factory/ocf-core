@@ -164,10 +164,9 @@ func except(actors []string, excluded string) []string {
 	return kept
 }
 
-// Every place the code disagrees with the spec. Each names its root cause.
-const (
-	gapCrossOrgAssignRefusesAdmin = "refuseCrossOrgAssignment refuses administrators on purpose; the spec's blanket admin bypass is probably what is wrong"
-)
+// Every place the code disagrees with the spec gets a gapXxx constant naming
+// its root cause, set on the cells it breaks with gap(gapXxx, actors...).
+// There are none today.
 
 func gap(reason string, actors ...string) map[string]string {
 	gaps := make(map[string]string, len(actors))
@@ -383,7 +382,9 @@ func assignmentRows() []accessRow {
 	return []accessRow{
 		{action: "assign scenM to classA", request: assign(scenM), allowed: classManagers},
 		{action: "assign scenPub to classA", request: assign(scenPub), allowed: classManagers},
-		{action: "assign scenOther to classA", request: assign(scenOther), allowed: allow(mxAdmin), gaps: gap(gapCrossOrgAssignRefusesAdmin, mxAdmin)},
+		// A scenario never leaves its organisation, not even for a platform
+		// administrator (refuseCrossOrgAssignment).
+		{action: "assign scenOther to classA", request: assign(scenOther), allowed: nil},
 		{action: "assign scenA to classB", request: send(http.MethodPost, entityPath("ScenarioAssignment", nil),
 			assignTo(scenA, func(w matrixWorld) uuid.UUID { return w.classB })),
 			allowed: allow(mxTeacherB, mxOrgOwner, mxOrgManager, mxAdmin)},
