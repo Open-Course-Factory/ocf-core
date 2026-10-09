@@ -18,7 +18,7 @@ type routeRegistry struct {
 	mu       sync.RWMutex
 	routes   map[string][]RoutePermission // category -> routes
 	byRoute  map[string]RoutePermission   // "METHOD:path" -> RoutePermission
-	entities []EntityCRUDPermissions       // registered entity CRUD permissions
+	entities []EntityCRUDPermissions       // reference page only, never enforced
 }
 
 // Register adds route permissions to the registry under the given category.

@@ -65,7 +65,10 @@ type RoutePermission struct {
 	NoGateway bool `json:"no_gateway,omitempty"`
 }
 
-// EntityCRUDPermissions declares the Layer 2 rules for a generic entity's CRUD operations.
+// EntityCRUDPermissions describes, for the permission reference page only, who
+// may call a generic entity's CRUD operations. Layer2Enforcement never reads it
+// (#544): entity CRUD routes are guarded by Casbin plus the entity's Before
+// hooks, which MemberWritesWithoutBeforeHook checks at startup.
 type EntityCRUDPermissions struct {
 	Entity string     `json:"entity"`
 	Create AccessRule `json:"create"`
