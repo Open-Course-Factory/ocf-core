@@ -736,6 +736,9 @@ func (sc *scenarioManagementController) OrgDuplicateScenario(ctx *gin.Context) {
 		return
 	}
 
+	if !sc.mayTeachInOrg(ctx, orgID) {
+		return
+	}
 	// The source is the organisation's own scenario or a platform one the
 	// caller can see — an org may copy the seeded catalogue to adapt it.
 	if !sc.mayCopyScenarioInto(ctx, scenarioID, &orgID) {
@@ -772,6 +775,28 @@ func (sc *scenarioManagementController) orgScenarioIf(ctx *gin.Context, orgID, s
 		return nil, false
 	}
 	return scenario, true
+}
+
+// mayTeachInOrg applies CanTeachInOrg to the caller, platform admins excepted.
+// It gates the copy route rather than an OrgRole rank, which would miss a
+// plain member who manages one of the organisation's classes; CanSeeScenario
+// alone would not do either, since anyone sees a public scenario. It answers
+// the request itself when it returns false.
+func (sc *scenarioManagementController) mayTeachInOrg(ctx *gin.Context, orgID uuid.UUID) bool {
+	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		return true
+	}
+	teaches, err := scenarioHooks.CanTeachInOrg(sc.db, orgID, ctx.GetString("userId"))
+	if err != nil {
+		slog.Error("failed to check whether the caller teaches in the organization", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to duplicate scenario")
+		return false
+	}
+	if !teaches {
+		errors.Respond(ctx, http.StatusForbidden, "You do not teach in this organization")
+		return false
+	}
+	return true
 }
 
 // mayCopyScenarioInto applies CanCopyScenarioInto to the caller, platform
