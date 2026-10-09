@@ -100,25 +100,43 @@ func (b *scenarioControllerBase) scenarioVerdicts(ctx *gin.Context, scenarios []
 
 // getSessionIfOwned loads a session by ID and checks that the authenticated user owns it.
 func (b *scenarioControllerBase) getSessionIfOwned(ctx *gin.Context) (*models.ScenarioSession, error) {
+	session, err := b.loadSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if session.UserID != ctx.GetString("userId") {
+		errors.Respond(ctx, http.StatusForbidden, "You do not own this session")
+		return nil, fmt.Errorf("forbidden")
+	}
+
+	return session, nil
+}
+
+// getSessionIfReadable is getSessionIfOwned for read-only routes, where a
+// platform administrator may also read anyone's session. The progress routes
+// act on the run (verify, submit, reset), so they stay owner-only.
+func (b *scenarioControllerBase) getSessionIfReadable(ctx *gin.Context) (*models.ScenarioSession, error) {
+	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		return b.getSessionIfOwned(ctx)
+	}
+	return b.loadSession(ctx)
+}
+
+// loadSession loads the session named by the :id parameter. It answers the
+// request itself when it returns an error.
+func (b *scenarioControllerBase) loadSession(ctx *gin.Context) (*models.ScenarioSession, error) {
 	sessionID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		errors.Respond(ctx, http.StatusBadRequest, "Invalid session ID")
 		return nil, err
 	}
 
-	userID := ctx.GetString("userId")
-
 	var session models.ScenarioSession
 	if err := b.db.First(&session, "id = ?", sessionID).Error; err != nil {
 		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return nil, err
 	}
-
-	if session.UserID != userID {
-		errors.Respond(ctx, http.StatusForbidden, "You do not own this session")
-		return nil, fmt.Errorf("forbidden")
-	}
-
 	return &session, nil
 }
 

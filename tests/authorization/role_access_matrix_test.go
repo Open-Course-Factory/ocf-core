@@ -166,7 +166,6 @@ func except(actors []string, excluded string) []string {
 
 // Every place the code disagrees with the spec. Each names its root cause.
 const (
-	gapSessionInfoNoAdminBypass   = "getSessionIfOwned compares the owner id with no administrator bypass"
 	gapCrossOrgAssignRefusesAdmin = "refuseCrossOrgAssignment refuses administrators on purpose; the spec's blanket admin bypass is probably what is wrong"
 )
 
@@ -403,9 +402,9 @@ func learnerRows() []accessRow {
 			func(w matrixWorld) any { return map[string]any{"scenario_id": w.scenA} }),
 			allowed: allow(mxLearner, mxAdmin), judged: learnerView, verdict: pastAuthorization},
 		{action: "read own session", request: get(route("/api/v1/scenario-sessions/%s/info", learnerRun)),
-			allowed: allow(mxLearner, mxAdmin), judged: learnerView, gaps: gap(gapSessionInfoNoAdminBypass, mxAdmin)},
+			allowed: allow(mxLearner, mxAdmin), judged: learnerView},
 		{action: "read a classmate's session", request: get(route("/api/v1/scenario-sessions/%s/info", peerRun)),
-			allowed: allow(mxAdmin), judged: learnerView, gaps: gap(gapSessionInfoNoAdminBypass, mxAdmin)},
+			allowed: allow(mxAdmin), judged: learnerView},
 	}
 }
 
