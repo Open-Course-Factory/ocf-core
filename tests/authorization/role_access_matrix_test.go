@@ -166,9 +166,8 @@ func except(actors []string, excluded string) []string {
 
 // Every place the code disagrees with the spec. Each names its root cause.
 const (
-	gapGroupMemberHookNoAdminBypass = "GroupMemberValidationHook calls CanUserManageGroup with no administrator bypass"
-	gapSessionInfoNoAdminBypass     = "getSessionIfOwned compares the owner id with no administrator bypass"
-	gapCrossOrgAssignRefusesAdmin   = "refuseCrossOrgAssignment refuses administrators on purpose; the spec's blanket admin bypass is probably what is wrong"
+	gapSessionInfoNoAdminBypass   = "getSessionIfOwned compares the owner id with no administrator bypass"
+	gapCrossOrgAssignRefusesAdmin = "refuseCrossOrgAssignment refuses administrators on purpose; the spec's blanket admin bypass is probably what is wrong"
 )
 
 func gap(reason string, actors ...string) map[string]string {
@@ -292,7 +291,7 @@ func classRows() []accessRow {
 			func(w matrixWorld) any {
 				return map[string]any{"group_id": w.classA, "user_id": mxNewcomer, "role": "member"}
 			}),
-			allowed: classManagers, gaps: gap(gapGroupMemberHookNoAdminBypass, mxAdmin)},
+			allowed: classManagers},
 		{action: "classA: remove the learner", request: send(http.MethodDelete, entityPath("GroupMember", learnerGrpM), nil),
 			allowed: classManagers},
 		{action: "classA: make the learner a class manager", request: send(http.MethodPatch, entityPath("GroupMember", learnerGrpM),

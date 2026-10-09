@@ -187,26 +187,28 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 		return err
 	}
 
-	// 6. Check if requesting user can manage this group
+	// 6. Check if requesting user can manage this group. Platform administrators
+	// hold no membership in it and bypass this check, like the removal side
+	// (GroupMemberCleanupHook).
 	if ctx.UserID != "" {
-		canManage, err := h.groupService.CanUserManageGroup(member.GroupID, ctx.UserID)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !canManage {
-			return utils.PermissionDeniedError("add members to", "group")
-		}
-
 		// Set InvitedBy if not already set
 		if member.InvitedBy == "" {
 			member.InvitedBy = ctx.UserID
 		}
 
-		// Cap the assigned role at the granter's own rank so a manager cannot mint a member
-		// who outranks them (e.g. an owner). Platform administrators bypass the cap. An
-		// org-based manager who manages via the org holds no group_members row, so treat a
-		// GetUserGroupRole miss as manager-equivalent rather than a denial.
 		if !ctx.IsAdmin() {
+			canManage, err := h.groupService.CanUserManageGroup(member.GroupID, ctx.UserID)
+			if err != nil {
+				return fmt.Errorf("permission check failed: %w", err)
+			}
+			if !canManage {
+				return utils.PermissionDeniedError("add members to", "group")
+			}
+
+			// Cap the assigned role at the granter's own rank so a manager cannot mint a member
+			// who outranks them (e.g. an owner). An org-based manager who manages via the org
+			// holds no group_members row, so treat a GetUserGroupRole miss as manager-equivalent
+			// rather than a denial.
 			granterRole, err := h.groupService.GetUserGroupRole(member.GroupID, ctx.UserID)
 			if err != nil {
 				granterRole = models.GroupMemberRoleManager
