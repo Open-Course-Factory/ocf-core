@@ -166,7 +166,6 @@ func except(actors []string, excluded string) []string {
 
 // Every place the code disagrees with the spec. Each names its root cause.
 const (
-	gapOrgRoleIgnoresClassManagers      = "Layer 2 OrgRole(teacher) on the copy route ignores class managers, whom CanTeachInOrg counts"
 	gapOrgMemberHooksNoAdminBypass      = "the organization member hooks call CanUserManageOrganization with no administrator bypass"
 	gapGroupMemberHookNoAdminBypass     = "GroupMemberValidationHook calls CanUserManageGroup with no administrator bypass"
 	gapSessionInfoNoAdminBypass         = "getSessionIfOwned compares the owner id with no administrator bypass"
@@ -362,16 +361,17 @@ func scenarioRows() []accessRow {
 
 		{action: "scenA: read its full content", request: get(entityPath("Scenario", scenA, "/steps/read-only")), allowed: orgTeachers},
 		{action: "scenA: export", request: get(entityPath("Scenario", scenA, "/export")), allowed: orgTeachers},
-		{action: "scenA: copy within École", request: copyInEcole(scenA), allowed: orgTeachers, gaps: gap(gapOrgRoleIgnoresClassManagers, mxCoTrainer)},
+		{action: "scenA: copy within École", request: copyInEcole(scenA), allowed: orgTeachers},
 		{action: "scenM: read its full content", request: get(entityPath("Scenario", scenM, "/steps/read-only")), allowed: orgTeachers},
 		{action: "scenM: export", request: get(entityPath("Scenario", scenM, "/export")), allowed: orgTeachers},
-		{action: "scenM: copy within École", request: copyInEcole(scenM), allowed: orgTeachers, gaps: gap(gapOrgRoleIgnoresClassManagers, mxCoTrainer)},
+		{action: "scenM: copy within École", request: copyInEcole(scenM), allowed: orgTeachers},
 
 		// The spec says every teacher and manager may use the public catalogue;
-		// it says nothing of learners, so they are not judged here.
+		// it says nothing of learners reading it, so they are not judged there.
+		// Copying writes into École, which only its teachers may do.
 		{action: "scenPub: read its full content", request: get(entityPath("Scenario", scenPub, "/steps/read-only")),
 			allowed: orgTeachers, judged: orgTeachers},
-		{action: "scenPub: copy into École", request: copyInEcole(scenPub), allowed: orgTeachers, judged: orgTeachers, gaps: gap(gapOrgRoleIgnoresClassManagers, mxCoTrainer)},
+		{action: "scenPub: copy into École", request: copyInEcole(scenPub), allowed: orgTeachers},
 
 		{action: "scenOther: read its full content", request: get(entityPath("Scenario", scenOther, "/steps/read-only")), allowed: allow(mxAdmin)},
 		{action: "scenOther: export", request: get(entityPath("Scenario", scenOther, "/export")), allowed: allow(mxAdmin)},

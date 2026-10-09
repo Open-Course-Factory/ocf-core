@@ -225,8 +225,8 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/:scenarioId/duplicate", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: access.RoleMinimumForClassrooms},
-			Description: "Duplicate a scenario within an organization",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Duplicate a scenario within an organization (controller verifies CanTeachInOrg on the organization, which counts class managers an OrgRole rank misses, and CanCopyScenarioInto on the source)",
 		},
 		// Admin scenario routes
 		access.RoutePermission{
