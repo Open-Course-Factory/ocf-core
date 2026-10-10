@@ -203,9 +203,8 @@ test:auth:
     # Create JWT certificate from GitLab CI variable (use test certificate for auth tests)
     - echo $token_jwt_key_test | base64 -d > ./src/auth/casdoor/token_jwt_key.pem
 
-    # Clean up previous run's resources to ensure a fresh start
-    - echo "🧹 Cleaning up old Docker resources..."
-    - docker compose -p $COMPOSE_PROJECT -f docker-compose.test.yml down -v --remove-orphans || true
+    # Remove stacks left by earlier jobs that never reached after_script
+    - bash scripts/ci/reap-stale-stacks.sh ocf-test-
 
     # Start all services at once — compose handles ordering via depends_on + healthchecks
     - echo "🐳 Starting all services (compose handles dependency ordering)..."
@@ -239,7 +238,8 @@ test:auth:
     - cat auth_tests.log | go-junit-report -set-exit-code > auth_report.xml
 
   after_script:
-    - docker compose -p ${COMPOSE_PROJECT:-ocf-test-cleanup} -f docker-compose.test.yml down -v --remove-orphans || true
+    # --rmi local: casdoor-test is built under the per-job project name, never reused.
+    - docker compose -p ${COMPOSE_PROJECT:-ocf-test-cleanup} -f docker-compose.test.yml down -v --remove-orphans --rmi local || true
 
   artifacts:
     reports:
