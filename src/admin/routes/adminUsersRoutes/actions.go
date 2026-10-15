@@ -1,9 +1,11 @@
 package adminUsersRoutes
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
@@ -13,8 +15,10 @@ import (
 	"soli/formations/src/auth/access"
 	auditModels "soli/formations/src/audit/models"
 	auditServices "soli/formations/src/audit/services"
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/interfaces"
 	authServices "soli/formations/src/auth/services"
+	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 )
 
@@ -40,6 +44,69 @@ var (
 	// restoring the account's ability to sign in.
 	SetAccountForbidden = func(userID string, forbidden bool) error {
 		return authServices.NewCasdoorUserClient().SetForbidden(userID, forbidden)
+	}
+
+	// CreateCasdoorUser creates the account in the identity provider.
+	CreateCasdoorUser = func(user *casdoorsdk.User) error {
+		return authServices.NewCasdoorUserClient().AddUser(user)
+	}
+
+	// GetCasdoorUserByEmail looks the just-created account back up, the same
+	// way the self-signup flow does, to get the id Casdoor assigned it.
+	GetCasdoorUserByEmail = func(email string) (*casdoorsdk.User, error) {
+		return casdoorsdk.GetUserByEmail(email)
+	}
+
+	// ProvisionNewUserExtras performs the best-effort side effects every new
+	// account gets on self-signup (see AddUser in
+	// src/auth/services/userService.go): a terminal trainer key, default
+	// user settings, and the free Trial subscription plan. Each failure is
+	// logged and swallowed rather than failing account creation — same
+	// resilience as the self-signup path, since none of the three is
+	// essential to having a working account.
+	ProvisionNewUserExtras = func(db *gorm.DB, userID, username string) {
+		if err := ttServices.NewTerminalTrainerService(db).CreateUserKey(userID, username); err != nil {
+			utils.Warn("admin-created user %s: could not create terminal trainer key: %v", userID, err)
+		}
+		if err := authServices.CreateDefaultUserSettings(userID); err != nil {
+			utils.Warn("admin-created user %s: could not create default settings: %v", userID, err)
+		}
+		if err := authServices.AssignFreeTrialPlan(userID); err != nil {
+			utils.Warn("admin-created user %s: could not assign free Trial plan: %v", userID, err)
+		}
+	}
+
+	// AddCasdoorNativeRole adds the account to Casdoor's own "member" Role
+	// object (used elsewhere for display/sync — authorization itself runs on
+	// the Casbin grouping policy, granted separately). Swappable because it
+	// calls the Casdoor SDK's package-level client directly, which panics
+	// rather than erroring when unconfigured (role.go GetRole dereferences a
+	// nil client) — tests must never reach the real function.
+	AddCasdoorNativeRole = authServices.AddDefaultRoleToUser
+
+	// MarkUserEmailVerified force-verifies an existing account's email with
+	// no token — the admin is vouching for the address directly. Shares
+	// casdoor.MarkEmailVerified with the token-based self-service flow
+	// (src/auth/services/emailVerificationService.go) and the organization
+	// bulk-import path, so "verified" means the same thing everywhere.
+	MarkUserEmailVerified = func(userID string) error {
+		client := authServices.NewCasdoorUserClient()
+		user, err := client.GetUserByUserId(userID)
+		if err != nil {
+			return fmt.Errorf("failed to load account %s: %w", userID, err)
+		}
+		if user == nil {
+			return fmt.Errorf("%w: %s", authServices.ErrUserNotFound, userID)
+		}
+		casdoor.MarkEmailVerified(user, time.Now())
+		affected, err := client.UpdateUserForColumns(user, casdoor.EmailVerifiedColumns)
+		if err != nil {
+			return fmt.Errorf("failed to update account %s: %w", userID, err)
+		}
+		if !affected {
+			return authServices.ErrCasdoorWriteNotPersisted
+		}
+		return nil
 	}
 )
 
@@ -204,6 +271,121 @@ func NewSetForbiddenHandler(db *gorm.DB) gin.HandlerFunc {
 			action = "Admin blocked the account"
 		}
 		logAdminUserAction(ctx, db, eventType, adminID, targetID, action)
+
+		ctx.JSON(http.StatusOK, ActionResult{Success: true})
+	}
+}
+
+// NewCreateUserHandler returns the handler for POST /admin/users. It creates
+// an account directly — no self-signup ToS step, since the admin isn't the
+// one accepting terms — and grants it the same "member" role and starter
+// resources (terminal key, settings, free Trial plan) a self-registered
+// account gets. The password is whatever the admin typed in the form; unlike
+// every other write action in this module, this one leaves the admin holding
+// a secret on purpose; they typed it, so there is nothing to protect by
+// hiding it back from them.
+func NewCreateUserHandler(enforcer interfaces.EnforcerInterface, db *gorm.DB) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if !requireAdmin(ctx) {
+			return
+		}
+
+		var input AdminCreateUserInput
+		if err := ctx.ShouldBindJSON(&input); err != nil {
+			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid_input"})
+			return
+		}
+
+		now := time.Now()
+		newUser := &casdoorsdk.User{
+			Name:              input.Username,
+			DisplayName:       input.DisplayName,
+			Email:             input.Email,
+			Password:          input.Password,
+			FirstName:         input.FirstName,
+			LastName:          input.LastName,
+			SignupApplication: "ocf",
+			CreatedTime:       casdoorsdk.GetCurrentTime(),
+			Properties: map[string]string{
+				// Synthesized rather than collected: the admin is creating this
+				// account, not accepting terms on the new user's behalf. Matches
+				// the organization bulk-import path's own synthesized stamp.
+				"tos_accepted_at":  now.Format(time.RFC3339),
+				"tos_version":      now.Format("2006-01-02"),
+				"created_by_admin": "true",
+			},
+		}
+		if input.EmailVerified {
+			casdoor.MarkEmailVerified(newUser, now)
+		}
+
+		if err := CreateCasdoorUser(newUser); err != nil {
+			utils.Error("admin create user failed for %s: %v", input.Email, err)
+			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "create_failed", "message": err.Error()})
+			return
+		}
+
+		created, err := GetCasdoorUserByEmail(input.Email)
+		if err != nil || created == nil {
+			utils.Error("admin create user: account created but lookup by email failed for %s: %v", input.Email, err)
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "lookup_after_create_failed"})
+			return
+		}
+
+		// Casdoor's own "member" Role object (used elsewhere for display/sync)
+		// — best-effort, same as self-signup.
+		if err := AddCasdoorNativeRole(*created); err != nil {
+			utils.Warn("admin-created user %s: could not add Casdoor default role: %v", created.Id, err)
+		}
+
+		// The Casbin grouping policy is what actually drives authorization
+		// (AuthMiddleware reads roles from here) — same roles self-signup grants.
+		rolesToAdd := []string{"member"}
+		if input.DefaultRole != "" {
+			rolesToAdd = append(rolesToAdd, input.DefaultRole)
+		}
+		opts := utils.DefaultPermissionOptions()
+		opts.WarnOnError = true
+		for _, role := range rolesToAdd {
+			if err := utils.AddGroupingPolicy(enforcer, created.Id, role, opts); err != nil {
+				utils.Warn("admin-created user %s: could not grant role %s: %v", created.Id, role, err)
+			}
+		}
+
+		ProvisionNewUserExtras(db, created.Id, created.Name)
+
+		adminID := ctx.GetString("userId")
+		logAdminUserAction(ctx, db, auditModels.AuditEventUserCreated, adminID, created.Id,
+			fmt.Sprintf("Admin created user account (email_verified=%t)", input.EmailVerified))
+
+		ctx.JSON(http.StatusCreated, AdminCreateUserOutput{ID: created.Id, Username: created.Name, Email: created.Email})
+	}
+}
+
+// NewVerifyEmailHandler returns the handler for
+// POST /admin/users/:id/verify-email. It force-verifies an existing
+// account's email with no token — for accounts created before this admin
+// panel existed, or whose owner never completed the self-service link.
+func NewVerifyEmailHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if !requireAdmin(ctx) {
+			return
+		}
+		targetID := ctx.Param("id")
+
+		if err := MarkUserEmailVerified(targetID); err != nil {
+			if errors.Is(err, authServices.ErrUserNotFound) {
+				ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+				return
+			}
+			utils.Error("admin verify-email failed for %s: %v", targetID, err)
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "verify_failed"})
+			return
+		}
+
+		adminID := ctx.GetString("userId")
+		logAdminUserAction(ctx, db, auditModels.AuditEventUserUpdated, adminID, targetID,
+			"Admin marked the account's email as verified")
 
 		ctx.JSON(http.StatusOK, ActionResult{Success: true})
 	}

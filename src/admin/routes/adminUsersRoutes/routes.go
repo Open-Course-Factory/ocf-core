@@ -18,10 +18,12 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB) {
 
 	admin := router.Group("/admin")
 	admin.GET("/users-with-memberships", mw.AuthManagement(), NewListUsersHandler(db))
+	admin.POST("/users", mw.AuthManagement(), NewCreateUserHandler(casdoor.Enforcer, db))
 
 	users := admin.Group("/users/:id")
 	users.POST("/send-password-reset-email", mw.AuthManagement(), NewSendPasswordResetHandler(db))
 	users.POST("/admin-role", mw.AuthManagement(), NewGrantAdminRoleHandler(casdoor.Enforcer, db))
 	users.DELETE("/admin-role", mw.AuthManagement(), NewRevokeAdminRoleHandler(casdoor.Enforcer, db))
 	users.PUT("/forbidden", mw.AuthManagement(), NewSetForbiddenHandler(db))
+	users.POST("/verify-email", mw.AuthManagement(), NewVerifyEmailHandler(db))
 }
