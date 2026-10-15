@@ -262,6 +262,106 @@ func TestVerifyEmailHandler_NonAdmin_403(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// --- Set password directly (no email) ---------------------------------------
+
+func TestSetPasswordHandler_Success(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+
+	original := adminUsersRoutes.SetUserPassword
+	t.Cleanup(func() { adminUsersRoutes.SetUserPassword = original })
+	var calledUserID, calledPassword string
+	adminUsersRoutes.SetUserPassword = func(userID, newPassword string) error {
+		calledUserID = userID
+		calledPassword = newPassword
+		return nil
+	}
+
+	r := newAdminRouter(http.MethodPut, "/admin/users/:id/password",
+		adminUsersRoutes.NewSetPasswordHandler(db), true)
+
+	body, _ := json.Marshal(adminUsersRoutes.SetPasswordInput{Password: "correct-horse-battery-staple"})
+	req := httptest.NewRequest(http.MethodPut, "/admin/users/"+uidBob+"/password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, uidBob, calledUserID)
+	assert.Equal(t, "correct-horse-battery-staple", calledPassword)
+}
+
+func TestSetPasswordHandler_TooShort_400(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+
+	original := adminUsersRoutes.SetUserPassword
+	t.Cleanup(func() { adminUsersRoutes.SetUserPassword = original })
+	called := false
+	adminUsersRoutes.SetUserPassword = func(userID, newPassword string) error {
+		called = true
+		return nil
+	}
+
+	r := newAdminRouter(http.MethodPut, "/admin/users/:id/password",
+		adminUsersRoutes.NewSetPasswordHandler(db), true)
+
+	body, _ := json.Marshal(adminUsersRoutes.SetPasswordInput{Password: "short"})
+	req := httptest.NewRequest(http.MethodPut, "/admin/users/"+uidBob+"/password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.False(t, called, "must refuse before calling SetUserPassword")
+}
+
+func TestSetPasswordHandler_UnknownUser_404(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+
+	original := adminUsersRoutes.SetUserPassword
+	t.Cleanup(func() { adminUsersRoutes.SetUserPassword = original })
+	adminUsersRoutes.SetUserPassword = func(userID, newPassword string) error {
+		return authServices.ErrUserNotFound
+	}
+
+	r := newAdminRouter(http.MethodPut, "/admin/users/:id/password",
+		adminUsersRoutes.NewSetPasswordHandler(db), true)
+
+	body, _ := json.Marshal(adminUsersRoutes.SetPasswordInput{Password: "correct-horse-battery-staple"})
+	req := httptest.NewRequest(http.MethodPut, "/admin/users/"+uidNobody+"/password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestSetPasswordHandler_NonAdmin_403(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+
+	r := newAdminRouter(http.MethodPut, "/admin/users/:id/password",
+		adminUsersRoutes.NewSetPasswordHandler(db), false)
+
+	body, _ := json.Marshal(adminUsersRoutes.SetPasswordInput{Password: "correct-horse-battery-staple"})
+	req := httptest.NewRequest(http.MethodPut, "/admin/users/"+uidBob+"/password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
 // --- email_verified surfaced in the listing ---------------------------------
 
 func TestBuildUserListings_SurfacesEmailVerified(t *testing.T) {

@@ -46,6 +46,13 @@ type SetForbiddenInput struct {
 	Forbidden bool `json:"forbidden"`
 }
 
+// SetPasswordInput is the body of PUT /admin/users/:id/password. The admin
+// sets the password directly and hands it to the user themselves — unlike
+// POST .../send-password-reset-email, no email is ever sent.
+type SetPasswordInput struct {
+	Password string `json:"password" binding:"required"`
+}
+
 // ActionResult is the JSON body every write action in this module returns
 // on success — the actions are fire-and-forget from the frontend's point of
 // view (no resource body to echo back), so a flat ack is enough.

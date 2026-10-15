@@ -26,4 +26,5 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	users.DELETE("/admin-role", mw.AuthManagement(), NewRevokeAdminRoleHandler(casdoor.Enforcer, db))
 	users.PUT("/forbidden", mw.AuthManagement(), NewSetForbiddenHandler(db))
 	users.POST("/verify-email", mw.AuthManagement(), NewVerifyEmailHandler(db))
+	users.PUT("/password", mw.AuthManagement(), NewSetPasswordHandler(db))
 }
