@@ -99,7 +99,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		return nil, err
 	}
 
-	errRole := addDefaultRoleToUser(user1)
+	errRole := AddDefaultRoleToUser(user1)
 	if errRole != nil {
 		return nil, errRole
 	}
@@ -140,7 +140,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 	}
 
 	// Create default user settings
-	errCreateSettings := createDefaultUserSettings(createdUser.Id)
+	errCreateSettings := CreateDefaultUserSettings(createdUser.Id)
 	if errCreateSettings != nil {
 		utils.Warn("Could not create default settings for user %s: %v", createdUser.Id, errCreateSettings)
 		// Don't fail registration for this, just log warning
@@ -178,7 +178,7 @@ func NewTerminalTrainerService(db *gorm.DB) ttServices.TerminalTrainerService {
 	return ttServices.NewTerminalTrainerService(db)
 }
 
-func addDefaultRoleToUser(user1 casdoorsdk.User) error {
+func AddDefaultRoleToUser(user1 casdoorsdk.User) error {
 	role, errRole := casdoorsdk.GetRole("member")
 	if errRole != nil {
 		utils.Error("%s", errRole.Error())
@@ -383,8 +383,8 @@ func (us *userService) SearchUsers(query string) (*[]dto.UserOutput, error) {
 	return &results, nil
 }
 
-// createDefaultUserSettings creates default settings for a new user
-func createDefaultUserSettings(userID string) error {
+// CreateDefaultUserSettings creates default settings for a new user
+func CreateDefaultUserSettings(userID string) error {
 	// Check if settings already exist
 	var existingSettings models.UserSettings
 	result := sqldb.DB.Where("user_id = ?", userID).First(&existingSettings)

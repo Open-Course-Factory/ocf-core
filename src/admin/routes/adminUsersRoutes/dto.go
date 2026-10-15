@@ -36,6 +36,7 @@ type UserListing struct {
 	Avatar        string            `json:"avatar,omitempty"`
 	IsActive      bool              `json:"is_active"`
 	IsAdmin       bool              `json:"is_admin"`
+	EmailVerified bool              `json:"email_verified"`
 	Organizations []OrgMembership   `json:"organizations"`
 	Groups        []GroupMembership `json:"groups"`
 }
@@ -50,4 +51,36 @@ type SetForbiddenInput struct {
 // view (no resource body to echo back), so a flat ack is enough.
 type ActionResult struct {
 	Success bool `json:"success"`
+}
+
+// AdminCreateUserInput is the body of POST /admin/users. Unlike the public
+// self-signup endpoint (dto.CreateUserInput), it carries no ToS acceptance
+// fields — an admin creating an account on someone's behalf isn't the one
+// accepting terms, so the acceptance timestamp/version are synthesized at
+// creation time instead (see NewCreateUserHandler), the same way the
+// organization bulk-import path already does for its own admin-created
+// accounts (src/organizations/services/importService.go).
+type AdminCreateUserInput struct {
+	Username    string `json:"username" binding:"required"`
+	DisplayName string `json:"display_name" binding:"required"`
+	Email       string `json:"email" binding:"required"`
+	Password    string `json:"password" binding:"required"`
+	FirstName   string `json:"first_name" binding:"required"`
+	LastName    string `json:"last_name" binding:"required"`
+	// EmailVerified marks the account verified immediately, at the admin's
+	// discretion (e.g. the admin already confirmed the address out of band).
+	// Default false: the account otherwise goes through the normal
+	// self-service verification flow like any other account.
+	EmailVerified bool `json:"email_verified"`
+	// DefaultRole is an extra Casbin role to grant alongside "member" (e.g. a
+	// custom role registered via access.RegisterRole), mirroring
+	// dto.CreateUserInput.DefaultRole on the public signup endpoint. Optional.
+	DefaultRole string `json:"default_role,omitempty"`
+}
+
+// AdminCreateUserOutput is the body returned by a successful POST /admin/users.
+type AdminCreateUserOutput struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
 }
