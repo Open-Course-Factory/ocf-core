@@ -84,6 +84,27 @@ var (
 	// nil client) — tests must never reach the real function.
 	AddCasdoorNativeRole = authServices.AddDefaultRoleToUser
 
+	// SetUserPassword sets an existing account's password directly, with no
+	// token and no email — the admin hands the password to the user
+	// themselves, the same trust model as the password field on account
+	// creation (NewCreateUserHandler). This is deliberately a second,
+	// independent path from SendPasswordResetEmail rather than a mode of
+	// it: the two answer different questions (does the user pick their own
+	// password via a link, or does the admin set one and hand it over) and
+	// gating one behind the other would make the no-email path feel like a
+	// workaround instead of a first-class choice.
+	SetUserPassword = func(userID, newPassword string) error {
+		client := authServices.NewCasdoorUserClient()
+		user, err := client.GetUserByUserId(userID)
+		if err != nil {
+			return fmt.Errorf("failed to load account %s: %w", userID, err)
+		}
+		if user == nil {
+			return fmt.Errorf("%w: %s", authServices.ErrUserNotFound, userID)
+		}
+		return client.SetPassword(user, newPassword)
+	}
+
 	// MarkUserEmailVerified force-verifies an existing account's email with
 	// no token — the admin is vouching for the address directly. Shares
 	// casdoor.MarkEmailVerified with the token-based self-service flow
@@ -271,6 +292,45 @@ func NewSetForbiddenHandler(db *gorm.DB) gin.HandlerFunc {
 			action = "Admin blocked the account"
 		}
 		logAdminUserAction(ctx, db, eventType, adminID, targetID, action)
+
+		ctx.JSON(http.StatusOK, ActionResult{Success: true})
+	}
+}
+
+// minAdminSetPasswordLength mirrors the frontend form's minlength — enforced
+// here too since the frontend check is only ever a courtesy.
+const minAdminSetPasswordLength = 8
+
+// NewSetPasswordHandler returns the handler for PUT /admin/users/:id/password.
+// It sets the account's password directly — no token, no email. The admin
+// is expected to hand the password to the user themselves, same as the
+// password field on account creation.
+func NewSetPasswordHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if !requireAdmin(ctx) {
+			return
+		}
+		targetID := ctx.Param("id")
+
+		var input SetPasswordInput
+		if err := ctx.ShouldBindJSON(&input); err != nil || len(input.Password) < minAdminSetPasswordLength {
+			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid_input"})
+			return
+		}
+
+		if err := SetUserPassword(targetID, input.Password); err != nil {
+			if errors.Is(err, authServices.ErrUserNotFound) {
+				ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+				return
+			}
+			utils.Error("admin set-password failed for %s: %v", targetID, err)
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "update_failed"})
+			return
+		}
+
+		adminID := ctx.GetString("userId")
+		logAdminUserAction(ctx, db, auditModels.AuditEventPasswordChange, adminID, targetID,
+			"Admin set the account's password directly (no email sent)")
 
 		ctx.JSON(http.StatusOK, ActionResult{Success: true})
 	}

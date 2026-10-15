@@ -256,6 +256,7 @@ func TestSetupAdminUsersPermissions(t *testing.T) {
 		{"/api/v1/admin/users/:id/forbidden", "PUT"},
 		{"/api/v1/admin/users", "POST"},
 		{"/api/v1/admin/users/:id/verify-email", "POST"},
+		{"/api/v1/admin/users/:id/password", "PUT"},
 	}
 
 	for _, r := range routes {

@@ -52,6 +52,11 @@ func RegisterPermissions(enforcer interfaces.EnforcerInterface) {
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Force-verify a user's email with no token (admin only)",
 		},
+		access.RoutePermission{
+			Path: "/api/v1/admin/users/:id/password", Method: "PUT",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Set a user's password directly, with no email sent (admin only)",
+		},
 	)
 
 	log.Println("=== Admin users permissions registered ===")
