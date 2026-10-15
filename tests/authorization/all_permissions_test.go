@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	adminUsersController "soli/formations/src/admin/routes/adminUsersRoutes"
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/mocks"
 	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
@@ -226,6 +227,33 @@ func TestSetupSecurityAdminPermissions(t *testing.T) {
 		{"/api/v1/admin/security/user-permissions", "GET"},
 		{"/api/v1/admin/security/entity-roles", "GET"},
 		{"/api/v1/admin/security/health-checks", "GET"},
+	}
+
+	for _, r := range routes {
+		t.Run("admin "+r.method+" "+r.path, func(t *testing.T) {
+			assertPolicy(t, ps, "administrator", r.path, r.method)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Admin users management permissions (password reset, admin role, block)
+// ---------------------------------------------------------------------------
+
+func TestSetupAdminUsersPermissions(t *testing.T) {
+	mock := mocks.NewMockEnforcer()
+	adminUsersController.RegisterPermissions(mock)
+	ps := collectPolicies(mock)
+
+	routes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/admin/users-with-memberships", "GET"},
+		{"/api/v1/admin/users/:id/send-password-reset-email", "POST"},
+		{"/api/v1/admin/users/:id/admin-role", "POST"},
+		{"/api/v1/admin/users/:id/admin-role", "DELETE"},
+		{"/api/v1/admin/users/:id/forbidden", "PUT"},
 	}
 
 	for _, r := range routes {

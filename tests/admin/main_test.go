@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	auditModels "soli/formations/src/audit/models"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	testTools "soli/formations/tests/testTools"
@@ -19,12 +20,13 @@ func TestMain(m *testing.M) {
 		&orgModels.OrganizationMember{},
 		&groupModels.ClassGroup{},
 		&groupModels.GroupMember{},
+		&auditModels.AuditLog{},
 	)
 	os.Exit(m.Run())
 }
 
 func freshTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	testTools.Truncate(sharedTestDB, "group_members", "class_groups", "organization_members", "organizations")
+	testTools.Truncate(sharedTestDB, "group_members", "class_groups", "organization_members", "organizations", "audit_logs")
 	return sharedTestDB
 }
