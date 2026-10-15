@@ -6,7 +6,7 @@ any user and change their access without touching the database directly.
 
 It builds on the admin "users with memberships" listing that already existed
 (`GET /admin/users-with-memberships` + `AdminUsers.vue`, previously used only
-for impersonation) and adds seven write actions plus inline role editing.
+for impersonation) and adds eight write actions plus inline role editing.
 
 ## What an admin can do from `/admin/users`
 
@@ -18,8 +18,17 @@ for impersonation) and adds seven write actions plus inline role editing.
 | **Set password** | Sets an *existing* account's password directly — no token, no email. The admin types it (masked, with a confirmation field) and hands it to the user themselves. | `PUT /admin/users/:id/password` |
 | **Grant / revoke admin** | Promotes a user to platform `administrator`, or demotes them back to a regular `member`. | `POST` / `DELETE /admin/users/:id/admin-role` |
 | **Assign a subscription plan** | Attributes a plan (Free / Small machine / Large machine / etc. — i.e. a `SubscriptionPlan` with its CPU/RAM budget) to the user for N days, bypassing Stripe. | `POST /user-subscriptions/admin-assign` (pre-existing endpoint, now reachable from the user's row via `AdminAssignPlanModal`) |
-| **Block / unblock account** | Flips Casdoor's `is_forbidden` flag — the account can no longer sign in (or can again). | `PUT /admin/users/:id/forbidden` |
+| **Block / unblock account** | Flips Casdoor's `is_forbidden` flag — the account can no longer sign in (or can again). Reversible. | `PUT /admin/users/:id/forbidden` |
+| **Delete a user** | Permanently erases the account: Stripe cancellation, Casdoor identity, RBAC policies and all OCF-side data. Irreversible. | `DELETE /users/:id` (pre-existing admin-only endpoint, now reachable from the row) |
 | **Change org / group role** | Inline `<select>` on each organization/group chip — member, teacher (org only), manager, owner. | `PATCH /organizations/:id/members/:userId` (orgs, pre-existing) and generic `PATCH /group-members/:id` (groups) |
+
+Block and delete answer different questions and are not substitutes for one
+another: blocking is reversible and keeps every record (useful for a
+suspension, a dispute, "come back when you've paid your invoice"); deleting
+is the GDPR right-to-erasure flow, permanent, and refused (409) while the
+account still owns a non-personal organization or group. The frontend asks
+the admin to type the target's exact username before enabling the delete
+button — there is no "undo" to fall back on if they click the wrong row.
 
 There are now three distinct password-handling actions, each answering a
 different question:
@@ -129,6 +138,14 @@ Layer 2 together), `routes.go` wires the gin handlers.
   (`member_id`) so the frontend can target the group PATCH directly — org
   memberships don't need it since that endpoint takes the org id + user id
   instead.
+- **Delete a user** also needed no new backend code — `DELETE /users/:id`
+  (`src/auth/routes/usersRoutes/deleteUser.go`) already existed, already
+  admin-gated, and already ran the full erasure flow
+  (`UserDeletionService.EraseUser`): Stripe cancellation, Casdoor identity,
+  RBAC policies, and every OCF-side record. It answers 409 (with a message
+  naming the reason) while the account still owns a non-personal
+  organization or group, and 404 for an unknown id. This slice only adds
+  the row action in `AdminUsers.vue`.
 
 Every write action is recorded to the audit log (`AuditService.LogSecurityEvent`)
 with the acting admin, the target user, and a human-readable action string —
@@ -152,6 +169,13 @@ visible wherever the platform's audit trail is reviewed.
 - `tests/authorization/all_permissions_test.go` —
   `TestSetupAdminUsersPermissions` asserts the Layer 1 Casbin policy exists
   for all eight admin/users routes.
+
+Delete-user added no backend tests of its own: `DELETE /users/:id` is
+pre-existing, already covered wherever `EraseUser` is tested. The new
+coverage lives entirely on the frontend (`tests/components/AdminUsers.test.ts`):
+the self-delete guard, the submit button staying disabled until the typed
+confirmation matches the username, the success path removing the row, and
+a 409 conflict surfacing the backend's message.
 
 **A gotcha worth knowing**: `AddDefaultRoleToUser` calls the Casdoor SDK's
 *package-level* client directly (`casdoorsdk.GetRole`), which panics with a
@@ -200,8 +224,17 @@ Everything lives on the existing `AdminUsers.vue` page
 - **Set password**'s dedicated modal reuses the same masked
   password+confirmation pattern as account creation (two `type="password"`
   fields, submit disabled until they match and meet the length minimum).
+- **Delete user** gets its own dedicated modal rather than the generic
+  confirm one: it shows what gets erased vs. anonymized, and the delete
+  button stays disabled until the admin types the target's exact username
+  into a confirmation field — the same "type to confirm" pattern the
+  self-service account-deletion page already uses, adapted since the admin
+  is confirming someone else's account rather than their own. A 409
+  response (still owns an organization or group) surfaces the backend's
+  message verbatim rather than a generic failure string. On success the row
+  is removed from the table locally.
 - `src/services/admin/usersService.ts` gained `createUser`, `verifyEmail`,
-  `setPassword`, `sendPasswordResetEmail`, `grantAdminRole`,
+  `setPassword`, `deleteUser`, `sendPasswordResetEmail`, `grantAdminRole`,
   `revokeAdminRole`, `setForbidden`; `AdminUserListing` gained
   `email_verified`; `OrgMembership` / `GroupMembership` gained `member_id`.
 
@@ -214,9 +247,12 @@ All new strings are translated (English + French), following the project's
   (`requireAdmin`), in addition to the Layer 1/Layer 2 gate — matching the
   rest of the codebase's admin-only handlers (e.g.
   `AdminAssignSubscription`).
-- An admin cannot revoke their own `administrator` role, nor block their own
-  account, through this portal — both would be a one-way trip to a
-  no-admin-left state.
+- An admin cannot revoke their own `administrator` role, block their own
+  account, or delete their own account, through this portal — all three
+  would be a one-way trip to a no-admin-left (or no-admin-at-all) state.
+- Deleting a user requires typing their exact username first; there is no
+  confirmation dialog alone standing between a misclick and an irreversible
+  erasure.
 - Password reset never shows the admin a password: only the user, through
   the emailed link, can set one. Account *creation* is the deliberate
   exception — see the note above.
