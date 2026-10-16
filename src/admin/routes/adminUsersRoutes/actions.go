@@ -46,6 +46,21 @@ var (
 		return authServices.NewCasdoorUserClient().SetForbidden(userID, forbidden)
 	}
 
+	// DisableUserTerminalKey deactivates the account's tt-backend API key —
+	// a long-lived credential the frontend holds and calls tt-backend with
+	// directly, independent of the Casdoor JWT. Blocking sign-in alone
+	// (SetAccountForbidden) stops a NEW login from ever getting that JWT,
+	// but does nothing to a key the browser already has: without this call,
+	// a blocked user keeps every terminal capability tt-backend grants that
+	// key until it expires on its own. Same fault-tolerant call the
+	// self-service key-regenerate endpoint and account erasure already use
+	// (src/terminalTrainer/routes/userTerminalKeyController.go,
+	// src/auth/services/userDeletionService.go) — a tt-backend-side failure
+	// is only ever a warning; the local row still flips to inactive.
+	DisableUserTerminalKey = func(db *gorm.DB, userID string) error {
+		return ttServices.NewTerminalTrainerService(db).DisableUserKey(userID)
+	}
+
 	// CreateCasdoorUser creates the account in the identity provider.
 	CreateCasdoorUser = func(user *casdoorsdk.User) error {
 		return authServices.NewCasdoorUserClient().AddUser(user)
@@ -283,6 +298,17 @@ func NewSetForbiddenHandler(db *gorm.DB) gin.HandlerFunc {
 			utils.Error("set forbidden=%t failed for %s: %v", input.Forbidden, targetID, err)
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "update_failed"})
 			return
+		}
+
+		// Best-effort: a blocked sign-in is the point of this endpoint even
+		// if tt-backend is unreachable, but leaving an already-issued key
+		// active would make the block a no-op for anyone already signed in.
+		// Most blocked accounts never opened a terminal and carry no key at
+		// all — that's an expected no-op, not a failure worth logging.
+		if input.Forbidden {
+			if err := DisableUserTerminalKey(db, targetID); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				utils.Warn("could not disable terminal trainer key for blocked user %s: %v", targetID, err)
+			}
 		}
 
 		eventType := auditModels.AuditEventUserReactivated

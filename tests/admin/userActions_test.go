@@ -3,6 +3,7 @@ package admin_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -216,13 +217,22 @@ func TestSetForbiddenHandler_BlocksAccount(t *testing.T) {
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.SetAccountForbidden
-	t.Cleanup(func() { adminUsersRoutes.SetAccountForbidden = original })
+	originalKeyDisable := adminUsersRoutes.DisableUserTerminalKey
+	t.Cleanup(func() {
+		adminUsersRoutes.SetAccountForbidden = original
+		adminUsersRoutes.DisableUserTerminalKey = originalKeyDisable
+	})
 
 	var calledUserID string
 	var calledForbidden bool
 	adminUsersRoutes.SetAccountForbidden = func(userID string, forbidden bool) error {
 		calledUserID = userID
 		calledForbidden = forbidden
+		return nil
+	}
+	var keyDisabledFor string
+	adminUsersRoutes.DisableUserTerminalKey = func(_ *gorm.DB, userID string) error {
+		keyDisabledFor = userID
 		return nil
 	}
 
@@ -238,6 +248,77 @@ func TestSetForbiddenHandler_BlocksAccount(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 	assert.Equal(t, uidBob, calledUserID)
 	assert.True(t, calledForbidden)
+	assert.Equal(t, uidBob, keyDisabledFor,
+		"blocking sign-in must also disable the account's tt-backend terminal key, "+
+			"or a user already holding that key keeps every terminal capability it grants")
+}
+
+// A blocked user's already-issued tt-backend key must not survive the block
+// even if tt-backend itself is unreachable — the account block (Casdoor) is
+// the point of this endpoint and must still succeed.
+func TestSetForbiddenHandler_BlocksAccountEvenIfKeyDisableFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+
+	original := adminUsersRoutes.SetAccountForbidden
+	originalKeyDisable := adminUsersRoutes.DisableUserTerminalKey
+	t.Cleanup(func() {
+		adminUsersRoutes.SetAccountForbidden = original
+		adminUsersRoutes.DisableUserTerminalKey = originalKeyDisable
+	})
+	adminUsersRoutes.SetAccountForbidden = func(userID string, forbidden bool) error { return nil }
+	adminUsersRoutes.DisableUserTerminalKey = func(_ *gorm.DB, userID string) error {
+		return fmt.Errorf("tt-backend unreachable")
+	}
+
+	r := newAdminRouter(http.MethodPut, "/admin/users/:id/forbidden",
+		adminUsersRoutes.NewSetForbiddenHandler(db), true)
+
+	body, _ := json.Marshal(adminUsersRoutes.SetForbiddenInput{Forbidden: true})
+	req := httptest.NewRequest(http.MethodPut, "/admin/users/"+uidBob+"/forbidden", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "a tt-backend key-disable failure must not fail the block itself; body=%s", w.Body.String())
+}
+
+// Unblocking must not try to disable the key — there is nothing to revoke
+// for a sign-in being restored, and it would also be a pointless call for
+// the common case (the account's key, if any, is already inactive from the
+// original block).
+func TestSetForbiddenHandler_UnblockDoesNotTouchTerminalKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+
+	originalForbidden := adminUsersRoutes.SetAccountForbidden
+	originalKeyDisable := adminUsersRoutes.DisableUserTerminalKey
+	t.Cleanup(func() {
+		adminUsersRoutes.SetAccountForbidden = originalForbidden
+		adminUsersRoutes.DisableUserTerminalKey = originalKeyDisable
+	})
+	adminUsersRoutes.SetAccountForbidden = func(userID string, forbidden bool) error { return nil }
+	keyDisableCalled := false
+	adminUsersRoutes.DisableUserTerminalKey = func(_ *gorm.DB, userID string) error {
+		keyDisableCalled = true
+		return nil
+	}
+
+	r := newAdminRouter(http.MethodPut, "/admin/users/:id/forbidden",
+		adminUsersRoutes.NewSetForbiddenHandler(db), true)
+
+	body, _ := json.Marshal(adminUsersRoutes.SetForbiddenInput{Forbidden: false})
+	req := httptest.NewRequest(http.MethodPut, "/admin/users/"+uidBob+"/forbidden", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	assert.False(t, keyDisableCalled)
 }
 
 func TestSetForbiddenHandler_CannotBlockOwnAccount(t *testing.T) {
