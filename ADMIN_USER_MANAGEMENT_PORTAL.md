@@ -125,6 +125,20 @@ Layer 2 together), `routes.go` wires the gin handlers.
   existing `CasdoorUserClient.SetForbidden`, already used for member
   offboarding. An admin cannot block their own account through this
   endpoint.
+
+  Blocking also disables the account's tt-backend terminal trainer API key
+  (`DisableUserTerminalKey`, same fault-tolerant call the self-service
+  key-regenerate endpoint and account erasure already use). This matters
+  because that key is a separate, long-lived credential the frontend holds
+  and calls tt-backend with directly — `is_forbidden` only stops a *new*
+  sign-in from ever getting a fresh Casdoor JWT, so without this, a user
+  already holding a key kept every terminal capability it grants, block
+  or no block, until the key expired on its own. The call is best-effort
+  (a tt-backend outage warns, never fails the block) and skipped entirely
+  on unblock — there's nothing to revoke when restoring sign-in, and the
+  account's key, if any, is already inactive from the original block; the
+  user gets a working one back through the existing self-service
+  `POST /user-terminal-keys/regenerate`.
 - **Assign a subscription plan** needed no new backend code — the
   `POST /user-subscriptions/admin-assign` endpoint
   (`SubscriptionController.AdminAssignSubscription`) already existed and is
@@ -157,8 +171,11 @@ visible wherever the platform's audit trail is reviewed.
   asserting the new `member_id` field.
 - `tests/admin/userActions_test.go` — one test per handler added in the
   first slice: success path, the admin-only gate, the two self-action
-  guards (can't revoke own admin role, can't block own account), and the
-  "unknown user" 404 for password reset.
+  guards (can't revoke own admin role, can't block own account), the
+  "unknown user" 404 for password reset, and three cases pinning the
+  terminal-key behavior added later: blocking disables the key, a
+  tt-backend failure doesn't fail the block itself, and unblocking never
+  touches the key at all.
 - `tests/admin/userCreation_test.go` — create-user success (asserts the
   Casdoor payload: ToS properties synthesized, `created_by_admin` stamped,
   password passed through verbatim), the `email_verified` flag actually
