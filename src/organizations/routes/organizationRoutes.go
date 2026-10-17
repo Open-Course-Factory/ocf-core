@@ -52,5 +52,11 @@ func OrganizationRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		// Backend assignment management
 		organizations.GET("/:id/backends", middleware.AuthManagement(), orgController.GetOrganizationBackends)
 		organizations.PUT("/:id/backends", middleware.AuthManagement(), orgController.UpdateOrganizationBackends)
+
+		// AI-assisted scenario authoring: bring-your-own-key config + the
+		// generate call that replaces the manual copy-prompt/paste-answer flow.
+		organizations.GET("/:id/ai-config", middleware.AuthManagement(), orgController.GetAiConfig)
+		organizations.PUT("/:id/ai-config", middleware.AuthManagement(), orgController.UpdateAiConfig)
+		organizations.POST("/:id/ai-config/generate", middleware.AuthManagement(), orgController.GenerateWithAi)
 	}
 }

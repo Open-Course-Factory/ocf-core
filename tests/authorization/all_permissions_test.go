@@ -560,6 +560,9 @@ func TestRegisterOrganizationPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/organizations/:id/backends", "GET"},
 		{"/api/v1/organizations/:id/import", "POST"},
 		{"/api/v1/organizations/:id/groups/:groupId/regenerate-passwords", "POST"},
+		{"/api/v1/organizations/:id/ai-config", "GET"},
+		{"/api/v1/organizations/:id/ai-config", "PUT"},
+		{"/api/v1/organizations/:id/ai-config/generate", "POST"},
 	}
 
 	for _, r := range memberRoutes {

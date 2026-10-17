@@ -63,6 +63,21 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Update organization backends (admin only)",
 		},
+		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/ai-config", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
+			Description: "Read whether the organization's AI-assisted scenario authoring is configured (never the key)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/ai-config", Method: "PUT",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Configure the organization's own AI assistant endpoint, model and key (manager and owner only)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/ai-config/generate", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
+			Description: "Generate a scenario answer with the organization's configured AI assistant",
+		},
 	)
 
 	log.Println("=== Organization custom route permissions registered ===")
