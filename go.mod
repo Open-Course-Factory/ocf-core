@@ -2,6 +2,8 @@ module soli/formations
 
 go 1.24.1
 
+toolchain go1.27.2
+
 require (
 	dario.cat/mergo v1.0.2 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect

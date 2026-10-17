@@ -1,4 +1,4 @@
-FROM golang:1.25-bookworm
+FROM golang:1.27-bookworm
 
 # Installation minimale des outils système + Node.js + PostgreSQL client + glab
 RUN apt-get update && apt-get install -y \

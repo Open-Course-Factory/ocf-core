@@ -34,7 +34,7 @@ default:
 
 variables:
   # Build configuration
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.27-bookworm"
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: "/certs"
   GOPROXY: "https://proxy.golang.org,direct"
@@ -233,7 +233,7 @@ test:auth:
         -e POSTGRES_PORT=$POSTGRES_PORT \
         -e POSTGRES_SSLMODE=$POSTGRES_SSLMODE \
         -e CASDOOR_ENDPOINT=$CASDOOR_ENDPOINT \
-        golang:1.24 \
+        golang:1.27-bookworm \
         sh -c "go test -v -tags integration -timeout=120s ./tests/auth/... 2>&1 | tee auth_tests.log"
     - cat auth_tests.log | go-junit-report -set-exit-code > auth_report.xml
 

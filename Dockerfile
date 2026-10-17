@@ -1,5 +1,5 @@
 # Base Golang Image
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.27-bookworm AS builder
 
 # Setup working directory
 WORKDIR /usr/src/ocf-core

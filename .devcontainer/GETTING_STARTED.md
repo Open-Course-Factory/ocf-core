@@ -188,7 +188,7 @@ Master:
 ## 🔧 What's Pre-Configured
 
 ### Development Tools
-✅ Go 1.24
+✅ Go 1.27
 ✅ Node.js 21
 ✅ PostgreSQL Client
 ✅ Docker-in-Docker

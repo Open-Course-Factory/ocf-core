@@ -107,7 +107,7 @@ docker run --rm \
     -e POSTGRES_PORT=5432 \
     -e POSTGRES_SSLMODE=disable \
     -e CASDOOR_ENDPOINT=http://ocf-casdoor-test:8000 \
-    golang:1.24.1 \
+    golang:1.27-bookworm \
     sh -c "go test -v -run TestSpecificTest ./tests/auth/..."
 ```
 
@@ -159,7 +159,7 @@ The local scripts mirror the GitLab CI configuration with these differences:
 |--------|-----------|-------|
 | JWT Key | From CI variable | Must be in place manually |
 | Cleanup | Always automatic | Optional (manual cleanup available) |
-| Go installation | Downloads Go 1.24 | Uses Docker image |
+| Go installation | Downloads Go 1.27 | Uses Docker image |
 | Networking | DinD network | Host Docker network |
 
 ## What Gets Tested

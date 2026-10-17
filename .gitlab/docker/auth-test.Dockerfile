@@ -9,10 +9,10 @@ RUN apk add --no-cache \
     wget \
     bash
 
-# Install Go 1.24.1
-RUN wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz && \
-    rm go1.24.1.linux-amd64.tar.gz
+# Install Go 1.27.2
+RUN wget https://go.dev/dl/go1.27.2.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.27.2.linux-amd64.tar.gz && \
+    rm go1.27.2.linux-amd64.tar.gz
 
 # Set up Go environment
 ENV PATH=$PATH:/usr/local/go/bin:/go/bin

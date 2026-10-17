@@ -5,7 +5,7 @@ This dev container comes pre-configured with everything you need for OCF Core de
 ## 🚀 What's Included
 
 ### Development Tools
-- **Go 1.24** - Main language
+- **Go 1.27** - Main language
 - **Node.js 21** - For MCPs and frontend tools
 - **PostgreSQL Client** - Database CLI and MCP prerequisites
 - **Docker-in-Docker** - Access to sibling containers
@@ -72,7 +72,7 @@ Test APIs directly:
 When you open the project in VS Code:
 
 1. **Container Build**
-   - Installs Go 1.24 + Node.js 21
+   - Installs Go 1.27 + Node.js 21
    - Sets up user `ocf` with sudo access
    - Installs Go tools (swag, dlv, gopls)
    - Downloads Go dependencies
@@ -125,7 +125,7 @@ node --version  # Should show v21.x
 npm --version   # Should show 10.x+
 
 # Check Go
-go version      # Should show 1.24
+go version      # Should show 1.27
 
 # Check Docker access
 docker ps       # Should show postgres, casdoor, etc.
@@ -178,7 +178,7 @@ Main configuration:
 
 ### `.devcontainer/Dockerfile`
 Container image definition:
-- Base image (golang:1.24-bookworm)
+- Base image (golang:1.27-bookworm)
 - System packages (Node.js, vim, etc.)
 - User configuration
 - Go tools installation

@@ -76,7 +76,7 @@ docker run --rm \
     -e POSTGRES_PORT=$POSTGRES_PORT \
     -e POSTGRES_SSLMODE=$POSTGRES_SSLMODE \
     -e CASDOOR_ENDPOINT=$CASDOOR_ENDPOINT \
-    golang:1.24.1 \
+    golang:1.27-bookworm \
     sh -c "go test -v -timeout=120s ./tests/auth/... 2>&1" || TEST_FAILED=1
 
 echo ""
