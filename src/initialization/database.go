@@ -162,6 +162,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Organization entities (Phase 1)
 	db.AutoMigrate(&organizationModels.Organization{})
 	db.AutoMigrate(&organizationModels.OrganizationMember{})
+	db.AutoMigrate(&organizationModels.OrganizationAiConfig{})
 
 	// Scenario entities
 	db.AutoMigrate(&scenarioModels.ProjectFile{})
