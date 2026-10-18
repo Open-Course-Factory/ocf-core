@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -63,7 +64,7 @@ func (sc *SSHClient) GenerateClient(ip, name string, sshkeys []string, port int)
 			return nil
 		},
 	}
-	addr = fmt.Sprintf("%s:%d", ip, port)
+	addr = net.JoinHostPort(ip, strconv.Itoa(port))
 	if client, err = ssh.Dial("tcp", addr, clientConfig); err != nil {
 		return err
 	}
