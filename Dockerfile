@@ -9,7 +9,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Tooling layer — cached unless version bumps
-RUN go install github.com/swaggo/swag/cmd/swag@v1.8.12
+RUN go install github.com/swaggo/swag/cmd/swag@v1.16.6
 
 # Source layer — invalidates on every commit, but deps above are cached
 COPY . .
