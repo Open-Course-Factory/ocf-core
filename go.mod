@@ -86,8 +86,8 @@ require (
 )
 
 require (
-	github.com/casbin/casbin/v2 v2.120.0
-	github.com/casbin/gorm-adapter/v3 v3.36.0
+	github.com/casbin/casbin/v2 v2.135.0
+	github.com/casbin/gorm-adapter/v3 v3.39.0
 	github.com/casdoor/casdoor-go-sdk v1.44.0
 	github.com/gertd/go-pluralize v0.2.1
 	github.com/gin-gonic/gin v1.10.1
