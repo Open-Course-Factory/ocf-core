@@ -101,8 +101,8 @@ require (
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/jackc/pgx/v5 v5.7.5
-	github.com/lib/pq v1.10.9
+	github.com/jackc/pgx/v5 v5.11.0
+	github.com/lib/pq v1.12.3
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/rs/cors/wrapper/gin v0.0.0-20261008204034-5d834403882d
 	github.com/stretchr/testify v1.11.1
@@ -114,7 +114,7 @@ require (
 	golang.org/x/sync v0.23.0
 	golang.org/x/text v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
-	gorm.io/driver/postgres v1.6.0
+	gorm.io/driver/postgres v1.6.3
 	gorm.io/driver/sqlite v1.6.0
-	gorm.io/gorm v1.30.1
+	gorm.io/gorm v1.31.2
 )
