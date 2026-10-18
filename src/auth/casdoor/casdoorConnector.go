@@ -7,6 +7,7 @@ import (
 	"soli/formations/src/auth/interfaces"
 
 	"github.com/casbin/casbin/v3"
+	"github.com/casbin/casbin/v3/persist"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/gorm"
@@ -48,7 +49,7 @@ func InitCasdoorEnforcer(db *gorm.DB, basePath string) {
 	}
 
 	// Load model configuration file and policy store adapter
-	enforcer, err := casbin.NewEnforcer(basePath+"src/configuration/keymatch_model.conf", adapter)
+	enforcer, err := NewEnforcer(basePath+"src/configuration/keymatch_model.conf", adapter)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create casbin enforcer: %v", err))
 	}
@@ -59,8 +60,26 @@ func InitCasdoorEnforcer(db *gorm.DB, basePath string) {
 		panic(fmt.Sprintf("Failed to load policy from DB: %v", errEnforcer))
 	}
 
-	// Utiliser le wrapper au lieu d'assigner directement
-	Enforcer = NewEnforcerWrapper(enforcer)
+	Enforcer = enforcer
+}
+
+// NewEnforcer builds the enforcer the application uses, wrapped behind
+// EnforcerInterface. With no adapter, policies live in memory only.
+//
+// It is a SyncedEnforcer: requests enforce concurrently while member hooks and
+// role sync change policies, and every policy change resets casbin's matcher
+// cache. Unsynchronised, a reader caught by that reset ends the process
+// ("sync: unlock of unlocked mutex").
+func NewEnforcer(modelPath string, adapter ...persist.Adapter) (interfaces.EnforcerInterface, error) {
+	params := []any{modelPath}
+	for _, a := range adapter {
+		params = append(params, a)
+	}
+	enforcer, err := casbin.NewSyncedEnforcer(params...)
+	if err != nil {
+		return nil, err
+	}
+	return NewEnforcerWrapper(enforcer), nil
 }
 
 // SetEnforcer permet d'injecter un enforcer pour les tests

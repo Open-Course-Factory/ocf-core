@@ -6,13 +6,13 @@ import (
 	"github.com/casbin/casbin/v3"
 )
 
-// enforcerWrapper wraps casbin.Enforcer to implement EnforcerInterface
+// enforcerWrapper wraps casbin.SyncedEnforcer to implement EnforcerInterface
 type enforcerWrapper struct {
-	enforcer *casbin.Enforcer
+	enforcer *casbin.SyncedEnforcer
 }
 
 // NewEnforcerWrapper creates a new wrapper around the casbin enforcer
-func NewEnforcerWrapper(enforcer *casbin.Enforcer) interfaces.EnforcerInterface {
+func NewEnforcerWrapper(enforcer *casbin.SyncedEnforcer) interfaces.EnforcerInterface {
 	return &enforcerWrapper{
 		enforcer: enforcer,
 	}
