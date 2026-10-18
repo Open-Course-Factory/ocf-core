@@ -3,8 +3,8 @@ package terminalTrainer_tests
 import (
 	"testing"
 
-	"github.com/casbin/casbin/v2"
-	"github.com/casbin/casbin/v2/model"
+	"github.com/casbin/casbin/v3"
+	"github.com/casbin/casbin/v3/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

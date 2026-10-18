@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casbin/casbin/v2/util"
+	"github.com/casbin/casbin/v3/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
