@@ -107,7 +107,7 @@ docker run --rm \
     -e POSTGRES_PORT=5432 \
     -e POSTGRES_SSLMODE=disable \
     -e CASDOOR_ENDPOINT=http://ocf-casdoor-test:8000 \
-    golang:1.27-bookworm \
+    golang:1.27-trixie \
     sh -c "go test -v -run TestSpecificTest ./tests/auth/..."
 ```
 
