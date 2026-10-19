@@ -474,8 +474,8 @@ type matrixStack struct {
 }
 
 // freshWorld drops the previous world's rows and its Casbin grants (which
-// AuthManagement would otherwise reload on every request, growing with each
-// cell), then seeds a new one.
+// would otherwise pile up in the enforcer, growing with each cell), then seeds
+// a new one.
 func (s *matrixStack) freshWorld(t *testing.T) matrixWorld {
 	t.Helper()
 	require.NoError(t, s.casbinDB.Exec("DELETE FROM casbin_rule WHERE id > ?", s.lastRoutePolicy).Error)

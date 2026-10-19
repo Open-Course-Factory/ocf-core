@@ -68,12 +68,6 @@ func (am *AuthMiddleware) AuthManagement() gin.HandlerFunc {
 			return
 		}
 
-		errLoadingPolicy := casdoor.Enforcer.LoadPolicy()
-		if errLoadingPolicy != nil {
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error loading authorization policy"})
-			return
-		}
-
 		// Get user roles first
 		var userRoles []string
 		userRoles, errRoles := casdoor.Enforcer.GetRolesForUser(userId)
@@ -158,10 +152,6 @@ func (am *AuthMiddleware) IdentifyIfPresent() gin.HandlerFunc {
 			return
 		}
 		if isTokenBlacklisted(tokenJTI) {
-			ctx.Next()
-			return
-		}
-		if err := casdoor.Enforcer.LoadPolicy(); err != nil {
 			ctx.Next()
 			return
 		}
