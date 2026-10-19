@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
+	"strings"
 	"time"
 
 	config "soli/formations/src/configuration"
@@ -99,10 +100,10 @@ func (s *emailService) SendEmailWithAttachment(to, subject, body, attachmentName
 	boundary := "----=_OCF_Boundary_" + fmt.Sprintf("%d", time.Now().UnixNano())
 
 	// Wrap base64 at 76 chars per line (RFC 2045)
-	var wrappedAttachment string
+	var wrappedAttachment strings.Builder
 	for i := 0; i < len(attachmentBase64); i += 76 {
 		end := min(i+76, len(attachmentBase64))
-		wrappedAttachment += attachmentBase64[i:end] + "\r\n"
+		wrappedAttachment.WriteString(attachmentBase64[i:end] + "\r\n")
 	}
 
 	msg := fmt.Sprintf(
@@ -126,7 +127,7 @@ func (s *emailService) SendEmailWithAttachment(to, subject, body, attachmentName
 			"--%s--\r\n",
 		from, to, subject, boundary,
 		boundary, body,
-		boundary, attachmentName, wrappedAttachment, boundary,
+		boundary, attachmentName, wrappedAttachment.String(), boundary,
 	)
 
 	addr := fmt.Sprintf("%s:%s", s.smtpHost, s.smtpPort)
