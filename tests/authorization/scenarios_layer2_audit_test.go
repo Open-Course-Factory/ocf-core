@@ -245,7 +245,6 @@ func TestScenariosLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
 	}
 
 	for _, route := range allScenariosAuditRoutes() {
-		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			perm, found := access.RouteRegistry.Lookup(route.method, route.registeredPath)
 			assert.True(t, found,
@@ -276,7 +275,6 @@ func TestScenariosLayer2_NoRegexMethodInCatalog(t *testing.T) {
 	}
 
 	for _, route := range allScenariosAuditRoutes() {
-		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			assert.True(t, allowed[route.method],
 				"catalog route %s %s declares a non-canonical HTTP method — Layer 2 Lookup is exact-match, regex/alternation methods would silently bypass enforcement",

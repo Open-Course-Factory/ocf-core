@@ -69,7 +69,6 @@ func JsonEncodeSerializedFields(model any, updateMap map[string]any) {
 // looking for gorm:"serializer:json" tags and JSON-encodes matching map values.
 func CollectSerializerFields(t reflect.Type, updateMap map[string]any) {
 	for field := range t.Fields() {
-		field := field
 
 		// Recurse into embedded (anonymous) structs
 		if field.Anonymous {
@@ -153,7 +152,6 @@ func stringFieldsOf(dto any) map[string]bool {
 		return out
 	}
 	for field := range t.Fields() {
-		field := field
 		ft := field.Type
 		for ft.Kind() == reflect.Pointer {
 			ft = ft.Elem()
@@ -248,7 +246,6 @@ type fieldKeys struct {
 func requestFieldKeys(t reflect.Type) []fieldKeys {
 	var out []fieldKeys
 	for field := range t.Fields() {
-		field := field
 
 		if field.Anonymous {
 			ft := field.Type

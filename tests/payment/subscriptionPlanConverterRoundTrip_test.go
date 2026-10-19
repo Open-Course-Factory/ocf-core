@@ -189,7 +189,6 @@ func TestSubscriptionPlanConverter_AllModelFieldsRoundTrip(t *testing.T) {
 	// converter dropped it.
 	pt := reflect.TypeFor[models.SubscriptionPlan]()
 	for f := range pt.Fields() {
-		f := f
 		if f.Anonymous || f.PkgPath != "" {
 			continue
 		}

@@ -328,7 +328,6 @@ func adaptPaymentRoutes() []layer2AuditRoute {
 // Layer 2-enforced route across all four modules.
 func TestLayer2Audit_Outsider_Denied(t *testing.T) {
 	for _, route := range allLayer2AuditRoutes() {
-		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			checker := &layer2AuditMembershipChecker{
 				groupRoles: map[string]string{},
@@ -355,7 +354,6 @@ func TestLayer2Audit_Outsider_Denied(t *testing.T) {
 // meaningful role hierarchy (EntityOwner, AdminOnly) are skipped.
 func TestLayer2Audit_InsufficientRole_Denied(t *testing.T) {
 	for _, route := range allLayer2AuditRoutes() {
-		route := route // capture
 		if route.skipInsufficientRoleTest {
 			continue
 		}
@@ -409,7 +407,6 @@ func TestLayer2Audit_Authorized_Allowed(t *testing.T) {
 	const authorizedUser = "authorized-user"
 
 	for _, route := range allLayer2AuditRoutes() {
-		route := route // capture
 		// AdminOnly "authorized" case is covered by AdminBypass (only admins pass).
 		if route.ruleType == access.AdminOnly {
 			continue
@@ -449,7 +446,6 @@ func TestLayer2Audit_Authorized_Allowed(t *testing.T) {
 // bypasses every Layer 2 enforcement rule and reaches the handler (200).
 func TestLayer2Audit_AdminBypass_Allowed(t *testing.T) {
 	for _, route := range allLayer2AuditRoutes() {
-		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			// Admin has no membership / ownership — bypass must still allow.
 			checker := &layer2AuditMembershipChecker{
@@ -513,7 +509,6 @@ func TestLayer2Audit_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
 	}
 
 	for _, route := range allLayer2AuditRoutes() {
-		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			perm, found := access.RouteRegistry.Lookup(route.method, route.registeredPath)
 			assert.True(t, found,
@@ -539,7 +534,6 @@ func TestLayer2Audit_NoRegexMethodInCatalog(t *testing.T) {
 	}
 
 	for _, route := range allLayer2AuditRoutes() {
-		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			assert.True(t, allowed[route.method],
 				"catalog route %s %s declares a non-canonical HTTP method — Layer 2 Lookup is exact-match, regex/alternation methods silently bypass enforcement (see #265, MR !180)",

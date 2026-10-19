@@ -18,8 +18,8 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
-	"soli/formations/src/scenarios/repositories"
 	"soli/formations/src/scenarios/models"
+	"soli/formations/src/scenarios/repositories"
 	ttDto "soli/formations/src/terminalTrainer/dto"
 	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
@@ -28,10 +28,10 @@ import (
 // Sentinel errors for teacher dashboard operations. Controllers translate these
 // into HTTP status codes (404 for the first three to avoid leaking existence).
 var (
-	ErrSessionNotFound              = errors.New("session not found")
-	ErrSessionNotInGroup            = errors.New("session does not belong to this group")
-	ErrSessionHasNoTerminal         = errors.New("session has no terminal yet")
-	ErrScenarioNotAssignedToGroup   = errors.New("scenario is not assigned to this group")
+	ErrSessionNotFound            = errors.New("session not found")
+	ErrSessionNotInGroup          = errors.New("session does not belong to this group")
+	ErrSessionHasNoTerminal       = errors.New("session has no terminal yet")
+	ErrScenarioNotAssignedToGroup = errors.New("scenario is not assigned to this group")
 )
 
 // AssignmentProgressItem re-exports the DTO so callers reference it as
@@ -40,16 +40,16 @@ type AssignmentProgressItem = dto.AssignmentProgressItem
 
 // ScenarioResultItem represents a single session result for a scenario
 type ScenarioResultItem struct {
-	SessionID      uuid.UUID  `json:"session_id"`
-	UserID         string     `json:"user_id"`
-	UserName       string     `json:"user_name,omitempty"`
-	UserEmail      string     `json:"user_email,omitempty"`
-	Status         string     `json:"status"`
-	Grade          *float64   `json:"grade,omitempty"`
-	CurrentStep    int        `json:"current_step"`
-	TotalSteps     int64      `json:"total_steps"`
-	CompletedSteps int64      `json:"completed_steps"`
-	TotalHintsUsed int64      `json:"total_hints_used"`
+	SessionID      uuid.UUID `json:"session_id"`
+	UserID         string    `json:"user_id"`
+	UserName       string    `json:"user_name,omitempty"`
+	UserEmail      string    `json:"user_email,omitempty"`
+	Status         string    `json:"status"`
+	Grade          *float64  `json:"grade,omitempty"`
+	CurrentStep    int       `json:"current_step"`
+	TotalSteps     int64     `json:"total_steps"`
+	CompletedSteps int64     `json:"completed_steps"`
+	TotalHintsUsed int64     `json:"total_hints_used"`
 	// CorrectCount is the absolute number of correct answers in the session
 	// (correct quiz answers + correct flag submissions). Computed in Go from
 	// step progress and ScenarioFlag rows; not stored in DB.
@@ -489,7 +489,6 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 
 	var mu sync.Mutex
 	for _, member := range members {
-		member := member // capture range variable
 		g.Go(func() error {
 			outcome := s.startScenarioForMember(run, member.UserID)
 			mu.Lock()
@@ -770,15 +769,15 @@ type SessionStepDetail struct {
 
 // SessionDetailResponse contains full session info with step-by-step progress
 type SessionDetailResponse struct {
-	SessionID         uuid.UUID          `json:"session_id"`
-	UserID            string             `json:"user_id"`
-	UserName          string             `json:"user_name,omitempty"`
-	UserEmail         string             `json:"user_email,omitempty"`
-	TrainerID         *string            `json:"trainer_id,omitempty"`
-	ScenarioID        uuid.UUID          `json:"scenario_id"`
-	ScenarioTitle     string             `json:"scenario_title"`
-	Status            string             `json:"status"`
-	Grade             *float64           `json:"grade,omitempty"`
+	SessionID     uuid.UUID `json:"session_id"`
+	UserID        string    `json:"user_id"`
+	UserName      string    `json:"user_name,omitempty"`
+	UserEmail     string    `json:"user_email,omitempty"`
+	TrainerID     *string   `json:"trainer_id,omitempty"`
+	ScenarioID    uuid.UUID `json:"scenario_id"`
+	ScenarioTitle string    `json:"scenario_title"`
+	Status        string    `json:"status"`
+	Grade         *float64  `json:"grade,omitempty"`
 	// CorrectCount mirrors ScenarioResultItem.CorrectCount at the session level
 	// so the detail modal header can render absolute progress without a second
 	// trip through the list endpoint.
@@ -1342,4 +1341,3 @@ func computeSessionCorrectCounts(db *gorm.DB, scenarioID, sessionID uuid.UUID) (
 
 	return ComputeCorrectCountsFromLoaded(steps, progress, flags, questionCountByStepID)
 }
-
