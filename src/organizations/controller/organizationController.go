@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	goerrors "errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -516,13 +517,7 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 
 	// Validate: if DefaultBackend is set and AllowedBackends is non-empty, default must be in allowed list
 	if input.DefaultBackend != "" && len(input.AllowedBackends) > 0 {
-		found := false
-		for _, b := range input.AllowedBackends {
-			if b == input.DefaultBackend {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(input.AllowedBackends, input.DefaultBackend)
 		if !found {
 			errors.Respond(ctx, http.StatusBadRequest, "default_backend must be in allowed_backends list")
 			return

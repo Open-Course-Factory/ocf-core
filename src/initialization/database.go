@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -381,13 +382,7 @@ func syncCasdoorRolesToCasbin() {
 			continue
 		}
 		existingRoles, _ := casdoor.Enforcer.GetRolesForUser(user.Id)
-		hasMember := false
-		for _, r := range existingRoles {
-			if r == "member" {
-				hasMember = true
-				break
-			}
-		}
+		hasMember := slices.Contains(existingRoles, "member")
 		if !hasMember {
 			if _, err := casdoor.Enforcer.AddGroupingPolicy(user.Id, "member"); err != nil {
 				log.Printf("[ROLE-SYNC] Failed to add 'member' role to user %s: %v", user.Id, err)
@@ -408,13 +403,7 @@ func syncCasdoorRolesToCasbin() {
 				continue
 			}
 			existingRoles, _ := casdoor.Enforcer.GetRolesForUser(userID)
-			hasRole := false
-			for _, r := range existingRoles {
-				if r == role.Name {
-					hasRole = true
-					break
-				}
-			}
+			hasRole := slices.Contains(existingRoles, role.Name)
 			if !hasRole {
 				if _, err := casdoor.Enforcer.AddGroupingPolicy(userID, role.Name); err != nil {
 					log.Printf("[ROLE-SYNC] Failed to add '%s' role to user %s: %v", role.Name, userID, err)
@@ -628,13 +617,7 @@ func BackfillGroupManagementEntitlement(db *gorm.DB) {
 		if err := json.Unmarshal([]byte(r.Features), &features); err != nil {
 			continue // unparseable legacy value — nothing to migrate
 		}
-		hasLegacyString := false
-		for _, f := range features {
-			if f == "group_management" {
-				hasLegacyString = true
-				break
-			}
-		}
+		hasLegacyString := slices.Contains(features, "group_management")
 		if !hasLegacyString {
 			continue
 		}
