@@ -18,9 +18,6 @@ import (
 	"soli/formations/src/payment/models"
 )
 
-//go:fix inline
-func boolPtr(v bool) *bool { return new(v) }
-
 // createPlanThroughTheEntityConverter runs the same two steps the generic
 // create path runs: DtoToModel, then db.Create on the model.
 func createPlanThroughTheEntityConverter(t *testing.T, input dto.CreateSubscriptionPlanInput) *models.SubscriptionPlan {

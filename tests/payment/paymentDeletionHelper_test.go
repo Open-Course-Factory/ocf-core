@@ -30,12 +30,6 @@ import (
 	"github.com/stripe/stripe-go/v85"
 )
 
-// pdhStrPtr returns a pointer to the given string (local helper so the file
-// stays self-contained; no shared helper of this name exists in tests/payment/).
-//
-//go:fix inline
-func pdhStrPtr(s string) *string { return new(s) }
-
 // stubStripeForPDH implements services.StripeService. Only CancelSubscription
 // is wired; every other method panics on call. The test sets a cancel handler
 // that records invocations and chooses what to return.

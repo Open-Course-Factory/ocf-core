@@ -14,9 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:fix inline
-func ptrString(s string) *string { return new(s) }
-
 func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 
 	planID := uuid.New()
