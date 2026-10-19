@@ -22,7 +22,7 @@ func TestCsvImport_DerivesUsernamesCasdoorAccepts(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity()
 	offboarding := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
 	importer := services.NewImportService(db, identity, offboarding)

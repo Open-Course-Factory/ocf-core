@@ -14,7 +14,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func ptrString(s string) *string { return &s }
+//go:fix inline
+func ptrString(s string) *string { return new(s) }
 
 func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 
@@ -31,12 +32,12 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 				UpdatedAt: updatedAt,
 			},
 		},
-		Name:               "Pro Plan",
-		Description:        "Professional plan with advanced features",
-		StripeProductID:    ptrString("prod_123"),
-		StripePriceID:      ptrString("price_123"),
-		PriceAmount:        2999, // 29.99 EUR
-		Currency:           "eur",
+		Name:                   "Pro Plan",
+		Description:            "Professional plan with advanced features",
+		StripeProductID:        new("prod_123"),
+		StripePriceID:          new("price_123"),
+		PriceAmount:            2999, // 29.99 EUR
+		Currency:               "eur",
 		BillingInterval:        "month",
 		GroupManagementEnabled: true, // derives "group_management" + "multiple_groups"
 		NetworkAccessEnabled:   true, // derives "network_access"
@@ -50,8 +51,8 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 	assert.Equal(t, planID, result.ID)
 	assert.Equal(t, "Pro Plan", result.Name)
 	assert.Equal(t, "Professional plan with advanced features", result.Description)
-	assert.Equal(t, ptrString("prod_123"), result.StripeProductID)
-	assert.Equal(t, ptrString("price_123"), result.StripePriceID)
+	assert.Equal(t, new("prod_123"), result.StripeProductID)
+	assert.Equal(t, new("price_123"), result.StripePriceID)
 	assert.Equal(t, int64(2999), result.PriceAmount)
 	assert.Equal(t, "eur", result.Currency)
 	assert.Equal(t, "month", result.BillingInterval)
@@ -94,10 +95,10 @@ func TestConversionService_UserSubscriptionToDTO(t *testing.T) {
 			s := "cus_123"
 			return &s
 		}(),
-		Status: "active",
-		CurrentPeriodStart:   now,
-		CurrentPeriodEnd:     now.AddDate(0, 1, 0),
-		CancelAtPeriodEnd:    false,
+		Status:             "active",
+		CurrentPeriodStart: now,
+		CurrentPeriodEnd:   now.AddDate(0, 1, 0),
+		CancelAtPeriodEnd:  false,
 	}
 
 	result := services.UserSubscriptionToDTO(subscription)

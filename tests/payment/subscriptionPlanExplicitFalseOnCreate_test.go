@@ -18,7 +18,8 @@ import (
 	"soli/formations/src/payment/models"
 )
 
-func boolPtr(v bool) *bool { return &v }
+//go:fix inline
+func boolPtr(v bool) *bool { return new(v) }
 
 // createPlanThroughTheEntityConverter runs the same two steps the generic
 // create path runs: DtoToModel, then db.Create on the model.
@@ -42,7 +43,7 @@ func hiddenPlanInput(name string) dto.CreateSubscriptionPlanInput {
 		BillingInterval: "month",
 		MaxCPU:          1000,
 		MaxMemoryMB:     1024,
-		IsCatalog:       boolPtr(false),
+		IsCatalog:       new(false),
 	}
 }
 

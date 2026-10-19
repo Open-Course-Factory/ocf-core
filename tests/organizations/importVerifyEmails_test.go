@@ -41,7 +41,7 @@ func TestCsvImport_VerifyEmails_CreatedAccountIsVerified(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity()
 	offboarding := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
 	importer := services.NewImportService(db, identity, offboarding)
@@ -60,7 +60,7 @@ func TestCsvImport_VerifyEmails_UpdatedAccountIsVerifiedAndKeepsItsProperties(t 
 	identity := newFakeIdentity("student-a")
 	identity.users["student-a"].Properties = map[string]string{"tos_version": "2026-01-01"}
 	offboarding := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
 	importer := services.NewImportService(db, identity, offboarding)
@@ -84,7 +84,7 @@ func TestCsvImport_VerifyEmailsOff_LeavesVerificationUntouched(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	offboarding := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
 	importer := services.NewImportService(db, identity, offboarding)
@@ -140,7 +140,7 @@ func postImport(t *testing.T, router *gin.Engine, orgID uuid.UUID, fields map[st
 func TestImportController_VerifyEmailsDefaultsToTrue(t *testing.T) {
 	installMockEnforcer(t)
 	db := newOffboardingDB(t)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
 	importer := &recordingImportService{}

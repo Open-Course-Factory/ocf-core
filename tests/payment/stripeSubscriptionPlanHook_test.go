@@ -3,21 +3,23 @@
 // Tests for StripeSubscriptionPlanHook.handleAfterDelete behavior.
 //
 // Bug under test (issue #267, MR !181):
-//   When a SubscriptionPlan is deleted, the hook calls
-//   UpdateSubscriptionPlanInStripe(plan), which forwards plan.IsActive=true
-//   to Stripe. As a result, the Stripe product is NEVER archived after a
-//   GORM soft delete.
+//
+//	When a SubscriptionPlan is deleted, the hook calls
+//	UpdateSubscriptionPlanInStripe(plan), which forwards plan.IsActive=true
+//	to Stripe. As a result, the Stripe product is NEVER archived after a
+//	GORM soft delete.
 //
 // Expected behavior (after fix):
-//   The hook MUST call ArchiveSubscriptionPlanInStripe(productID) on
-//   AfterDelete. This method (to be added on services.StripeService) will
-//   issue a `product.Update(productID, {Active: false})` call to Stripe so
-//   the product is properly archived.
+//
+//	The hook MUST call ArchiveSubscriptionPlanInStripe(productID) on
+//	AfterDelete. This method (to be added on services.StripeService) will
+//	issue a `product.Update(productID, {Active: false})` call to Stripe so
+//	the product is properly archived.
 //
 // These tests assert the new contract. They are RED until backend-dev:
-//   1. Adds ArchiveSubscriptionPlanInStripe(productID string) error to the
-//      services.StripeService interface and the concrete stripeService.
-//   2. Updates handleAfterDelete to call it.
+//  1. Adds ArchiveSubscriptionPlanInStripe(productID string) error to the
+//     services.StripeService interface and the concrete stripeService.
+//  2. Updates handleAfterDelete to call it.
 //
 // Note on integration: we cannot unit-test the real Stripe SDK call here
 // without an integration test setup. We only verify the hook calls the right
@@ -33,8 +35,8 @@ import (
 
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
-	paymentHooks "soli/formations/src/payment/hooks"
 	"soli/formations/src/payment/dto"
+	paymentHooks "soli/formations/src/payment/hooks"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 
@@ -46,8 +48,10 @@ import (
 
 // stringPtr returns a pointer to the given string. Used to build *string
 // fields like StripeProductID.
+//
+//go:fix inline
 func stringPtr(s string) *string {
-	return &s
+	return new(s)
 }
 
 // ============================================================================
@@ -207,7 +211,7 @@ func TestStripeSubscriptionPlanHook_AfterDelete_CallsArchive_WhenStripeProductID
 	plan := &models.SubscriptionPlan{
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:            "Test Plan",
-		StripeProductID: stringPtr("prod_test_123"),
+		StripeProductID: new("prod_test_123"),
 		IsActive:        true, // soft-deleted plans still have IsActive=true; that's the bug
 	}
 
@@ -300,7 +304,7 @@ func TestStripeSubscriptionPlanHook_AfterDelete_DoesNotPropagateArchiveError(t *
 	plan := &models.SubscriptionPlan{
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:            "Test Plan",
-		StripeProductID: stringPtr("prod_test_999"),
+		StripeProductID: new("prod_test_999"),
 		IsActive:        true,
 	}
 
@@ -343,7 +347,7 @@ func TestStripeSubscriptionPlanHook_AfterDelete_NeverCallsUpdate(t *testing.T) {
 	plan := &models.SubscriptionPlan{
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:            "Test Plan",
-		StripeProductID: stringPtr("prod_test_456"),
+		StripeProductID: new("prod_test_456"),
 		IsActive:        true,
 	}
 

@@ -32,7 +32,9 @@ import (
 
 // pdhStrPtr returns a pointer to the given string (local helper so the file
 // stays self-contained; no shared helper of this name exists in tests/payment/).
-func pdhStrPtr(s string) *string { return &s }
+//
+//go:fix inline
+func pdhStrPtr(s string) *string { return new(s) }
 
 // stubStripeForPDH implements services.StripeService. Only CancelSubscription
 // is wired; every other method panics on call. The test sets a cancel handler
@@ -188,7 +190,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				UserID:               userID,
 				SubscriptionPlanID:   planID,
 				Status:               "active",
-				StripeSubscriptionID: pdhStrPtr("sub_active_1"),
+				StripeSubscriptionID: new("sub_active_1"),
 				CurrentPeriodStart:   now,
 				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
 			},
@@ -197,7 +199,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				UserID:               userID,
 				SubscriptionPlanID:   planID,
 				Status:               "past_due",
-				StripeSubscriptionID: pdhStrPtr("sub_pastdue_1"),
+				StripeSubscriptionID: new("sub_pastdue_1"),
 				CurrentPeriodStart:   now,
 				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
 			},
@@ -218,7 +220,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				UserID:               userID,
 				SubscriptionPlanID:   planID,
 				Status:               "unpaid",
-				StripeSubscriptionID: pdhStrPtr("sub_unpaid_1"),
+				StripeSubscriptionID: new("sub_unpaid_1"),
 				CurrentPeriodStart:   now,
 				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
 			},
@@ -227,7 +229,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				UserID:               userID,
 				SubscriptionPlanID:   planID,
 				Status:               "cancelled",
-				StripeSubscriptionID: pdhStrPtr("sub_cancelled_1"),
+				StripeSubscriptionID: new("sub_cancelled_1"),
 				CurrentPeriodStart:   now,
 				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
 			},
@@ -236,7 +238,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				UserID:               userID,
 				SubscriptionPlanID:   planID,
 				Status:               "incomplete",
-				StripeSubscriptionID: pdhStrPtr("sub_incomplete_1"),
+				StripeSubscriptionID: new("sub_incomplete_1"),
 				CurrentPeriodStart:   now,
 				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
 			},
@@ -254,7 +256,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				UserID:               "other-user",
 				SubscriptionPlanID:   planID,
 				Status:               "active",
-				StripeSubscriptionID: pdhStrPtr("sub_other_user"),
+				StripeSubscriptionID: new("sub_other_user"),
 				CurrentPeriodStart:   now,
 				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
 			},
@@ -306,7 +308,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				UserID:               userID,
 				SubscriptionPlanID:   planID,
 				Status:               "active",
-				StripeSubscriptionID: pdhStrPtr("sub_first"),
+				StripeSubscriptionID: new("sub_first"),
 				CurrentPeriodStart:   now,
 				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
 			},
@@ -315,7 +317,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				UserID:               userID,
 				SubscriptionPlanID:   planID,
 				Status:               "active",
-				StripeSubscriptionID: pdhStrPtr("sub_second"),
+				StripeSubscriptionID: new("sub_second"),
 				CurrentPeriodStart:   now,
 				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
 			},
@@ -355,7 +357,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 			UserID:               userID,
 			SubscriptionPlanID:   planID,
 			Status:               "cancelled",
-			StripeSubscriptionID: pdhStrPtr("sub_old"),
+			StripeSubscriptionID: new("sub_old"),
 			CurrentPeriodStart:   time.Now(),
 			CurrentPeriodEnd:     time.Now().Add(30 * 24 * time.Hour),
 		}).Error)

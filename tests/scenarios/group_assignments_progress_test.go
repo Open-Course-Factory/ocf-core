@@ -67,11 +67,11 @@ func TestGetGroupAssignmentsProgress_AggregatesPerScenario(t *testing.T) {
 	// --- Scenario A: 2 of 3 members completed, grades 80 and 100 → avg 90 ---
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenarioA.ID, UserID: "student-1", Status: "completed",
-		Grade: floatPtr(80.0), StartedAt: now.Add(-2 * time.Hour), CompletedAt: &now,
+		Grade: new(80.0), StartedAt: now.Add(-2 * time.Hour), CompletedAt: &now,
 	}).Error)
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenarioA.ID, UserID: "student-2", Status: "completed",
-		Grade: floatPtr(100.0), StartedAt: now.Add(-2 * time.Hour), CompletedAt: &now,
+		Grade: new(100.0), StartedAt: now.Add(-2 * time.Hour), CompletedAt: &now,
 	}).Error)
 	// student-3 has an active (not completed) session on A.
 	require.NoError(t, db.Create(&models.ScenarioSession{
@@ -82,17 +82,17 @@ func TestGetGroupAssignmentsProgress_AggregatesPerScenario(t *testing.T) {
 	// A PREVIEW session on A from an active member — must be excluded entirely.
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenarioA.ID, UserID: "student-1", Status: "completed",
-		Grade: floatPtr(10.0), IsPreview: true, StartedAt: now, CompletedAt: &now,
+		Grade: new(10.0), IsPreview: true, StartedAt: now, CompletedAt: &now,
 	}).Error)
 	// A session on A from the INACTIVE member — must be excluded.
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenarioA.ID, UserID: "inactive-student", Status: "completed",
-		Grade: floatPtr(0.0), StartedAt: now, CompletedAt: &now,
+		Grade: new(0.0), StartedAt: now, CompletedAt: &now,
 	}).Error)
 	// A session on A from a non-member — must be excluded.
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenarioA.ID, UserID: "outsider", Status: "completed",
-		Grade: floatPtr(0.0), StartedAt: now, CompletedAt: &now,
+		Grade: new(0.0), StartedAt: now, CompletedAt: &now,
 	}).Error)
 
 	// --- Scenario B: 1 member with an active session, nobody completed ---
@@ -166,11 +166,11 @@ func TestGetGroupAssignmentsProgress_DistinctMembers(t *testing.T) {
 	// Two completed sessions from the SAME member.
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "repeat-student", Status: "completed",
-		Grade: floatPtr(60.0), StartedAt: now.Add(-3 * time.Hour), CompletedAt: &now,
+		Grade: new(60.0), StartedAt: now.Add(-3 * time.Hour), CompletedAt: &now,
 	}).Error)
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "repeat-student", Status: "completed",
-		Grade: floatPtr(90.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
+		Grade: new(90.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
 	}).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)

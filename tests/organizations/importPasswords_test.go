@@ -29,7 +29,7 @@ func TestCsvImport_ReimportLeavesAnExistingPasswordAlone(t *testing.T) {
 	identity := newFakeIdentity()
 	identity.users["existing-1"] = &casdoorsdk.User{Id: "existing-1", Owner: "soli", Name: "ada-lovelace-1", Email: "ada@example.com"}
 	offboarding := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
 	importer := services.NewImportService(db, identity, offboarding)
@@ -49,7 +49,7 @@ func TestCsvImport_ExplicitPasswordOnExistingAccountGoesThroughSetPassword(t *te
 	identity := newFakeIdentity()
 	identity.users["existing-1"] = &casdoorsdk.User{Id: "existing-1", Owner: "soli", Name: "ada-lovelace-1", Email: "ada@example.com"}
 	offboarding := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
 	importer := services.NewImportService(db, identity, offboarding)
@@ -66,7 +66,7 @@ func TestCsvImport_CreatedAccountGetsAGeneratedPasswordAndACredential(t *testing
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity()
 	offboarding := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
 	importer := services.NewImportService(db, identity, offboarding)

@@ -56,7 +56,7 @@ func TestStripeSyncWorker_ProcessOnce_DrainsPendingRows(t *testing.T) {
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:            "P",
 		PriceAmount:     100,
-		StripeProductID: stringPtr("prod_test"),
+		StripeProductID: new("prod_test"),
 	}
 
 	if err := queue.Enqueue(paymentModels.StripeSyncOperationCreate, plan); err != nil {

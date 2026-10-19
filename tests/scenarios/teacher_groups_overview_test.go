@@ -151,7 +151,7 @@ func TestGetManagedGroupsOverview_StaffOnlyClass_ReportsZeroLearners(t *testing.
 	now := time.Now()
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: teacher, Status: "completed",
-		Grade: floatPtr(100.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
+		Grade: new(100.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
 	}).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
@@ -407,7 +407,7 @@ func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing
 	now := time.Now()
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-1", Status: "completed",
-		Grade: floatPtr(80.0), StartedAt: now.Add(-2 * time.Hour), CompletedAt: &now,
+		Grade: new(80.0), StartedAt: now.Add(-2 * time.Hour), CompletedAt: &now,
 	}).Error)
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-2", Status: "active",
@@ -416,12 +416,12 @@ func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing
 	// A preview session must not inflate the counts.
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-3", Status: "completed",
-		Grade: floatPtr(10.0), IsPreview: true, StartedAt: now, CompletedAt: &now,
+		Grade: new(10.0), IsPreview: true, StartedAt: now, CompletedAt: &now,
 	}).Error)
 	// Neither must the teacher's own non-preview run through the scenario (#480).
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: teacher, Status: "completed",
-		Grade: floatPtr(100.0), StartedAt: now.Add(-3 * time.Hour), CompletedAt: &now,
+		Grade: new(100.0), StartedAt: now.Add(-3 * time.Hour), CompletedAt: &now,
 	}).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
@@ -477,7 +477,7 @@ func TestGetManagedGroupsOverview_ClassCompletionRate_IsAPercentageNotAFraction(
 	now := time.Now()
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-1", Status: "completed",
-		Grade: floatPtr(70.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
+		Grade: new(70.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
 	}).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
@@ -519,7 +519,7 @@ func TestGetManagedGroupsOverview_MultipleGroups_AggregatesStayPerGroup(t *testi
 	now := time.Now()
 	require.NoError(t, db.Create(&models.ScenarioSession{
 		ScenarioID: scenarioA.ID, UserID: "student-1", Status: "completed",
-		Grade: floatPtr(90.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
+		Grade: new(90.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
 	}).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)

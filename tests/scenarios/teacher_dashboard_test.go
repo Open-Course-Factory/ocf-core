@@ -1000,7 +1000,9 @@ func TestTeacherController_ResetSessions_AccessDenied(t *testing.T) {
 // helper and fields are implemented in src/scenarios/services.
 
 // floatPtr returns a pointer to the supplied float (used by quiz-score setup).
-func floatPtr(v float64) *float64 { return &v }
+//
+//go:fix inline
+func floatPtr(v float64) *float64 { return new(v) }
 
 // entityModelWithID is a tiny helper used by the unit-level
 // ComputeCorrectCountsFromLoaded tests to construct a ScenarioStep with a
@@ -1020,7 +1022,7 @@ func TestComputeCorrectCountsFromLoaded_QuizAndFlag_AllCorrect(t *testing.T) {
 		{BaseModel: entityModelWithID(flagStepID), Order: 1, StepType: "flag", HasFlag: true},
 	}
 	progress := []models.ScenarioStepProgress{
-		{StepOrder: 0, StepType: "quiz", Status: "completed", QuizScore: floatPtr(1.0)},
+		{StepOrder: 0, StepType: "quiz", Status: "completed", QuizScore: new(1.0)},
 		{StepOrder: 1, StepType: "flag", Status: "completed"},
 	}
 	flags := []models.ScenarioFlag{
@@ -1039,7 +1041,7 @@ func TestComputeCorrectCountsFromLoaded_PartialQuiz(t *testing.T) {
 		{BaseModel: entityModelWithID(quizStepID), Order: 0, StepType: "quiz"},
 	}
 	progress := []models.ScenarioStepProgress{
-		{StepOrder: 0, StepType: "quiz", Status: "completed", QuizScore: floatPtr(0.6)},
+		{StepOrder: 0, StepType: "quiz", Status: "completed", QuizScore: new(0.6)},
 	}
 	questionCounts := map[uuid.UUID]int{quizStepID: 5}
 
@@ -1110,7 +1112,7 @@ func TestComputeCorrectCountsFromLoaded_FloatRoundingSafety(t *testing.T) {
 		{BaseModel: entityModelWithID(quizStepID), Order: 0, StepType: "quiz"},
 	}
 	progress := []models.ScenarioStepProgress{
-		{StepOrder: 0, StepType: "quiz", Status: "completed", QuizScore: floatPtr(0.6)},
+		{StepOrder: 0, StepType: "quiz", Status: "completed", QuizScore: new(0.6)},
 	}
 	questionCounts := map[uuid.UUID]int{quizStepID: 5}
 
@@ -1162,11 +1164,11 @@ func TestGetScenarioResults_PopulatesCorrectCounts(t *testing.T) {
 	// Per-step progress with quiz scores
 	require.NoError(t, db.Create(&models.ScenarioStepProgress{
 		SessionID: session.ID, StepOrder: 0, StepType: "quiz", Status: "completed",
-		QuizScore: floatPtr(1.0),
+		QuizScore: new(1.0),
 	}).Error)
 	require.NoError(t, db.Create(&models.ScenarioStepProgress{
 		SessionID: session.ID, StepOrder: 1, StepType: "quiz", Status: "completed",
-		QuizScore: floatPtr(0.5),
+		QuizScore: new(0.5),
 	}).Error)
 	require.NoError(t, db.Create(&models.ScenarioStepProgress{
 		SessionID: session.ID, StepOrder: 2, StepType: "flag", Status: "completed",
@@ -1321,11 +1323,11 @@ func TestGetSessionDetail_PopulatesCorrectCounts(t *testing.T) {
 	require.NoError(t, db.Create(&session).Error)
 	require.NoError(t, db.Create(&models.ScenarioStepProgress{
 		SessionID: session.ID, StepOrder: 0, StepType: "quiz", Status: "completed",
-		QuizScore: floatPtr(1.0),
+		QuizScore: new(1.0),
 	}).Error)
 	require.NoError(t, db.Create(&models.ScenarioStepProgress{
 		SessionID: session.ID, StepOrder: 1, StepType: "quiz", Status: "completed",
-		QuizScore: floatPtr(0.5),
+		QuizScore: new(0.5),
 	}).Error)
 	require.NoError(t, db.Create(&models.ScenarioStepProgress{
 		SessionID: session.ID, StepOrder: 2, StepType: "flag", Status: "completed",
