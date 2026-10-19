@@ -48,7 +48,7 @@ func TestMiddleware_NoBackend_Passes(t *testing.T) {
 	// Terminal with no backend should pass middleware (backward compat)
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Equal(t, "passed", response["message"])

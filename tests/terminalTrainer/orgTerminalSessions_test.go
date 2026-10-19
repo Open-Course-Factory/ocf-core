@@ -58,7 +58,7 @@ func TestOrgTerminalSessions_RouteParamConsistency(t *testing.T) {
 		"Handler should read :id param, not :orgId — got 400 which means param was empty")
 
 	if w.Code == http.StatusBadRequest {
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &resp)
 		require.NoError(t, err)
 		t.Logf("Response: %s", w.Body.String())

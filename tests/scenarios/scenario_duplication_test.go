@@ -27,26 +27,26 @@ func createFullSourceScenario(t *testing.T, db *gorm.DB, orgID *uuid.UUID) model
 	t.Helper()
 
 	scenario := models.Scenario{
-		Name:           "test-scenario",
-		Title:          "Test Scenario",
-		Description:    "A test scenario for duplication",
-		Difficulty:     "intermediate",
-		EstimatedTimeMinutes:  30,
-		InstanceType:   "ubuntu:22.04",
-		Hostname:       "lab-host",
-		OsType:         "deb",
-		SourceType:     "upload",
-		FlagsEnabled:   true,
-		FlagSecret:     "original-secret-that-should-not-be-copied",
-		CrashTraps:     false,
-		Objectives:     "Learn to duplicate",
-		Prerequisites:  "None",
-		IntroText:      "Welcome to the test",
-		FinishText:     "Congratulations!",
-		SetupScript:    "#!/bin/bash\necho setup",
-		CreatedByID:    "original-user",
-		OrganizationID: orgID,
-		IsPublic:       true,
+		Name:                 "test-scenario",
+		Title:                "Test Scenario",
+		Description:          "A test scenario for duplication",
+		Difficulty:           "intermediate",
+		EstimatedTimeMinutes: 30,
+		InstanceType:         "ubuntu:22.04",
+		Hostname:             "lab-host",
+		OsType:               "deb",
+		SourceType:           "upload",
+		FlagsEnabled:         true,
+		FlagSecret:           "original-secret-that-should-not-be-copied",
+		CrashTraps:           false,
+		Objectives:           "Learn to duplicate",
+		Prerequisites:        "None",
+		IntroText:            "Welcome to the test",
+		FinishText:           "Congratulations!",
+		SetupScript:          "#!/bin/bash\necho setup",
+		CreatedByID:          "original-user",
+		OrganizationID:       orgID,
+		IsPublic:             true,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
@@ -60,16 +60,16 @@ func createFullSourceScenario(t *testing.T, db *gorm.DB, orgID *uuid.UUID) model
 
 	// Create step
 	step1 := models.ScenarioStep{
-		ScenarioID:         scenario.ID,
-		Order:              0,
-		Title:              "Step 1: Do the thing",
-		TextContent:        "# Step 1\nDo something",
-		HintContent:        "Try running the command",
-		VerifyScript:       "#!/bin/bash\nexit 0",
-		BackgroundScript:   "#!/bin/bash\necho bg",
-		HasFlag:            true,
-		FlagPath:           "/tmp/flag1",
-		FlagLevel:          1,
+		ScenarioID:       scenario.ID,
+		Order:            0,
+		Title:            "Step 1: Do the thing",
+		TextContent:      "# Step 1\nDo something",
+		HintContent:      "Try running the command",
+		VerifyScript:     "#!/bin/bash\nexit 0",
+		BackgroundScript: "#!/bin/bash\necho bg",
+		HasFlag:          true,
+		FlagPath:         "/tmp/flag1",
+		FlagLevel:        1,
 	}
 	require.NoError(t, db.Create(&step1).Error)
 
@@ -340,7 +340,7 @@ func TestDuplicateScenarioController_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "Test Scenario (Copy)", resp["title"])
 	assert.NotEqual(t, source.ID.String(), resp["id"])
@@ -385,7 +385,7 @@ func TestOrgDuplicateScenarioController_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "Test Scenario (Copy)", resp["title"])
 }

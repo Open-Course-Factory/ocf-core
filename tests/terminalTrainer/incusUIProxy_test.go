@@ -171,7 +171,7 @@ func TestIncusUIProxy_OrgOwnerDeniedUnallowedBackend(t *testing.T) {
 		"Org owner should be denied access to a backend NOT in their org's AllowedBackends")
 
 	// Verify error message
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.Contains(t, resp["error_message"], "forbidden",

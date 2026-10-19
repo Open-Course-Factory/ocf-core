@@ -138,7 +138,7 @@ func TestIsSessionOwnerOrOrgManager_OrgOwnerCanAccessStudentHistory(t *testing.T
 	// If we get a 403, let's verify it's the specific "Only session owner or admin"
 	// message to confirm it's the access check that blocked us.
 	if w.Code == http.StatusForbidden {
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		require.NoError(t, err)
 		t.Logf("Response body: %s", w.Body.String())
@@ -176,7 +176,7 @@ func TestIsSessionOwnerOrOrgManager_OrgManagerCanAccessStudentHistory(t *testing
 		"Org manager should be able to access student's command history (got 403 Forbidden)")
 
 	if w.Code == http.StatusForbidden {
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		require.NoError(t, err)
 		t.Logf("Response body: %s", w.Body.String())
@@ -402,11 +402,11 @@ func TestGetGroupCommandHistory_ScopedToOrganization(t *testing.T) {
 	assert.Equal(t, "application/json", contentType)
 
 	// Parse the JSON response and verify it returns 0 commands
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(body, &result)
 	require.NoError(t, err, "Response should be valid JSON")
 
-	commands, ok := result["commands"].([]interface{})
+	commands, ok := result["commands"].([]any)
 	require.True(t, ok, "Response should contain 'commands' array")
 	assert.Equal(t, 0, len(commands),
 		"Group command history should return 0 commands when student only has terminals in other orgs")
@@ -453,18 +453,18 @@ func TestGetGroupCommandHistoryStats_ScopedToOrganization(t *testing.T) {
 	assert.Equal(t, "application/json", contentType)
 
 	// Parse the JSON response and verify it returns empty statistics
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(body, &result)
 	require.NoError(t, err, "Response should be valid JSON")
 
-	summary, ok := result["summary"].(map[string]interface{})
+	summary, ok := result["summary"].(map[string]any)
 	require.True(t, ok, "Response should contain 'summary' object")
 	assert.Equal(t, float64(0), summary["total_sessions"],
 		"Stats should show 0 sessions when student only has terminals in other orgs")
 	assert.Equal(t, float64(0), summary["total_commands"],
 		"Stats should show 0 commands when student only has terminals in other orgs")
 
-	students, ok := result["students"].([]interface{})
+	students, ok := result["students"].([]any)
 	require.True(t, ok, "Response should contain 'students' array")
 	assert.Equal(t, 0, len(students),
 		"Stats should show 0 students when no terminals match the group's organization")
@@ -508,10 +508,10 @@ func TestGetGroupCommandHistory_NullOrgGroup_ReturnsNothing(t *testing.T) {
 	require.NoError(t, err, "a NULL-org group must resolve to an empty history, not a tt-backend call")
 	assert.Equal(t, "application/json", contentType)
 
-	var result map[string]interface{}
+	var result map[string]any
 	require.NoError(t, json.Unmarshal(body, &result), "Response should be valid JSON")
 
-	commands, ok := result["commands"].([]interface{})
+	commands, ok := result["commands"].([]any)
 	require.True(t, ok, "Response should contain 'commands' array")
 	assert.Equal(t, 0, len(commands), "a NULL-org group supervises nothing → 0 commands")
 	assert.Equal(t, float64(0), result["total"], "total must be 0 for a NULL-org group")
@@ -540,15 +540,15 @@ func TestGetGroupCommandHistoryStats_NullOrgGroup_ReturnsEmpty(t *testing.T) {
 	require.NoError(t, err, "a NULL-org group must resolve to empty stats, not a tt-backend call")
 	assert.Equal(t, "application/json", contentType)
 
-	var result map[string]interface{}
+	var result map[string]any
 	require.NoError(t, json.Unmarshal(body, &result), "Response should be valid JSON")
 
-	summary, ok := result["summary"].(map[string]interface{})
+	summary, ok := result["summary"].(map[string]any)
 	require.True(t, ok, "Response should contain 'summary' object")
 	assert.Equal(t, float64(0), summary["total_sessions"], "a NULL-org group supervises nothing → 0 sessions")
 	assert.Equal(t, float64(0), summary["total_commands"], "a NULL-org group supervises nothing → 0 commands")
 
-	students, ok := result["students"].([]interface{})
+	students, ok := result["students"].([]any)
 	require.True(t, ok, "Response should contain 'students' array")
 	assert.Equal(t, 0, len(students), "a NULL-org group supervises nothing → 0 students")
 }

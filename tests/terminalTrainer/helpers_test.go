@@ -19,10 +19,10 @@ func setupTestDB(t *testing.T) *gorm.DB {
 // createTestUserKey creates a test user key
 func createTestUserKey(db *gorm.DB, userID string) (*models.UserTerminalKey, error) {
 	userKey := &models.UserTerminalKey{
-		UserID:      userID,
-		APIKey:      "test-api-key-" + userID,
-		KeyName:     "test-key-" + userID,
-		IsActive:    true,
+		UserID:   userID,
+		APIKey:   "test-api-key-" + userID,
+		KeyName:  "test-key-" + userID,
+		IsActive: true,
 	}
 	err := db.Create(userKey).Error
 	return userKey, err
@@ -33,7 +33,7 @@ func createTestUserKey(db *gorm.DB, userID string) (*models.UserTerminalKey, err
 // "deleted") and the legacy convenience labels ("active"/"expired") that
 // pre-date the SSOT consolidation — those are translated via labelToState
 // so existing call sites keep compiling.
-func createTestTerminal(db *gorm.DB, userID string, lifecycleLabel string, userKeyIDOrExpiry interface{}) (*models.Terminal, error) {
+func createTestTerminal(db *gorm.DB, userID string, lifecycleLabel string, userKeyIDOrExpiry any) (*models.Terminal, error) {
 	// Support both old signature (userKeyID uuid.UUID) and new signature (expiresAt time.Time)
 	var userKeyID uuid.UUID
 	var expiresAt time.Time
@@ -89,6 +89,3 @@ func labelToState(label string) models.TerminalState {
 		return models.TerminalState(label)
 	}
 }
-
-
-

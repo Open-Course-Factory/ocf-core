@@ -1,13 +1,13 @@
 package scenarioController
 
 import (
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	stderrors "errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"slices"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
 	"time"
 
@@ -138,7 +138,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		// - Without org context (personal): only personal groups (no org) + public scenarios
 		var groupIDs []uuid.UUID
 		var conditions []string
-		var args []interface{}
+		var args []any
 
 		if orgID != nil {
 			// Get groups belonging to this org that the user is a member of
@@ -219,7 +219,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		now := time.Now()
 		if len(groupIDs) > 0 || len(orgIDs) > 0 {
 			var conditions []string
-			var scopeArgs []interface{}
+			var scopeArgs []any
 			if len(groupIDs) > 0 {
 				conditions = append(conditions, "(scope = 'group' AND group_id IN ?)")
 				scopeArgs = append(scopeArgs, groupIDs)
@@ -285,17 +285,17 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	output := make([]dto.AvailableScenarioOutput, 0, len(scenarios))
 	for _, s := range scenarios {
 		item := dto.AvailableScenarioOutput{
-			ID:            s.ID,
-			Name:          s.Name,
-			Title:         s.Title,
-			Description:   s.Description,
-			Difficulty:    s.Difficulty,
+			ID:                   s.ID,
+			Name:                 s.Name,
+			Title:                s.Title,
+			Description:          s.Description,
+			Difficulty:           s.Difficulty,
 			EstimatedTimeMinutes: s.EstimatedTimeMinutes,
-			InstanceType:  s.InstanceType,
-			OsType:        s.OsType,
-			IsPublic:      s.IsPublic,
-			CanManage:     manageable[s.ID],
-			CanRun:        runnable[s.ID],
+			InstanceType:         s.InstanceType,
+			OsType:               s.OsType,
+			IsPublic:             s.IsPublic,
+			CanManage:            manageable[s.ID],
+			CanRun:               runnable[s.ID],
 		}
 
 		// A scenario offered in more than one language says so here, so the card
@@ -391,10 +391,6 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, output)
 }
 
-
-
-
-
 // Block reasons are a contract with the launcher, which switches its copy on
 // them. Named here so the endpoint that emits one and the endpoint that refuses
 // a launch for the same cause cannot drift apart in spelling.
@@ -476,9 +472,6 @@ func blockReasonForBudgetMiss(quotaSvc paymentServices.QuotaService, plan *payme
 	return blockReasonBudgetExhausted
 }
 
-
-
-
 // LaunchScenario godoc
 // @Summary Launch a scenario with auto-provisioned terminal
 // @Description Creates a terminal session and starts a scenario session in one call
@@ -505,7 +498,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 
 	var input dto.LaunchScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid input: " + err.Error())
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid input: "+err.Error())
 		return
 	}
 
@@ -741,7 +734,7 @@ func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioI
 
 	// Build OR conditions for group and org scopes
 	var conditions []string
-	var args []interface{}
+	var args []any
 
 	args = append(args, scenarioID)
 
@@ -1161,4 +1154,3 @@ func (sc *scenarioLaunchController) resolveTerminalPlan(ctx *gin.Context, userID
 	}
 	return planResult, true
 }
-

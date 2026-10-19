@@ -59,7 +59,7 @@ func deactivatePreviousOrgSubscription(tx *gorm.DB, orgID uuid.UUID) error {
 		// states exactly this status. Widening it here would cancel rows the
 		// index never constrained. Change the two together.
 		Where("organization_id = ? AND status = ?", orgID, "active").
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status":       "cancelled",
 			"cancelled_at": time.Now(),
 		}).Error

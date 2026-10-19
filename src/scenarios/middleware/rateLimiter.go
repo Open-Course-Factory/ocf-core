@@ -124,7 +124,7 @@ func PerUserRateLimit() gin.HandlerFunc {
 			cleanupMu.Lock()
 			if time.Since(lastCleanup) > cleanupInterval { // double-check after lock
 				lastCleanup = time.Now()
-				buckets.Range(func(key, value interface{}) bool {
+				buckets.Range(func(key, value any) bool {
 					b := value.(*userBucket)
 					b.mu.Lock()
 					if len(b.timestamps) == 0 || time.Since(b.timestamps[len(b.timestamps)-1]) > staleThreshold {

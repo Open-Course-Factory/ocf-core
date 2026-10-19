@@ -14,7 +14,6 @@ import (
 	auditModels "soli/formations/src/audit/models"
 	"soli/formations/src/auth/casdoor"
 	authModels "soli/formations/src/auth/models"
-	scenarioServices "soli/formations/src/scenarios/services"
 	configModels "soli/formations/src/configuration/models"
 	courseModels "soli/formations/src/courses/models"
 	emailModels "soli/formations/src/email/models"
@@ -23,6 +22,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	scenarioModels "soli/formations/src/scenarios/models"
+	scenarioServices "soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	testtools "soli/formations/tests/testTools"
 )
@@ -548,7 +548,7 @@ func EnsureFreePlanExists(db *gorm.DB) {
 	// drifts back to the offer. Sourced from the same template as the creation
 	// above — the two used to be separate literals, and only one of them was
 	// updated when the free tier was renamed.
-	db.Model(&existing).Updates(map[string]interface{}{
+	db.Model(&existing).Updates(map[string]any{
 		"description":                    template.Description,
 		"max_session_duration_minutes":   template.MaxSessionDurationMinutes,
 		"max_cpu":                        template.MaxCPU,

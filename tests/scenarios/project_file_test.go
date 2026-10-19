@@ -43,8 +43,8 @@ func TestProjectFile_Create_Success(t *testing.T) {
 	assert.Equal(t, "script", found.ContentType)
 	assert.Equal(t, "#!/bin/bash\nexit 0", found.Content)
 	assert.Equal(t, "step1/verify.sh", found.RelPath)
-	assert.Equal(t, int64(0), found.SizeBytes)         // default
-	assert.Equal(t, "database", found.StorageType)      // default
+	assert.Equal(t, int64(0), found.SizeBytes)     // default
+	assert.Equal(t, "database", found.StorageType) // default
 	assert.NotEqual(t, uuid.Nil, found.ID)
 }
 
@@ -59,9 +59,9 @@ func TestProjectFile_Update_Success(t *testing.T) {
 	require.NoError(t, db.Create(&file).Error)
 
 	// Update name and content
-	err := db.Model(&file).Updates(map[string]interface{}{
-		"name": "updated.sh",
-		"content":  "echo updated",
+	err := db.Model(&file).Updates(map[string]any{
+		"name":    "updated.sh",
+		"content": "echo updated",
 	}).Error
 	require.NoError(t, err)
 
@@ -321,7 +321,7 @@ func TestProjectFileController_GetByScenario_ListsLinkedFiles(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	var result []map[string]interface{}
+	var result []map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
 	require.Len(t, result, 1)
 	assert.Equal(t, image.ID.String(), result[0]["id"])
@@ -344,10 +344,10 @@ func TestProjectFileController_GetByScenario_Empty(t *testing.T) {
 
 	// Scenario with no linked ProjectFile
 	scenario := models.Scenario{
-		Name:        "no-files-test",
-		Title:       "No Files",
+		Name:         "no-files-test",
+		Title:        "No Files",
 		InstanceType: "ubuntu:22.04",
-		CreatedByID: "user-1",
+		CreatedByID:  "user-1",
 		Steps: []models.ScenarioStep{
 			{Order: 0, Title: "Step 1"},
 		},
@@ -365,7 +365,7 @@ func TestProjectFileController_GetByScenario_Empty(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var result []map[string]interface{}
+	var result []map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
 	assert.Len(t, result, 0)
 }

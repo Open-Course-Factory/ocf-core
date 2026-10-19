@@ -144,7 +144,7 @@ func (s *EmailVerificationService) sendVerificationEmail(email, token, userName 
 	expiryHours := getExpiryDuration().Hours()
 
 	// Use existing SendTemplatedEmail method
-	return s.emailService.SendTemplatedEmail(email, "email_verification", map[string]interface{}{
+	return s.emailService.SendTemplatedEmail(email, "email_verification", map[string]any{
 		"VerificationLink": fmt.Sprintf("%s/verify-email?token=%s", frontendURL, token),
 		"Token":            token,
 		"UserName":         userName,

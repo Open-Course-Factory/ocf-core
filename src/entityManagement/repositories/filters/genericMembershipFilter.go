@@ -89,7 +89,7 @@ func (f *GenericMembershipFilter) Apply(
 		)
 	}
 
-	args := []interface{}{userID}
+	args := []any{userID}
 
 	// If organization access is enabled and manager roles are specified,
 	// add organization-based access condition

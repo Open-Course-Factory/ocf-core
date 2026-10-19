@@ -19,8 +19,8 @@ import (
 
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
-	"soli/formations/src/auth/services"
 	emailVerificationRoutes "soli/formations/src/auth/routes/emailVerificationRoutes"
+	"soli/formations/src/auth/services"
 )
 
 // --- Test DB setup ---
@@ -353,7 +353,7 @@ func TestVerifyEmailController_InvalidInput(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "INVALID_INPUT", response["error"])
 }
@@ -376,7 +376,7 @@ func TestVerifyEmailController_TokenNotFound(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "VERIFICATION_FAILED", response["error"])
 }
@@ -400,7 +400,7 @@ func TestVerifyEmailController_ExpiredToken(t *testing.T) {
 
 	assert.Equal(t, http.StatusGone, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "VERIFICATION_FAILED", response["error"])
 }
@@ -432,7 +432,7 @@ func TestVerifyEmailController_AlreadyUsedToken(t *testing.T) {
 
 	assert.Equal(t, http.StatusConflict, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "VERIFICATION_FAILED", response["error"])
 }

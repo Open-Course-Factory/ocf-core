@@ -64,7 +64,7 @@ func startLowRAMTTServer(t *testing.T) *httptest.Server {
 // addActiveGroupMember inserts a group member with is_active=true.
 // We cannot reuse addGroupMember because it hardcodes is_active=false.
 func addActiveGroupMember(t *testing.T, db interface {
-	Exec(sql string, values ...interface{}) *gorm.DB
+	Exec(sql string, values ...any) *gorm.DB
 }, groupID uuid.UUID, userID string, role groupModels.GroupMemberRole) {
 	t.Helper()
 	id := uuid.New()
@@ -78,8 +78,10 @@ func addActiveGroupMember(t *testing.T, db interface {
 // TestBulkCreateTerminals_InsufficientRAM_Refused is the red TDD test for issue #170.
 //
 // Setup: 5 active members, budget caps 100 vCPU / 51200 MiB so the size
-//        catalog still allows S (0.5 GB each).
-//        Server metrics: 1.0 GB available at 95% usage.
+//
+//	catalog still allows S (0.5 GB each).
+//	Server metrics: 1.0 GB available at 95% usage.
+//
 // Expected RAM needed: 5 × 0.5 = 2.5 GB > 1.0 GB available → refused.
 //
 // Current behaviour (FAILING): the service returns nil error and a Success=false response

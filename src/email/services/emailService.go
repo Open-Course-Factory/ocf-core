@@ -17,7 +17,7 @@ type EmailService interface {
 	SendEmail(to, subject, body string) error
 	SendEmailWithAttachment(to, subject, body, attachmentName, attachmentBase64 string) error
 	SendPasswordResetEmail(to, resetToken, resetURL string) error
-	SendTemplatedEmail(to, templateName string, variables map[string]interface{}) error
+	SendTemplatedEmail(to, templateName string, variables map[string]any) error
 }
 
 type emailService struct {
@@ -215,7 +215,7 @@ func (s *emailService) sendMailTLS(addr, from, to string, msg []byte) error {
 
 func (s *emailService) SendPasswordResetEmail(to, resetToken, resetURL string) error {
 	resetLink := fmt.Sprintf("%s?token=%s", resetURL, resetToken)
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"ResetLink": resetLink,
 		"ResetURL":  resetURL,
 		"Token":     resetToken,
@@ -224,7 +224,7 @@ func (s *emailService) SendPasswordResetEmail(to, resetToken, resetURL string) e
 }
 
 // SendTemplatedEmail sends an email using a template from the database
-func (s *emailService) SendTemplatedEmail(to, templateName string, variables map[string]interface{}) error {
+func (s *emailService) SendTemplatedEmail(to, templateName string, variables map[string]any) error {
 	if s.templateService == nil {
 		return fmt.Errorf("template service not initialized - use NewEmailServiceWithDB")
 	}

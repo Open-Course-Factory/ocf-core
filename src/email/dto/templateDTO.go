@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-
 // CreateTemplateInput represents the input for creating an email template
 type CreateTemplateInput struct {
 	Name        string `json:"name" binding:"required"`
@@ -52,14 +51,14 @@ type TestEmailInput struct {
 
 // TemplateResponse represents the response for template operations (DEPRECATED - kept for backward compat)
 type TemplateResponse struct {
-	Success bool        `json:"success"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 // TemplateListResponse represents the response for listing templates (DEPRECATED - kept for backward compat)
 type TemplateListResponse struct {
-	Success   bool        `json:"success"`
-	Message   string      `json:"message"`
-	Templates interface{} `json:"templates"`
+	Success   bool   `json:"success"`
+	Message   string `json:"message"`
+	Templates any    `json:"templates"`
 }

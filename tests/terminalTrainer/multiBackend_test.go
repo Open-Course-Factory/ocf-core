@@ -156,7 +156,7 @@ func TestGetUserSessions_OrgFilter(t *testing.T) {
 		SessionID:         "session-with-org",
 		UserID:            "test-user-org",
 		Name:              "With Org",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "M",
@@ -170,7 +170,7 @@ func TestGetUserSessions_OrgFilter(t *testing.T) {
 		SessionID:         "session-without-org",
 		UserID:            "test-user-org",
 		Name:              "Without Org",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -290,7 +290,7 @@ func TestSetDefaultBackend_AdminOnly(t *testing.T) {
 					"expected one of %v, got %d", tc.want.statusOneOf, w.Code)
 			}
 			if tc.want.errMsgContains != "" {
-				var apiErr map[string]interface{}
+				var apiErr map[string]any
 				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &apiErr))
 				assert.Equal(t, tc.want.errMsgContains, apiErr["error_message"])
 			}
@@ -361,11 +361,11 @@ func TestOrganization_BackendFieldsPersistence(t *testing.T) {
 	db := freshTestDB(t)
 
 	cases := []struct {
-		name             string
-		allowedBackends  []string
-		defaultBackend   string
-		wantAllowed      []string // nil/empty checked via assert.Empty
-		wantDefault      string
+		name            string
+		allowedBackends []string
+		defaultBackend  string
+		wantAllowed     []string // nil/empty checked via assert.Empty
+		wantDefault     string
 	}{
 		{
 			name:            "configured allowed_backends + default are persisted",
@@ -510,11 +510,11 @@ func TestGetOrganizationBackends(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var result map[string]interface{}
+		var result map[string]any
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
 		assert.Equal(t, "local", result["default_backend"])
 
-		backends, ok := result["allowed_backends"].([]interface{})
+		backends, ok := result["allowed_backends"].([]any)
 		require.True(t, ok)
 		assert.Len(t, backends, 2)
 	})
@@ -646,7 +646,7 @@ func TestGetBackends_AuthAndContract(t *testing.T) {
 					"expected status to NOT be %d, got %d", tc.wantNotStatus, w.Code)
 			}
 			if tc.wantErrEqual != "" || tc.wantErrContains != "" {
-				var apiErr map[string]interface{}
+				var apiErr map[string]any
 				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &apiErr))
 				if tc.wantErrEqual != "" {
 					assert.Equal(t, tc.wantErrEqual, apiErr["error_message"])
@@ -673,7 +673,7 @@ func TestGetBackends_GenericErrorOnFailure(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Skipf("expected 500 (TT API unconfigured), got %d — skipping leak check", w.Code)
 	}
-	var apiErr map[string]interface{}
+	var apiErr map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &apiErr))
 	errMsg := apiErr["error_message"].(string)
 	assert.NotContains(t, errMsg, "http://")
@@ -702,7 +702,7 @@ func TestGetServerMetrics_GenericErrorOnFailure(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Skipf("expected 500 (TT API unconfigured), got %d — skipping leak check", w.Code)
 	}
-	var apiErr map[string]interface{}
+	var apiErr map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &apiErr))
 	assert.Equal(t, "Failed to get server metrics", apiErr["error_message"])
 }
@@ -773,12 +773,12 @@ func TestGetBackendsForOrganization_Filtering(t *testing.T) {
 	svc, db := setupServiceWithMockBackends(t, allBackends, "default")
 
 	cases := []struct {
-		name              string
-		allowedBackends   []string
-		defaultBackend    string
-		wantIDs           []string // expected backend IDs returned (order-insensitive)
-		wantDefaultID     string   // ID expected to be marked is_default (empty = none required)
-		wantDefaultCount  int      // number of backends marked is_default
+		name             string
+		allowedBackends  []string
+		defaultBackend   string
+		wantIDs          []string // expected backend IDs returned (order-insensitive)
+		wantDefaultID    string   // ID expected to be marked is_default (empty = none required)
+		wantDefaultCount int      // number of backends marked is_default
 	}{
 		{
 			name:             "null allowed_backends → only system default",
@@ -890,7 +890,7 @@ func TestGetBackendsForOrganization_NoSystemDefault(t *testing.T) {
 func setupSetDefaultTestServer(
 	t *testing.T,
 	backends []dto.BackendInfo,
-	adminBackends []map[string]interface{},
+	adminBackends []map[string]any,
 	putHandler func(w http.ResponseWriter, r *http.Request),
 ) *httptest.Server {
 	t.Helper()
@@ -900,7 +900,7 @@ func setupSetDefaultTestServer(
 		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/backends") && !strings.Contains(r.URL.Path, "/admin/"):
 			_ = json.NewEncoder(w).Encode(backends)
 		case r.Method == "GET" && strings.Contains(r.URL.Path, "/admin/backends"):
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"success": true,
 				"data":    adminBackends,
 			})
@@ -908,7 +908,7 @@ func setupSetDefaultTestServer(
 			if putHandler != nil {
 				putHandler(w, r)
 			} else {
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Backend updated successfully"})
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "message": "Backend updated successfully"})
 			}
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -930,13 +930,13 @@ func TestSetSystemDefaultBackend_HappyPath(t *testing.T) {
 		{ID: "local", Name: "Local Server", Connected: true, IsDefault: true},
 		{ID: "cloud1", Name: "Cloud 1", Connected: true, IsDefault: false},
 	}
-	adminBackends := []map[string]interface{}{
+	adminBackends := []map[string]any{
 		{"id": 1, "backend_id": "local", "name": "Local Server", "is_default": true, "is_active": true, "server_url": "", "server_certificate": "", "client_certificate": "", "project": "default"},
 		{"id": 2, "backend_id": "cloud1", "name": "Cloud 1", "is_default": false, "is_active": true, "server_url": "https://cloud1:8443", "server_certificate": "", "client_certificate": "", "project": "default"},
 	}
 
 	var putCalled atomic.Int32
-	var putBody map[string]interface{}
+	var putBody map[string]any
 
 	ts := setupSetDefaultTestServer(t, publicBackends, adminBackends, func(w http.ResponseWriter, r *http.Request) {
 		putCalled.Add(1)
@@ -944,7 +944,7 @@ func TestSetSystemDefaultBackend_HappyPath(t *testing.T) {
 		_ = json.Unmarshal(body, &putBody)
 		// Verify correct path (should target backend id=2 for "cloud1")
 		assert.True(t, strings.HasSuffix(r.URL.Path, "/admin/backends/2"), "PUT should target admin backend ID 2, got %s", r.URL.Path)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Backend updated successfully"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "message": "Backend updated successfully"})
 	})
 	defer ts.Close()
 
@@ -971,7 +971,7 @@ func TestSetSystemDefaultBackend_PreflightErrors(t *testing.T) {
 	cases := []struct {
 		name           string
 		publicBackends []dto.BackendInfo
-		adminBackends  []map[string]interface{} // nil = use default (no admin path)
+		adminBackends  []map[string]any // nil = use default (no admin path)
 		targetID       string
 		wantErrSubstr  string
 	}{
@@ -996,7 +996,7 @@ func TestSetSystemDefaultBackend_PreflightErrors(t *testing.T) {
 			publicBackends: []dto.BackendInfo{
 				{ID: "local", Name: "Local Server", Connected: true, IsDefault: false},
 			},
-			adminBackends: []map[string]interface{}{}, // empty admin list
+			adminBackends: []map[string]any{}, // empty admin list
 			targetID:      "local",
 			wantErrSubstr: "not found in admin API",
 		},
@@ -1048,7 +1048,7 @@ func TestSetSystemDefaultBackend_PutFails(t *testing.T) {
 	publicBackends := []dto.BackendInfo{
 		{ID: "local", Name: "Local Server", Connected: true, IsDefault: false},
 	}
-	adminBackends := []map[string]interface{}{
+	adminBackends := []map[string]any{
 		{"id": 1, "backend_id": "local", "name": "Local Server", "is_default": false, "is_active": true, "server_url": "", "server_certificate": "", "client_certificate": "", "project": "default"},
 	}
 
@@ -1073,7 +1073,7 @@ func TestSetSystemDefaultBackend_InvalidatesCache(t *testing.T) {
 		{ID: "local", Name: "Local Server", Connected: true, IsDefault: true},
 		{ID: "cloud1", Name: "Cloud 1", Connected: true, IsDefault: false},
 	}
-	adminBackends := []map[string]interface{}{
+	adminBackends := []map[string]any{
 		{"id": 1, "backend_id": "local", "name": "Local Server", "is_default": true, "is_active": true, "server_url": "", "server_certificate": "", "client_certificate": "", "project": "default"},
 		{"id": 2, "backend_id": "cloud1", "name": "Cloud 1", "is_default": false, "is_active": true, "server_url": "https://cloud1:8443", "server_certificate": "", "client_certificate": "", "project": "default"},
 	}
@@ -1085,12 +1085,12 @@ func TestSetSystemDefaultBackend_InvalidatesCache(t *testing.T) {
 			getBackendsCount.Add(1)
 			_ = json.NewEncoder(w).Encode(publicBackends)
 		case r.Method == "GET" && strings.Contains(r.URL.Path, "/admin/backends"):
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"success": true,
 				"data":    adminBackends,
 			})
 		case r.Method == "PUT" && strings.Contains(r.URL.Path, "/admin/backends/"):
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

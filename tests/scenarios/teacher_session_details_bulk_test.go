@@ -164,7 +164,7 @@ func TestGetSessionDetailsBulkHandler_ReturnsItems(t *testing.T) {
 
 	router := setupRealTeacherRouter(t, sharedTestDB, ownerID, []string{"member"})
 
-	body, _ := json.Marshal(map[string]interface{}{
+	body, _ := json.Marshal(map[string]any{
 		"session_ids": []uuid.UUID{ids[0], ids[1]},
 	})
 

@@ -20,7 +20,7 @@ type TemplateService interface {
 	CreateTemplate(tmpl *models.EmailTemplate) error
 	UpdateTemplate(tmpl *models.EmailTemplate) error
 	DeleteTemplate(id uuid.UUID) error
-	RenderTemplate(name string, variables map[string]interface{}) (subject string, body string, err error)
+	RenderTemplate(name string, variables map[string]any) (subject string, body string, err error)
 	TestTemplate(id uuid.UUID, testEmail string) error
 }
 
@@ -57,7 +57,7 @@ func (s *templateService) GetAllTemplates() ([]models.EmailTemplate, error) {
 // CreateTemplate creates a new email template
 func (s *templateService) CreateTemplate(tmpl *models.EmailTemplate) error {
 	// Validate template can be rendered
-	if _, _, err := s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]interface{}{}); err != nil {
+	if _, _, err := s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]any{}); err != nil {
 		return fmt.Errorf("invalid template syntax: %w", err)
 	}
 
@@ -76,7 +76,7 @@ func (s *templateService) UpdateTemplate(tmpl *models.EmailTemplate) error {
 	}
 
 	// Validate template can be rendered
-	if _, _, err := s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]interface{}{}); err != nil {
+	if _, _, err := s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]any{}); err != nil {
 		return fmt.Errorf("invalid template syntax: %w", err)
 	}
 
@@ -104,7 +104,7 @@ func (s *templateService) DeleteTemplate(id uuid.UUID) error {
 }
 
 // RenderTemplate renders a template with the provided variables
-func (s *templateService) RenderTemplate(name string, variables map[string]interface{}) (subject string, body string, err error) {
+func (s *templateService) RenderTemplate(name string, variables map[string]any) (subject string, body string, err error) {
 	tmpl, err := s.GetTemplate(name)
 	if err != nil {
 		return "", "", err
@@ -114,7 +114,7 @@ func (s *templateService) RenderTemplate(name string, variables map[string]inter
 }
 
 // renderTemplateContent renders subject and body with variables
-func (s *templateService) renderTemplateContent(subjectTmpl, bodyTmpl string, variables map[string]interface{}) (subject string, body string, err error) {
+func (s *templateService) renderTemplateContent(subjectTmpl, bodyTmpl string, variables map[string]any) (subject string, body string, err error) {
 	// Render subject
 	subjectTemplate, err := template.New("subject").Parse(subjectTmpl)
 	if err != nil {
@@ -158,7 +158,7 @@ func (s *templateService) TestTemplate(id uuid.UUID, testEmail string) error {
 	}
 
 	// Build example data from variables
-	exampleData := make(map[string]interface{})
+	exampleData := make(map[string]any)
 	for _, v := range variables {
 		exampleData[v.Name] = v.Example
 	}

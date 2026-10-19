@@ -127,7 +127,7 @@ func (h *terminalHistoryService) GetSessionCommandHistoryAdmin(sessionUUID strin
 
 	url := fmt.Sprintf("%s/%s/admin/history/bulk", h.baseURL, h.apiVersion)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"session_uuids": []string{sessionUUID},
 		"limit":         limit,
 		"offset":        offset,
@@ -303,8 +303,8 @@ func (h *terminalHistoryService) GetGroupCommandHistory(groupID string, userID s
 			writer.Flush()
 			return buf.Bytes(), "text/csv", nil
 		}
-		result := map[string]interface{}{
-			"commands": []interface{}{},
+		result := map[string]any{
+			"commands": []any{},
 			"total":    0,
 			"limit":    limit,
 			"offset":   offset,
@@ -340,7 +340,7 @@ func (h *terminalHistoryService) GetGroupCommandHistory(groupID string, userID s
 	// Call tt-backend bulk endpoint
 	url := fmt.Sprintf("%s/%s/admin/history/bulk", h.baseURL, h.apiVersion)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"session_uuids": sessionUUIDs,
 		"limit":         limit,
 		"offset":        offset,
@@ -416,7 +416,7 @@ func (h *terminalHistoryService) GetGroupCommandHistory(groupID string, userID s
 	}
 
 	// JSON format (default)
-	result := map[string]interface{}{
+	result := map[string]any{
 		"commands": enriched,
 		"total":    bulkResponse.Total,
 		"limit":    bulkResponse.Limit,
@@ -490,15 +490,15 @@ func (h *terminalHistoryService) GetGroupCommandHistoryStats(groupID string, use
 
 	// If no sessions found, return empty stats
 	if len(sessionUUIDs) == 0 {
-		result := map[string]interface{}{
-			"summary": map[string]interface{}{
+		result := map[string]any{
+			"summary": map[string]any{
 				"total_commands":               0,
 				"total_sessions":               0,
 				"active_students":              0,
 				"avg_commands_per_student":     0.0,
 				"avg_time_per_student_seconds": 0,
 			},
-			"students": []interface{}{},
+			"students": []any{},
 		}
 		body, _ := json.Marshal(result)
 		return body, "application/json", nil
@@ -523,7 +523,7 @@ func (h *terminalHistoryService) GetGroupCommandHistoryStats(groupID string, use
 	// Call tt-backend bulk-stats endpoint
 	url := fmt.Sprintf("%s/%s/admin/history/bulk-stats", h.baseURL, h.apiVersion)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"session_uuids": sessionUUIDs,
 	}
 
@@ -608,7 +608,7 @@ func (h *terminalHistoryService) GetGroupCommandHistoryStats(groupID string, use
 		AvgTimePerStudentSecs int64   `json:"avg_time_per_student_seconds"`
 	}
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		"summary": statsSummary{
 			TotalCommands:         bulkStatsResponse.TotalCommands,
 			TotalSessions:         bulkStatsResponse.TotalSessions,

@@ -696,7 +696,7 @@ func (c *terminalComposer) startComposedSession(
 	}
 
 	// Build POST body for tt-backend
-	ttReqBody := map[string]interface{}{
+	ttReqBody := map[string]any{
 		"distribution":           input.Distribution,
 		"size":                   strings.ToLower(input.Size),
 		"features":               input.Features,

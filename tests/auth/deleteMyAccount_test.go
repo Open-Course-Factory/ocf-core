@@ -8,23 +8,23 @@
 // hand-rolling its own cascade:
 //
 //   - authServices.UserService.DeleteUser(id) (src/auth/services/userService.go):
-//       GetCasdoorUser → CancelAllActiveSubscriptionsForUser (ABORT on error)
-//       → PseudonymizeBillingDataForUser (preserves country + StripePaymentMethodID
-//       for the 10y retention) → Casdoor DeleteUser → RemoveGroupingPolicy.
+//     GetCasdoorUser → CancelAllActiveSubscriptionsForUser (ABORT on error)
+//     → PseudonymizeBillingDataForUser (preserves country + StripePaymentMethodID
+//     for the 10y retention) → Casdoor DeleteUser → RemoveGroupingPolicy.
 //   - paymentServices.PaymentDeletionHelper.PseudonymizeBillingDataForUser
-//       (src/payment/services/userDeletionHelper.go).
+//     (src/payment/services/userDeletionHelper.go).
 //   - paymentServices.TerminateUserTerminals(db, userID, nil)
-//       (src/payment/services/terminalCleanup.go): flips State=StateDeleted.
+//     (src/payment/services/terminalCleanup.go): flips State=StateDeleted.
 //
 // TARGET ordering of the reworked DeleteMyAccount(userID):
-//   1. pre-flight 409 gates (owns non-personal org / owns group)
-//   2. DELEGATE to userService.DeleteUser(userID) FIRST — so a Stripe-cancel
-//      failure aborts with ZERO OCF-side mutation (retryable, returns error;
-//      the handler maps that to 5xx).
-//   3. OCF-side cascade: TerminateUserTerminals, delete scenario sessions
-//      (cascade step_progress + flags), remove memberships, delete personal org,
-//      anonymize scenario authorship, anonymize audit logs (clear actor_id,
-//      actor_email AND actor_ip), delete auth tokens/settings/SSH keys.
+//  1. pre-flight 409 gates (owns non-personal org / owns group)
+//  2. DELEGATE to userService.DeleteUser(userID) FIRST — so a Stripe-cancel
+//     failure aborts with ZERO OCF-side mutation (retryable, returns error;
+//     the handler maps that to 5xx).
+//  3. OCF-side cascade: TerminateUserTerminals, delete scenario sessions
+//     (cascade step_progress + flags), remove memberships, delete personal org,
+//     anonymize scenario authorship, anonymize audit logs (clear actor_id,
+//     actor_email AND actor_ip), delete auth tokens/settings/SSH keys.
 //
 // TARGET API the backend-dev must introduce (these tests are RED until then):
 //   - services.NewUserDeletionService(db *gorm.DB, userSvc authServices.UserService, keyRevoker authServices.TerminalKeyRevoker) UserDeletionService
@@ -82,7 +82,7 @@ func (s *stubStripeService) CancelSubscription(subscriptionID string, cancelAtPe
 }
 
 // anyArg is a readable alias for mock.Anything.
-func anyArg() interface{} { return mock.Anything }
+func anyArg() any { return mock.Anything }
 
 // invokeDeleteMyAccountHandler runs the real gin handler so the confirmation
 // gate (400 on missing/invalid confirmation) is exercised end-to-end at the
