@@ -63,13 +63,13 @@ func TestCatalogGetCatalogSizes_StampsCPUMcpu(t *testing.T) {
 // TestCatalogGetCatalogSizes_Caches asserts the 60s TTL cache: the second call
 // is served from cache (no second /sizes hit) and equals the first result.
 func TestCatalogGetCatalogSizes_Caches(t *testing.T) {
-	var sizesCalls int32
+	var sizesCalls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/sizes") {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		atomic.AddInt32(&sizesCalls, 1)
+		sizesCalls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[{"key":"XS","cpu":1,"memory":"256MiB","sort_order":0}]`))
 	}))
@@ -85,7 +85,7 @@ func TestCatalogGetCatalogSizes_Caches(t *testing.T) {
 	require.NoError(t, err)
 
 	// Only one upstream /sizes fetch: the second call is served from the cache.
-	assert.Equal(t, int32(1), atomic.LoadInt32(&sizesCalls))
+	assert.Equal(t, int32(1), sizesCalls.Load())
 	assert.Equal(t, first, second)
 }
 
