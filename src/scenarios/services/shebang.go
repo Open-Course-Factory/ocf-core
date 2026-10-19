@@ -22,8 +22,8 @@ func parseShebang(script string) string {
 
 	// Extract the first line
 	firstLine := script
-	if idx := strings.IndexByte(script, '\n'); idx != -1 {
-		firstLine = script[:idx]
+	if before, _, ok := strings.Cut(script, "\n"); ok {
+		firstLine = before
 	}
 
 	// Remove the "#!" prefix and trim whitespace
