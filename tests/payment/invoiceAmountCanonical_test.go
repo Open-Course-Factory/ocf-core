@@ -53,13 +53,6 @@ const (
 	invTotal      int64 = 1200
 )
 
-// uuidPtr returns a pointer to u. Invoice.UserSubscriptionID is nullable
-// (*uuid.UUID) — org rows leave it NULL — so user-invoice fixtures must pass a
-// pointer.
-//
-//go:fix inline
-func uuidPtr(u uuid.UUID) *uuid.UUID { return new(u) }
-
 // buildInvoiceAmountsWebhook builds a signed invoice.* event whose amount_due,
 // amount_paid and total are all distinct, so we can tell which field a handler
 // persisted into Invoice.Amount. status mirrors the real event (e.g. "open" for

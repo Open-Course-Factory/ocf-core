@@ -289,9 +289,6 @@ func newOffboardingService(db *gorm.DB, identity *fakeIdentity) services.MemberO
 	return services.NewMemberOffboardingService(db, identity, paymentServices.NewBulkLicenseService(db), newDeletionService(db, identity))
 }
 
-//go:fix inline
-func intPtr(v int) *int { return new(v) }
-
 // ---------------------------------------------------------------------------
 // Offboard
 // ---------------------------------------------------------------------------

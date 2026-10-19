@@ -46,14 +46,6 @@ import (
 	"github.com/stripe/stripe-go/v85"
 )
 
-// stringPtr returns a pointer to the given string. Used to build *string
-// fields like StripeProductID.
-//
-//go:fix inline
-func stringPtr(s string) *string {
-	return new(s)
-}
-
 // ============================================================================
 // fakeStripeService — focused testify mock implementing services.StripeService.
 //

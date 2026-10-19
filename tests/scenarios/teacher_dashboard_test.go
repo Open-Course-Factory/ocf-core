@@ -999,11 +999,6 @@ func TestTeacherController_ResetSessions_AccessDenied(t *testing.T) {
 // ScenarioResultItem and SessionDetailResponse. They are RED until the
 // helper and fields are implemented in src/scenarios/services.
 
-// floatPtr returns a pointer to the supplied float (used by quiz-score setup).
-//
-//go:fix inline
-func floatPtr(v float64) *float64 { return new(v) }
-
 // entityModelWithID is a tiny helper used by the unit-level
 // ComputeCorrectCountsFromLoaded tests to construct a ScenarioStep with a
 // known ID without going through the DB. The helper writes only into the
