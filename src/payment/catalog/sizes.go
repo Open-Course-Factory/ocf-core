@@ -18,6 +18,7 @@ package catalog
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -102,9 +103,7 @@ func resetActiveForTesting() {
 	mu.Lock()
 	defer mu.Unlock()
 	active = make(map[string]MachineSize, len(fallbackCatalog))
-	for k, v := range fallbackCatalog {
-		active[k] = v
-	}
+	maps.Copy(active, fallbackCatalog)
 	activeKeys = append([]string(nil), fallbackKeys...)
 	activeLargest = fallbackLargest
 }

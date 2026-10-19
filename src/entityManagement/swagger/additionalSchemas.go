@@ -2,6 +2,7 @@
 package swagger
 
 import (
+	"maps"
 	"reflect"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
@@ -142,9 +143,7 @@ func (ass *AdditionalSchemasService) RegisterSchema(name string, structInstance 
 // GetAllSchemas retourne tous les schémas enregistrés
 func (ass *AdditionalSchemasService) GetAllSchemas() map[string]any {
 	result := make(map[string]any)
-	for name, schema := range ass.schemas {
-		result[name] = schema
-	}
+	maps.Copy(result, ass.schemas)
 	return result
 }
 

@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"maps"
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/interfaces"
@@ -133,9 +134,7 @@ func (s *EntityRegistrationService) GetSwaggerConfig(name string) *entityManagem
 func (s *EntityRegistrationService) GetAllSwaggerConfigs() map[string]*entityManagementInterfaces.EntitySwaggerConfig {
 	// Retourner une copie pour éviter les modifications externes
 	result := make(map[string]*entityManagementInterfaces.EntitySwaggerConfig)
-	for k, v := range s.swaggerConfigs {
-		result[k] = v
-	}
+	maps.Copy(result, s.swaggerConfigs)
 	return result
 }
 
@@ -207,9 +206,7 @@ func (s *EntityRegistrationService) GetOwnershipConfig(name string) *access.Owne
 // wire the write-side ownership hooks from the declarative configs.
 func (s *EntityRegistrationService) GetAllOwnershipConfigs() map[string]*access.OwnershipConfig {
 	result := make(map[string]*access.OwnershipConfig, len(s.ownershipConfigs))
-	for name, config := range s.ownershipConfigs {
-		result[name] = config
-	}
+	maps.Copy(result, s.ownershipConfigs)
 	return result
 }
 
@@ -276,9 +273,15 @@ var memberWriteRoutes = []struct {
 	hookType  hooks.HookType
 	operation func(*entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation
 }{
-	{"POST", hooks.BeforeCreate, func(c *entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation { return c.Create }},
-	{"PATCH", hooks.BeforeUpdate, func(c *entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation { return c.Update }},
-	{"DELETE", hooks.BeforeDelete, func(c *entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation { return c.Delete }},
+	{"POST", hooks.BeforeCreate, func(c *entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation {
+		return c.Create
+	}},
+	{"PATCH", hooks.BeforeUpdate, func(c *entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation {
+		return c.Update
+	}},
+	{"DELETE", hooks.BeforeDelete, func(c *entityManagementInterfaces.EntitySwaggerConfig) *entityManagementInterfaces.SwaggerOperation {
+		return c.Delete
+	}},
 }
 
 // MemberWritesWithoutBeforeHook lists, sorted as "Entity METHOD", every mounted
@@ -449,9 +452,7 @@ func (s *EntityRegistrationService) GetActions(name string) []entityManagementIn
 // that declared at least one action.
 func (s *EntityRegistrationService) GetAllActions() map[string][]entityManagementInterfaces.ActionConfig {
 	result := make(map[string][]entityManagementInterfaces.ActionConfig, len(s.entityActions))
-	for name, actions := range s.entityActions {
-		result[name] = actions
-	}
+	maps.Copy(result, s.entityActions)
 	return result
 }
 
@@ -497,9 +498,7 @@ func (s *EntityRegistrationService) SetEntityActionAccesses(entityName string, a
 // GetAllEntityRoles returns the roles configuration for all registered entities
 func (s *EntityRegistrationService) GetAllEntityRoles() map[string]entityManagementInterfaces.EntityRoles {
 	result := make(map[string]entityManagementInterfaces.EntityRoles)
-	for k, v := range s.entityRoles {
-		result[k] = v
-	}
+	maps.Copy(result, s.entityRoles)
 	return result
 }
 
