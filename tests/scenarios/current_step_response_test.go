@@ -218,8 +218,8 @@ func TestGetCurrentStep_QuizStep_IncludesSanitizedQuestions(t *testing.T) {
 	// future mistake of adding such a field directly to the DTO.
 	stShape := response.Questions[0]
 	rt := reflect.TypeOf(stShape)
-	for i := 0; i < rt.NumField(); i++ {
-		name := rt.Field(i).Name
+	for field := range rt.Fields() {
+		name := field.Name
 		assert.NotEqual(t, "CorrectAnswer", name,
 			"CurrentStepQuestion DTO must NOT expose CorrectAnswer — that leaks the answer")
 		assert.NotEqual(t, "Explanation", name,

@@ -42,8 +42,8 @@ func TestSubscriptionPlan_AddonPriceIDFields_Removed(t *testing.T) {
 	pt := reflect.TypeFor[models.SubscriptionPlan]()
 
 	present := map[string]bool{}
-	for i := 0; i < pt.NumField(); i++ {
-		if key := modelJSONKey(pt.Field(i)); key != "" {
+	for field := range pt.Fields() {
+		if key := modelJSONKey(field); key != "" {
 			present[key] = true
 		}
 	}
@@ -62,8 +62,8 @@ func TestSubscriptionPlanOutput_HasNoAddonFields(t *testing.T) {
 	ot := reflect.TypeFor[dto.SubscriptionPlanOutput]()
 
 	present := map[string]bool{}
-	for i := 0; i < ot.NumField(); i++ {
-		if key := modelJSONKey(ot.Field(i)); key != "" {
+	for field := range ot.Fields() {
+		if key := modelJSONKey(field); key != "" {
 			present[key] = true
 		}
 	}

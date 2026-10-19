@@ -188,8 +188,8 @@ func TestSubscriptionPlanConverter_AllModelFieldsRoundTrip(t *testing.T) {
 	// explicitly excluded, MUST appear non-zero in the output — otherwise a
 	// converter dropped it.
 	pt := reflect.TypeFor[models.SubscriptionPlan]()
-	for i := 0; i < pt.NumField(); i++ {
-		f := pt.Field(i)
+	for f := range pt.Fields() {
+		f := f
 		if f.Anonymous || f.PkgPath != "" {
 			continue
 		}
