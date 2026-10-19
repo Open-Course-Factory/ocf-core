@@ -329,7 +329,6 @@ See `.claude/agents/README.md` and `.claude/commands/README.md` for complete doc
 - `src/courses/` - Course models, generation, sessions
 - `src/entityManagement/` - Generic CRUD system, member management utilities
 - `src/payment/` - Stripe payment processing, subscription management
-- `src/webSsh/` - SSH client integration
 - `src/terminalTrainer/` - Terminal session management, sharing, and hiding functionality
 - `src/utils/` - Shared utilities (logger, errors, validation, permissions)
 - `tests/` - Comprehensive test suite

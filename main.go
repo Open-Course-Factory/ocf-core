@@ -54,7 +54,6 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	scenarioController "soli/formations/src/scenarios/routes"
 	versionController "soli/formations/src/version"
-	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
 	sqldb "soli/formations/src/db"
 
@@ -272,7 +271,6 @@ userController.UsersRoutes(apiGroup, sqldb.DB)
 	// NOTE: Commented out legacy Casdoor group routes - replaced by new class-groups system
 	// groupController.GroupRoutes(apiGroup, sqldb.DB)
 	accessController.AccessRoutes(apiGroup, sqldb.DB)
-	sshClientController.SshClientRoutes(apiGroup, sqldb.DB)
 	generationController.GenerationsRoutes(apiGroup, sqldb.DB)
 	terminalController.TerminalRoutes(apiGroup, sqldb.DB)
 	terminalController.UserTerminalKeyRoutes(apiGroup, sqldb.DB)

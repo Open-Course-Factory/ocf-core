@@ -498,7 +498,6 @@ func TestSetupUserManagementPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/users", "GET"},
 		{"/api/v1/users/batch", "POST"},
 		{"/api/v1/users/search", "GET"},
-		{"/api/v1/ssh", "GET"},
 	}
 
 	for _, r := range memberRoutes {
@@ -506,6 +505,10 @@ func TestSetupUserManagementPermissions_MemberRoutes(t *testing.T) {
 			assertPolicy(t, ps, "member", r.path, r.method)
 		})
 	}
+
+	// The web SSH proxy dialled any host the caller named; it is gone and
+	// must not come back as a member grant.
+	assert.False(t, ps.has("member", "/api/v1/ssh", "GET"), "member must not be granted the removed web SSH proxy")
 }
 
 func TestSetupUserManagementPermissions_AdminRoutes(t *testing.T) {
