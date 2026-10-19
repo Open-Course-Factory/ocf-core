@@ -1,7 +1,6 @@
 package services
 
 import (
-	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
 
 	"github.com/google/uuid"
@@ -19,23 +18,10 @@ func NewSshKeyService(db *gorm.DB) *SshKeyService {
 	}
 }
 
-func (sks *SshKeyService) GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error) {
+func (sks *SshKeyService) GetKeysByUserId(id string) ([]models.SshKey, error) {
 	var sshKeys []models.SshKey
-
-	result := sks.db.Find(&sshKeys, "owner_ids && ?", pq.StringArray{uuid.MustParse(id).String()})
-	if result.Error != nil {
-		return nil, result.Error
+	if err := sks.db.Find(&sshKeys, "owner_ids && ?", pq.StringArray{uuid.MustParse(id).String()}).Error; err != nil {
+		return nil, err
 	}
-
-	var results []dto.SshKeyOutput
-	for _, sshKey := range sshKeys {
-		results = append(results, dto.SshKeyOutput{
-			Id:         sshKey.ID,
-			KeyName:    sshKey.KeyName,
-			PrivateKey: sshKey.PrivateKey,
-			CreatedAt:  sshKey.CreatedAt,
-		})
-	}
-
-	return &results, nil
+	return sshKeys, nil
 }

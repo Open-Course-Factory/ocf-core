@@ -161,7 +161,7 @@ func prepareGitCloneOptions(userId string, courseURL string, branchName ...strin
 		return nil, errSsh
 	}
 
-	if len(*sshKeys) == 0 {
+	if len(sshKeys) == 0 {
 		utils.Info("No SSH key found, trying without auth")
 
 		urlFormat := DetectURLFormat(courseURL)
@@ -178,8 +178,7 @@ func prepareGitCloneOptions(userId string, courseURL string, branchName ...strin
 		}
 
 	} else {
-		array := *sshKeys
-		firstKey := array[0].PrivateKey
+		firstKey := sshKeys[0].PrivateKey
 
 		var err error
 		key, err = ssh.NewPublicKeys("git", []byte(firstKey), "")

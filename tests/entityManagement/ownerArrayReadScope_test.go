@@ -444,3 +444,55 @@ func TestSshKeyReadScope_ListAsNonOwner_ReturnsOnlyOwnKeys(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, int64(1), resp.Total, "Total must be owner-scoped to A's 1 key, not the global 2")
 }
+
+
+// --- Test 10: no reader ever gets the private key back ------------------------
+//
+// The key is write-only: it is decrypted on load for the git clone, and the
+// front never displays it. Neither its owner nor an administrator (who bypasses
+// the owner scope) may read it back through the API.
+func TestSshKeyRead_ListAsOwnerOrAdmin_NeverReturnsPrivateKey(t *testing.T) {
+	t.Setenv("FIELD_ENCRYPTION_SECRET", "test-secret-for-ssh-key-scope")
+
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	hooks.GlobalHookRegistry.DisableAllHooks(true)
+	authRegistration.RegisterSshKey(ems.GlobalEntityRegistrationService)
+	t.Cleanup(func() {
+		ems.GlobalEntityRegistrationService.UnregisterEntity("SshKey")
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&authModels.SshKey{}))
+
+	const plaintext = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAA=\n-----END OPENSSH PRIVATE KEY-----"
+	key := authModels.SshKey{
+		BaseModel:  entityManagementModels.BaseModel{OwnerIDs: pq.StringArray{"user-A"}},
+		KeyName:    "A-key",
+		PrivateKey: plaintext,
+	}
+	require.NoError(t, db.Create(&key).Error)
+
+	for _, caller := range []struct{ userID, role string }{
+		{"user-A", "member"},
+		{"admin-1", "administrator"},
+	} {
+		t.Run(caller.role, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			gc := controller.NewGenericController(db, nil)
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				c.Set("userId", caller.userID)
+				c.Set("userRoles", []string{caller.role})
+				c.Next()
+			})
+			r.GET("/api/v1/ssh-keys/", func(c *gin.Context) { gc.GetEntities(c) })
+
+			w := doArrayGET(r, "/api/v1/ssh-keys/")
+			require.Equal(t, http.StatusOK, w.Code, "list should succeed; body=%s", w.Body.String())
+			assert.Contains(t, w.Body.String(), "A-key", "the caller must see the key itself")
+			assert.NotContains(t, w.Body.String(), "PRIVATE KEY", "the private key must never be returned")
+			assert.NotContains(t, w.Body.String(), "private_key", "the response must not carry a private_key field")
+		})
+	}
+}

@@ -17,11 +17,11 @@ func RegisterSshKey(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[authModels.SshKey, dto.CreateSshKeyInput, dto.EditSshKeyInput, dto.SshKeyOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[authModels.SshKey, dto.CreateSshKeyInput, dto.EditSshKeyInput, dto.SshKeyOutput]{
 				ModelToDto: func(model *authModels.SshKey) (dto.SshKeyOutput, error) {
+					// The private key is write-only: never echo it back.
 					return dto.SshKeyOutput{
-						Id:         model.ID,
-						KeyName:    model.KeyName,
-						PrivateKey: model.PrivateKey,
-						CreatedAt:  model.CreatedAt,
+						Id:        model.ID,
+						KeyName:   model.KeyName,
+						CreatedAt: model.CreatedAt,
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateSshKeyInput) *authModels.SshKey {

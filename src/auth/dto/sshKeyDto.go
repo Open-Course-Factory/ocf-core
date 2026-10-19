@@ -7,10 +7,9 @@ import (
 )
 
 type SshKeyOutput struct {
-	Id         uuid.UUID `json:"id"`
-	KeyName    string    `json:"name"`
-	PrivateKey string    `json:"private_key"`
-	CreatedAt  time.Time `json:"created_at"`
+	Id        uuid.UUID `json:"id"`
+	KeyName   string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type CreateSshKeyInput struct {
