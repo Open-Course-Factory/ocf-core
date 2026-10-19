@@ -348,10 +348,10 @@ func readAuthorInfo(authorTrigramme string) AuthorInfo {
 			firstAsterisk := strings.Index(line, "**")
 			if firstAsterisk != -1 {
 				restOfLine := line[firstAsterisk+2:] // Skip the first **
-				secondAsterisk := strings.Index(restOfLine, "**")
-				if secondAsterisk != -1 {
+				before, _, ok := strings.Cut(restOfLine, "**")
+				if ok {
 					// Extract the name between the ** markers
-					name := strings.TrimSpace(restOfLine[:secondAsterisk])
+					name := strings.TrimSpace(before)
 					// Skip empty names or generic headers
 					if name != "" && name != "Qui suis-je ?" && !strings.Contains(strings.ToLower(name), "formateur") && !strings.Contains(strings.ToLower(name), "expert") {
 						author.FullName = name
