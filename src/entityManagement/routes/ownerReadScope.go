@@ -47,7 +47,7 @@ func ownershipConfigHasReadOp(config *access.OwnershipConfig) bool {
 // mismatch so a misconfigured entity fails closed (deny) rather than leaking.
 func ownerMatchesCaller(entity any, ownerField, userID string) bool {
 	v := reflect.ValueOf(entity)
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return false
 		}
@@ -72,7 +72,7 @@ func ownerArrayContainsCaller(entity any, ownerField, userID string) bool {
 		return false
 	}
 	v := reflect.ValueOf(entity)
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return false
 		}

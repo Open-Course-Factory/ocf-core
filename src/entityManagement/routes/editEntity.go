@@ -55,7 +55,7 @@ func JsonEncodeSerializedFields(model any, updateMap map[string]any) {
 	}
 
 	t := reflect.TypeOf(model)
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -74,7 +74,7 @@ func CollectSerializerFields(t reflect.Type, updateMap map[string]any) {
 		// Recurse into embedded (anonymous) structs
 		if field.Anonymous {
 			ft := field.Type
-			for ft.Kind() == reflect.Ptr {
+			for ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct {
@@ -146,7 +146,7 @@ func stringFieldsOf(dto any) map[string]bool {
 		return out
 	}
 	t := reflect.TypeOf(dto)
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -155,7 +155,7 @@ func stringFieldsOf(dto any) map[string]bool {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		ft := field.Type
-		for ft.Kind() == reflect.Ptr {
+		for ft.Kind() == reflect.Pointer {
 			ft = ft.Elem()
 		}
 		if ft.Kind() != reflect.String {
@@ -222,7 +222,7 @@ func RetainRequestedFields(editDto any, inbound map[string]any, updateMap map[st
 	}
 
 	t := reflect.TypeOf(editDto)
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -252,7 +252,7 @@ func requestFieldKeys(t reflect.Type) []fieldKeys {
 
 		if field.Anonymous {
 			ft := field.Type
-			for ft.Kind() == reflect.Ptr {
+			for ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct {

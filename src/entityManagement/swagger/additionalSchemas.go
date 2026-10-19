@@ -156,7 +156,7 @@ func (ass *AdditionalSchemasService) generateSchemaFromStruct(structInstance any
 	}
 
 	structType := reflect.TypeOf(structInstance)
-	if structType.Kind() == reflect.Ptr {
+	if structType.Kind() == reflect.Pointer {
 		structType = structType.Elem()
 	}
 
@@ -269,7 +269,7 @@ func (ass *AdditionalSchemasService) addValidationFromBinding(fieldSchema map[st
 // getSwaggerTypeFromGoType convertit un type Go vers un type Swagger/OpenAPI
 func (ass *AdditionalSchemasService) getSwaggerTypeFromGoType(goType reflect.Type) map[string]any {
 	// Gérer les pointeurs
-	if goType.Kind() == reflect.Ptr {
+	if goType.Kind() == reflect.Pointer {
 		goType = goType.Elem()
 	}
 
