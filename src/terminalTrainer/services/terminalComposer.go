@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -324,10 +325,8 @@ func (c *terminalComposer) validateBackendForContext(orgID *uuid.UUID, plan *pay
 
 		// Backend requested → check against plan's AllowedBackends
 		if len(plan.AllowedBackends) > 0 {
-			for _, allowed := range plan.AllowedBackends {
-				if allowed == requestedBackend {
-					return requestedBackend, nil
-				}
+			if slices.Contains(plan.AllowedBackends, requestedBackend) {
+				return requestedBackend, nil
 			}
 			// Requested backend not in allowed list — fall back to plan default
 			// (the user likely didn't explicitly choose; the frontend auto-selected from a stale list)
@@ -388,10 +387,8 @@ func (c *terminalComposer) validateBackendForOrg(orgID *uuid.UUID, requestedBack
 	}
 
 	// Check if requested backend is in allowed list
-	for _, allowed := range org.AllowedBackends {
-		if allowed == requestedBackend {
-			return requestedBackend, nil
-		}
+	if slices.Contains(org.AllowedBackends, requestedBackend) {
+		return requestedBackend, nil
 	}
 
 	return "", fmt.Errorf("backend '%s' is not allowed for your organization. Allowed backends: %v",

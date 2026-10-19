@@ -20,13 +20,14 @@ package auth_tests
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	authServices "soli/formations/src/auth/services"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 
@@ -46,12 +47,7 @@ type authCustomerDeleteCapture struct {
 func (c *authCustomerDeleteCapture) has(id string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, got := range c.deleted {
-		if got == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.deleted, id)
 }
 
 // installAuthCustomerDeleteBackend points the global stripe backend at a fake

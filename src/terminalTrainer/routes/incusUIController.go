@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -303,10 +304,8 @@ func (c *IncusUIController) IsUserAuthorizedForBackend(userID string, userRoles 
 			continue
 		}
 
-		for _, allowed := range org.AllowedBackends {
-			if allowed == backendID {
-				return true
-			}
+		if slices.Contains(org.AllowedBackends, backendID) {
+			return true
 		}
 	}
 

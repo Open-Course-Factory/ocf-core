@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	authInterfaces "soli/formations/src/auth/interfaces"
@@ -198,10 +199,8 @@ func (gps *generationPackageService) isCustomTheme(themeName string) bool {
 	// Les thèmes standards Slidev n'ont pas besoin d'être uploadés
 	standardThemes := []string{"default", "apple-basic", "bricks", "carbon", "dracula", "geist", "light", "materia", "minimal", "news", "nordic", "penguin", "purplin", "seriph", "shibainu", "themes"}
 
-	for _, standard := range standardThemes {
-		if themeName == standard {
-			return false
-		}
+	if slices.Contains(standardThemes, themeName) {
+		return false
 	}
 
 	// Vérifier si le thème existe localement

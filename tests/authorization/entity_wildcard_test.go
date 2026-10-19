@@ -1,6 +1,7 @@
 package authorization_tests
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -48,22 +49,10 @@ func TestEntityRegistration_UsesIdNotWildcard(t *testing.T) {
 	}
 
 	// Verify policies use /:id for resource access
-	found := false
-	for _, path := range paths {
-		if path == "/api/v1/test-entities/:id" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(paths, "/api/v1/test-entities/:id")
 	assert.True(t, found, "should have a policy for /api/v1/test-entities/:id")
 
 	// Verify list path exists without parameter
-	foundList := false
-	for _, path := range paths {
-		if path == "/api/v1/test-entities" {
-			foundList = true
-			break
-		}
-	}
+	foundList := slices.Contains(paths, "/api/v1/test-entities")
 	assert.True(t, foundList, "should have a policy for /api/v1/test-entities (list)")
 }

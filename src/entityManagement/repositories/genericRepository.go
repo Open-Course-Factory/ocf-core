@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
+	"slices"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/repositories/filters"
@@ -540,10 +541,8 @@ func applyIncludes(query *gorm.DB, includes []string) *gorm.DB {
 	}
 
 	// Check for wildcard - load all associations
-	for _, include := range includes {
-		if include == "*" {
-			return query.Preload(clause.Associations)
-		}
+	if slices.Contains(includes, "*") {
+		return query.Preload(clause.Associations)
 	}
 
 	// Apply selective preloading for each specified relation
