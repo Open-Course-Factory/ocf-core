@@ -184,7 +184,7 @@ func AssertFieldEqual(t *testing.T, obj any, fieldName string, expected any) {
 	t.Helper()
 
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 

@@ -8,12 +8,12 @@
 //
 // Root cause has three legs in ocf-core:
 //
-//   1. The DTO that maps tt-backend's /1.0/sessions response
-//      (TerminalTrainerSession) has NO state / persistence_mode / idle_until
-//      fields, so even if tt-backend sends them they are silently dropped.
+//  1. The DTO that maps tt-backend's /1.0/sessions response
+//     (TerminalTrainerSession) has NO state / persistence_mode / idle_until
+//     fields, so even if tt-backend sends them they are silently dropped.
 //
-//   2. SyncUserSessions never writes localSession.State (or
-//      PersistenceMode / IdleUntil) — only localSession.Status.
+//  2. SyncUserSessions never writes localSession.State (or
+//     PersistenceMode / IdleUntil) — only localSession.Status.
 //
 // These two tests pin both legs. They MUST be red until both are fixed.
 // A passing test 3 will require fixing both legs (and the tt-backend leg —
@@ -43,7 +43,7 @@ import (
 // the field is missing, rather than blocking Test 3 with a build error.
 func fieldByName(v any, name string) any {
 	rv := reflect.ValueOf(v)
-	if rv.Kind() == reflect.Ptr {
+	if rv.Kind() == reflect.Pointer {
 		rv = rv.Elem()
 	}
 	f := rv.FieldByName(name)

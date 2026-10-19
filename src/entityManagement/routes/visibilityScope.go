@@ -37,7 +37,7 @@ func visibilityScope(ctx *gin.Context, entityName string) *access.VisibilityScop
 // ownerMatchesCaller.
 func entityBoolFieldIsTrue(entity any, field string) bool {
 	v := reflect.ValueOf(entity)
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return false
 		}

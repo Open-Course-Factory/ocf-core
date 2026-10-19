@@ -80,7 +80,7 @@ func setSentinel(v reflect.Value, name string) {
 		v.SetUint(7)
 	case reflect.Float32, reflect.Float64:
 		v.SetFloat(7)
-	case reflect.Ptr:
+	case reflect.Pointer:
 		v.Set(reflect.New(v.Type().Elem()))
 		setSentinel(v.Elem(), name)
 	case reflect.Slice:

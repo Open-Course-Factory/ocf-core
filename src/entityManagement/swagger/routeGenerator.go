@@ -361,7 +361,7 @@ func (dg *DocumentationGenerator) generateSchemas(configs map[string]*entityMana
 func (dg *DocumentationGenerator) generateSchemaFromStruct(structInstance any) map[string]any {
 	// Utiliser la réflexion pour analyser la structure
 	t := reflect.TypeOf(structInstance)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -441,7 +441,7 @@ func (dg *DocumentationGenerator) getOpenAPIType(t reflect.Type) map[string]any 
 			"type":  "array",
 			"items": elemType,
 		}
-	case reflect.Ptr:
+	case reflect.Pointer:
 		// Pour les pointeurs, analyser le type sous-jacent
 		return dg.getOpenAPIType(t.Elem())
 	case reflect.Struct:

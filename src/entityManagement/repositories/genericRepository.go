@@ -226,7 +226,7 @@ func getPreloadString(entityName string, queryPreloadsString *string, firstItera
 func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error) {
 	// Get entity name for relationship filters lookup
 	t := reflect.TypeOf(data)
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	entityName := t.Name()
@@ -304,7 +304,7 @@ func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, fil
 func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error) {
 	// Get entity name for relationship filters lookup
 	t := reflect.TypeOf(data)
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	entityName := t.Name()
@@ -411,7 +411,7 @@ func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit 
 
 func createEmptySliceOfCalledType(data any) any {
 	t := reflect.TypeOf(data)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem().Elem()
 	}
 
@@ -440,7 +440,7 @@ func (o *genericRepository) DeleteEntity(id uuid.UUID, entity any, scoped bool) 
 	if result.RowsAffected == 0 {
 		// Get entity name from type
 		entityType := reflect.TypeOf(entity)
-		if entityType.Kind() == reflect.Ptr {
+		if entityType.Kind() == reflect.Pointer {
 			entityType = entityType.Elem()
 		}
 		entityName := entityType.Name()
