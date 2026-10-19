@@ -200,12 +200,12 @@ func TestTerminateUserTerminals_DeletesActiveTerminals(t *testing.T) {
 	// rows via models.OccupiesSlotScope. The stored counter is left alone:
 	// it self-heals on the next reconcile pass and is not consulted by gating).
 	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Test Plan",
-		PriceAmount:            0,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            "Test Plan",
+		PriceAmount:     0,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
 	}
 	require.NoError(t, db.Create(plan).Error)
 
@@ -218,7 +218,7 @@ func TestTerminateUserTerminals_DeletesActiveTerminals(t *testing.T) {
 	require.NoError(t, db.Create(sub).Error)
 
 	// Create 2 active terminals
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		db.Exec(
 			`INSERT INTO terminals (id, session_id, user_id, name, state, expires_at) VALUES (?, ?, ?, ?, 'running', ?)`,
 			uuid.New().String(), uuid.New().String(), userID, "term", time.Now().Add(time.Hour),
@@ -245,12 +245,12 @@ func TestCancelOrganizationSubscription_ImmediateTerminatesTerminals(t *testing.
 
 	// Create plan
 	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Org Plan",
-		PriceAmount:            0,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            "Org Plan",
+		PriceAmount:     0,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
 	}
 	require.NoError(t, db.Create(plan).Error)
 

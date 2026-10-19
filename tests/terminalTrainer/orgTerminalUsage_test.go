@@ -232,7 +232,7 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 	// Create two active terminals for student1 in the org
 	userKey1, err := createTestUserKey(db, "student1")
 	require.NoError(t, err)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		terminal := &models.Terminal{
 			SessionID:         "active-session-" + uuid.New().String(),
 			UserID:            "student1",

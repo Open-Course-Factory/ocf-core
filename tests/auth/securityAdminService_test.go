@@ -443,7 +443,7 @@ func TestGetPolicyHealthChecks_AdminUserCount_MediumSeverity(t *testing.T) {
 
 	// 6 admin users -> should trigger medium severity
 	adminUUIDs := make([]string, 6)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		adminUUIDs[i] = fmt.Sprintf("550e8400-e29b-41d4-a716-44665544%04d", i)
 	}
 
@@ -625,7 +625,7 @@ func TestGetPolicyHealthChecks_SummaryCountsMatchFindings(t *testing.T) {
 	mockEnforcer.GetPolicyFunc = func() ([][]string, error) {
 		return [][]string{
 			{"trainer", "/api/v1/courses", "*"},      // overly_permissive -> medium
-			{userUUID, "/api/v1/courses/1", "(GET)"},  // user_specific -> info
+			{userUUID, "/api/v1/courses/1", "(GET)"}, // user_specific -> info
 		}, nil
 	}
 	mockEnforcer.GetUsersForRoleFunc = func(name string) ([]string, error) {

@@ -41,7 +41,7 @@ func TestCalculateGrade_AllStepsCompleted(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step",
 		}).Error)
@@ -54,7 +54,7 @@ func TestCalculateGrade_AllStepsCompleted(t *testing.T) {
 	require.NoError(t, db.Create(&session).Error)
 
 	// All 3 steps completed
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		now := time.Now()
 		require.NoError(t, db.Create(&models.ScenarioStepProgress{
 			SessionID: session.ID, StepOrder: i, Status: "completed", CompletedAt: &now,
@@ -74,7 +74,7 @@ func TestCalculateGrade_PartialCompletion(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step",
 		}).Error)
@@ -134,7 +134,7 @@ func TestGetScenarioResults_Success(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step",
 		}).Error)
@@ -168,7 +168,7 @@ func TestGetScenarioResults_Paginated(t *testing.T) {
 
 	groupID := uuid.New()
 	// Create 5 students with sessions
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		uid := fmt.Sprintf("pag-student-%d", i)
 		require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
 			GroupID: groupID, UserID: uid, Role: "member", JoinedAt: time.Now(), IsActive: true,
@@ -180,7 +180,7 @@ func TestGetScenarioResults_Paginated(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		uid := fmt.Sprintf("pag-student-%d", i)
 		require.NoError(t, db.Create(&models.ScenarioSession{
 			ScenarioID: scenario.ID, UserID: uid, Status: "completed",
@@ -238,7 +238,7 @@ func TestGetScenarioResults_Paginated_HTTPController(t *testing.T) {
 	}).Error)
 
 	// Create 3 students with sessions
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		uid := fmt.Sprintf("pag-http-student-%d", i)
 		require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
 			GroupID: group.ID, UserID: uid, Role: "member", JoinedAt: time.Now(), IsActive: true,
@@ -250,7 +250,7 @@ func TestGetScenarioResults_Paginated_HTTPController(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		uid := fmt.Sprintf("pag-http-student-%d", i)
 		require.NoError(t, db.Create(&models.ScenarioSession{
 			ScenarioID: scenario.ID, UserID: uid, Status: "completed",
@@ -518,7 +518,7 @@ func TestGradeCalculation_ViaVerifyCurrentStep(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step", VerifyScript: "#!/bin/bash\ntrue",
 		}).Error)
@@ -532,7 +532,7 @@ func TestGradeCalculation_ViaVerifyCurrentStep(t *testing.T) {
 	require.NoError(t, err)
 
 	// Complete all 3 steps
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		result, err := sessionSvc.VerifyCurrentStep(session.ID)
 		require.NoError(t, err)
 		assert.True(t, result.Passed)
@@ -697,7 +697,7 @@ func TestGetScenarioResults_ExcludesSoftDeletedSteps(t *testing.T) {
 	require.NoError(t, db.Create(&scenario).Error)
 
 	// Create 4 steps, then soft-delete one
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step",
 		}).Error)
@@ -737,7 +737,7 @@ func TestGetSessionDetail_ExcludesSoftDeletedSteps(t *testing.T) {
 	}).Error)
 
 	// Create 3 steps
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step",
 		}).Error)
@@ -750,7 +750,7 @@ func TestGetSessionDetail_ExcludesSoftDeletedSteps(t *testing.T) {
 
 	// Create step progress for all 3 steps
 	now := time.Now()
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		require.NoError(t, db.Create(&models.ScenarioStepProgress{
 			SessionID: session.ID, StepOrder: i, Status: "completed", CompletedAt: &now,
 		}).Error)
@@ -1135,7 +1135,7 @@ func TestGetScenarioResults_PopulatesCorrectCounts(t *testing.T) {
 	// Step 0: quiz (4 questions), score 1.0 (4/4 correct)
 	quiz1 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Quiz 1", StepType: "quiz"}
 	require.NoError(t, db.Create(&quiz1).Error)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
 			StepID: quiz1.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
 		}).Error)
@@ -1144,7 +1144,7 @@ func TestGetScenarioResults_PopulatesCorrectCounts(t *testing.T) {
 	// Step 1: quiz (2 questions), score 0.5 (1/2 correct)
 	quiz2 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Quiz 2", StepType: "quiz"}
 	require.NoError(t, db.Create(&quiz2).Error)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
 			StepID: quiz2.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
 		}).Error)
@@ -1205,7 +1205,7 @@ func TestGetScenarioResults_TotalCorrectPossibleStaticForInProgress(t *testing.T
 	// Quiz step with 5 questions (full denominator should be 5+1=6)
 	quiz := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Quiz", StepType: "quiz"}
 	require.NoError(t, db.Create(&quiz).Error)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
 			StepID: quiz.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
 		}).Error)
@@ -1247,7 +1247,7 @@ func TestGetScenarioResults_ExcludesSoftDeletedStepsFromCounts(t *testing.T) {
 	// Quiz step #1 (3 questions) — kept
 	keepQuiz := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Keep", StepType: "quiz"}
 	require.NoError(t, db.Create(&keepQuiz).Error)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
 			StepID: keepQuiz.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
 		}).Error)
@@ -1256,7 +1256,7 @@ func TestGetScenarioResults_ExcludesSoftDeletedStepsFromCounts(t *testing.T) {
 	// Quiz step #2 (4 questions) — soft-deleted
 	delQuiz := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Delete", StepType: "quiz"}
 	require.NoError(t, db.Create(&delQuiz).Error)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
 			StepID: delQuiz.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
 		}).Error)
@@ -1300,14 +1300,14 @@ func TestGetSessionDetail_PopulatesCorrectCounts(t *testing.T) {
 	// 2 quiz steps (4q at 100%, 2q at 50%) + 1 flag (correct) → 6/7.
 	quiz1 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Quiz 1", StepType: "quiz"}
 	require.NoError(t, db.Create(&quiz1).Error)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
 			StepID: quiz1.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
 		}).Error)
 	}
 	quiz2 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Quiz 2", StepType: "quiz"}
 	require.NoError(t, db.Create(&quiz2).Error)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
 			StepID: quiz2.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
 		}).Error)

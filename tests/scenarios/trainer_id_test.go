@@ -24,7 +24,7 @@ func TestScenarioSession_TrainerID_SetOnBulkStart(t *testing.T) {
 		Name: "trainer-id-bulk", Title: "Trainer ID Bulk", InstanceType: "ubuntu:22.04", CreatedByID: trainerUserID,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step", TextContent: "content",
 		}).Error)
@@ -75,7 +75,7 @@ func TestScenarioSession_TrainerID_NilOnSelfStart(t *testing.T) {
 		Name: "trainer-id-self", Title: "Trainer ID Self", InstanceType: "ubuntu:22.04", CreatedByID: "admin-1",
 	}
 	require.NoError(t, db.Create(&scenario).Error)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step", TextContent: "content",
 		}).Error)

@@ -372,7 +372,7 @@ func TestGenerationWorkflow_WithRetry(t *testing.T) {
 
 	// Simuler plusieurs tentatives
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		generation := &models.Generation{
 			BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
 			Name:      "Retry Test Generation",

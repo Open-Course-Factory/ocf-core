@@ -232,7 +232,7 @@ func TestBulkLicenseService_UpdateBatchQuantity_IncreaseByTwo_CreatesExactDelta(
 
 	// Seed 2 existing licenses with NULL StripeSubscriptionID (as the fixed
 	// created path leaves them), linked via the batch.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		lic := &models.UserSubscription{
 			UserID:              "",
 			PurchaserUserID:     &purchaserID,

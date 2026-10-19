@@ -86,7 +86,7 @@ func TestCheckBudget_TenXSSessionsFitInFiveVCPUPlan(t *testing.T) {
 	svc := newQuotaSvc(t, db)
 
 	// Seed 10 running XS sessions. Each one occupies xs.CPU mCPU.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		insertTerminal(t, db, userID, nil, "running", "ephemeral", xs.CPU, xs.MemoryMB)
 	}
 
@@ -122,7 +122,7 @@ func TestCheckBudget_NineXSSessionsLeaveRoomForOneMore(t *testing.T) {
 
 	svc := newQuotaSvc(t, db)
 
-	for i := 0; i < 9; i++ {
+	for range 9 {
 		insertTerminal(t, db, userID, nil, "running", "ephemeral", xs.CPU, xs.MemoryMB)
 	}
 

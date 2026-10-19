@@ -76,7 +76,7 @@ func TestDropOrphanScenarioColumns_Idempotent(t *testing.T) {
 
 	// Three passes: the column is there for the first and absent for the rest,
 	// which is what every startup after the first one looks like.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		initialization.DropOrphanScenarioColumns(db)
 	}
 

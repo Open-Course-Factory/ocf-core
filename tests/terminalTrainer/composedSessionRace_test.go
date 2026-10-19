@@ -123,7 +123,7 @@ func fireConcurrentComposedStarts(t *testing.T, router http.Handler, body []byte
 	var wg sync.WaitGroup
 	barrier := make(chan struct{})
 
-	for i := 0; i < n; i++ {
+	for range n {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -273,7 +273,7 @@ func TestComposedSession_ConcurrentStarts_OrgScoped_NeverExceedsBudget(t *testin
 	// N distinct members, each with a terminal key.
 	const n = 8
 	members := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		uid := "race-org-member-" + uuid.New().String()[:8]
 		members[i] = uid
 		createTestOrgMember(t, pg, org.ID, uid, orgModels.OrgRoleMember)

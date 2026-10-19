@@ -52,7 +52,7 @@ func TestPurchaseBulkLicenses_TransactionAtomicity_HappyPath(t *testing.T) {
 
 	licenses := make([]models.UserSubscription, quantity)
 	licenseStripeIDs := make([]string, quantity)
-	for i := 0; i < quantity; i++ {
+	for i := range quantity {
 		licenseStripeIDs[i] = fmt.Sprintf("%s-lic-%d", stripeSubscriptionID, i)
 		licenses[i] = models.UserSubscription{
 			UserID:               "",
@@ -74,7 +74,7 @@ func TestPurchaseBulkLicenses_TransactionAtomicity_HappyPath(t *testing.T) {
 		}
 
 		// Update batch ID reference now that it's been assigned
-		for i := 0; i < quantity; i++ {
+		for i := range quantity {
 			licenses[i].SubscriptionBatchID = &batch.ID
 			if err := tx.Create(&licenses[i]).Error; err != nil {
 				return fmt.Errorf("failed to create license %d: %w", i, err)
@@ -150,10 +150,10 @@ func TestPurchaseBulkLicenses_TransactionRollback_OnLicenseFailure(t *testing.T)
 		}
 
 		licStripeIDs := make([]string, quantity)
-		for i := 0; i < quantity; i++ {
+		for i := range quantity {
 			licStripeIDs[i] = fmt.Sprintf("%s-lic-%d", stripeSubscriptionID, i)
 		}
-		for i := 0; i < quantity; i++ {
+		for i := range quantity {
 			// Simulate a failure at the specified index
 			if i == failAtIndex {
 				return fmt.Errorf("failed to create license %d: simulated database error", i)

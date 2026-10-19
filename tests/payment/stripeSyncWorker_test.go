@@ -6,10 +6,10 @@
 //
 // The implementer must add:
 //   - src/payment/services/stripeSyncWorker.go with:
-//       NewStripeSyncWorker(queue StripeSyncQueue, stripeService StripeService) *StripeSyncWorker
-//       (*StripeSyncWorker).Start(ctx context.Context)
-//       (*StripeSyncWorker).ProcessOnce(ctx context.Context) error
-//       (*StripeSyncWorker).Shutdown(timeout time.Duration)
+//     NewStripeSyncWorker(queue StripeSyncQueue, stripeService StripeService) *StripeSyncWorker
+//     (*StripeSyncWorker).Start(ctx context.Context)
+//     (*StripeSyncWorker).ProcessOnce(ctx context.Context) error
+//     (*StripeSyncWorker).Shutdown(timeout time.Duration)
 //
 // Contract:
 //   - ProcessOnce drains all pending rows from the queue in a single pass
@@ -139,7 +139,7 @@ func TestStripeSyncWorker_ProcessOnce_TransitionsToFailedAfterMaxAttempts(t *tes
 
 	fake.On("CreateSubscriptionPlanInStripe", mock.Anything).Return(errors.New("persistent"))
 
-	for i := 0; i < paymentModels.StripeSyncMaxAttempts; i++ {
+	for range paymentModels.StripeSyncMaxAttempts {
 		_ = worker.ProcessOnce(context.Background())
 	}
 

@@ -69,7 +69,7 @@ func (m *capturingTTService) GetTerms() (string, error) {
 
 // --- Stubs for the rest of the interface (not called by BulkStartScenario) ---
 
-func (m *capturingTTService) DisableUserKey(string) error { return nil }
+func (m *capturingTTService) DisableUserKey(string) error                       { return nil }
 func (m *capturingTTService) GetSessionInfo(string) (*ttModels.Terminal, error) { return nil, nil }
 func (m *capturingTTService) GetTerminalByUUID(string) (*ttModels.Terminal, error) {
 	return nil, nil
@@ -122,7 +122,7 @@ func (m *capturingTTService) GetSessionCommandHistory(string, *int64, string, in
 func (m *capturingTTService) GetSessionCommandHistoryAdmin(string, int, int) ([]byte, string, error) {
 	return nil, "", nil
 }
-func (m *capturingTTService) DeleteSessionCommandHistory(string) error      { return nil }
+func (m *capturingTTService) DeleteSessionCommandHistory(string) error          { return nil }
 func (m *capturingTTService) DeleteAllUserCommandHistory(string) (int64, error) { return 0, nil }
 func (m *capturingTTService) GetOrganizationTerminalSessions(uuid.UUID) (*[]ttModels.Terminal, error) {
 	return nil, nil
@@ -211,7 +211,7 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 		OrganizationID: &orgID,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step", TextContent: "content",
 		}).Error)

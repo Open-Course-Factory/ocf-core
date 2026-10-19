@@ -63,7 +63,7 @@ func NewTestIDString() string {
 //	})
 func NewTestSlice[T any](n int, builder func(int) T) []T {
 	slice := make([]T, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		slice[i] = builder(i)
 	}
 	return slice
@@ -78,7 +78,7 @@ func NewTestSlice[T any](n int, builder func(int) T) []T {
 //	})
 func NewTestMap[K comparable, V any](n int, builder func(int) (K, V)) map[K]V {
 	m := make(map[K]V, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		k, v := builder(i)
 		m[k] = v
 	}

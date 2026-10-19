@@ -370,7 +370,7 @@ func TestSecurity_LoadPolicyPerformance(t *testing.T) {
 
 	// Create multiple entities
 	numEntities := 10
-	for i := 0; i < numEntities; i++ {
+	for i := range numEntities {
 		input := SecurityTestEntityInput{
 			Name:          fmt.Sprintf("Entity %d", i),
 			SensitiveData: "Data",

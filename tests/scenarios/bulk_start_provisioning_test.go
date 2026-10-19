@@ -45,7 +45,7 @@ func bulkStartFixture(t *testing.T, name string, membersByRole map[string][]stri
 		OrganizationID: &orgID,
 	}
 	require.NoError(t, db.Create(&scenario).Error)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step", TextContent: "content",
 		}).Error)
@@ -66,7 +66,7 @@ func bulkStartFixture(t *testing.T, name string, membersByRole map[string][]stri
 	groupID := uuid.New()
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.ClassGroup{
 		BaseModel: entityManagementModels.BaseModel{ID: groupID},
-		Name: name + "-class", DisplayName: name + " Class", OwnerUserID: ownerID, OrganizationID: &orgID, MaxMembers: 50,
+		Name:      name + "-class", DisplayName: name + " Class", OwnerUserID: ownerID, OrganizationID: &orgID, MaxMembers: 50,
 	}).Error)
 	for role, users := range membersByRole {
 		for _, uid := range users {

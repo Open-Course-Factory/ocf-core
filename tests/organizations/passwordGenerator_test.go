@@ -55,7 +55,7 @@ func TestGenerateSecurePassword_NoAmbiguousChars(t *testing.T) {
 	ambiguous := "lIO01"
 
 	// Generate many passwords to increase coverage
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		password := orgUtils.GenerateSecurePassword(16)
 		for _, c := range password {
 			assert.False(t, strings.ContainsRune(ambiguous, c),
@@ -67,7 +67,7 @@ func TestGenerateSecurePassword_NoAmbiguousChars(t *testing.T) {
 func TestGenerateSecurePassword_Uniqueness(t *testing.T) {
 	seen := make(map[string]bool)
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		password := orgUtils.GenerateSecurePassword(16)
 		assert.False(t, seen[password], "Generated duplicate password: %s", password)
 		seen[password] = true

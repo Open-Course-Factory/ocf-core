@@ -26,8 +26,8 @@ import (
 	"gorm.io/gorm"
 
 	entityErrors "soli/formations/src/entityManagement/errors"
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/entityManagement/hooks"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	organizationModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
@@ -520,7 +520,7 @@ func TestTerminalBudgetHook_RaceCondition_ConcurrentStarts(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]error, goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

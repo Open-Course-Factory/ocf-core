@@ -38,9 +38,9 @@ import (
 	"strings"
 	"testing"
 
+	access "soli/formations/src/auth/access"
 	authRegistration "soli/formations/src/auth/entityRegistration"
 	authModels "soli/formations/src/auth/models"
-	access "soli/formations/src/auth/access"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -295,7 +295,7 @@ func TestOwnerArrayReadScope_ListPaginationCountIsOwnerScoped(t *testing.T) {
 	// Interleave A and B so B rows fall within the first (default 20) page —
 	// this makes BOTH the COUNT assertion AND the per-row ownership assertion
 	// fail today, rather than ordering accidentally hiding B on page 1.
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		seedArrayOwnerRow(t, db, []string{"user-A"}, fmt.Sprintf("A-%d", i))
 		seedArrayOwnerRow(t, db, []string{"user-B"}, fmt.Sprintf("B-%d", i))
 	}
@@ -444,7 +444,6 @@ func TestSshKeyReadScope_ListAsNonOwner_ReturnsOnlyOwnKeys(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, int64(1), resp.Total, "Total must be owner-scoped to A's 1 key, not the global 2")
 }
-
 
 // --- Test 10: no reader ever gets the private key back ------------------------
 //

@@ -96,7 +96,7 @@ func TestMockWorkerService_SubmitGeneration_MultipleJobs_AllTracked(t *testing.T
 	ctx := context.Background()
 	jobIDs := make([]string, 3)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		gen := newTestGeneration()
 		pkg := newValidPackage(gen)
 		status, err := mock.SubmitGeneration(ctx, gen, pkg)
@@ -302,7 +302,7 @@ func TestMockWorkerService_ClearJobs_EmptiesJobList(t *testing.T) {
 	mock.SetProcessingDelay(100 * time.Millisecond)
 
 	// Submit a few jobs
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		gen := newTestGeneration()
 		_, err := mock.SubmitGeneration(context.Background(), gen, newValidPackage(gen))
 		require.NoError(t, err)
@@ -376,7 +376,7 @@ func TestMockWorkerService_ConcurrentSubmissions(t *testing.T) {
 	ctx := context.Background()
 	errCh := make(chan error, 10)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			gen := newTestGeneration()
 			pkg := newValidPackage(gen)
@@ -385,7 +385,7 @@ func TestMockWorkerService_ConcurrentSubmissions(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		err := <-errCh
 		assert.NoError(t, err)
 	}

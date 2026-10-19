@@ -50,7 +50,7 @@ func seedBulkSessionDetailsScenario(t *testing.T, prefix string, n int) (uuid.UU
 	}).Error)
 
 	sessionIDs := make([]uuid.UUID, 0, n)
-	for i := 0; i < n; i++ {
+	for range n {
 		userID := prefix + "-student-" + uuid.New().String()
 		require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
 			GroupID: groupID, UserID: userID, Role: "member", JoinedAt: time.Now(), IsActive: true,

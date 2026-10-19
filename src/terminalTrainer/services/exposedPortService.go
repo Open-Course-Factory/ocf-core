@@ -377,7 +377,7 @@ func (s *exposedPortService) exposurePlan(terminal *models.Terminal) (*paymentMo
 // (astronomically unlikely, but not impossible) unique-index collision.
 func (s *exposedPortService) allocateSlug() (string, error) {
 	const maxAttempts = 5
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for range maxAttempts {
 		slug, err := randomSlug()
 		if err != nil {
 			return "", fmt.Errorf("failed to generate slug: %w", err)

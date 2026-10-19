@@ -92,10 +92,10 @@ func createTestPlan(t *testing.T, db *gorm.DB, portExposureEnabled bool) uuid.UU
 // createTestTerminal creates a running terminal owned by the given plan.
 func createTestTerminal(t *testing.T, db *gorm.DB, sessionID string, planID uuid.UUID) *models.Terminal {
 	userKey := &models.UserTerminalKey{
-		UserID:      "user1",
-		APIKey:      "test-api-key",
-		KeyName:     "test-key",
-		IsActive:    true,
+		UserID:   "user1",
+		APIKey:   "test-api-key",
+		KeyName:  "test-key",
+		IsActive: true,
 	}
 	require.NoError(t, db.Create(userKey).Error)
 
@@ -191,7 +191,7 @@ func TestCreateExposedPort_EnforcesPerSessionCap(t *testing.T) {
 	createTestTerminal(t, db, "sess-1", planID)
 
 	svc := newExposedPortTestService(server.URL, db)
-	for i := 0; i < maxExposedPortsPerSession; i++ {
+	for i := range maxExposedPortsPerSession {
 		_, err := svc.CreateExposedPort("sess-1", 8080+i)
 		require.NoError(t, err)
 	}
@@ -387,7 +387,7 @@ func TestExposedPorts_ExpiredOnesAreNeitherListedNorCounted(t *testing.T) {
 	terminal := createTestTerminal(t, db, "sess-exp", planID)
 
 	// three expired rows the sweep has not deleted yet
-	for i := 0; i < maxExposedPortsPerSession; i++ {
+	for i := range maxExposedPortsPerSession {
 		require.NoError(t, db.Create(&models.ExposedPort{TerminalID: terminal.ID, SessionID: "sess-exp", UserID: "user1",
 			ContainerPort: 9000 + i, Slug: fmt.Sprintf("old%d", i), ContainerIP: "10.0.0.5", ExpiresAt: time.Now().Add(-time.Minute)}).Error)
 	}

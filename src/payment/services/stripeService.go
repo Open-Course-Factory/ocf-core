@@ -474,7 +474,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 	// forever), so fetch the LIVE status and, while the session is no longer
 	// open, reissue with the consumed session's id folded into the key — each
 	// hop deterministic, so a double-submit still deduplicates.
-	for hop := 0; hop < maxConsumedSessionReissues; hop++ {
+	for range maxConsumedSessionReissues {
 		liveSession, liveErr := session.Get(checkoutSession.ID, nil)
 		if liveErr != nil || liveSession.Status == stripe.CheckoutSessionStatusOpen {
 			break
@@ -683,7 +683,7 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 	// Safety net for consumed sessions the generation discriminator cannot see
 	// (webhook never landed, or the earlier batch was permanently deleted): same
 	// live-status walk as the personal checkout path.
-	for hop := 0; hop < maxConsumedSessionReissues; hop++ {
+	for range maxConsumedSessionReissues {
 		liveSession, liveErr := session.Get(checkoutSession.ID, nil)
 		if liveErr != nil || liveSession.Status == stripe.CheckoutSessionStatusOpen {
 			break
@@ -2256,7 +2256,7 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 	if err := ss.db.Transaction(func(tx *gorm.DB) error {
 		if difference > 0 {
 			// Adding licenses
-			for i := 0; i < difference; i++ {
+			for i := range difference {
 				license := models.UserSubscription{
 					UserID:              "",
 					PurchaserUserID:     &purchaserID,

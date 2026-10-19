@@ -88,7 +88,7 @@ func TestVerifyEmailToken_ConcurrentRequests_OnlyOneSucceeds(t *testing.T) {
 	// Barrier to make all goroutines fire as simultaneously as possible
 	barrier := make(chan struct{})
 
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -246,7 +246,7 @@ func TestVerifyEmailToken_RaceCondition_DatabaseLevelProtection(t *testing.T) {
 
 	// Two goroutines fire simultaneously — both will fail at Casdoor since it's
 	// unreachable. The race detector targets concurrent reads/writes on the token.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		wg.Add(1)
 		idx := i
 		go func() {

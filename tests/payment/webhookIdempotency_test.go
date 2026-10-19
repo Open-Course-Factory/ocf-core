@@ -3,9 +3,9 @@
 // Failing tests for the webhook idempotency race condition (GitLab issue #260).
 //
 // The current `HandleStripeWebhook` flow is:
-//   1. isEventProcessed(event.ID)   -- SELECT
-//   2. ProcessWebhook(...)          -- runs handler
-//   3. markEventProcessed(event.ID) -- INSERT
+//  1. isEventProcessed(event.ID)   -- SELECT
+//  2. ProcessWebhook(...)          -- runs handler
+//  3. markEventProcessed(event.ID) -- INSERT
 //
 // Between steps 1 and 3, a concurrent pod can also pass step 1 and also
 // run step 2, resulting in two handler invocations and potentially duplicate
@@ -290,7 +290,7 @@ func TestWebhook_ConcurrentDuplicateEvent_OnlyProcessedOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]int, 2)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -666,7 +666,7 @@ func TestWebhook_FailedReservation_RaceProtected(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]int, 2)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

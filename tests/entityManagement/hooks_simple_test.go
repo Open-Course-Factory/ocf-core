@@ -486,7 +486,7 @@ func TestHooksSimple_ConcurrentExecution(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(index int) {
 			defer wg.Done()
 
@@ -557,7 +557,7 @@ func TestHooksSimple_ErrorTracking_MultipleErrors(t *testing.T) {
 	_ = registry.RegisterHook(afterCreateHook)
 
 	// Create multiple entities to generate multiple errors
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		entity := HookTestEntitySimple{Name: fmt.Sprintf("Test %d", i), Value: i, Status: "active"}
 		_, _ = service.CreateEntity(entity, "HookTestEntity")
 	}
@@ -583,7 +583,7 @@ func TestHooksSimple_ErrorTracking_GetRecentErrors(t *testing.T) {
 	_ = registry.RegisterHook(failingHook)
 
 	// Execute it 10 times to generate 10 errors
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		ctx := &hooks.HookContext{
 			EntityName: "TestEntity",
 			HookType:   hooks.AfterCreate,
@@ -619,7 +619,7 @@ func TestHooksSimple_ErrorTracking_CircularBuffer(t *testing.T) {
 	_ = registry.RegisterHook(failingHook)
 
 	// Create more errors than the buffer can hold (default 100)
-	for i := 0; i < 150; i++ {
+	for i := range 150 {
 		ctx := &hooks.HookContext{
 			EntityName: "TestEntity",
 			HookType:   hooks.AfterCreate,
@@ -641,7 +641,7 @@ func TestHooksSimple_ErrorTracking_ClearErrors(t *testing.T) {
 	_ = registry.RegisterHook(failingHook)
 
 	// Add some errors
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		ctx := &hooks.HookContext{
 			EntityName: "TestEntity",
 			HookType:   hooks.AfterCreate,

@@ -158,10 +158,10 @@ func TestBulkLicense_ConcurrentAssignLastSeat_LedgerStaysConsistent(t *testing.T
 			}
 			require.NoError(t, db.Create(&lic).Error)
 		}
-		for i := 0; i < assignedBase; i++ {
+		for range assignedBase {
 			seedLicense(true)
 		}
-		for i := 0; i < unassignedRows; i++ {
+		for range unassignedRows {
 			seedLicense(false)
 		}
 		return batch
@@ -172,13 +172,13 @@ func TestBulkLicense_ConcurrentAssignLastSeat_LedgerStaysConsistent(t *testing.T
 	// the FIRST ledger corruption. A correct (row-locking) implementation keeps
 	// every round consistent; the buggy no-op lock corrupts within a few rounds.
 	const rounds = 40
-	for round := 0; round < rounds; round++ {
+	for round := range rounds {
 		batch := seedBatch(round)
 
 		start := make(chan struct{})
 		var wg sync.WaitGroup
 		successes := make([]bool, concurrency)
-		for i := 0; i < concurrency; i++ {
+		for i := range concurrency {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()

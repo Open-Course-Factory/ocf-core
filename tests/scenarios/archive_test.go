@@ -190,7 +190,7 @@ func TestExtractArchive_SizeLimit(t *testing.T) {
 
 	// Write 51MB of data
 	chunk := strings.Repeat("x", 1024*1024) // 1MB
-	for i := 0; i < 51; i++ {
+	for range 51 {
 		_, err = fw.Write([]byte(chunk))
 		require.NoError(t, err)
 	}
