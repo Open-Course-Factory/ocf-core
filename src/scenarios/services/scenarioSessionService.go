@@ -985,8 +985,8 @@ func parseStepAnswer(stdout string) string {
 	answer := ""
 	for _, line := range strings.Split(stdout, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, stepAnswerMarker) {
-			answer = strings.TrimSpace(strings.TrimPrefix(trimmed, stepAnswerMarker))
+		if after, ok := strings.CutPrefix(trimmed, stepAnswerMarker); ok {
+			answer = strings.TrimSpace(after)
 		}
 	}
 	return answer

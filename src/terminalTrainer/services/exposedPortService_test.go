@@ -472,8 +472,8 @@ func infoStubPerSession(answers map[string]string) http.HandlerFunc {
 			return
 		}
 		running, ip := "true", answer
-		if strings.HasPrefix(answer, "stopped:") {
-			running, ip = "false", strings.TrimPrefix(answer, "stopped:")
+		if after, ok0 := strings.CutPrefix(answer, "stopped:"); ok0 {
+			running, ip = "false", after
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"id":"stub","status":0,"ip":"` + ip + `","instance_running":` + running + `}`))

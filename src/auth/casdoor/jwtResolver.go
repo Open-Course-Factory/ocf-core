@@ -38,10 +38,10 @@ func extractBearerToken(ctx *gin.Context) (string, error) {
 		return "", fmt.Errorf("missing Authorization header - tokens in query parameters are not allowed for non-WebSocket requests")
 	}
 
-	if strings.HasPrefix(token, "Bearer ") {
-		token = strings.TrimPrefix(token, "Bearer ")
-	} else if strings.HasPrefix(token, "bearer ") {
-		token = strings.TrimPrefix(token, "bearer ")
+	if after, ok := strings.CutPrefix(token, "Bearer "); ok {
+		token = after
+	} else if after, ok := strings.CutPrefix(token, "bearer "); ok {
+		token = after
 	}
 
 	if token == "" {
