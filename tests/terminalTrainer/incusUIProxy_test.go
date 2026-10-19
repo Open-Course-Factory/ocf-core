@@ -652,3 +652,30 @@ func TestIncusUIProxy_IsUserAuthorizedForBackend_ProtectedBackend(t *testing.T) 
 	assert.False(t, authorized,
 		"IsUserAuthorizedForBackend should deny non-admin access to protected backends")
 }
+
+// TestIncusUIProxy_ClientCannotStripAdminKeyOrSpoofForwardedFor verifies that a
+// client listing X-API-Key as a hop-by-hop header in Connection cannot make
+// the proxy drop the injected admin key, and that a client-supplied
+// X-Forwarded-For is not passed through to tt-backend.
+func TestIncusUIProxy_ClientCannotStripAdminKeyOrSpoofForwardedFor(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	var capturedKey, capturedXFF string
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedKey = r.Header.Get("X-API-Key")
+		capturedXFF = r.Header.Get("X-Forwarded-For")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil, "admin-key")
+	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
+
+	req := httptest.NewRequest("GET", "/api/v1/incus-ui/test-backend/ui/", nil)
+	req.Header.Set("Connection", "X-API-Key")
+	req.Header.Set("X-Forwarded-For", "6.6.6.6")
+	router.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Equal(t, "admin-key", capturedKey, "admin key must reach tt-backend")
+	assert.NotContains(t, capturedXFF, "6.6.6.6", "client X-Forwarded-For must not be passed through")
+}

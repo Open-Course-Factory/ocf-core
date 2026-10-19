@@ -168,7 +168,12 @@ func (c *IncusUIController) ProxyIncusUI(ctx *gin.Context) {
 	adminKey := c.adminKey
 	proxy := &httputil.ReverseProxy{
 		Transport: c.transport,
-		Director: func(req *http.Request) {
+		// Rewrite (not Director) runs after hop-by-hop headers are removed, so
+		// a client cannot list X-API-Key in Connection to strip the admin key,
+		// and inbound X-Forwarded-* headers are dropped instead of forwarded.
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetXForwarded()
+			req := pr.Out
 			req.URL.Scheme = targetBase.Scheme
 			req.URL.Host = targetBase.Host
 			req.URL.Path = targetPath
