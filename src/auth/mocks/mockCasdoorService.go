@@ -2,6 +2,7 @@ package mocks
 
 import (
 	"fmt"
+	"maps"
 	"soli/formations/src/auth/interfaces"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -151,18 +152,14 @@ func (m *MockCasdoorService) GetGroup(groupId string) (*casdoorsdk.Group, error)
 // GetAllUsers retourne tous les utilisateurs (utile pour les tests)
 func (m *MockCasdoorService) GetAllUsers() map[string]*casdoorsdk.User {
 	result := make(map[string]*casdoorsdk.User)
-	for k, v := range m.users {
-		result[k] = v
-	}
+	maps.Copy(result, m.users)
 	return result
 }
 
 // GetAllGroups retourne tous les groupes (utile pour les tests)
 func (m *MockCasdoorService) GetAllGroups() map[string]*casdoorsdk.Group {
 	result := make(map[string]*casdoorsdk.Group)
-	for k, v := range m.groups {
-		result[k] = v
-	}
+	maps.Copy(result, m.groups)
 	return result
 }
 

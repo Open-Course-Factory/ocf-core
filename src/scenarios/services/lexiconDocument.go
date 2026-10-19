@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"sort"
 	"strings"
@@ -24,9 +25,7 @@ func LoadLexiconDocument(db *gorm.DB, scenarioID uuid.UUID) (*dto.LexiconDocumen
 	document := &dto.LexiconDocumentOutput{Entries: make([]dto.LexiconEntryOutput, 0, len(entries))}
 	for _, entry := range entries {
 		perLocale := map[string]string{}
-		for locale, name := range names[entry.ID] {
-			perLocale[locale] = name
-		}
+		maps.Copy(perLocale, names[entry.ID])
 		document.Entries = append(document.Entries, dto.LexiconEntryOutput{
 			Key:       entry.Key,
 			ParentKey: entry.ParentKey,
