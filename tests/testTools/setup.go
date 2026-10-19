@@ -6,13 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
+	"slices"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
 	coursesDto "soli/formations/src/courses/dto"
 	paymentServices "soli/formations/src/payment/services"
 	"testing"
+	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 
@@ -259,8 +260,8 @@ func DeleteAllObjects() {
 	}
 
 	groups, _ := casdoorsdk.GetGroups()
-	for i := len(groups) - 1; i >= 0; i-- {
-		_, err := casdoorsdk.DeleteGroup(groups[i])
+	for _, group := range slices.Backward(groups) {
+		_, err := casdoorsdk.DeleteGroup(group)
 		if err != nil {
 			fmt.Println(err.Error())
 		}

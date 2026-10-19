@@ -1,10 +1,11 @@
 package services
 
 import (
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	"context"
 	"fmt"
 	"os"
+	"slices"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
 	"time"
 
@@ -709,8 +710,8 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		sizeRemaining := tts.quotaService.ComputeRemainingBySize(resolvedPlan, usedCPU, usedMem)
 		// Largest sizes first so the dashboard renders xl → xs by default.
 		out := make([]dto.SizeRemainingDTO, 0, len(sizeRemaining))
-		for i := len(sizeRemaining) - 1; i >= 0; i-- {
-			sr := sizeRemaining[i]
+		for _, sr := range slices.Backward(sizeRemaining) {
+
 			out = append(out, dto.SizeRemainingDTO{
 				Key:            sr.Key,
 				CPU:            sr.CPU,

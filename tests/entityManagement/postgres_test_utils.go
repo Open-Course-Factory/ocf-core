@@ -3,6 +3,7 @@ package entityManagement_tests
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	config "soli/formations/src/configuration"
@@ -79,8 +80,8 @@ func CleanupPostgresTestDB(t *testing.T, db *gorm.DB, tables ...any) {
 	}
 
 	// Drop tables in reverse order to handle foreign keys
-	for i := len(tables) - 1; i >= 0; i-- {
-		if err := db.Migrator().DropTable(tables[i]); err != nil {
+	for _, table := range slices.Backward(tables) {
+		if err := db.Migrator().DropTable(table); err != nil {
 			t.Logf("Warning: failed to drop table: %v", err)
 		}
 	}
