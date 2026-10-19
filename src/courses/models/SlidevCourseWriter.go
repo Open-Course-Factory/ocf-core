@@ -161,12 +161,12 @@ func (scow *SlidevCourseWriter) SetToc() string {
 }
 
 func (scow *SlidevCourseWriter) SetContent() string {
-	var chapters string
+	var chapters strings.Builder
 
 	for _, chapter := range scow.Course.Chapters {
-		chapters += chapter.String() + "\n\n"
+		chapters.WriteString(chapter.String() + "\n\n")
 	}
-	return chapters
+	return chapters.String()
 }
 
 func (scow *SlidevCourseWriter) SetAuthorPage() string {

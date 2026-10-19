@@ -88,12 +88,12 @@ func (mcow *MarpCourseWriter) SetToc() string {
 }
 
 func (mcow *MarpCourseWriter) SetContent() string {
-	var chapters string
+	var chapters strings.Builder
 
 	for _, chapter := range mcow.Course.Chapters {
-		chapters += chapter.String() + "\n\n"
+		chapters.WriteString(chapter.String() + "\n\n")
 	}
-	return chapters
+	return chapters.String()
 }
 
 func (mcow *MarpCourseWriter) SetConclusionPage() string {
