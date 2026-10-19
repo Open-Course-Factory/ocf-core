@@ -4,20 +4,20 @@
 // fields, so plan capabilities set in the DB are invisible through the API.
 //
 // Live-confirmed losses (this is the classic hand-written-converter field drift):
-//   1. ModelToDto (subscriptionPlanRegistration.go) never copies DefaultBackend
-//      or AllowedBackends into the output — even though SubscriptionPlanOutput
-//      HAS both fields (subscriptionDto.go:90-91). Result: the generic GET
-//      returns "" / null for backend routing that IS set in the DB. This is why
-//      prod plans appear to have empty backend fields.
-//   2. SessionSupervisionEnabled exists on the model
-//      (subscriptionPlan.go:44) but is ENTIRELY ABSENT from
-//      SubscriptionPlanOutput — the supervision capability can never be observed
-//      through the API.
-//   3. Write path: DtoToModel (the create converter) never copies DefaultBackend
-//      or AllowedBackends FROM the create DTO into the model, even though
-//      CreateSubscriptionPlanInput carries them (subscriptionDto.go:27-28). And
-//      SessionSupervisionEnabled is absent from BOTH input DTOs, so it cannot be
-//      set through the API at all.
+//  1. ModelToDto (subscriptionPlanRegistration.go) never copies DefaultBackend
+//     or AllowedBackends into the output — even though SubscriptionPlanOutput
+//     HAS both fields (subscriptionDto.go:90-91). Result: the generic GET
+//     returns "" / null for backend routing that IS set in the DB. This is why
+//     prod plans appear to have empty backend fields.
+//  2. SessionSupervisionEnabled exists on the model
+//     (subscriptionPlan.go:44) but is ENTIRELY ABSENT from
+//     SubscriptionPlanOutput — the supervision capability can never be observed
+//     through the API.
+//  3. Write path: DtoToModel (the create converter) never copies DefaultBackend
+//     or AllowedBackends FROM the create DTO into the model, even though
+//     CreateSubscriptionPlanInput carries them (subscriptionDto.go:27-28). And
+//     SessionSupervisionEnabled is absent from BOTH input DTOs, so it cannot be
+//     set through the API at all.
 //
 // The definitive guard below (a) is REFLECTION-DRIVEN: it assigns a distinctive
 // non-zero sentinel to every field declared directly on the model, persists,
@@ -187,7 +187,7 @@ func TestSubscriptionPlanConverter_AllModelFieldsRoundTrip(t *testing.T) {
 	// Walk every field declared directly on the model. Each such field, unless
 	// explicitly excluded, MUST appear non-zero in the output — otherwise a
 	// converter dropped it.
-	pt := reflect.TypeOf(models.SubscriptionPlan{})
+	pt := reflect.TypeFor[models.SubscriptionPlan]()
 	for i := 0; i < pt.NumField(); i++ {
 		f := pt.Field(i)
 		if f.Anonymous || f.PkgPath != "" {

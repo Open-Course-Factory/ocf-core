@@ -28,12 +28,12 @@ func stringToUUIDHookFunc() mapstructure.DecodeHookFunc {
 		data any,
 	) (any, error) {
 		// Target must be uuid.UUID
-		if t != reflect.TypeOf(uuid.UUID{}) {
+		if t != reflect.TypeFor[uuid.UUID]() {
 			return data, nil
 		}
 
 		// If source is already uuid.UUID, pass it through
-		if f == reflect.TypeOf(uuid.UUID{}) {
+		if f == reflect.TypeFor[uuid.UUID]() {
 			return data, nil
 		}
 

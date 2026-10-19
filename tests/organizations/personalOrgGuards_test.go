@@ -27,7 +27,7 @@ import (
 // the numbers. This pins them to the constants so the two cannot drift — which is
 // the whole failure mode #458 is about.
 func TestOrganizationDefaults_StructTagsMatchTheConstants(t *testing.T) {
-	typ := reflect.TypeOf(organizationModels.Organization{})
+	typ := reflect.TypeFor[organizationModels.Organization]()
 
 	cases := []struct {
 		field string

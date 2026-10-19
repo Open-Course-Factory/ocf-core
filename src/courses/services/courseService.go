@@ -396,7 +396,7 @@ func (c courseService) GetCourse(ownerId string, courseName string, sourceType s
 		utils.Info("Creating new course '%s' v%s...", course.Name, course.Version)
 
 		courseInputDto := dto.CourseModelToCourseInputDto(course)
-		savedEntity, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
+		savedEntity, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeFor[models.Course]().Name())
 
 		if errorSaving != nil {
 			utils.Error("%s", errorSaving.Error())

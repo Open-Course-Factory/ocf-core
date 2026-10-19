@@ -24,7 +24,7 @@ func StringToUUIDHook() mapstructure.DecodeHookFunc {
 		}
 
 		// Check if target type is uuid.UUID
-		uuidType := reflect.TypeOf(uuid.UUID{})
+		uuidType := reflect.TypeFor[uuid.UUID]()
 		if t != uuidType {
 			return data, nil
 		}
