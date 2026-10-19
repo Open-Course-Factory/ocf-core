@@ -3,6 +3,7 @@ package testutils
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -109,10 +110,8 @@ func AssertFalse(t *testing.T, condition bool, message string) {
 //	AssertContains(t, []string{"a", "b", "c"}, "b")
 func AssertContains[T comparable](t *testing.T, slice []T, item T) {
 	t.Helper()
-	for _, v := range slice {
-		if v == item {
-			return
-		}
+	if slices.Contains(slice, item) {
+		return
 	}
 	t.Errorf("Expected slice to contain %v, but it doesn't. Slice: %v", item, slice)
 }

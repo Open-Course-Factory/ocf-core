@@ -255,10 +255,8 @@ func (s *ScenarioSessionService) assertLocaleLaunchable(scenarioID uuid.UUID, lo
 	if err != nil {
 		return fmt.Errorf("failed to resolve available languages: %w", err)
 	}
-	for _, available := range launchable {
-		if available == locale {
-			return nil
-		}
+	if slices.Contains(launchable, locale) {
+		return nil
 	}
 	return fmt.Errorf("this scenario is not available in %q", locale)
 }

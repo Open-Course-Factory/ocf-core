@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	access "soli/formations/src/auth/access"
@@ -237,12 +238,7 @@ func (mms *memberManagementService) canUserManage(entityID uuid.UUID, userID str
 }
 
 func (mms *memberManagementService) isValidRole(role string) bool {
-	for _, allowed := range mms.config.AllowedRoles {
-		if role == allowed {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(mms.config.AllowedRoles, role)
 }
 
 func (mms *memberManagementService) grantMemberPermissions(userID string, entityID uuid.UUID, role string) error {

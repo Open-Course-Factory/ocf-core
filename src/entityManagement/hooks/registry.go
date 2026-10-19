@@ -4,6 +4,7 @@ package hooks
 import (
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -154,11 +155,8 @@ func (hr *hookRegistry) GetHooks(entityName string, hookType HookType) []Hook {
 
 	var result []Hook
 	for _, hook := range entityHooks {
-		for _, supportedType := range hook.GetHookTypes() {
-			if supportedType == hookType {
-				result = append(result, hook)
-				break
-			}
+		if slices.Contains(hook.GetHookTypes(), hookType) {
+			result = append(result, hook)
 		}
 	}
 
