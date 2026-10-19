@@ -38,7 +38,7 @@ WORKDIR /workspaces/ocf-core
 COPY --chown=ocf:ocf go.mod go.sum ./
 
 # Installation des outils Go
-RUN go install -v github.com/swaggo/swag/cmd/swag@latest \
+RUN go install -v github.com/swaggo/swag/cmd/swag@v1.16.6 \
     && go install -v github.com/go-delve/delve/cmd/dlv@latest \
     && go install -v golang.org/x/tools/gopls@latest
     
