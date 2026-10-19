@@ -134,8 +134,7 @@ const sqliteActiveSessionUniqueViolation = "UNIQUE constraint failed: scenario_s
 // isActiveSessionUniqueViolation reports whether err is the unique index on
 // open runs refusing a second one — a concurrent launch that won the race.
 func isActiveSessionUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
 		return pgErr.Code == pgUniqueViolation && pgErr.ConstraintName == models.UniqueActiveSessionIndex
 	}
 	return strings.HasSuffix(err.Error(), sqliteActiveSessionUniqueViolation)

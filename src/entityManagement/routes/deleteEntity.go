@@ -30,8 +30,7 @@ func (genericController genericController) DeleteEntity(ctx *gin.Context, scoped
 	errorDelete := genericController.genericService.DeleteEntityWithUser(id, entity, scoped, userId, userRoles...)
 	if errorDelete != nil {
 		statusCode := http.StatusInternalServerError // default
-		var entityErr *entityErrors.EntityError
-		if stderrors.As(errorDelete, &entityErr) {
+		if entityErr, ok := stderrors.AsType[*entityErrors.EntityError](errorDelete); ok {
 			statusCode = entityErr.HTTPStatus
 		}
 		if errors.HandleError(statusCode, errorDelete, ctx) {

@@ -320,8 +320,7 @@ func bindSeedScenarioInput(ctx *gin.Context) (dto.SeedScenarioInput, bool) {
 	var input dto.SeedScenarioInput
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxScenarioJSONBytes)
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		var tooLarge *http.MaxBytesError
-		if stderrors.As(err, &tooLarge) {
+		if _, ok := stderrors.AsType[*http.MaxBytesError](err); ok {
 			errors.Respond(ctx, http.StatusRequestEntityTooLarge, "Scenario JSON exceeds 10MB limit")
 		} else {
 			errors.Respond(ctx, http.StatusBadRequest, err.Error())
@@ -400,8 +399,7 @@ func (b *scenarioControllerBase) mayImportOver(ctx *gin.Context, title string, o
 // a 400 listing every problem, so it can be fixed in one pass; anything else
 // is the server's failure.
 func respondImportError(ctx *gin.Context, err error) {
-	var contentErr *services.ScenarioContentError
-	if stderrors.As(err, &contentErr) {
+	if contentErr, ok := stderrors.AsType[*services.ScenarioContentError](err); ok {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: fmt.Sprintf("The scenario has %d problem(s) to fix before it can be imported", len(contentErr.Problems)),
