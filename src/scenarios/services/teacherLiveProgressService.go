@@ -538,11 +538,9 @@ func elapsedOnCurrentStep(session learnerSessionRow, now time.Time) *int {
 	if session.LastStepCompletedAt != nil && session.LastStepCompletedAt.After(enteredAt) {
 		enteredAt = *session.LastStepCompletedAt
 	}
-	elapsed := int(now.Sub(enteredAt).Seconds())
-	if elapsed < 0 {
+	elapsed := max(int(now.Sub(enteredAt).Seconds()),
 		// Rows written under a different clock must not render as negative time.
-		elapsed = 0
-	}
+		0)
 	return &elapsed
 }
 
