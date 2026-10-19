@@ -3,6 +3,7 @@ package access
 import (
 	"fmt"
 	"log"
+	"maps"
 	"sort"
 	"strings"
 
@@ -117,9 +118,7 @@ func RegisterRole(name string, priority int) {
 // GetRoleHierarchy returns a copy of the current role hierarchy (for the reference page).
 func GetRoleHierarchy() map[string]int {
 	copy := make(map[string]int, len(roleHierarchy))
-	for k, v := range roleHierarchy {
-		copy[k] = v
-	}
+	maps.Copy(copy, roleHierarchy)
 	return copy
 }
 
