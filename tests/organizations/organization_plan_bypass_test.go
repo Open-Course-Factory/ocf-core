@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	hookpkg "soli/formations/src/entityManagement/hooks"
-	organizationHooks "soli/formations/src/organizations/hooks"
 	"soli/formations/src/organizations/dto"
+	organizationHooks "soli/formations/src/organizations/hooks"
 	"soli/formations/src/organizations/models"
 
 	"github.com/google/uuid"
@@ -130,7 +130,7 @@ func TestOrganizationCreate_WithSubscriptionPlanID_ShouldAllowForAdmin(t *testin
 	targetPlanID := uuid.New()
 
 	// Admin payload — same field, different caller.
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name":                 "admin-plan-org",
 		"display_name":         "Admin Plan Org",
 		"subscription_plan_id": targetPlanID.String(),
@@ -186,7 +186,7 @@ func TestOrganizationCreate_WithSubscriptionPlanID_ShouldAllowForAdmin(t *testin
 // the baseline: when no subscription_plan_id is supplied, the DTO field is nil
 // and the hook is a no-op, allowing the Trial plan assignment logic to run downstream.
 func TestOrganizationCreate_NoSubscriptionPlanID_ShouldAssignTrialPlan(t *testing.T) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name":         "trial-org",
 		"display_name": "Trial Org",
 		// No subscription_plan_id — normal member creation.

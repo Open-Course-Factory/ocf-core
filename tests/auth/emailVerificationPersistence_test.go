@@ -146,7 +146,7 @@ func TestLoginOutput_JSONSerialization_IncludesEmailFields(t *testing.T) {
 	jsonBytes, err := json.Marshal(output)
 	require.NoError(t, err)
 
-	var jsonMap map[string]interface{}
+	var jsonMap map[string]any
 	err = json.Unmarshal(jsonBytes, &jsonMap)
 	require.NoError(t, err)
 
@@ -175,7 +175,7 @@ func TestLoginOutput_JSONSerialization_EmailVerifiedValues(t *testing.T) {
 	jsonBytes, err := json.Marshal(output)
 	require.NoError(t, err)
 
-	var jsonMap map[string]interface{}
+	var jsonMap map[string]any
 	err = json.Unmarshal(jsonBytes, &jsonMap)
 	require.NoError(t, err)
 

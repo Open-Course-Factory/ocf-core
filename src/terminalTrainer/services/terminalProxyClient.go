@@ -334,7 +334,7 @@ func (p *terminalProxyClient) getBackendsCached() ([]dto.BackendInfo, error) {
 
 	// Use singleflight to prevent cache stampede: concurrent callers that find
 	// stale cache will share a single upstream GetBackends() call.
-	v, err, _ := p.backendCacheSF.Do("backends", func() (interface{}, error) {
+	v, err, _ := p.backendCacheSF.Do("backends", func() (any, error) {
 		backends, err := p.GetBackends()
 		if err != nil {
 			return nil, err

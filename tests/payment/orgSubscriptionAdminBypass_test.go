@@ -36,12 +36,12 @@ func setupOrgAndPlan(t *testing.T) (orgID uuid.UUID, planID uuid.UUID) {
 	require.NoError(t, err, "Failed to create test org")
 
 	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Org Plan",
-		PriceAmount:            0,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            "Org Plan",
+		PriceAmount:     0,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
 	}
 	require.NoError(t, db.Create(plan).Error, "Failed to create test plan")
 
@@ -49,7 +49,7 @@ func setupOrgAndPlan(t *testing.T) (orgID uuid.UUID, planID uuid.UUID) {
 }
 
 // newTestContext creates a gin test context with user info set.
-func newTestContext(method, path string, body interface{}, userID string, roles []string) (*gin.Context, *httptest.ResponseRecorder) {
+func newTestContext(method, path string, body any, userID string, roles []string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	var req *http.Request
@@ -110,7 +110,7 @@ func TestCreateOrgSubscription_AdminNonMember_Succeeds(t *testing.T) {
 
 	adminUserID := uuid.New().String() // Not a member of the org
 
-	body := map[string]interface{}{
+	body := map[string]any{
 		"subscription_plan_id": planID.String(),
 		"quantity":             15,
 	}
@@ -131,7 +131,7 @@ func TestCreateOrgSubscription_NonMemberNonAdmin_Forbidden(t *testing.T) {
 	// Use a router-based test so Layer 2 middleware can match the route
 	router := setupOrgSubscriptionRouter(t, sharedTestDB, regularUserID, []string{"member"})
 
-	body := map[string]interface{}{
+	body := map[string]any{
 		"subscription_plan_id": planID.String(),
 		"quantity":             1,
 	}
@@ -193,7 +193,7 @@ func TestCancelOrgSubscription_AdminNonMember_NotForbidden(t *testing.T) {
 	controller := paymentController.NewOrganizationSubscriptionController(sharedTestDB)
 
 	adminUserID := uuid.New().String()
-	body := map[string]interface{}{
+	body := map[string]any{
 		"cancel_at_period_end": true,
 	}
 	ctx, w := newTestContext("DELETE", "/organizations/"+orgID.String()+"/subscription", body, adminUserID, []string{"administrator"})

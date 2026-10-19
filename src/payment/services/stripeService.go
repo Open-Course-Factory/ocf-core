@@ -237,7 +237,7 @@ func stripeIdempotencyKey(operation string, parts ...string) string {
 // every checkout failed for the rest of the day. Folding the identity of the
 // request (user, plan, day, generation) was not enough; the request itself has
 // to be part of the key.
-func stripeRequestFingerprint(params interface{}) string {
+func stripeRequestFingerprint(params any) string {
 	values := &form.Values{}
 	form.AppendTo(values, params)
 	return values.Encode() // stripeIdempotencyKey hashes it

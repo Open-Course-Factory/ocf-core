@@ -40,7 +40,7 @@ func TestGetTerminalSessionsByUserID_ExcludesPastExpiry(t *testing.T) {
 	live := &models.Terminal{
 		SessionID:         "live-" + uuid.New().String(),
 		UserID:            "user-rds-1",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -52,7 +52,7 @@ func TestGetTerminalSessionsByUserID_ExcludesPastExpiry(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie-" + uuid.New().String(),
 		UserID:            "user-rds-1",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -87,7 +87,7 @@ func TestGetTerminalSessionsByUserID_IsActiveFalseUnchanged(t *testing.T) {
 	live := &models.Terminal{
 		SessionID:         "live2-" + uuid.New().String(),
 		UserID:            "user-rds-2",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -98,7 +98,7 @@ func TestGetTerminalSessionsByUserID_IsActiveFalseUnchanged(t *testing.T) {
 	stopped := &models.Terminal{
 		SessionID:         "stopped2-" + uuid.New().String(),
 		UserID:            "user-rds-2",
-		State:            models.StateStopped,
+		State:             models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -109,7 +109,7 @@ func TestGetTerminalSessionsByUserID_IsActiveFalseUnchanged(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie2-" + uuid.New().String(),
 		UserID:            "user-rds-2",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -138,7 +138,7 @@ func TestGetTerminalSessionsByUserIDAndOrg_ExcludesPastExpiry(t *testing.T) {
 	live := &models.Terminal{
 		SessionID:         "live3-" + uuid.New().String(),
 		UserID:            "user-rds-3",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -150,7 +150,7 @@ func TestGetTerminalSessionsByUserIDAndOrg_ExcludesPastExpiry(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie3-" + uuid.New().String(),
 		UserID:            "user-rds-3",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -193,7 +193,7 @@ func TestGetGroupCommandHistory_ExcludesPastExpiry(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie4-" + uuid.New().String(),
 		UserID:            "student-rds-4",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute), // past expiry
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -210,7 +210,7 @@ func TestGetGroupCommandHistory_ExcludesPastExpiry(t *testing.T) {
 		"GetGroupCommandHistory with includeStopped=false must filter out the zombie terminal locally and return empty rather than hit tt-backend")
 	assert.Equal(t, "application/json", contentType)
 
-	var result map[string]interface{}
+	var result map[string]any
 	require.NoError(t, json.Unmarshal(body, &result))
 	total, ok := result["total"].(float64)
 	require.True(t, ok, "Response must contain 'total'")
@@ -234,7 +234,7 @@ func TestGetGroupCommandHistoryStats_ExcludesPastExpiry(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie5-" + uuid.New().String(),
 		UserID:            "student-rds-5",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -245,15 +245,15 @@ func TestGetGroupCommandHistoryStats_ExcludesPastExpiry(t *testing.T) {
 
 	service := terminalServices.NewTerminalTrainerService(db)
 	body, contentType, err := service.GetGroupCommandHistoryStats(
-		group.ID.String(), "trainer-rds-5", false /* includeStopped */,
+		group.ID.String(), "trainer-rds-5", false, /* includeStopped */
 	)
 	require.NoError(t, err,
 		"GetGroupCommandHistoryStats with includeStopped=false must filter out the zombie terminal locally and return empty stats")
 	assert.Equal(t, "application/json", contentType)
 
-	var result map[string]interface{}
+	var result map[string]any
 	require.NoError(t, json.Unmarshal(body, &result))
-	summary, ok := result["summary"].(map[string]interface{})
+	summary, ok := result["summary"].(map[string]any)
 	require.True(t, ok, "Response must contain 'summary'")
 	assert.Equal(t, float64(0), summary["total_sessions"],
 		"Past-expiry terminals must not contribute to total_sessions when includeStopped=false")

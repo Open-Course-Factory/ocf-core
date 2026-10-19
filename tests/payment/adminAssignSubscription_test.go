@@ -22,14 +22,14 @@ import (
 func createTestPlan(t *testing.T, name string, priceAmount int64) *models.SubscriptionPlan {
 	t.Helper()
 	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   name,
-		Description:            "Test plan for admin assign tests",
-		PriceAmount:            priceAmount,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
-		RequiredRole:           "", // Empty to avoid Casdoor calls in tests
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            name,
+		Description:     "Test plan for admin assign tests",
+		PriceAmount:     priceAmount,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
+		RequiredRole:    "", // Empty to avoid Casdoor calls in tests
 	}
 	err := sharedTestDB.Create(plan).Error
 	require.NoError(t, err, "Failed to create test plan %q", name)
@@ -151,7 +151,7 @@ func TestAdminAssignSubscription_NonExistentUser_ReturnsError(t *testing.T) {
 	svc := services.NewSubscriptionService(db)
 
 	// Override the user lookup function to simulate Casdoor returning nil (user not found)
-	svc.SetUserLookupFunc(func(userID string) (interface{}, error) {
+	svc.SetUserLookupFunc(func(userID string) (any, error) {
 		return nil, nil // No error, but user is nil = user does not exist
 	})
 
@@ -170,7 +170,7 @@ func TestAdminAssignSubscription_ExistingUser_Succeeds(t *testing.T) {
 	svc := services.NewSubscriptionService(db)
 
 	// Override the user lookup function to simulate Casdoor returning a valid user
-	svc.SetUserLookupFunc(func(userID string) (interface{}, error) {
+	svc.SetUserLookupFunc(func(userID string) (any, error) {
 		return &struct{ Name string }{Name: "Test User"}, nil
 	})
 

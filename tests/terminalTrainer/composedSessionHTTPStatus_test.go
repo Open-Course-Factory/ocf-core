@@ -219,7 +219,7 @@ func setupComposedSessionRouter(svc services.TerminalTrainerService, plan *payme
 
 // validComposedSessionBody returns a JSON body with all required fields.
 func validComposedSessionBody() []byte {
-	body, _ := json.Marshal(map[string]interface{}{
+	body, _ := json.Marshal(map[string]any{
 		"distribution": "ubuntu-24.04",
 		"size":         "S",
 		"terms":        "accepted",

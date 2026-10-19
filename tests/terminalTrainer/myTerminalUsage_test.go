@@ -33,16 +33,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	orgModels "soli/formations/src/organizations/models"
-	paymentServices "soli/formations/src/payment/services"
 	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
-	terminalServices "soli/formations/src/terminalTrainer/services"
 	terminalController "soli/formations/src/terminalTrainer/routes"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 )
 
 // mountMyUsageRouter wires the controller with a stub auth middleware that
 // sets userId / userRoles, and exposes GET /terminals/my-usage.
-func mountMyUsageRouter(t *testing.T, db interface{}, userID string) *gin.Engine {
+func mountMyUsageRouter(t *testing.T, db any, userID string) *gin.Engine {
 	t.Helper()
 	ctrl := terminalController.NewTerminalController(sharedTestDB)
 	gin.SetMode(gin.TestMode)
@@ -93,7 +93,7 @@ func TestMyTerminalUsage_EmptyState(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	assert.Equal(t, "Pro", resp["plan_name"])
@@ -105,7 +105,7 @@ func TestMyTerminalUsage_EmptyState(t *testing.T) {
 	assert.Equal(t, float64(0), resp["used_cpu"])
 	assert.Equal(t, float64(0), resp["used_memory_mb"])
 
-	sessions, ok := resp["active_sessions"].([]interface{})
+	sessions, ok := resp["active_sessions"].([]any)
 	require.True(t, ok, "active_sessions must be present as an array")
 	assert.Equal(t, 0, len(sessions))
 }
@@ -126,16 +126,16 @@ func TestMyTerminalUsage_RunningEphemeral(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	assert.Equal(t, float64(2000), resp["used_cpu"])
 	assert.Equal(t, float64(1024), resp["used_memory_mb"])
 
-	sessions, ok := resp["active_sessions"].([]interface{})
+	sessions, ok := resp["active_sessions"].([]any)
 	require.True(t, ok)
 	require.Equal(t, 1, len(sessions))
-	entry := sessions[0].(map[string]interface{})
+	entry := sessions[0].(map[string]any)
 	assert.Equal(t, "running", entry["state"])
 	assert.Equal(t, "ephemeral", entry["persistence_mode"])
 	assert.Equal(t, float64(2000), entry["size_cpu"])
@@ -167,18 +167,18 @@ func TestMyTerminalUsage_Stopped_CountedRegardlessOfPersistence(t *testing.T) {
 			router.ServeHTTP(w, req)
 
 			require.Equal(t, http.StatusOK, w.Code)
-			var resp map[string]interface{}
+			var resp map[string]any
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 			assert.Equal(t, float64(4000), resp["used_cpu"],
 				"stopped %s reserves CPU under OccupiesSlotScope (D6')", tc.mode)
 			assert.Equal(t, float64(2048), resp["used_memory_mb"])
 
-			sessions, ok := resp["active_sessions"].([]interface{})
+			sessions, ok := resp["active_sessions"].([]any)
 			require.True(t, ok)
 			require.Equal(t, 1, len(sessions),
 				"stopped %s must appear in the session list (D6': paused = reserved)", tc.mode)
-			entry := sessions[0].(map[string]interface{})
+			entry := sessions[0].(map[string]any)
 			assert.Equal(t, "stopped", entry["state"])
 			assert.Equal(t, tc.mode, entry["persistence_mode"])
 		})
@@ -201,12 +201,12 @@ func TestMyTerminalUsage_ExpiredZombie_Excluded(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	assert.Equal(t, float64(0), resp["used_cpu"], "expired zombies must not count")
 	assert.Equal(t, float64(0), resp["used_memory_mb"])
-	sessions, _ := resp["active_sessions"].([]interface{})
+	sessions, _ := resp["active_sessions"].([]any)
 	assert.Equal(t, 0, len(sessions), "expired zombies must not appear in the list")
 }
 
@@ -316,7 +316,7 @@ func TestMyTerminalUsage_OrgContext(t *testing.T) {
 	orgPlan := &paymentModels.SubscriptionPlan{
 		Name:                      "OrgPro",
 		MaxCPU:                    16000, // 16 vCPU in mCPU
-		MaxMemoryMB:                16384,
+		MaxMemoryMB:               16384,
 		MaxSessionDurationMinutes: 120,
 		IsActive:                  true,
 		IsCatalog:                 true,
@@ -355,7 +355,7 @@ func TestMyTerminalUsage_OrgContext(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	assert.Equal(t, "OrgPro", resp["plan_name"], "org plan must supersede personal")

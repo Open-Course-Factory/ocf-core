@@ -33,11 +33,11 @@ package terminalTrainer_tests
 // client-supplied group id — that is the IDOR guard the first test pins.
 
 import (
-	"time"
 	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -69,7 +69,7 @@ func (m *mockSupervisionAudit) Log(entry auditModels.AuditLogCreate) error {
 
 func (m *mockSupervisionAudit) LogAuthentication(_ *gin.Context, _ auditModels.AuditEventType, _ *uuid.UUID, _ string, _ string, _ string) {
 }
-func (m *mockSupervisionAudit) LogBilling(_ *gin.Context, _ auditModels.AuditEventType, _ *uuid.UUID, _ *uuid.UUID, _ string, _ *float64, _ string, _ map[string]interface{}) {
+func (m *mockSupervisionAudit) LogBilling(_ *gin.Context, _ auditModels.AuditEventType, _ *uuid.UUID, _ *uuid.UUID, _ string, _ *float64, _ string, _ map[string]any) {
 }
 func (m *mockSupervisionAudit) LogSecurityEvent(_ *gin.Context, _ auditModels.AuditEventType, _ *uuid.UUID, _ *uuid.UUID, _ string, _ auditModels.AuditSeverity) {
 }

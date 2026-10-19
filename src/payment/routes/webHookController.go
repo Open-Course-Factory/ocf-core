@@ -209,8 +209,8 @@ func (wc *WebhookController) validatePayloadAndSignature(ctx *gin.Context) ([]by
 //   - existing status=reserved -> another worker owns it; returns (false, nil)
 //   - existing status=processed-> idempotent terminal state; returns (false, nil)
 //   - existing status=failed   -> conditional UPDATE(status=reserved
-//                                 WHERE status='failed'); returns (true, nil)
-//                                 if RowsAffected==1, else (false, nil)
+//     WHERE status='failed'); returns (true, nil)
+//     if RowsAffected==1, else (false, nil)
 //
 // Implemented as a transactional SELECT-then-INSERT/UPDATE for portability
 // across SQLite (tests) and PostgreSQL (production).
@@ -277,7 +277,7 @@ func (wc *WebhookController) reserveEvent(eventID, eventType string, payload []b
 			// seeded with a Postgres-side `gen_random_uuid()` default.
 			result := tx.Model(&models.WebhookEvent{}).
 				Where("event_id = ? AND status = ?", eventID, models.WebhookEventStatusFailed).
-				Updates(map[string]interface{}{
+				Updates(map[string]any{
 					"status":       models.WebhookEventStatusReserved,
 					"processed_at": now,
 				})
@@ -314,7 +314,7 @@ func (wc *WebhookController) reserveEvent(eventID, eventType string, payload []b
 func (wc *WebhookController) markProcessed(eventID string) {
 	if err := wc.db.Model(&models.WebhookEvent{}).
 		Where("event_id = ?", eventID).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status":       models.WebhookEventStatusProcessed,
 			"processed_at": time.Now(),
 		}).Error; err != nil {

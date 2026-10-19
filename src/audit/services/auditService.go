@@ -16,7 +16,7 @@ import (
 // AuditService provides methods for creating audit log entries
 type AuditService interface {
 	LogAuthentication(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, email string, status string, errorMsg string)
-	LogBilling(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, targetID *uuid.UUID, targetType string, amount *float64, currency string, metadata map[string]interface{})
+	LogBilling(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, targetID *uuid.UUID, targetType string, amount *float64, currency string, metadata map[string]any)
 	LogSecurityEvent(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, targetID *uuid.UUID, action string, severity models.AuditSeverity)
 	Log(entry models.AuditLogCreate) error
 }
@@ -115,7 +115,7 @@ func (as *auditService) LogAuthentication(ctx *gin.Context, eventType models.Aud
 }
 
 // LogBilling logs billing and payment-related events
-func (as *auditService) LogBilling(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, targetID *uuid.UUID, targetType string, amount *float64, currency string, metadata map[string]interface{}) {
+func (as *auditService) LogBilling(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, targetID *uuid.UUID, targetType string, amount *float64, currency string, metadata map[string]any) {
 	metadataJSON, _ := json.Marshal(metadata)
 
 	severity := models.AuditSeverityInfo

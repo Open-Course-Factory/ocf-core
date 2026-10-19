@@ -4,9 +4,9 @@
 //
 // The response carries:
 //
-//   * Quota envelope (MaxCPU / MaxMemoryMB / Used* / Remaining* / Scope)
-//   * RemainingBySize array (one entry per catalog size, XL → XS)
-//   * Per-user ActiveCPU / ActiveMemoryMB
+//   - Quota envelope (MaxCPU / MaxMemoryMB / Used* / Remaining* / Scope)
+//   - RemainingBySize array (one entry per catalog size, XL → XS)
+//   - Per-user ActiveCPU / ActiveMemoryMB
 package terminalTrainer_tests
 
 import (
@@ -76,12 +76,12 @@ func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	// Top-level quota envelope. Values are in mCPU (frontend converts to
 	// fractional vCPU for display).
-	quota, ok := resp["quota"].(map[string]interface{})
+	quota, ok := resp["quota"].(map[string]any)
 	require.True(t, ok, "quota envelope must be present in budget mode")
 	assert.Equal(t, float64(8000), quota["max_cpu"])
 	assert.Equal(t, float64(4096), quota["max_memory_mb"])
@@ -92,17 +92,17 @@ func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.
 	assert.Equal(t, "organization", quota["scope"])
 
 	// RemainingBySize: largest first (xl → xs).
-	bySize, ok := resp["remaining_by_size"].([]interface{})
+	bySize, ok := resp["remaining_by_size"].([]any)
 	require.True(t, ok, "remaining_by_size must be present in budget mode")
 	require.NotEmpty(t, bySize)
-	first := bySize[0].(map[string]interface{})
+	first := bySize[0].(map[string]any)
 	assert.Equal(t, "xl", first["key"], "largest size must come first")
 
 	// Per-user CPU/RAM (mCPU + MiB).
-	users, ok := resp["users"].([]interface{})
+	users, ok := resp["users"].([]any)
 	require.True(t, ok)
 	require.Equal(t, 1, len(users))
-	student := users[0].(map[string]interface{})
+	student := users[0].(map[string]any)
 	assert.Equal(t, "student1", student["user_id"])
 	assert.Equal(t, float64(2000), student["active_cpu"])
 	assert.Equal(t, float64(1024), student["active_memory_mb"])

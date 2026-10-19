@@ -20,7 +20,7 @@ import (
 
 // UserLookupFunc is a function that looks up a user by ID.
 // Returns the user (or nil if not found) and any error.
-type UserLookupFunc func(userID string) (interface{}, error)
+type UserLookupFunc func(userID string) (any, error)
 
 type UserSubscriptionService interface {
 	// Subscription management - retourne des models
@@ -369,8 +369,8 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 		err := tx.Model(&models.UsageMetrics{}).
 			Where("user_id = ? AND subscription_id = ?", userID, subscription.ID).
 			Updates(map[string]any{
-				"limit_value": gorm.Expr("CASE "+
-					"WHEN metric_type = 'courses_created' THEN -1 "+
+				"limit_value": gorm.Expr("CASE " +
+					"WHEN metric_type = 'courses_created' THEN -1 " +
 					"ELSE limit_value END"),
 			}).Error
 

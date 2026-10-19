@@ -197,7 +197,7 @@ func TestGetOrgTerminalUsage_ResponseShape(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err, "Response should be valid JSON")
 
@@ -236,7 +236,7 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 		terminal := &models.Terminal{
 			SessionID:         "active-session-" + uuid.New().String(),
 			UserID:            "student1",
-			State:            models.StateRunning,
+			State:             models.StateRunning,
 			ExpiresAt:         time.Now().Add(1 * time.Hour),
 			InstanceType:      "test",
 			MachineSize:       "S",
@@ -250,7 +250,7 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 	stoppedTerminal := &models.Terminal{
 		SessionID:         "stopped-session-" + uuid.New().String(),
 		UserID:            "student1",
-		State:            models.StateStopped,
+		State:             models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -266,7 +266,7 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 	outsideTerminal := &models.Terminal{
 		SessionID:         "outside-session-" + uuid.New().String(),
 		UserID:            "non-member",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -291,7 +291,7 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
@@ -300,7 +300,7 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 		"active_terminals should count only active terminals in this org")
 
 	// Users array should have exactly one entry (student1 with count 2)
-	users, ok := resp["users"].([]interface{})
+	users, ok := resp["users"].([]any)
 	require.True(t, ok, "users should be a JSON array")
 	assert.Equal(t, 1, len(users), "There should be 1 user entry (student1)")
 }
@@ -324,7 +324,7 @@ func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
 	activeTerminal := &models.Terminal{
 		SessionID:         "active-session-" + uuid.New().String(),
 		UserID:            "student1",
-		State:            models.StateRunning,
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -338,7 +338,7 @@ func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
 	stoppedTerminal := &models.Terminal{
 		SessionID:         "stopped-session-" + uuid.New().String(),
 		UserID:            "student1",
-		State:            models.StateStopped,
+		State:             models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -363,7 +363,7 @@ func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
@@ -375,10 +375,10 @@ func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
 		"occupying_slots must include stopped sessions per OccupiesSlotScope")
 
 	// Per-user breakdown carries both counts as well.
-	users, ok := resp["users"].([]interface{})
+	users, ok := resp["users"].([]any)
 	require.True(t, ok, "users should be a JSON array")
 	require.Equal(t, 1, len(users), "There should be 1 user entry (student1)")
-	userEntry := users[0].(map[string]interface{})
+	userEntry := users[0].(map[string]any)
 	assert.Equal(t, "student1", userEntry["user_id"])
 	assert.Equal(t, float64(1), userEntry["active_count"],
 		"per-user active_count reports running-only sessions")
@@ -403,7 +403,7 @@ func TestGetOrgTerminalUsage_OccupyingSlotsAllStopped(t *testing.T) {
 	stoppedTerminal := &models.Terminal{
 		SessionID:         "stopped-only-" + uuid.New().String(),
 		UserID:            "student2",
-		State:            models.StateStopped,
+		State:             models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -428,18 +428,18 @@ func TestGetOrgTerminalUsage_OccupyingSlotsAllStopped(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
 	assert.Equal(t, float64(0), resp["active_terminals"])
 	assert.Equal(t, float64(1), resp["occupying_slots"])
 
-	users, ok := resp["users"].([]interface{})
+	users, ok := resp["users"].([]any)
 	require.True(t, ok)
 	require.Equal(t, 1, len(users),
 		"user with only stopped sessions must still appear in the breakdown")
-	userEntry := users[0].(map[string]interface{})
+	userEntry := users[0].(map[string]any)
 	assert.Equal(t, "student2", userEntry["user_id"])
 	assert.Equal(t, float64(0), userEntry["active_count"])
 	assert.Equal(t, float64(1), userEntry["occupying_slots"])
@@ -489,11 +489,11 @@ func TestGetOrgTerminalUsage_PlanLimitsFromSubscription(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	quota, ok := resp["quota"].(map[string]interface{})
+	quota, ok := resp["quota"].(map[string]any)
 	require.True(t, ok, "response must carry budget quota envelope")
 	assert.Equal(t, float64(8000), quota["max_cpu"], "quota max_cpu should come from the plan in mCPU")
 	assert.Equal(t, float64(4096), quota["max_memory_mb"], "quota max_memory_mb should come from the plan")
@@ -549,7 +549,7 @@ func TestGetOrgTerminalUsage_PastExpiryNotCountedAsActive(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
@@ -601,7 +601,7 @@ func TestGetOrgTerminalUsage_FutureExpiryCountedAsActive(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
@@ -675,15 +675,15 @@ func TestGetOrgTerminalUsage_DisplayNameResolvedFromCasdoor(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	users, ok := resp["users"].([]interface{})
+	users, ok := resp["users"].([]any)
 	require.True(t, ok, "users should be a JSON array")
 	require.Equal(t, 1, len(users))
 
-	entry := users[0].(map[string]interface{})
+	entry := users[0].(map[string]any)
 	assert.Equal(t, "student1", entry["user_id"], "user_id must carry the Casdoor ID")
 	assert.Equal(t, "Alice Liddell", entry["display_name"],
 		"display_name must be resolved from Casdoor, not hardcoded to the user_id")
@@ -757,17 +757,17 @@ func TestGetOrgTerminalUsage_DisplayNameFallbackChain(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	users, ok := resp["users"].([]interface{})
+	users, ok := resp["users"].([]any)
 	require.True(t, ok)
 	require.Equal(t, 2, len(users))
 
-	byUser := make(map[string]map[string]interface{})
+	byUser := make(map[string]map[string]any)
 	for _, u := range users {
-		entry := u.(map[string]interface{})
+		entry := u.(map[string]any)
 		byUser[entry["user_id"].(string)] = entry
 	}
 

@@ -106,7 +106,7 @@ func TestEmailService_SendPasswordResetEmail_WithDB_UsesTemplate(t *testing.T) {
 func TestEmailService_SendTemplatedEmail_NoTemplateService(t *testing.T) {
 	// NewEmailService() creates service without DB, so templateService is nil
 	svc := services.NewEmailService()
-	err := svc.SendTemplatedEmail("test@example.com", "password_reset", map[string]interface{}{})
+	err := svc.SendTemplatedEmail("test@example.com", "password_reset", map[string]any{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "template service not initialized")
 }
@@ -119,7 +119,7 @@ func TestEmailService_SendTemplatedEmail_TemplateNotFound(t *testing.T) {
 	db := freshTestDB(t)
 	svc := services.NewEmailServiceWithDB(db)
 
-	err := svc.SendTemplatedEmail("test@example.com", "nonexistent", map[string]interface{}{})
+	err := svc.SendTemplatedEmail("test@example.com", "nonexistent", map[string]any{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to render template")
 }
@@ -145,7 +145,7 @@ func TestEmailService_SendTemplatedEmail_ValidTemplate_FailsAtSMTP(t *testing.T)
 	})
 
 	svc := services.NewEmailServiceWithDB(db)
-	vars := map[string]interface{}{"UserName": "Bob"}
+	vars := map[string]any{"UserName": "Bob"}
 	err := svc.SendTemplatedEmail("test@example.com", "test_templated", vars)
 	assert.Error(t, err)
 	// Should fail at SMTP, not at template rendering

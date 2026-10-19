@@ -33,7 +33,7 @@ type SubscriptionController struct {
 
 func NewSubscriptionController(db *gorm.DB) *SubscriptionController {
 	svc := services.NewSubscriptionService(db)
-	svc.SetUserLookupFunc(func(userID string) (interface{}, error) {
+	svc.SetUserLookupFunc(func(userID string) (any, error) {
 		return casdoorsdk.GetUserByUserId(userID)
 	})
 	return &SubscriptionController{
@@ -95,7 +95,7 @@ func (sc *SubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 			// allow_replace is true - check if current subscription is free
 			currentPlan, err := sc.subscriptionService.GetSubscriptionPlan(existingSubscription.SubscriptionPlanID)
 			if err != nil {
-				errors.Respond(ctx, http.StatusInternalServerError, "Failed to get current subscription plan: " + err.Error())
+				errors.Respond(ctx, http.StatusInternalServerError, "Failed to get current subscription plan: "+err.Error())
 				return
 			}
 
@@ -131,7 +131,7 @@ func (sc *SubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 				err := sc.stripeService.CancelSubscription(*existingSubscription.StripeSubscriptionID, false) // false = cancel immediately
 				if err != nil {
 					utils.Error("❌ Failed to cancel Stripe subscription %s: %v", existingSubscription.StripeSubscriptionID, err)
-					errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel existing Stripe subscription: " + err.Error())
+					errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel existing Stripe subscription: "+err.Error())
 					return
 				}
 
@@ -141,7 +141,7 @@ func (sc *SubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 
 		subscription, err := sc.subscriptionService.CreateUserSubscription(userId, input.SubscriptionPlanID)
 		if err != nil {
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to create free subscription: " + err.Error())
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to create free subscription: "+err.Error())
 			return
 		}
 
@@ -158,7 +158,7 @@ func (sc *SubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 	// PAID PLAN: Create Stripe checkout session
 	checkoutSession, err := sc.stripeService.CreateCheckoutSession(userId, input, replaceSubscriptionID)
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to create checkout session: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to create checkout session: "+err.Error())
 		return
 	}
 
@@ -278,7 +278,7 @@ func (sc *SubscriptionController) GetAllUserSubscriptions(ctx *gin.Context) {
 	// Get ALL active subscriptions
 	subscriptions, err := sc.subscriptionService.GetAllActiveUserSubscriptions(userId)
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve subscriptions: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve subscriptions: "+err.Error())
 		return
 	}
 
@@ -356,7 +356,7 @@ func (sc *SubscriptionController) CancelSubscription(ctx *gin.Context) {
 		// Free subscription - cancel directly in our database
 		updateErr := sc.stripeService.MarkSubscriptionAsCancelled(subscription)
 		if updateErr != nil {
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel free subscription: " + updateErr.Error())
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel free subscription: "+updateErr.Error())
 			return
 		}
 
@@ -374,7 +374,7 @@ func (sc *SubscriptionController) CancelSubscription(ctx *gin.Context) {
 			// L'abonnement a déjà été supprimé dans Stripe, mettre à jour notre base de données
 			updateErr := sc.stripeService.MarkSubscriptionAsCancelled(subscription)
 			if updateErr != nil {
-				errors.Respond(ctx, http.StatusInternalServerError, "Failed to update subscription status: " + updateErr.Error())
+				errors.Respond(ctx, http.StatusInternalServerError, "Failed to update subscription status: "+updateErr.Error())
 				return
 			}
 
@@ -384,7 +384,7 @@ func (sc *SubscriptionController) CancelSubscription(ctx *gin.Context) {
 			return
 		}
 
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel subscription: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to cancel subscription: "+err.Error())
 		return
 	}
 
@@ -462,7 +462,7 @@ func (sc *SubscriptionController) ReactivateSubscription(ctx *gin.Context) {
 	// Réactiver via Stripe
 	err = sc.stripeService.ReactivateSubscription(*subscription.StripeSubscriptionID)
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to reactivate subscription: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to reactivate subscription: "+err.Error())
 		return
 	}
 
@@ -532,7 +532,7 @@ func (sc *SubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 		input.ProrationBehavior,
 	)
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to update subscription in Stripe: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to update subscription in Stripe: "+err.Error())
 		return
 	}
 
@@ -565,7 +565,7 @@ func (sc *SubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 			utils.Error("MANUAL RECONCILIATION REQUIRED: Stripe subscription %s was charged at new price %s but the local plan upgrade (old plan %s) failed to persist, and the old plan has no Stripe price to revert to. The customer is billed for a plan they were not granted; reconcile Stripe and the local subscription manually.",
 				*currentSubscription.StripeSubscriptionID, *newPlan.StripePriceID, currentSubscription.SubscriptionPlanID)
 		}
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to upgrade plan in database: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to upgrade plan in database: "+err.Error())
 		return
 	}
 
@@ -600,7 +600,7 @@ func (sc *SubscriptionController) GetSubscriptionAnalytics(ctx *gin.Context) {
 	// Récupérer les analytics depuis le service (retourne un objet métier)
 	analytics, err := sc.subscriptionService.GetSubscriptionAnalytics()
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get analytics: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get analytics: "+err.Error())
 		return
 	}
 
@@ -699,7 +699,7 @@ func (sc *SubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Contex
 	// Créer le produit et prix dans Stripe
 	err = sc.stripeService.CreateSubscriptionPlanInStripe(plan)
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync plan with Stripe: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync plan with Stripe: "+err.Error())
 		return
 	}
 
@@ -734,7 +734,7 @@ func (sc *SubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gin.Co
 	// than aborting the whole run.
 	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync plans to Stripe: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync plans to Stripe: "+err.Error())
 		return
 	}
 
@@ -745,7 +745,7 @@ func (sc *SubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gin.Co
 		actorID := parseActorUUID(ctx)
 		for _, migrated := range result.PriceMigrated {
 			auditSvc.LogBilling(ctx, auditModels.AuditEventPlanPriceMigrated, actorID, nil, "stripe_price",
-				nil, "", map[string]interface{}{
+				nil, "", map[string]any{
 					"admin_user_id": ctx.GetString("userId"),
 					"detail":        migrated,
 					"action":        "sync_stripe_price_migration",
@@ -776,7 +776,7 @@ func (sc *SubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.Conte
 
 	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, Execute: execute})
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to mirror plans to Stripe: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to mirror plans to Stripe: "+err.Error())
 		return
 	}
 
@@ -787,7 +787,7 @@ func (sc *SubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.Conte
 		actorID := parseActorUUID(ctx)
 		for _, migrated := range result.PriceMigrated {
 			auditSvc.LogBilling(ctx, auditModels.AuditEventPlanPriceMigrated, actorID, nil, "stripe_price",
-				nil, "", map[string]interface{}{
+				nil, "", map[string]any{
 					"admin_user_id": ctx.GetString("userId"),
 					"detail":        migrated,
 					"action":        "sync_stripe_price_migration",
@@ -802,7 +802,7 @@ func (sc *SubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.Conte
 		actorID := parseActorUUID(ctx)
 		for _, archived := range result.Archived {
 			auditSvc.LogBilling(ctx, auditModels.AuditEventPlanProductArchived, actorID, nil, "stripe_product",
-				nil, "", map[string]interface{}{
+				nil, "", map[string]any{
 					"admin_user_id": ctx.GetString("userId"),
 					"detail":        archived,
 					"action":        "mirror_archive_stripe_product",
@@ -838,7 +838,7 @@ func (sc *SubscriptionController) ImportPlansFromStripe(ctx *gin.Context) {
 	// Import plans from Stripe
 	result, err := sc.stripeService.ImportPlansFromStripe()
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import plans from Stripe: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import plans from Stripe: "+err.Error())
 		return
 	}
 
@@ -860,7 +860,7 @@ func (sc *SubscriptionController) SyncExistingSubscriptions(ctx *gin.Context) {
 	// Synchroniser tous les abonnements depuis Stripe
 	result, err := sc.stripeService.SyncExistingSubscriptions()
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync existing subscriptions: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync existing subscriptions: "+err.Error())
 		return
 	}
 
@@ -890,7 +890,7 @@ func (sc *SubscriptionController) SyncUserSubscriptions(ctx *gin.Context) {
 	// Synchroniser les abonnements de l'utilisateur depuis Stripe
 	result, err := sc.stripeService.SyncUserSubscriptions(userID)
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync user subscriptions: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync user subscriptions: "+err.Error())
 		return
 	}
 
@@ -912,7 +912,7 @@ func (sc *SubscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *gin.
 	// Synchroniser les abonnements avec métadonnées manquantes
 	result, err := sc.stripeService.SyncSubscriptionsWithMissingMetadata()
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync subscriptions with missing metadata: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync subscriptions with missing metadata: "+err.Error())
 		return
 	}
 
@@ -954,7 +954,7 @@ func (sc *SubscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
 	// Lier l'abonnement à l'utilisateur
 	err := sc.stripeService.LinkSubscriptionToUser(subscriptionID, request.UserID, request.SubscriptionPlanID)
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to link subscription: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to link subscription: "+err.Error())
 		return
 	}
 
@@ -996,7 +996,7 @@ func (sc *SubscriptionController) SyncUsageLimits(ctx *gin.Context) {
 	// Update usage limits to match current plan
 	err = sc.subscriptionService.UpdateUsageMetricLimits(userId, subscription.SubscriptionPlanID)
 	if err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync usage limits: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to sync usage limits: "+err.Error())
 		return
 	}
 
@@ -1166,8 +1166,8 @@ func (sc *SubscriptionController) AdminAssignSubscription(ctx *gin.Context) {
 	// Audit log for admin subscription assignment
 	auditSvc := auditServices.NewAuditService(sc.db)
 	auditSvc.LogBilling(ctx, auditModels.AuditEventLicenseAssigned, nil, &subscription.ID, "subscription",
-		nil, "", map[string]interface{}{
-			"admin_user_id": adminUserID,
+		nil, "", map[string]any{
+			"admin_user_id":  adminUserID,
 			"target_user_id": input.UserID,
 			"plan_id":        input.PlanID.String(),
 			"duration_days":  input.DurationDays,

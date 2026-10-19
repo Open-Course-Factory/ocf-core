@@ -119,7 +119,7 @@ func TestGetAccessStatus_StoppedSession(t *testing.T) {
 	// Should return 200 OK with accessibility info
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	unmarshalErr := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, unmarshalErr)
 
@@ -160,7 +160,7 @@ func TestGetAccessStatus_ExpiredSession(t *testing.T) {
 	// Should return 200 OK with accessibility info
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	unmarshalErr := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, unmarshalErr)
 
@@ -205,7 +205,7 @@ func TestGetAccessStatus_ActiveSession(t *testing.T) {
 	// Should return 200 OK with accessibility info
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	unmarshalErr := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, unmarshalErr)
 
@@ -246,7 +246,7 @@ func TestGetAccessStatus_NoPermission(t *testing.T) {
 	// Should return 200 OK with accessibility info
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	unmarshalErr := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, unmarshalErr)
 

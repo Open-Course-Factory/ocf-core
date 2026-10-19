@@ -69,7 +69,7 @@ func TestGetSessionHistory_NonexistentSession_Returns404(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Equal(t, "Session not found", response["error_message"])
@@ -89,7 +89,7 @@ func TestGetSessionHistory_Unauthorized_Returns403(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Contains(t, response["error_message"], "Only session owner, admin, or group owner can access command history")
@@ -156,7 +156,7 @@ func TestDeleteSessionHistory_NonexistentSession_Returns404(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Equal(t, "Session not found", response["error_message"])
@@ -174,7 +174,7 @@ func TestDeleteSessionHistory_Unauthorized_Returns403(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Contains(t, response["error_message"], "Only session owner or admin can delete command history")
@@ -209,7 +209,7 @@ func TestDeleteAllUserHistory_NoApiKey_Returns500(t *testing.T) {
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Equal(t, "Failed to get user API key", response["error_message"])
@@ -232,7 +232,7 @@ func TestDeleteAllUserHistory_WithApiKey_PassesKeyLookup(t *testing.T) {
 	assert.NotEqual(t, http.StatusNotFound, w.Code)
 
 	if w.Code == http.StatusInternalServerError {
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		require.NoError(t, err)
 		assert.NotEqual(t, "Failed to get user API key", response["error_message"],

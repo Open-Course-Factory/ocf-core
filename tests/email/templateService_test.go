@@ -405,7 +405,7 @@ func TestTemplateService_RenderTemplate_VariableSubstitution(t *testing.T) {
 		IsActive:    true,
 	})
 
-	vars := map[string]interface{}{
+	vars := map[string]any{
 		"UserName": "Alice",
 		"Platform": "OCF",
 	}
@@ -433,7 +433,7 @@ func TestTemplateService_RenderTemplate_MissingVars(t *testing.T) {
 	})
 
 	// html/template with map[string]interface{} renders missing keys as empty string
-	subject, body, err := svc.RenderTemplate("missing_vars", map[string]interface{}{})
+	subject, body, err := svc.RenderTemplate("missing_vars", map[string]any{})
 	assert.NoError(t, err)
 	assert.Equal(t, "Hello ", subject)
 	assert.Equal(t, "<p>Welcome</p>", body)
@@ -446,7 +446,7 @@ func TestTemplateService_RenderTemplate_TemplateNotFound(t *testing.T) {
 
 	svc := createTemplateService(t)
 
-	_, _, err := svc.RenderTemplate("nonexistent", map[string]interface{}{})
+	_, _, err := svc.RenderTemplate("nonexistent", map[string]any{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "template not found")
 }
@@ -472,7 +472,7 @@ func TestTemplateService_RenderTemplate_BadBodySyntax(t *testing.T) {
 	err := db.Create(tmpl).Error
 	require.NoError(t, err)
 
-	_, _, err = svc.RenderTemplate("bad_body", map[string]interface{}{})
+	_, _, err = svc.RenderTemplate("bad_body", map[string]any{})
 	assert.Error(t, err)
 }
 
