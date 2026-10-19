@@ -266,10 +266,10 @@ func emailEntityRoles() []entityRoleDefinition {
 // Each row is an `entityRoleDefinition` with three fields:
 //   - entityName: PascalCase registration name (must match production registration)
 //   - routeName:  kebab-case pluralized route segment (must match Pluralize +
-//                 PascalToKebab — validated by TestRBAC_RouteNameDerivation)
+//     PascalToKebab — validated by TestRBAC_RouteNameDerivation)
 //   - roles:      map[ocfRole]"(METHOD1|METHOD2|...)" — one entry per OCF role
-//                 that has Casbin access. Missing role => no Casbin policy
-//                 for that role on that entity.
+//     that has Casbin access. Missing role => no Casbin policy
+//     for that role on that entity.
 //
 // Empty `roles.Roles` map means the entity does NOT register Casbin policies
 // at registration time. Access for these entities (Chapter, Course, Page,
@@ -291,7 +291,7 @@ func emailEntityRoles() []entityRoleDefinition {
 // Two layers of authorization (CRITICAL — see CLAUDE.md):
 //   - Layer 1 (this matrix): Casbin RBAC. Coarse method-on-route gating.
 //   - Layer 2 (NOT here):    Group/org/owner role enforcement via entity
-//                            hooks and `RouteRegistry`. Tested elsewhere.
+//     hooks and `RouteRegistry`. Tested elsewhere.
 //
 // Adding a new entity:
 //  1. Add the row to the appropriate per-class function below.
@@ -397,8 +397,8 @@ func methodMatchesRegex(method, regex string) bool {
 func containsMethod(s, method string) bool {
 	// Strip parentheses and split by "|"
 	trimmed := strings.Trim(s, "()")
-	parts := strings.Split(trimmed, "|")
-	for _, p := range parts {
+	parts := strings.SplitSeq(trimmed, "|")
+	for p := range parts {
 		if p == method {
 			return true
 		}
@@ -931,7 +931,7 @@ func TestRBAC_EntitiesWithoutRoles_HaveNoPolicies(t *testing.T) {
 func TestRBAC_RouteNameDerivation(t *testing.T) {
 	expected := map[string]string{
 		"SshKey":             "ssh-keys",
-		"UserSetting":       "user-settings",
+		"UserSetting":        "user-settings",
 		"Feature":            "features",
 		"ClassGroup":         "class-groups",
 		"GroupMember":        "group-members",
@@ -976,4 +976,3 @@ func TestRBAC_RouteNameDerivation(t *testing.T) {
 		})
 	}
 }
-

@@ -983,7 +983,7 @@ const stepAnswerMarker = "OCF_ANSWER:"
 // ignored: it has to start the line.
 func parseStepAnswer(stdout string) string {
 	answer := ""
-	for _, line := range strings.Split(stdout, "\n") {
+	for line := range strings.SplitSeq(stdout, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if after, ok := strings.CutPrefix(trimmed, stepAnswerMarker); ok {
 			answer = strings.TrimSpace(after)
