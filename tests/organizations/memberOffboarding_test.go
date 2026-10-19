@@ -289,7 +289,8 @@ func newOffboardingService(db *gorm.DB, identity *fakeIdentity) services.MemberO
 	return services.NewMemberOffboardingService(db, identity, paymentServices.NewBulkLicenseService(db), newDeletionService(db, identity))
 }
 
-func intPtr(v int) *int { return &v }
+//go:fix inline
+func intPtr(v int) *int { return new(v) }
 
 // ---------------------------------------------------------------------------
 // Offboard
@@ -301,7 +302,7 @@ func TestOffboardMembers_SetsLeftAtInactiveAndScheduledErasureFromOrgRetention(t
 	identity := newFakeIdentity("student-a", "student-b")
 	svc := newOffboardingService(db, identity)
 
-	orgWithRetention := seedTeamOrg(t, db, "owner-1", intPtr(30))
+	orgWithRetention := seedTeamOrg(t, db, "owner-1", new(30))
 	seedMember(t, db, orgWithRetention, "student-a", models.OrgRoleMember)
 	orgWithDefault := seedTeamOrg(t, db, "owner-2", nil)
 	seedMember(t, db, orgWithDefault, "student-b", models.OrgRoleMember)
@@ -327,7 +328,7 @@ func TestOffboardMembers_SetsLeftAtInactiveAndScheduledErasureFromOrgRetention(t
 
 func TestOffboardMembers_ForbidsTheCasdoorAccount_WithColumnList(t *testing.T) {
 	db := newOffboardingDB(t)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 
 	// The real client, with the SDK seams swapped: the assertion is on the exact
@@ -370,7 +371,7 @@ func TestOffboardedMember_GetsNoEffectivePlanFromTheOrg(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 
 	plans := paymentServices.NewEffectivePlanService(db)
@@ -391,7 +392,7 @@ func TestOffboardedMember_TerminalsAreTerminated_AndLicenceReleased(t *testing.T
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 	sessionID := seedRunningTerminal(t, db, "student-a")
 	licenceID := seedAssignedLicence(t, db, "owner-1", "student-a")
@@ -417,7 +418,7 @@ func TestOffboardedMember_GroupRosterRowsAreUntouched(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 	classID := seedClassWithMember(t, db, orgID, "owner-1", "student-a")
 
@@ -436,7 +437,7 @@ func TestReinstate_ClearsBothFieldsAndUnforbidsTheAccount(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
 	require.True(t, identity.forbidden["student-a"])
@@ -475,7 +476,7 @@ func TestCsvImport_ReenrolsAnOffboardedStudentByEmail(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	offboarding := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 	require.NoError(t, offboarding.Offboard(orgID, []string{"student-a"}, "owner-1"))
 
@@ -502,7 +503,7 @@ func TestManualAddMember_ReenrolsAnOffboardedStudent(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
 	registerOrgHooks(t, db)
@@ -612,8 +613,8 @@ func TestMemberErasureJob_ErasesOnlyDueMembers(t *testing.T) {
 	identity := newFakeIdentity("due", "not-due", "elsewhere")
 	eraser := newDeletionService(db, identity)
 	now := time.Now()
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
-	otherOrgID := seedTeamOrg(t, db, "owner-2", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
 	for _, u := range []string{"due", "not-due", "elsewhere"} {
 		seedMember(t, db, orgID, u, models.OrgRoleMember)
 		seedRunningTerminal(t, db, u)
@@ -649,7 +650,7 @@ func TestEraseNow_RunsTheSharedCascade(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 	classID := seedClassWithMember(t, db, orgID, "owner-1", "student-a")
 	seedRunningTerminal(t, db, "student-a")
@@ -685,8 +686,8 @@ func TestEraseNow_RefusedWhileActiveElsewhere_AndListedAsBlocked(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
-	otherOrgID := seedTeamOrg(t, db, "owner-2", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 	seedMember(t, db, otherOrgID, "student-a", models.OrgRoleMember)
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
@@ -704,7 +705,7 @@ func TestOffboard_EmptySelectionAndOwner_AreRefused(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("owner-1", "student-a")
 	svc := newOffboardingService(db, identity)
-	orgID := seedTeamOrg(t, db, "owner-1", intPtr(10))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 
 	require.ErrorIs(t, svc.Offboard(orgID, nil, "owner-1"), services.ErrNoMembersSelected)

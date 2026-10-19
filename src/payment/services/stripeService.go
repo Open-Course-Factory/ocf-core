@@ -416,11 +416,11 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		},
 		// Enable automatic tax calculation (recommended for EU compliance)
 		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
-			Enabled: stripe.Bool(true),
+			Enabled: new(true),
 		},
 		// Collect the buyer's VAT/SIRET so the Stripe invoice is a valid B2B facture.
 		TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
-			Enabled: stripe.Bool(true),
+			Enabled: new(true),
 		},
 	}
 
@@ -600,7 +600,7 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 				Price: stripe.String(*plan.StripePriceID),
 				// Billing units, not licences: a learner-day pack is priced per
 				// learner-day, so ten learners for three days is thirty units.
-				Quantity: stripe.Int64(int64(terms.BillingUnits)),
+				Quantity: new(int64(terms.BillingUnits)),
 			},
 		},
 		SuccessURL: stripe.String(input.SuccessURL),
@@ -624,11 +624,11 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 		},
 		// Enable automatic tax calculation (recommended for EU compliance)
 		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
-			Enabled: stripe.Bool(true),
+			Enabled: new(true),
 		},
 		// Collect the buyer's VAT/SIRET so the Stripe invoice is a valid B2B facture.
 		TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
-			Enabled: stripe.Bool(true),
+			Enabled: new(true),
 		},
 	}
 
@@ -765,11 +765,11 @@ func adoptStripeSubscriptionStatus(status stripe.SubscriptionStatus, subscriptio
 func stripeTierParams(tiers []models.PricingTier) []*stripe.PriceTierParams {
 	out := make([]*stripe.PriceTierParams, 0, len(tiers))
 	for _, t := range tiers {
-		tier := &stripe.PriceTierParams{UnitAmount: stripe.Int64(t.UnitAmount)}
+		tier := &stripe.PriceTierParams{UnitAmount: new(t.UnitAmount)}
 		if t.MaxQuantity > 0 {
-			tier.UpTo = stripe.Int64(int64(t.MaxQuantity))
+			tier.UpTo = new(int64(t.MaxQuantity))
 		} else {
-			tier.UpToInf = stripe.Bool(true)
+			tier.UpToInf = new(true)
 		}
 		out = append(out, tier)
 	}
@@ -820,7 +820,7 @@ func ApplyPricing(params *stripe.PriceParams, plan *models.SubscriptionPlan) {
 		params.Tiers = stripeTierParams(plan.PricingTiers)
 		return
 	}
-	params.UnitAmount = stripe.Int64(plan.PriceAmount)
+	params.UnitAmount = new(plan.PriceAmount)
 }
 
 // tiersMatch reports whether a Stripe price already carries this exact ladder.
@@ -911,7 +911,7 @@ func (ss *stripeService) UpdateSubscriptionPlanInStripe(plan *models.Subscriptio
 	productParams := &stripe.ProductParams{
 		Name:        stripe.String(plan.Name),
 		Description: stripe.String(plan.Description),
-		Active:      stripe.Bool(plan.IsActive),
+		Active:      new(plan.IsActive),
 		Metadata:    BuildPlanProductMetadata(plan),
 	}
 
@@ -923,7 +923,7 @@ func (ss *stripeService) UpdateSubscriptionPlanInStripe(plan *models.Subscriptio
 // Stripe doesn't truly delete products — archiving preserves history while preventing new uses.
 func (ss *stripeService) ArchiveSubscriptionPlanInStripe(productID string) error {
 	_, err := product.Update(productID, &stripe.ProductParams{
-		Active: stripe.Bool(false),
+		Active: new(false),
 	})
 	return err
 }
@@ -2140,7 +2140,7 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 // with their parameter name.)
 func (ss *stripeService) schedulePackCancellation(stripeSubscriptionID string, expiresAt time.Time) error {
 	_, err := subscription.Update(stripeSubscriptionID, &stripe.SubscriptionParams{
-		CancelAt: stripe.Int64(expiresAt.Unix()),
+		CancelAt: new(expiresAt.Unix()),
 	})
 	return err
 }
@@ -2391,7 +2391,7 @@ func (ss *stripeService) CancelSubscription(subscriptionID string, cancelAtPerio
 	if cancelAtPeriodEnd {
 		// Annulation à la fin de la période de facturation
 		params := &stripe.SubscriptionParams{
-			CancelAtPeriodEnd: stripe.Bool(true),
+			CancelAtPeriodEnd: new(true),
 		}
 		_, err := subscription.Update(subscriptionID, params)
 		return err
@@ -2421,7 +2421,7 @@ func (ss *stripeService) MarkSubscriptionAsCancelled(userSubscription *models.Us
 // ReactivateSubscription réactive un abonnement annulé
 func (ss *stripeService) ReactivateSubscription(subscriptionID string) error {
 	params := &stripe.SubscriptionParams{
-		CancelAtPeriodEnd: stripe.Bool(false),
+		CancelAtPeriodEnd: new(false),
 	}
 	params.AddExpand("latest_invoice.payment_intent")
 
@@ -3306,7 +3306,7 @@ func (ss *stripeService) CreateSubscriptionWithQuantity(customerID string, plan 
 		Items: []*stripe.SubscriptionItemsParams{
 			{
 				Price:    stripe.String(*plan.StripePriceID),
-				Quantity: stripe.Int64(int64(quantity)),
+				Quantity: new(int64(quantity)),
 			},
 		},
 		PaymentBehavior: stripe.String("default_incomplete"),
@@ -3346,7 +3346,7 @@ func (ss *stripeService) UpdateSubscriptionQuantity(subscriptionID string, subsc
 		Items: []*stripe.SubscriptionItemsParams{
 			{
 				ID:       stripe.String(subscriptionItemID),
-				Quantity: stripe.Int64(int64(newQuantity)),
+				Quantity: new(int64(newQuantity)),
 			},
 		},
 		ProrationBehavior: stripe.String("always_invoice"),
@@ -3817,7 +3817,7 @@ func (ss *stripeService) archiveSupersededPrices(plan *models.SubscriptionPlan, 
 	if plan.StripeProductID == nil || plan.StripePriceID == nil {
 		return
 	}
-	listParams := &stripe.PriceListParams{Product: plan.StripeProductID, Active: stripe.Bool(true)}
+	listParams := &stripe.PriceListParams{Product: plan.StripeProductID, Active: new(true)}
 
 	iter := price.List(listParams)
 	for iter.Next() {
@@ -3825,7 +3825,7 @@ func (ss *stripeService) archiveSupersededPrices(plan *models.SubscriptionPlan, 
 		if superseded.ID == *plan.StripePriceID || superseded.Metadata["plan_id"] != plan.ID.String() {
 			continue
 		}
-		if _, err := price.Update(superseded.ID, &stripe.PriceParams{Active: stripe.Bool(false)}); err != nil {
+		if _, err := price.Update(superseded.ID, &stripe.PriceParams{Active: new(false)}); err != nil {
 			result.Failed = append(result.Failed,
 				fmt.Sprintf("%s: superseded price %s is still active (archived on the next run): %v", label, superseded.ID, err))
 			continue

@@ -2,7 +2,7 @@
 //
 // RED-phase tests for issue #384: a new org-scoped invoice listing endpoint
 //
-//     GET /api/v1/organizations/:id/invoices
+//	GET /api/v1/organizations/:id/invoices
 //
 // gated at Layer 2 by OrgRole with MinRole "manager" (mirrors the existing
 // /organizations/:id/subscribe declaration in the payment module). Org managers
@@ -44,8 +44,8 @@ import (
 	"soli/formations/src/payment/models"
 	paymentController "soli/formations/src/payment/routes"
 
-	"github.com/google/uuid"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -265,7 +265,7 @@ func TestOrgInvoices_ListByOrg_ManagerGets200WithRows(t *testing.T) {
 	seedOrgInvoice(t, db, orgB.ID, orgBStripeID, "INV-B", now.Add(-12*time.Hour))
 	// One user-scoped invoice (no org) — must never appear either.
 	require.NoError(t, db.Create(&models.Invoice{
-		UserID: "orginv-rows-user", UserSubscriptionID: uuidPtr(uuid.New()),
+		UserID: "orginv-rows-user", UserSubscriptionID: new(uuid.New()),
 		StripeInvoiceID: "in_user_" + uuid.NewString(), Amount: 999, Currency: "eur",
 		Status: "paid", InvoiceNumber: "INV-USER", InvoiceDate: now.Add(-2 * time.Hour),
 	}).Error)

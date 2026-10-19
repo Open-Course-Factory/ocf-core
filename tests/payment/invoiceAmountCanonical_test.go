@@ -7,8 +7,8 @@
 //   - handleInvoiceCreated   (invoice.created)           → stripeInvoice.AmountDue
 //   - handleInvoiceFinalized (invoice.finalized, insert) → stripeInvoice.AmountDue
 //   - handleInvoicePaymentSucceeded (payment_succeeded):
-//       * insert branch → stripeInvoice.AmountPaid
-//       * update branch → never refreshes Amount at all
+//   - insert branch → stripeInvoice.AmountPaid
+//   - update branch → never refreshes Amount at all
 //   - processSingleInvoice   (Stripe sync)               → inv.Total  (canonical, already correct)
 //
 // These diverge when tax/credit adjustments apply. Amount is the denominator of
@@ -56,7 +56,9 @@ const (
 // uuidPtr returns a pointer to u. Invoice.UserSubscriptionID is nullable
 // (*uuid.UUID) — org rows leave it NULL — so user-invoice fixtures must pass a
 // pointer.
-func uuidPtr(u uuid.UUID) *uuid.UUID { return &u }
+//
+//go:fix inline
+func uuidPtr(u uuid.UUID) *uuid.UUID { return new(u) }
 
 // buildInvoiceAmountsWebhook builds a signed invoice.* event whose amount_due,
 // amount_paid and total are all distinct, so we can tell which field a handler
@@ -180,7 +182,7 @@ func TestInvoiceAmount_PaymentSucceededUpdate_RefreshesTotal(t *testing.T) {
 	const staleAmount int64 = 999
 	stripeInvoiceID := "in_" + uuid.NewString()
 	require.NoError(t, db.Create(&models.Invoice{
-		UserID: "user_invamt", UserSubscriptionID: uuidPtr(uuid.New()),
+		UserID: "user_invamt", UserSubscriptionID: new(uuid.New()),
 		StripeInvoiceID: stripeInvoiceID, Amount: staleAmount, Currency: "eur", Status: "open",
 		InvoiceNumber: "INV-STALE", InvoiceDate: time.Now(),
 	}).Error)
@@ -256,7 +258,7 @@ func TestInvoiceAmount_PaymentSucceededUpdate_BackfillsInvoiceFields(t *testing.
 	// should backfill.
 	stripeInvoiceID := "in_" + uuid.NewString()
 	require.NoError(t, db.Create(&models.Invoice{
-		UserID: "user_invamt", UserSubscriptionID: uuidPtr(uuid.New()),
+		UserID: "user_invamt", UserSubscriptionID: new(uuid.New()),
 		StripeInvoiceID: stripeInvoiceID, Amount: 999, Currency: "usd", Status: "open",
 		InvoiceNumber: "", StripeHostedURL: "", InvoiceDate: time.Now(),
 	}).Error)
