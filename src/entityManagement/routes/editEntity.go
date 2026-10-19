@@ -97,8 +97,8 @@ func CollectSerializerFields(t reflect.Type, updateMap map[string]any) {
 		}
 		if mapKey == "" {
 			// Check for explicit gorm column tag
-			gormParts := strings.Split(gormTag, ";")
-			for _, part := range gormParts {
+			gormParts := strings.SplitSeq(gormTag, ";")
+			for part := range gormParts {
 				part = strings.TrimSpace(part)
 				if after, ok := strings.CutPrefix(part, "column:"); ok {
 					mapKey = after
