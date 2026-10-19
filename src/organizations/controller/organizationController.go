@@ -81,9 +81,9 @@ func (oc *OrganizationController) GetOrganizationMembers(ctx *gin.Context) {
 	includeUser := false
 
 	if includeParam != "" {
-		allIncludes := strings.Split(includeParam, ",")
+		allIncludes := strings.SplitSeq(includeParam, ",")
 		// Separate database relationships from Casdoor relationships
-		for _, inc := range allIncludes {
+		for inc := range allIncludes {
 			trimmed := strings.TrimSpace(inc)
 			if trimmed == "User" {
 				includeUser = true
@@ -108,16 +108,16 @@ func (oc *OrganizationController) GetOrganizationMembers(ctx *gin.Context) {
 	membersOutput := make([]dto.OrganizationMemberOutput, 0, len(*members))
 	for _, member := range *members {
 		memberOutput := dto.OrganizationMemberOutput{
-			ID:             member.ID,
-			OrganizationID: member.OrganizationID,
-			UserID:         member.UserID,
-			Role:           member.Role,
-			InvitedBy:      member.InvitedBy,
-			JoinedAt:       member.JoinedAt,
-			IsActive:       member.IsActive,
-			Metadata:       member.Metadata,
-			CreatedAt:      member.CreatedAt,
-			UpdatedAt:      member.UpdatedAt,
+			ID:                 member.ID,
+			OrganizationID:     member.OrganizationID,
+			UserID:             member.UserID,
+			Role:               member.Role,
+			InvitedBy:          member.InvitedBy,
+			JoinedAt:           member.JoinedAt,
+			IsActive:           member.IsActive,
+			Metadata:           member.Metadata,
+			CreatedAt:          member.CreatedAt,
+			UpdatedAt:          member.UpdatedAt,
 			LeftAt:             member.LeftAt,
 			ScheduledErasureAt: member.ScheduledErasureAt,
 		}
@@ -213,8 +213,8 @@ func (oc *OrganizationController) GetOrganizationGroups(ctx *gin.Context) {
 	var includes []string
 	includeMembersInOutput := false
 	if includeParam != "" {
-		rawIncludes := strings.Split(includeParam, ",")
-		for _, inc := range rawIncludes {
+		rawIncludes := strings.SplitSeq(includeParam, ",")
+		for inc := range rawIncludes {
 			trimmed := strings.TrimSpace(inc)
 			if trimmed != "" {
 				includes = append(includes, trimmed)
@@ -341,7 +341,7 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 			return
 		}
 
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import data: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to import data: "+err.Error())
 		return
 	}
 
@@ -510,7 +510,7 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 
 	var input dto.UpdateOrganizationBackendsInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body: " + err.Error())
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -557,7 +557,7 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 		"default_backend":  input.DefaultBackend,
 	}
 	if err := oc.db.Model(org).Updates(updateMap).Error; err != nil {
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to update backends: " + err.Error())
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to update backends: "+err.Error())
 		return
 	}
 
@@ -612,7 +612,7 @@ func (oc *OrganizationController) RegenerateGroupMemberPasswords(ctx *gin.Contex
 	// Bind request body
 	var request dto.RegeneratePasswordsRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body: " + err.Error())
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 

@@ -337,9 +337,9 @@ func readAuthorInfo(authorTrigramme string) AuthorInfo {
 	author.PageContent = string(content)
 
 	// Parse the markdown content to extract author info
-	lines := strings.Split(string(content), "\n")
+	lines := strings.SplitSeq(string(content), "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		line = strings.TrimSpace(line)
 
 		// Look for the author name in bold format like "**Thomas Saquet**"

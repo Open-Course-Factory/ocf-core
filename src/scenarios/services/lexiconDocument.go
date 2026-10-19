@@ -263,7 +263,7 @@ func scriptCode(script string) string {
 	var kept []string
 	terminator := ""
 
-	for _, line := range strings.Split(script, "\n") {
+	for line := range strings.SplitSeq(script, "\n") {
 		if terminator != "" {
 			if strings.TrimSpace(line) == terminator {
 				terminator = ""
@@ -296,7 +296,7 @@ func scriptCode(script string) string {
 // appearing only inside one is not reported.
 func stripMachinery(script string) string {
 	var kept []string
-	for _, field := range strings.Fields(script) {
+	for field := range strings.FieldsSeq(script) {
 		machinery := false
 		for _, prefix := range machineryPrefixes {
 			if strings.Contains(field, prefix+"/") {
@@ -321,7 +321,7 @@ func namedAsAPath(script, name string) bool {
 	if strings.Contains(script, "/"+name) {
 		return true
 	}
-	for _, field := range strings.Fields(script) {
+	for field := range strings.FieldsSeq(script) {
 		bare := strings.Trim(field, `"'`)
 		if bare == name || strings.HasPrefix(bare, name+"*") {
 			return true

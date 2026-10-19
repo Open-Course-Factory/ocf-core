@@ -60,7 +60,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	includeParam := ctx.Query("include")
 	if includeParam != "" {
 		// Split by comma and trim whitespace
-		for _, rel := range strings.Split(includeParam, ",") {
+		for rel := range strings.SplitSeq(includeParam, ",") {
 			trimmed := strings.TrimSpace(rel)
 			if trimmed != "" {
 				// Normalize to title case for case-insensitive support

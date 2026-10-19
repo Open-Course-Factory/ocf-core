@@ -234,9 +234,9 @@ func (ass *AdditionalSchemasService) generateSchemaFromStruct(structInstance any
 // addValidationFromBinding ajoute des validations basées sur le tag binding
 func (ass *AdditionalSchemasService) addValidationFromBinding(fieldSchema map[string]any, bindingTag string) {
 	// Parser les validations du tag binding
-	validations := strings.Split(bindingTag, ",")
+	validations := strings.SplitSeq(bindingTag, ",")
 
-	for _, validation := range validations {
+	for validation := range validations {
 		validation = strings.TrimSpace(validation)
 
 		if strings.HasPrefix(validation, "min=") {

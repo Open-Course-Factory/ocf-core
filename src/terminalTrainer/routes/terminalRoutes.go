@@ -201,7 +201,7 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	}
 	featureRepo := configRepositories.NewFeatureRepository(db)
 	if f, err := featureRepo.GetFeatureByKey("incus_ui_protected_backends"); err == nil && f.Value != "" {
-		for _, id := range strings.Split(f.Value, ",") {
+		for id := range strings.SplitSeq(f.Value, ",") {
 			if id = strings.TrimSpace(id); id != "" {
 				protectedBackends[id] = true
 			}
