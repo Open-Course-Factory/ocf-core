@@ -16,7 +16,7 @@ import (
 // The Create and Edit DTOs already have the mapstructure tag; this test ensures the
 // Output DTO is consistent.
 func TestSubscriptionPlanOutput_MapstructureTag_CommandHistoryRetentionDays(t *testing.T) {
-	outputType := reflect.TypeOf(SubscriptionPlanOutput{})
+	outputType := reflect.TypeFor[SubscriptionPlanOutput]()
 
 	field, found := outputType.FieldByName("CommandHistoryRetentionDays")
 	assert.True(t, found, "SubscriptionPlanOutput should have a CommandHistoryRetentionDays field")
@@ -39,8 +39,8 @@ func TestSubscriptionPlanOutput_MapstructureTag_CommandHistoryRetentionDays(t *t
 // as the Create DTO. This catches the inconsistency where Create/Edit DTOs have the
 // tag but Output does not.
 func TestSubscriptionPlanOutput_MapstructureTag_ConsistencyWithCreateDTO(t *testing.T) {
-	createType := reflect.TypeOf(CreateSubscriptionPlanInput{})
-	outputType := reflect.TypeOf(SubscriptionPlanOutput{})
+	createType := reflect.TypeFor[CreateSubscriptionPlanInput]()
+	outputType := reflect.TypeFor[SubscriptionPlanOutput]()
 
 	fieldName := "CommandHistoryRetentionDays"
 

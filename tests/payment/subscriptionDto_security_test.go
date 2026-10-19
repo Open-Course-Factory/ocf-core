@@ -23,7 +23,7 @@ import (
 // in the update DTO allows any authenticated user to PATCH their subscription
 // status to "active" without paying, bypassing the entire payment flow.
 func TestUpdateUserSubscriptionInput_NoStatusField(t *testing.T) {
-	dtoType := reflect.TypeOf(dto.UpdateUserSubscriptionInput{})
+	dtoType := reflect.TypeFor[dto.UpdateUserSubscriptionInput]()
 	_, hasStatus := dtoType.FieldByName("Status")
 
 	assert.False(t, hasStatus,

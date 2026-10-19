@@ -65,7 +65,7 @@ func TestDuplicateScenario_StepsAreFieldCompleteAgainstSource(t *testing.T) {
 
 	require.Len(t, copiedSteps, len(sourceSteps), "every source step must be duplicated")
 
-	stepType := reflect.TypeOf(models.ScenarioStep{})
+	stepType := reflect.TypeFor[models.ScenarioStep]()
 	for i := range sourceSteps {
 		src := reflect.ValueOf(sourceSteps[i])
 		dst := reflect.ValueOf(copiedSteps[i])
@@ -216,7 +216,7 @@ func TestDuplicateScenario_ScenarioIsFieldCompleteAgainstSource(t *testing.T) {
 	copied, err := services.NewScenarioDuplicateService(db).DuplicateScenario(source.ID, "duplicating-user", nil)
 	require.NoError(t, err)
 
-	scenarioType := reflect.TypeOf(models.Scenario{})
+	scenarioType := reflect.TypeFor[models.Scenario]()
 	src, dst := reflect.ValueOf(reloaded), reflect.ValueOf(*copied)
 	for f := 0; f < scenarioType.NumField(); f++ {
 		field := scenarioType.Field(f)

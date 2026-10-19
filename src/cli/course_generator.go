@@ -129,7 +129,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 			// Save the course to database
 			genericService := genericService.NewGenericService(db, enforcer)
 			courseInputDto := courseDto.CourseModelToCourseInputDto(course)
-			savedCourseEntity, errorSaving := genericService.CreateEntity(*courseInputDto, reflect.TypeOf(models.Course{}).Name())
+			savedCourseEntity, errorSaving := genericService.CreateEntity(*courseInputDto, reflect.TypeFor[courseModels.Course]().Name())
 
 			if errorSaving != nil {
 				utils.Error("%s", errorSaving.Error())

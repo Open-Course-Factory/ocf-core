@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/auth/dto"
+	authRegistration "soli/formations/src/auth/entityRegistration"
 	authMocks "soli/formations/src/auth/mocks"
 	authModels "soli/formations/src/auth/models"
-	authRegistration "soli/formations/src/auth/entityRegistration"
-	"soli/formations/src/auth/dto"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 )
 
@@ -49,9 +49,9 @@ func TestUserSettings_ModelToDto_IncludesRecordingAcknowledgedAt(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	model := &authModels.UserSettings{
-		UserID:                    "user-ack-test",
-		Theme:                     "dark",
-		RecordingAcknowledgedAt:   &now,
+		UserID:                  "user-ack-test",
+		Theme:                   "dark",
+		RecordingAcknowledgedAt: &now,
 	}
 
 	rawDto, err := ops.ConvertModelToDto(model)
@@ -91,13 +91,13 @@ func TestUserSettings_DtoToMap_AcceptsRecordingAcknowledgedAt(t *testing.T) {
 // that the UserSettings model struct has a field named RecordingAcknowledgedAt
 // of type *time.Time, catching accidental renames.
 func TestUserSettings_Model_HasRecordingAcknowledgedAtField(t *testing.T) {
-	modelType := reflect.TypeOf(authModels.UserSettings{})
+	modelType := reflect.TypeFor[authModels.UserSettings]()
 
 	field, found := modelType.FieldByName("RecordingAcknowledgedAt")
 	assert.True(t, found, "UserSettings must have a field named RecordingAcknowledgedAt")
 
 	if found {
-		expectedType := reflect.TypeOf((*time.Time)(nil))
+		expectedType := reflect.TypeFor[*time.Time]()
 		assert.Equal(t, expectedType, field.Type,
 			"RecordingAcknowledgedAt must be of type *time.Time")
 	}

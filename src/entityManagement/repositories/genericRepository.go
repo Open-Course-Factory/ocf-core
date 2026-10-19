@@ -397,7 +397,7 @@ func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit 
 		// Get the last entity's ID
 		lastEntity := sliceValue.Index(sliceValue.Len() - 1)
 		idField := lastEntity.FieldByName("ID")
-		if idField.IsValid() && idField.Type() == reflect.TypeOf(uuid.UUID{}) {
+		if idField.IsValid() && idField.Type() == reflect.TypeFor[uuid.UUID]() {
 			lastID := idField.Interface().(uuid.UUID)
 			nextCursor = base64.StdEncoding.EncodeToString(lastID[:])
 			utils.Debug("Generated nextCursor for %s: UUID=%s, cursor=%s", entityName, lastID.String(), nextCursor)

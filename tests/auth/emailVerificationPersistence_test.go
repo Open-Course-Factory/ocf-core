@@ -100,7 +100,7 @@ func TestVerifyEmail_TokenConsumed_OnlyAfterCasdoorSuccess(t *testing.T) {
 // ============================================================
 
 func TestLoginOutput_HasEmailVerifiedFields(t *testing.T) {
-	loginOutputType := reflect.TypeOf(dto.LoginOutput{})
+	loginOutputType := reflect.TypeFor[dto.LoginOutput]()
 
 	t.Run("has Email field", func(t *testing.T) {
 		field, found := loginOutputType.FieldByName("Email")

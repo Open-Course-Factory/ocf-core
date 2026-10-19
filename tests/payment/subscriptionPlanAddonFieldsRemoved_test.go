@@ -39,7 +39,7 @@ var addonJSONKeys = []string{
 // subscriptionPlanConverterRoundTrip_test.go (same package). RED today: the
 // fields exist on the struct.
 func TestSubscriptionPlan_AddonPriceIDFields_Removed(t *testing.T) {
-	pt := reflect.TypeOf(models.SubscriptionPlan{})
+	pt := reflect.TypeFor[models.SubscriptionPlan]()
 
 	present := map[string]bool{}
 	for i := 0; i < pt.NumField(); i++ {
@@ -59,7 +59,7 @@ func TestSubscriptionPlan_AddonPriceIDFields_Removed(t *testing.T) {
 // removing the model fields has no output-side effect). Kept so a future
 // re-introduction is caught. This one passes today; it documents the N/A.
 func TestSubscriptionPlanOutput_HasNoAddonFields(t *testing.T) {
-	ot := reflect.TypeOf(dto.SubscriptionPlanOutput{})
+	ot := reflect.TypeFor[dto.SubscriptionPlanOutput]()
 
 	present := map[string]bool{}
 	for i := 0; i < ot.NumField(); i++ {
