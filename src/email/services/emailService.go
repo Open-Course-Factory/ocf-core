@@ -101,10 +101,7 @@ func (s *emailService) SendEmailWithAttachment(to, subject, body, attachmentName
 	// Wrap base64 at 76 chars per line (RFC 2045)
 	var wrappedAttachment string
 	for i := 0; i < len(attachmentBase64); i += 76 {
-		end := i + 76
-		if end > len(attachmentBase64) {
-			end = len(attachmentBase64)
-		}
+		end := min(i+76, len(attachmentBase64))
 		wrappedAttachment += attachmentBase64[i:end] + "\r\n"
 	}
 
