@@ -212,7 +212,7 @@ func TestStripeSyncQueue_MarkFailure_TransitionsToFailedAfterMaxAttempts(t *test
 	rowID := pending[0].ID
 
 	// Fail MaxAttempts times.
-	for i := 0; i < paymentModels.StripeSyncMaxAttempts; i++ {
+	for i := range paymentModels.StripeSyncMaxAttempts {
 		if err := queue.MarkFailure(rowID, errors.New("persistent fail")); err != nil {
 			t.Fatalf("MarkFailure attempt %d failed: %v", i+1, err)
 		}

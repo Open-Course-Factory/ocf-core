@@ -281,7 +281,7 @@ func benchmarkReadList(b *testing.B, count int) {
 	userID := "bench-user"
 
 	// Create entities
-	for i := 0; i < count; i++ {
+	for i := range count {
 		entity := BenchmarkEntity{
 			Name:     fmt.Sprintf("Entity %d", i),
 			Value:    i,
@@ -368,7 +368,7 @@ func BenchmarkFilter_ByName(b *testing.B) {
 	userID := "bench-user"
 
 	// Create test data
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		entity := BenchmarkEntity{
 			Name:     fmt.Sprintf("Entity %d", i),
 			Value:    i,
@@ -394,7 +394,7 @@ func BenchmarkFilter_ByBoolean(b *testing.B) {
 	suite := setupBenchmarkSuite(b)
 	userID := "bench-user"
 
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		entity := BenchmarkEntity{
 			Name:     fmt.Sprintf("Entity %d", i),
 			Value:    i,
@@ -424,7 +424,7 @@ func benchmarkPagination(b *testing.B, page int) {
 	userID := "bench-user"
 
 	// Create 2000 entities
-	for i := 0; i < 2000; i++ {
+	for i := range 2000 {
 		entity := BenchmarkEntity{
 			Name:  fmt.Sprintf("Entity %d", i),
 			Value: i,

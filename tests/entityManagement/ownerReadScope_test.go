@@ -300,7 +300,7 @@ func TestOwnerReadScope_ListPaginationCountIsOwnerScoped(t *testing.T) {
 	// Interleave A and B so B rows fall within the first (default 20) page —
 	// this makes BOTH the COUNT assertion AND the per-row ownership assertion
 	// fail today, rather than the ordering accidentally hiding B on page 1.
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		seedOwnerScopeRow(t, db, "user-A", fmt.Sprintf("A-%d", i))
 		seedOwnerScopeRow(t, db, "user-B", fmt.Sprintf("B-%d", i))
 	}

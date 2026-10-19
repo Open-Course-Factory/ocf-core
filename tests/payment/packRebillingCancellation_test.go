@@ -155,7 +155,7 @@ func TestWebhook_BulkPackUpdated_ScheduledEndDoesNotCancelBatch(t *testing.T) {
 		CurrentPeriodEnd:     deadline,
 	}
 	require.NoError(t, db.Create(batch).Error)
-	for i := 0; i < learners; i++ {
+	for range learners {
 		require.NoError(t, db.Create(&models.UserSubscription{
 			PurchaserUserID:     &batch.PurchaserUserID,
 			SubscriptionBatchID: &batch.ID,

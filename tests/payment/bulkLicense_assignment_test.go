@@ -44,7 +44,7 @@ func TestAssignLicense_DecrementsAvailableCount(t *testing.T) {
 	_, batch, _ := seedBulkLicenseTestData(t, db, purchaserID, 4, 0)
 
 	// Assign 3 out of 4 licenses
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		targetUser := "user-dec-" + uuid.New().String()[:8]
 		_, err := svc.AssignLicense(batch.ID, purchaserID, targetUser)
 		require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestAssignLicense_FullFlowExhaustion(t *testing.T) {
 
 	// Assign all licenses
 	assignedUsers := make([]string, totalLicenses)
-	for i := 0; i < totalLicenses; i++ {
+	for i := range totalLicenses {
 		targetUser := "exhaust-user-" + uuid.New().String()[:8]
 		assignedUsers[i] = targetUser
 		license, err := svc.AssignLicense(batch.ID, purchaserID, targetUser)

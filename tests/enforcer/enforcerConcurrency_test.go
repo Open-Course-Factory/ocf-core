@@ -24,20 +24,20 @@ func TestEnforcerConcurrentEnforceAndPolicyChangesAreSafe(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
-	for r := 0; r < 8; r++ {
+	for range 8 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 300; i++ {
+			for range 300 {
 				_, _ = enforcer.Enforce("alice", "/api/v1/things/1", "GET")
 			}
 		}()
 	}
-	for w := 0; w < 2; w++ {
+	for w := range 2 {
 		wg.Add(1)
 		go func(w int) {
 			defer wg.Done()
-			for i := 0; i < 300; i++ {
+			for i := range 300 {
 				user := fmt.Sprintf("user-%d-%d", w, i)
 				_, _ = enforcer.AddGroupingPolicy(user, "member")
 				_, _ = enforcer.RemoveGroupingPolicy(user, "member")

@@ -31,7 +31,7 @@ func limiterRouter(userID string) *gin.Engine {
 func allowedBefore429(t *testing.T, r *gin.Engine, tries int) int {
 	t.Helper()
 	allowed := 0
-	for i := 0; i < tries; i++ {
+	for range tries {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/x", nil)
 		r.ServeHTTP(w, req)

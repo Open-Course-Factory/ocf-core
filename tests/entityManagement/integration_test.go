@@ -482,7 +482,7 @@ func TestIntegration_ConcurrentOperations(t *testing.T) {
 		results := make(chan string, numGoroutines)
 		errors := make(chan error, numGoroutines)
 
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			go func(index int) {
 				input := IntegrationTestEntityInput{
 					Name:        fmt.Sprintf("Concurrent Entity %d", index),
@@ -515,7 +515,7 @@ func TestIntegration_ConcurrentOperations(t *testing.T) {
 
 		// Collect results
 		createdIDs := make([]string, 0, numGoroutines)
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			select {
 			case id := <-results:
 				createdIDs = append(createdIDs, id)
@@ -628,11 +628,11 @@ type capturingHook struct {
 	capturedRoles  []string
 }
 
-func (h *capturingHook) GetName() string             { return h.entityName + "CapturingHook" }
-func (h *capturingHook) GetEntityName() string        { return h.entityName }
+func (h *capturingHook) GetName() string                { return h.entityName + "CapturingHook" }
+func (h *capturingHook) GetEntityName() string          { return h.entityName }
 func (h *capturingHook) GetHookTypes() []hooks.HookType { return []hooks.HookType{hooks.BeforeCreate} }
-func (h *capturingHook) IsEnabled() bool              { return true }
-func (h *capturingHook) GetPriority() int             { return 1 }
+func (h *capturingHook) IsEnabled() bool                { return true }
+func (h *capturingHook) GetPriority() int               { return 1 }
 func (h *capturingHook) Execute(ctx *hooks.HookContext) error {
 	h.capturedUserID = ctx.UserID
 	h.capturedRoles = ctx.UserRoles

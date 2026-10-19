@@ -197,7 +197,7 @@ func TestBulkStartScenario_ReplacesExistingActiveSessions(t *testing.T) {
 		Name: "replace-active", Title: "Replace Active", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
 	}
 	require.NoError(t, db.Create(&scenario).Error)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step", TextContent: "content",
 		}).Error)
@@ -280,7 +280,7 @@ func TestBulkStartScenario_ReplacesInProgressSessions(t *testing.T) {
 		Name: "replace-progress", Title: "Replace InProgress", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
 	}
 	require.NoError(t, db.Create(&scenario).Error)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step", TextContent: "content",
 		}).Error)

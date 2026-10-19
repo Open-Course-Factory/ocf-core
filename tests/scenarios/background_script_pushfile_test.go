@@ -17,7 +17,7 @@ import (
 // waitForSetupDone waits until the session transitions out of "provisioning" (to "active" or "setup_failed").
 func waitForSetupDone(t *testing.T, db *gorm.DB, sessionID any) string {
 	t.Helper()
-	for i := 0; i < 50; i++ { // max 500ms
+	for range 50 { // max 500ms
 		var s models.ScenarioSession
 		db.First(&s, "id = ?", sessionID)
 		if s.Status != "provisioning" {

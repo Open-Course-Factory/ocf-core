@@ -111,7 +111,7 @@ func TestBulkCreateTerminals_InsufficientRAM_Refused(t *testing.T) {
 
 	// Add 5 active members — each will need 0.5 GB (size "S").
 	// Total estimated RAM: 5 × 0.5 = 2.5 GB; available: 1.0 GB → should be refused.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		memberID := "bulk-ram-member-" + uuid.New().String()
 		addActiveGroupMember(t, db, group.ID, memberID, groupModels.GroupMemberRoleMember)
 	}

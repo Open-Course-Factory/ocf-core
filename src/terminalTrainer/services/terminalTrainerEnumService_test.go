@@ -91,9 +91,9 @@ func TestEnumServiceConcurrency(t *testing.T) {
 
 	// Run multiple goroutines concurrently
 	done := make(chan bool)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
-			for j := 0; j < 100; j++ {
+			for j := range 100 {
 				_ = service.GetEnumDescription("session_status", j%7)
 				_ = service.GetEnumName("session_status", j%7)
 				_ = service.GetStatus()
@@ -103,7 +103,7 @@ func TestEnumServiceConcurrency(t *testing.T) {
 	}
 
 	// Wait for all goroutines to finish
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 }

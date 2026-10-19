@@ -3,6 +3,7 @@ package services
 
 import (
 	"fmt"
+	"slices"
 	access "soli/formations/src/auth/access"
 	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
@@ -11,7 +12,6 @@ import (
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 	"soli/formations/src/utils"
-	"slices"
 	"strings"
 	"time"
 
@@ -524,7 +524,7 @@ func (s *BulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 			// Sharing the batch's stripe_subscription_id across added rows collided
 			// on the partial unique index idx_user_stripe_sub_not_null, so only the
 			// first added license survived and the transaction then rolled back.
-			for i := 0; i < difference; i++ {
+			for i := range difference {
 				license := models.UserSubscription{
 					UserID:              "",
 					PurchaserUserID:     &batch.PurchaserUserID,
@@ -823,9 +823,9 @@ func (s *BulkLicenseService) getUserFromCasdoor(userID string) (user *casdoorsdk
 }
 
 // canUserReadBatch checks if a user can READ a batch through:
-// 1. Direct purchase (user is the purchaser)
-// 2. Organization membership (any active member of a team organization that
-//    the purchaser also belongs to — including regular members).
+//  1. Direct purchase (user is the purchaser)
+//  2. Organization membership (any active member of a team organization that
+//     the purchaser also belongs to — including regular members).
 //
 // This is the lenient check used for read-only endpoints. Destructive
 // operations must use canUserManageBatch instead.
@@ -855,10 +855,10 @@ func (s *BulkLicenseService) canUserReadBatch(batch *models.SubscriptionBatch, u
 // batch (assign, revoke, update quantity, permanent delete).
 //
 // Authorization is granted when:
-// 1. User is the direct purchaser, OR
-// 2. User is an active member of a team organization that the purchaser also
-//    belongs to AND the requesting user's role in that shared team org is
-//    manager or owner (>= manager per the role hierarchy).
+//  1. User is the direct purchaser, OR
+//  2. User is an active member of a team organization that the purchaser also
+//     belongs to AND the requesting user's role in that shared team org is
+//     manager or owner (>= manager per the role hierarchy).
 //
 // Regular org "members" are intentionally denied even if they would pass the
 // lenient read check.

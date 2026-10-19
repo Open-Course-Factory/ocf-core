@@ -215,7 +215,7 @@ func TestCourseServiceDatabaseSwitching(t *testing.T) {
 	services := make([]courseServices.CourseService, 3)
 	courses := make([]*models.Course, 3)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		// Créer une DB unique
 		db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 		require.NoError(t, err)
@@ -248,8 +248,8 @@ func TestCourseServiceDatabaseSwitching(t *testing.T) {
 	}
 
 	// Vérifier que chaque service ne voit que son propre cours
-	for i := 0; i < 3; i++ {
-		for j := 0; j < 3; j++ {
+	for i := range 3 {
+		for j := range 3 {
 			// Tenter de récupérer le cours j via le service i
 			_, err := services[i].CheckGenerationStatus(courses[j].ID.String())
 

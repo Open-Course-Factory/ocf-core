@@ -84,7 +84,7 @@ func TestGetSessionDetail_StartedAt_NthStepEqualsPreviousCompletion(t *testing.T
 		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group",
 		CreatedByID: "c1", IsActive: true,
 	}).Error)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step",
 		}).Error)
@@ -149,7 +149,7 @@ func TestGetSessionDetail_StartedAt_NilWhenPreviousIncomplete(t *testing.T) {
 		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group",
 		CreatedByID: "c1", IsActive: true,
 	}).Error)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.NoError(t, db.Create(&models.ScenarioStep{
 			ScenarioID: scenario.ID, Order: i, Title: "Step",
 		}).Error)

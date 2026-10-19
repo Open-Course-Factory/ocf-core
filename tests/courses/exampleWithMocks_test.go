@@ -96,7 +96,7 @@ func Test_CompleteWorkflowWithMocks(t *testing.T) {
 	// 5b. Attendre la completion en polling
 	var finalStatus *dto.GenerationStatusOutput
 	maxAttempts := 50 // 5 secondes max
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for range maxAttempts {
 		status, err := courseService.CheckGenerationStatus(generationID)
 		require.NoError(t, err)
 

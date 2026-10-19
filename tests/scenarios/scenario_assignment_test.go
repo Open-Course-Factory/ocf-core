@@ -95,7 +95,7 @@ func TestScenarioAssignment_ListByGroup(t *testing.T) {
 	groupB := uuid.New()
 
 	// Create two assignments for groupA, one for groupB
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		require.NoError(t, db.Create(&models.ScenarioAssignment{
 			ScenarioID:  scenario.ID,
 			GroupID:     &groupA,

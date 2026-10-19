@@ -453,7 +453,7 @@ func TestSyncRoutes_BatchOperations(t *testing.T) {
 	t.Run("Large batch sync operation", func(t *testing.T) {
 		// Simuler un sync de grande quantité
 		createdDetails := make([]string, 50)
-		for i := 0; i < 50; i++ {
+		for i := range 50 {
 			createdDetails[i] = "Created subscription sub_batch_" + string(rune(i+1)) + " for user_batch_" + string(rune(i+1))
 		}
 
@@ -585,7 +585,8 @@ func setupSyncPlansRouter() (*gin.Engine, *SharedMockSubscriptionService, *Share
 // Given: DB contains Trial (price=0), Member Pro (price=1200), Trainer Plan (price=1200).
 // When : POST /api/v1/subscription-plans/sync-stripe is called.
 // Then : CreateSubscriptionPlanInStripe is invoked EXACTLY for the two paid plans
-//        and the response lists Trial under skipped_plans (not synced_plans).
+//
+//	and the response lists Trial under skipped_plans (not synced_plans).
 func TestSyncAllSubscriptionPlans_TrialPlanIsSkipped(t *testing.T) {
 	router, mockSubscriptionService, mockStripeService := setupSyncPlansRouter()
 
@@ -793,7 +794,8 @@ func setupSyncSinglePlanRouter() (*gin.Engine, *SharedMockSubscriptionService, *
 // Given: a free plan (PriceAmount == 0, no StripePriceID).
 // When : POST /api/v1/subscription-plans/{id}/sync-stripe is called for it.
 // Then : the endpoint rejects with HTTP 400 ("free plan") and NEVER calls
-//        CreateSubscriptionPlanInStripe — the free plan stays decoupled.
+//
+//	CreateSubscriptionPlanInStripe — the free plan stays decoupled.
 func TestSyncSubscriptionPlan_FreePlan_NotSyncedAndRejected(t *testing.T) {
 	router, mockSubscriptionService, mockStripeService := setupSyncSinglePlanRouter()
 

@@ -26,7 +26,7 @@ func setupPaginationBenchmarkDB(b *testing.B, entityCount int) (*gorm.DB, reposi
 	}
 
 	// Create entities
-	for i := 0; i < entityCount; i++ {
+	for i := range entityCount {
 		entity := &BenchmarkEntity{
 			Name:  "Entity " + string(rune('A'+(i%26))),
 			Value: i,
@@ -99,7 +99,7 @@ func BenchmarkCursorPagination_Page250(b *testing.B) {
 
 	// Navigate to page 250 to get the cursor
 	cursor := ""
-	for page := 0; page < 250; page++ {
+	for range 250 {
 		_, nextCursor, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]any{}, nil)
 		if err != nil {
 			b.Fatalf("Setup error: %v", err)
@@ -123,7 +123,7 @@ func BenchmarkCursorPagination_Page500(b *testing.B) {
 
 	// Navigate to page 500 to get the cursor
 	cursor := ""
-	for page := 0; page < 500; page++ {
+	for range 500 {
 		_, nextCursor, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]any{}, nil)
 		if err != nil {
 			b.Fatalf("Setup error: %v", err)

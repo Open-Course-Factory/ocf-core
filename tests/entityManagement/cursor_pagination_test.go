@@ -42,7 +42,7 @@ func TestCursorPagination_FirstPage(t *testing.T) {
 	repo := repositories.NewGenericRepository(db)
 
 	// Create 10 test entities
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		entity := &CursorTestEntity{
 			ID:    uuid.New(),
 			Name:  "Entity " + string(rune('A'+i)),
@@ -77,7 +77,7 @@ func TestCursorPagination_SecondPage(t *testing.T) {
 
 	// Create 10 test entities
 	createdIDs := make([]uuid.UUID, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		entity := &CursorTestEntity{
 			ID:    uuid.New(),
 			Name:  "Entity " + string(rune('A'+i)),
@@ -111,7 +111,7 @@ func TestCursorPagination_LastPageIncomplete(t *testing.T) {
 	repo := repositories.NewGenericRepository(db)
 
 	// Create 7 test entities
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		entity := &CursorTestEntity{
 			ID:    uuid.New(),
 			Name:  "Entity " + string(rune('A'+i)),
@@ -155,7 +155,7 @@ func TestCursorPagination_WithFilters(t *testing.T) {
 	repo := repositories.NewGenericRepository(db)
 
 	// Create entities with different values
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		entity := &CursorTestEntity{
 			ID:    uuid.New(),
 			Name:  "Entity " + string(rune('A'+i)),
@@ -209,7 +209,7 @@ func TestIntegration_CursorPagination_HTTP(t *testing.T) {
 
 	// Create 15 test entities
 	createdIDs := make([]string, 15)
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		input := IntegrationTestEntityInput{
 			Name:     "Cursor Entity " + string(rune('A'+i)),
 			Value:    i,

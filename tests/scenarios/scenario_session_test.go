@@ -541,7 +541,7 @@ func TestScenarioSessionService_ConcurrentStartNoDuplicates(t *testing.T) {
 	require.NoError(t, db.Create(&step).Error)
 
 	// Create active terminals so the zombie-detection logic doesn't auto-abandon
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		utk := terminalModels.UserTerminalKey{
 			UserID:   "student-concurrent",
 			APIKey:   fmt.Sprintf("key-concurrent-%d", i),
@@ -571,7 +571,7 @@ func TestScenarioSessionService_ConcurrentStartNoDuplicates(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(idx int) {
 			defer wg.Done()
 			session, err := sessionSvc.StartScenario("student-concurrent", scenario.ID, fmt.Sprintf("terminal-%d", idx), "")
@@ -584,7 +584,7 @@ func TestScenarioSessionService_ConcurrentStartNoDuplicates(t *testing.T) {
 	// Exactly one should succeed and one should fail (duplicate prevention)
 	successCount := 0
 	failCount := 0
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		if errs[i] == nil && results[i] != nil {
 			successCount++
 		} else {
@@ -639,7 +639,7 @@ func TestScenarioSessionService_StartScenario_ExecutesBackgroundScript(t *testin
 	assert.Equal(t, "provisioning", session.Status)
 
 	// Wait for async setup goroutine to complete
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		var s models.ScenarioSession
 		db.First(&s, "id = ?", session.ID)
 		if s.Status == "active" {
@@ -968,7 +968,7 @@ func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testi
 	assert.Equal(t, "provisioning", session.Status)
 
 	// Wait for async setup — should fail since exec errors
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		var s models.ScenarioSession
 		db.First(&s, "id = ?", session.ID)
 		if s.Status != "provisioning" {

@@ -33,7 +33,7 @@ func seedBulkLicenseTestData(t *testing.T, db *gorm.DB, purchaserID string, tota
 	require.NoError(t, db.Create(batch).Error)
 
 	licenses := make([]models.UserSubscription, totalQty)
-	for i := 0; i < totalQty; i++ {
+	for i := range totalQty {
 		// Each license needs a unique StripeSubscriptionID due to SQLite unique index
 		// (PostgreSQL uses partial indexes which SQLite doesn't support)
 		uniqueStripeSubID := batch.StripeSubscriptionID + "-lic-" + uuid.New().String()[:8]
@@ -423,7 +423,7 @@ func TestBulkLicenseService_AssignLicense_MultipleAssignments(t *testing.T) {
 	_, batch, _ := seedBulkLicenseTestData(t, db, purchaserID, 3, 0)
 
 	// Assign all 3 licenses
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		targetUser := "user-" + uuid.New().String()[:8]
 		license, err := svc.AssignLicense(batch.ID, purchaserID, targetUser)
 		require.NoError(t, err)
