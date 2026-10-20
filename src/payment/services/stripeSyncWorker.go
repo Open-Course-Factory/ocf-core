@@ -53,9 +53,7 @@ func NewStripeSyncWorker(queue StripeSyncQueue, stripeService StripeService) *St
 func (w *StripeSyncWorker) Start(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	w.cancel = cancel
-	w.wg.Add(1)
-	go func() {
-		defer w.wg.Done()
+	w.wg.Go(func() {
 		ticker := time.NewTicker(stripeSyncWorkerPollInterval)
 		defer ticker.Stop()
 		for {
@@ -68,7 +66,7 @@ func (w *StripeSyncWorker) Start(parent context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 // Shutdown cancels the polling goroutine and waits for it to exit, up to

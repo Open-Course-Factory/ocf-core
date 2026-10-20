@@ -89,9 +89,7 @@ func TestVerifyEmailToken_ConcurrentRequests_OnlyOneSucceeds(t *testing.T) {
 	barrier := make(chan struct{})
 
 	for range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-barrier // wait for all goroutines to be ready
 			err := svc.VerifyEmail(tokenValue)
 			switch err {
@@ -102,7 +100,7 @@ func TestVerifyEmailToken_ConcurrentRequests_OnlyOneSucceeds(t *testing.T) {
 			default:
 				otherErrors.Add(1)
 			}
-		}()
+		})
 	}
 
 	// Release all goroutines at once

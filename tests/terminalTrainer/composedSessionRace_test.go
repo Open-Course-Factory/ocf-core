@@ -124,9 +124,7 @@ func fireConcurrentComposedStarts(t *testing.T, router http.Handler, body []byte
 	barrier := make(chan struct{})
 
 	for range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-barrier
 			req := httptest.NewRequest(http.MethodPost,
 				"/api/v1/terminals/start-composed-session", bytes.NewReader(body))
@@ -148,7 +146,7 @@ func fireConcurrentComposedStarts(t *testing.T, router http.Handler, body []byte
 			default:
 				res.otherFailure.Add(1)
 			}
-		}()
+		})
 	}
 
 	close(barrier)
@@ -300,9 +298,7 @@ func TestComposedSession_ConcurrentStarts_OrgScoped_NeverExceedsBudget(t *testin
 	barrier := make(chan struct{})
 	for _, uid := range members {
 		router := setupBudgetHTTPRouter(t, uid, svc)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-barrier
 			req := httptest.NewRequest(http.MethodPost,
 				"/api/v1/terminals/start-composed-session", bytes.NewReader(reqBody))
@@ -323,7 +319,7 @@ func TestComposedSession_ConcurrentStarts_OrgScoped_NeverExceedsBudget(t *testin
 			default:
 				res.otherFailure.Add(1)
 			}
-		}()
+		})
 	}
 	close(barrier)
 	wg.Wait()

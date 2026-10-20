@@ -25,13 +25,11 @@ func TestEnforcerConcurrentEnforceAndPolicyChangesAreSafe(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 300 {
 				_, _ = enforcer.Enforce("alice", "/api/v1/things/1", "GET")
 			}
-		}()
+		})
 	}
 	for w := range 2 {
 		wg.Add(1)
