@@ -163,7 +163,6 @@ func (ass *AdditionalSchemasService) generateSchemaFromStruct(structInstance any
 	var required []string
 
 	for field := range structType.Fields() {
-		field := field
 
 		// Ignorer les champs non exportés
 		if !field.IsExported() {

@@ -369,7 +369,6 @@ func (dg *DocumentationGenerator) generateSchemaFromStruct(structInstance any) m
 	required := []string{}
 
 	for field := range t.Fields() {
-		field := field
 
 		// Ignorer les champs non exportés
 		if !field.IsExported() {

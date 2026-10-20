@@ -73,7 +73,6 @@ var paymentAuditRoutes = []paymentAuditRoute{
 
 func TestPaymentLayer2_NoUser_Passthrough(t *testing.T) {
 	for _, route := range paymentAuditRoutes {
-		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			// Reuse the generic helpers from layer2_audit_parameterized_test.go.
 			adapted := adaptPaymentRoute(route)
