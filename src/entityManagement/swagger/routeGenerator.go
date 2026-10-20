@@ -368,8 +368,8 @@ func (dg *DocumentationGenerator) generateSchemaFromStruct(structInstance any) m
 	properties := make(map[string]any)
 	required := []string{}
 
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
+	for field := range t.Fields() {
+		field := field
 
 		// Ignorer les champs non exportés
 		if !field.IsExported() {

@@ -162,8 +162,8 @@ func (ass *AdditionalSchemasService) generateSchemaFromStruct(structInstance any
 	properties := schema["properties"].(map[string]any)
 	var required []string
 
-	for i := 0; i < structType.NumField(); i++ {
-		field := structType.Field(i)
+	for field := range structType.Fields() {
+		field := field
 
 		// Ignorer les champs non exportés
 		if !field.IsExported() {
