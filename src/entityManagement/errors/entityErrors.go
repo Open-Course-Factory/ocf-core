@@ -63,11 +63,11 @@ import (
 // EntityError represents a standardized error in the entity management system.
 // It includes a code for programmatic handling, a message for humans, and optional details.
 type EntityError struct {
-	Code       string                 `json:"code"`              // Error code (e.g., "ENT001")
-	Message    string                 `json:"message"`           // Human-readable message
-	HTTPStatus int                    `json:"-"`                 // HTTP status code to return
+	Code       string         `json:"code"`              // Error code (e.g., "ENT001")
+	Message    string         `json:"message"`           // Human-readable message
+	HTTPStatus int            `json:"-"`                 // HTTP status code to return
 	Details    map[string]any `json:"details,omitempty"` // Additional context
-	Err        error                  `json:"-"`                 // Wrapped error (if any)
+	Err        error          `json:"-"`                 // Wrapped error (if any)
 }
 
 // Error implements the error interface.
@@ -264,8 +264,7 @@ func NewUnauthorizedError(userId string, resource string, action string) *Entity
 // not a generic ENT007/500 hook failure. Only opaque hook errors are wrapped as
 // ENT007.
 func WrapHookError(hookName string, entityName string, hookErr error) *EntityError {
-	var structured *EntityError
-	if errors.As(hookErr, &structured) {
+	if structured, ok := errors.AsType[*EntityError](hookErr); ok {
 		return structured
 	}
 

@@ -18,10 +18,9 @@ import (
 //	    return
 //	}
 func HandleEntityError(ctx *gin.Context, err error) {
-	var entityErr *entityErrors.EntityError
 
 	// Check if it's an EntityError
-	if errors.As(err, &entityErr) {
+	if entityErr, ok := errors.AsType[*entityErrors.EntityError](err); ok {
 		ctx.JSON(entityErr.HTTPStatus, gin.H{
 			"error": gin.H{
 				"code":    entityErr.Code,

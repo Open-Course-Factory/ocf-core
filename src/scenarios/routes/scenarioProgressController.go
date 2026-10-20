@@ -211,8 +211,7 @@ func (pc *scenarioProgressController) TestVerifyScript(ctx *gin.Context) {
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 2*testVerifyScriptLimit)
 	var input dto.TestVerifyScriptInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		var tooLarge *http.MaxBytesError
-		if stderrors.As(err, &tooLarge) {
+		if _, ok := stderrors.AsType[*http.MaxBytesError](err); ok {
 			errors.Respond(ctx, http.StatusRequestEntityTooLarge, "Script is too large")
 			return
 		}

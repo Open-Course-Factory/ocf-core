@@ -174,8 +174,7 @@ func (h *paymentDeletionHelper) DeleteStripeCustomersForUser(userID string) erro
 // isStripeResourceMissing reports whether err is a Stripe 404 / resource_missing
 // (the customer was already deleted), which erasure treats as success.
 func isStripeResourceMissing(err error) bool {
-	var se *stripe.Error
-	if errors.As(err, &se) {
+	if se, ok := errors.AsType[*stripe.Error](err); ok {
 		return se.HTTPStatusCode == http.StatusNotFound || se.Code == stripe.ErrorCodeResourceMissing
 	}
 	return false

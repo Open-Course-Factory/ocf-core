@@ -400,8 +400,7 @@ func relayTerminalToClient(terminalConn, clientConn consoleRelayConn, terminalSe
 	for {
 		messageType, data, err := terminalConn.ReadMessage()
 		if err != nil {
-			var closeErr *websocket.CloseError
-			if stderrors.As(err, &closeErr) {
+			if closeErr, ok := stderrors.AsType[*websocket.CloseError](err); ok {
 				services.ReportConsoleClose(terminalSessionID, closeErr.Code)
 				forwardConsoleCloseFrame(clientConn, closeErr)
 			}
