@@ -332,3 +332,50 @@ func TestConsoleRelay_SupervisionAttachIsNotReported(t *testing.T) {
 		"a supervisor observing the terminal must never be reported as the "+
 			"learner's attach")
 }
+
+func TestConsoleRelay_BrowserLeavingClosesTerminalTrainerSide(t *testing.T) {
+	ttDetached := make(chan struct{})
+	upgrader := websocket.Upgrader{}
+	ttServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				close(ttDetached)
+				return
+			}
+		}
+	}))
+	defer ttServer.Close()
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clientConn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer clientConn.Close()
+		terminalConn, _, dialErr := websocket.DefaultDialer.Dial(
+			"ws"+strings.TrimPrefix(ttServer.URL, "http"), nil)
+		if dialErr != nil {
+			return
+		}
+		relayClientToTerminal(clientConn, terminalConn)
+	}))
+	defer proxy.Close()
+
+	browserConn, _, err := websocket.DefaultDialer.Dial(
+		"ws"+strings.TrimPrefix(proxy.URL, "http"), nil)
+	require.NoError(t, err)
+	require.NoError(t, browserConn.WriteMessage(websocket.TextMessage, []byte("ls\n")))
+	browserConn.Close()
+
+	select {
+	case <-ttDetached:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tt-backend must see the console close as soon as the browser " +
+			"leaves, otherwise a reopened console is torn down by the stale one")
+	}
+}

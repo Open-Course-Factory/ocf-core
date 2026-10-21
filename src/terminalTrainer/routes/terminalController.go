@@ -342,20 +342,30 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}()
 
 	// Proxy bidirectionnel
-	go func() {
-		for {
-			messageType, data, err := clientConn.ReadMessage()
-			if err != nil {
-				break
-			}
-			if err := terminalConn.WriteMessage(messageType, data); err != nil {
-				break
-			}
-		}
-	}()
+	go relayClientToTerminal(clientConn, terminalConn)
 
 	reportLearnerAttach(ctx, terminal)
 	relayTerminalToClient(terminalConn, clientConn, terminal.SessionID)
+}
+
+// relayClientToTerminal pumps the browser's keystrokes to tt-backend, then
+// closes the tt-backend side as soon as the browser goes away.
+//
+// Without that close, tt-backend keeps the learner attached until its next
+// keepalive write fails (up to 30 s). A learner who reloads or reopens the
+// console inside that window gets their new attachment torn down when the
+// stale one finally detaches.
+func relayClientToTerminal(clientConn consoleRelayConn, terminalConn consoleRelayCloser) {
+	defer terminalConn.Close()
+	for {
+		messageType, data, err := clientConn.ReadMessage()
+		if err != nil {
+			return
+		}
+		if err := terminalConn.WriteMessage(messageType, data); err != nil {
+			return
+		}
+	}
 }
 
 // reportLearnerAttach publishes the console attach when the user opening it
@@ -386,6 +396,11 @@ func reportLearnerAttach(ctx *gin.Context, terminal *models.Terminal) {
 type consoleRelayConn interface {
 	ReadMessage() (messageType int, data []byte, err error)
 	WriteMessage(messageType int, data []byte) error
+}
+
+type consoleRelayCloser interface {
+	consoleRelayConn
+	Close() error
 }
 
 // relayTerminalToClient pumps tt-backend's console output to the browser until
