@@ -10,7 +10,7 @@ import (
 	"soli/formations/src/auth/mocks"
 	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
-	brandingRoutes "soli/formations/src/configuration/routes"
+	brandingRoutes "soli/formations/src/configuration/routes/brandingRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	organizationRoutes "soli/formations/src/organizations/routes"
 	paymentController "soli/formations/src/payment/routes"
@@ -21,17 +21,6 @@ import (
 // policySet collects all policies added by a Setup function for easy assertion.
 type policySet struct {
 	policies []policy
-}
-
-func TestBrandingWriteRequiresAdministrator(t *testing.T) {
-	mock := mocks.NewMockEnforcer()
-	brandingRoutes.RegisterBrandingPermissions(mock)
-	ps := collectPolicies(mock)
-	assert.True(t, ps.has(access.RoleAdministrator, "/api/v1/branding", "PUT"))
-	assert.False(t, ps.has("member", "/api/v1/branding", "PUT"))
-	permission, found := access.RouteRegistry.Lookup("PUT", "/api/v1/branding")
-	assert.True(t, found)
-	assert.Equal(t, access.AdminOnly, permission.Access.Type)
 }
 
 type policy struct {
@@ -774,5 +763,30 @@ func TestSetupScenarioPermissions_StepLibrary(t *testing.T) {
 	for _, role := range []string{"member", "administrator"} {
 		assertPolicy(t, ps, role, "/api/v1/scenarios/:id/steps/read-only", "GET")
 		assertPolicy(t, ps, role, "/api/v1/scenarios/:id/steps/copy", "POST")
+	}
+}
+
+// TestBrandingRoutes_ReadsArePublicAndWriteIsAdministratorOnly pins the
+// branding declarations: the reads are public (login page, no Casbin row) and
+// the write is AdminOnly on both layers.
+func TestBrandingRoutes_ReadsArePublicAndWriteIsAdministratorOnly(t *testing.T) {
+	access.RouteRegistry.Reset()
+	defer access.RouteRegistry.Reset()
+	mock := mocks.NewMockEnforcer()
+	brandingRoutes.RegisterBrandingPermissions(mock)
+	ps := collectPolicies(mock)
+
+	assert.True(t, ps.has(access.RoleAdministrator, "/api/v1/branding", "PUT"))
+	assert.False(t, ps.has(access.RoleMember, "/api/v1/branding", "PUT"))
+	permission, found := access.RouteRegistry.Lookup("PUT", "/api/v1/branding")
+	assert.True(t, found)
+	assert.Equal(t, access.AdminOnly, permission.Access.Type)
+
+	assert.Len(t, ps.policies, 1, "only the PUT may reach Casbin")
+	for _, path := range []string{"/api/v1/branding", "/api/v1/branding/logo"} {
+		permission, found := access.RouteRegistry.Lookup("GET", path)
+		assert.True(t, found, path)
+		assert.Equal(t, access.Public, permission.Access.Type, path)
+		assert.True(t, permission.NoGateway, path)
 	}
 }

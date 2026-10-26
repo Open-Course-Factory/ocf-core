@@ -13,7 +13,7 @@ import (
 	cors "github.com/rs/cors/wrapper/gin"
 
 	config "soli/formations/src/configuration"
-	brandingRoutes "soli/formations/src/configuration/routes"
+	brandingRoutes "soli/formations/src/configuration/routes/brandingRoutes"
 	generator "soli/formations/src/generationEngine"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
 	"soli/formations/src/payment"
