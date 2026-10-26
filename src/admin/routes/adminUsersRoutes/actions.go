@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"os"
 	"time"
 
@@ -16,8 +17,10 @@ import (
 	auditModels "soli/formations/src/audit/models"
 	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/casdoor"
+	apiErrors "soli/formations/src/auth/errors"
 	"soli/formations/src/auth/interfaces"
 	authServices "soli/formations/src/auth/services"
+	paymentServices "soli/formations/src/payment/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 )
@@ -72,24 +75,10 @@ var (
 		return casdoorsdk.GetUserByEmail(email)
 	}
 
-	// ProvisionNewUserExtras performs the best-effort side effects every new
-	// account gets on self-signup (see AddUser in
-	// src/auth/services/userService.go): a terminal trainer key, default
-	// user settings, and the free Trial subscription plan. Each failure is
-	// logged and swallowed rather than failing account creation — same
-	// resilience as the self-signup path, since none of the three is
-	// essential to having a working account.
-	ProvisionNewUserExtras = func(db *gorm.DB, userID, username string) {
-		if err := ttServices.NewTerminalTrainerService(db).CreateUserKey(userID, username); err != nil {
-			utils.Warn("admin-created user %s: could not create terminal trainer key: %v", userID, err)
-		}
-		if err := authServices.CreateDefaultUserSettings(userID); err != nil {
-			utils.Warn("admin-created user %s: could not create default settings: %v", userID, err)
-		}
-		if err := authServices.AssignFreeTrialPlan(userID); err != nil {
-			utils.Warn("admin-created user %s: could not assign free Trial plan: %v", userID, err)
-		}
-	}
+	// ProvisionNewUser is the post-creation setup self-signup runs too
+	// (authServices.ProvisionNewUser), swappable because its steps reach
+	// tt-backend, Casdoor and SMTP.
+	ProvisionNewUser = authServices.ProvisionNewUser
 
 	// AddCasdoorNativeRole adds the account to Casdoor's own "member" Role
 	// object (used elsewhere for display/sync — authorization itself runs on
@@ -169,7 +158,7 @@ func requireAdmin(ctx *gin.Context) bool {
 	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
 		return true
 	}
-	ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin role required"})
+	apiErrors.Abort(ctx, http.StatusForbidden, "admin_role_required")
 	return false
 }
 
@@ -198,13 +187,13 @@ func NewSendPasswordResetHandler(db *gorm.DB) gin.HandlerFunc {
 
 		user, err := GetCasdoorUserByID(targetID)
 		if err != nil || user == nil {
-			ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+			apiErrors.Abort(ctx, http.StatusNotFound, "user_not_found")
 			return
 		}
 
 		if err := SendPasswordResetEmail(db, user.Email, resetPasswordURL()); err != nil {
 			utils.Error("admin password-reset email failed for %s: %v", targetID, err)
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "send_failed"})
+			apiErrors.Abort(ctx, http.StatusInternalServerError, "send_failed")
 			return
 		}
 
@@ -227,9 +216,14 @@ func NewGrantAdminRoleHandler(enforcer interfaces.EnforcerInterface, db *gorm.DB
 		}
 		targetID := ctx.Param("id")
 
+		if user, err := GetCasdoorUserByID(targetID); err != nil || user == nil {
+			apiErrors.Abort(ctx, http.StatusNotFound, "user_not_found")
+			return
+		}
+
 		if err := utils.AddGroupingPolicy(enforcer, targetID, access.RoleAdministrator, utils.DefaultPermissionOptions()); err != nil {
 			utils.Error("grant administrator role failed for %s: %v", targetID, err)
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "grant_failed"})
+			apiErrors.Abort(ctx, http.StatusInternalServerError, "grant_failed")
 			return
 		}
 
@@ -254,13 +248,13 @@ func NewRevokeAdminRoleHandler(enforcer interfaces.EnforcerInterface, db *gorm.D
 		adminID := ctx.GetString("userId")
 
 		if targetID == adminID {
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "cannot_revoke_own_admin_role"})
+			apiErrors.Abort(ctx, http.StatusBadRequest, "cannot_revoke_own_admin_role")
 			return
 		}
 
 		if err := utils.RemoveGroupingPolicy(enforcer, targetID, access.RoleAdministrator, utils.DefaultPermissionOptions()); err != nil {
 			utils.Error("revoke administrator role failed for %s: %v", targetID, err)
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "revoke_failed"})
+			apiErrors.Abort(ctx, http.StatusInternalServerError, "revoke_failed")
 			return
 		}
 
@@ -285,30 +279,27 @@ func NewSetForbiddenHandler(db *gorm.DB) gin.HandlerFunc {
 
 		var input SetForbiddenInput
 		if err := ctx.ShouldBindJSON(&input); err != nil {
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid_input"})
+			apiErrors.Abort(ctx, http.StatusBadRequest, "invalid_input")
 			return
 		}
 
 		if input.Forbidden && targetID == adminID {
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "cannot_block_own_account"})
+			apiErrors.Abort(ctx, http.StatusBadRequest, "cannot_block_own_account")
 			return
 		}
 
 		if err := SetAccountForbidden(targetID, input.Forbidden); err != nil {
+			if errors.Is(err, authServices.ErrUserNotFound) {
+				apiErrors.Abort(ctx, http.StatusNotFound, "user_not_found")
+				return
+			}
 			utils.Error("set forbidden=%t failed for %s: %v", input.Forbidden, targetID, err)
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "update_failed"})
+			apiErrors.Abort(ctx, http.StatusInternalServerError, "update_failed")
 			return
 		}
 
-		// Best-effort: a blocked sign-in is the point of this endpoint even
-		// if tt-backend is unreachable, but leaving an already-issued key
-		// active would make the block a no-op for anyone already signed in.
-		// Most blocked accounts never opened a terminal and carry no key at
-		// all — that's an expected no-op, not a failure worth logging.
 		if input.Forbidden {
-			if err := DisableUserTerminalKey(db, targetID); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				utils.Warn("could not disable terminal trainer key for blocked user %s: %v", targetID, err)
-			}
+			cutOffTerminalAccess(db, targetID)
 		}
 
 		eventType := auditModels.AuditEventUserReactivated
@@ -320,6 +311,20 @@ func NewSetForbiddenHandler(db *gorm.DB) gin.HandlerFunc {
 		logAdminUserAction(ctx, db, eventType, adminID, targetID, action)
 
 		ctx.JSON(http.StatusOK, ActionResult{Success: true})
+	}
+}
+
+// cutOffTerminalAccess disables the blocked account's terminal key and revokes
+// its running terminals. Best-effort: a blocked sign-in is the point of the
+// block even if tt-backend is unreachable, but an already-issued key or a
+// running terminal would otherwise outlive it. Most blocked accounts never
+// opened a terminal and carry no key at all, an expected no-op.
+func cutOffTerminalAccess(db *gorm.DB, userID string) {
+	if err := DisableUserTerminalKey(db, userID); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		utils.Warn("could not disable terminal trainer key for blocked user %s: %v", userID, err)
+	}
+	if err := paymentServices.TerminateUserTerminals(db, userID, nil); err != nil {
+		utils.Warn("could not terminate terminals of blocked user %s: %v", userID, err)
 	}
 }
 
@@ -340,17 +345,17 @@ func NewSetPasswordHandler(db *gorm.DB) gin.HandlerFunc {
 
 		var input SetPasswordInput
 		if err := ctx.ShouldBindJSON(&input); err != nil || len(input.Password) < minAdminSetPasswordLength {
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid_input"})
+			apiErrors.Abort(ctx, http.StatusBadRequest, "invalid_input")
 			return
 		}
 
 		if err := SetUserPassword(targetID, input.Password); err != nil {
 			if errors.Is(err, authServices.ErrUserNotFound) {
-				ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+				apiErrors.Abort(ctx, http.StatusNotFound, "user_not_found")
 				return
 			}
 			utils.Error("admin set-password failed for %s: %v", targetID, err)
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "update_failed"})
+			apiErrors.Abort(ctx, http.StatusInternalServerError, "update_failed")
 			return
 		}
 
@@ -364,9 +369,8 @@ func NewSetPasswordHandler(db *gorm.DB) gin.HandlerFunc {
 
 // NewCreateUserHandler returns the handler for POST /admin/users. It creates
 // an account directly — no self-signup ToS step, since the admin isn't the
-// one accepting terms — and grants it the same "member" role and starter
-// resources (terminal key, settings, free Trial plan) a self-registered
-// account gets. The password is whatever the admin typed in the form; unlike
+// one accepting terms — and runs it through the same post-creation setup a
+// self-registered account gets (authServices.ProvisionNewUser). The password is whatever the admin typed in the form; unlike
 // every other write action in this module, this one leaves the admin holding
 // a secret on purpose; they typed it, so there is nothing to protect by
 // hiding it back from them.
@@ -378,7 +382,15 @@ func NewCreateUserHandler(enforcer interfaces.EnforcerInterface, db *gorm.DB) gi
 
 		var input AdminCreateUserInput
 		if err := ctx.ShouldBindJSON(&input); err != nil {
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid_input"})
+			apiErrors.Abort(ctx, http.StatusBadRequest, "invalid_input")
+			return
+		}
+		if _, err := mail.ParseAddress(input.Email); err != nil {
+			apiErrors.Abort(ctx, http.StatusBadRequest, "invalid_email")
+			return
+		}
+		if len(input.Password) < minAdminSetPasswordLength {
+			apiErrors.Abort(ctx, http.StatusBadRequest, "password_too_short")
 			return
 		}
 
@@ -407,38 +419,25 @@ func NewCreateUserHandler(enforcer interfaces.EnforcerInterface, db *gorm.DB) gi
 
 		if err := CreateCasdoorUser(newUser); err != nil {
 			utils.Error("admin create user failed for %s: %v", input.Email, err)
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "create_failed", "message": err.Error()})
+			apiErrors.Abort(ctx, http.StatusBadRequest, "create_failed")
 			return
 		}
 
 		created, err := GetCasdoorUserByEmail(input.Email)
 		if err != nil || created == nil {
 			utils.Error("admin create user: account created but lookup by email failed for %s: %v", input.Email, err)
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "lookup_after_create_failed"})
+			apiErrors.Abort(ctx, http.StatusInternalServerError, "lookup_after_create_failed")
 			return
 		}
 
 		// Casdoor's own "member" Role object (used elsewhere for display/sync)
-		// — best-effort, same as self-signup.
+		// — best-effort, unlike self-signup: the account already exists and
+		// the Casbin grouping policy is what drives authorization.
 		if err := AddCasdoorNativeRole(*created); err != nil {
 			utils.Warn("admin-created user %s: could not add Casdoor default role: %v", created.Id, err)
 		}
 
-		// The Casbin grouping policy is what actually drives authorization
-		// (AuthMiddleware reads roles from here) — same roles self-signup grants.
-		rolesToAdd := []string{"member"}
-		if input.DefaultRole != "" {
-			rolesToAdd = append(rolesToAdd, input.DefaultRole)
-		}
-		opts := utils.DefaultPermissionOptions()
-		opts.WarnOnError = true
-		for _, role := range rolesToAdd {
-			if err := utils.AddGroupingPolicy(enforcer, created.Id, role, opts); err != nil {
-				utils.Warn("admin-created user %s: could not grant role %s: %v", created.Id, role, err)
-			}
-		}
-
-		ProvisionNewUserExtras(db, created.Id, created.Name)
+		ProvisionNewUser(enforcer, db, created, input.DefaultRole)
 
 		adminID := ctx.GetString("userId")
 		logAdminUserAction(ctx, db, auditModels.AuditEventUserCreated, adminID, created.Id,
@@ -461,11 +460,11 @@ func NewVerifyEmailHandler(db *gorm.DB) gin.HandlerFunc {
 
 		if err := MarkUserEmailVerified(targetID); err != nil {
 			if errors.Is(err, authServices.ErrUserNotFound) {
-				ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+				apiErrors.Abort(ctx, http.StatusNotFound, "user_not_found")
 				return
 			}
 			utils.Error("admin verify-email failed for %s: %v", targetID, err)
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "verify_failed"})
+			apiErrors.Abort(ctx, http.StatusInternalServerError, "verify_failed")
 			return
 		}
 

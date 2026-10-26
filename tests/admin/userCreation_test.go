@@ -13,8 +13,12 @@ import (
 	"gorm.io/gorm"
 
 	"soli/formations/src/admin/routes/adminUsersRoutes"
+	"soli/formations/src/auth/casdoor"
+	apiErrors "soli/formations/src/auth/errors"
+	"soli/formations/src/auth/interfaces"
 	"soli/formations/src/auth/mocks"
 	authServices "soli/formations/src/auth/services"
+	orgModels "soli/formations/src/organizations/models"
 )
 
 // ---------------------------------------------------------------------------
@@ -44,12 +48,12 @@ func TestCreateUserHandler_Success(t *testing.T) {
 
 	originalCreate := adminUsersRoutes.CreateCasdoorUser
 	originalGetByEmail := adminUsersRoutes.GetCasdoorUserByEmail
-	originalExtras := adminUsersRoutes.ProvisionNewUserExtras
+	originalProvision := adminUsersRoutes.ProvisionNewUser
 	originalNativeRole := adminUsersRoutes.AddCasdoorNativeRole
 	t.Cleanup(func() {
 		adminUsersRoutes.CreateCasdoorUser = originalCreate
 		adminUsersRoutes.GetCasdoorUserByEmail = originalGetByEmail
-		adminUsersRoutes.ProvisionNewUserExtras = originalExtras
+		adminUsersRoutes.ProvisionNewUser = originalProvision
 		adminUsersRoutes.AddCasdoorNativeRole = originalNativeRole
 	})
 	// AddCasdoorNativeRole calls the Casdoor SDK's package-level client
@@ -65,13 +69,15 @@ func TestCreateUserHandler_Success(t *testing.T) {
 	adminUsersRoutes.GetCasdoorUserByEmail = func(email string) (*casdoorsdk.User, error) {
 		return fakeUser("newteacher-id", "newteacher", "New Teacher", email, ""), nil
 	}
-	var extrasUserID, extrasUsername string
-	adminUsersRoutes.ProvisionNewUserExtras = func(_ *gorm.DB, userID, username string) {
-		extrasUserID = userID
-		extrasUsername = username
+	var provisioned *casdoorsdk.User
+	var provisionedRole string
+	adminUsersRoutes.ProvisionNewUser = func(_ interfaces.EnforcerInterface, _ *gorm.DB, user *casdoorsdk.User, defaultRole string) {
+		provisioned = user
+		provisionedRole = defaultRole
 	}
 
 	body := validCreateUserBody()
+	body.DefaultRole = "trainer"
 	payload, _ := json.Marshal(body)
 
 	r := newAdminRouter(http.MethodPost, "/admin/users",
@@ -95,12 +101,9 @@ func TestCreateUserHandler_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
 	assert.Equal(t, "newteacher-id", got.ID)
 
-	require.GreaterOrEqual(t, enforcer.GetAddGroupingPolicyCallCount(), 1)
-	assert.Equal(t, "newteacher-id", enforcer.AddGroupingPolicyCalls[0][0])
-	assert.Equal(t, "member", enforcer.AddGroupingPolicyCalls[0][1])
-
-	assert.Equal(t, "newteacher-id", extrasUserID, "starter resources must be provisioned for the new account")
-	assert.Equal(t, "newteacher", extrasUsername)
+	require.NotNil(t, provisioned, "the new account must go through the shared post-creation setup")
+	assert.Equal(t, "newteacher-id", provisioned.Id)
+	assert.Equal(t, "trainer", provisionedRole)
 }
 
 func TestCreateUserHandler_EmailVerifiedFlagMarksAccountVerified(t *testing.T) {
@@ -112,12 +115,12 @@ func TestCreateUserHandler_EmailVerifiedFlagMarksAccountVerified(t *testing.T) {
 
 	originalCreate := adminUsersRoutes.CreateCasdoorUser
 	originalGetByEmail := adminUsersRoutes.GetCasdoorUserByEmail
-	originalExtras := adminUsersRoutes.ProvisionNewUserExtras
+	originalProvision := adminUsersRoutes.ProvisionNewUser
 	originalNativeRole := adminUsersRoutes.AddCasdoorNativeRole
 	t.Cleanup(func() {
 		adminUsersRoutes.CreateCasdoorUser = originalCreate
 		adminUsersRoutes.GetCasdoorUserByEmail = originalGetByEmail
-		adminUsersRoutes.ProvisionNewUserExtras = originalExtras
+		adminUsersRoutes.ProvisionNewUser = originalProvision
 		adminUsersRoutes.AddCasdoorNativeRole = originalNativeRole
 	})
 	// AddCasdoorNativeRole calls the Casdoor SDK's package-level client
@@ -133,7 +136,7 @@ func TestCreateUserHandler_EmailVerifiedFlagMarksAccountVerified(t *testing.T) {
 	adminUsersRoutes.GetCasdoorUserByEmail = func(email string) (*casdoorsdk.User, error) {
 		return fakeUser("newteacher-id", "newteacher", "New Teacher", email, ""), nil
 	}
-	adminUsersRoutes.ProvisionNewUserExtras = func(_ *gorm.DB, userID, username string) {}
+	adminUsersRoutes.ProvisionNewUser = func(interfaces.EnforcerInterface, *gorm.DB, *casdoorsdk.User, string) {}
 
 	body := validCreateUserBody()
 	body.EmailVerified = true
@@ -195,6 +198,108 @@ func TestCreateUserHandler_CasdoorRejects_400(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var got apiErrors.APIError
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	assert.Equal(t, "create_failed", got.ErrorMessage)
+	assert.NotContains(t, w.Body.String(), assert.AnError.Error(), "the identity provider's raw error must not reach the client")
+}
+
+// The admin path must give the account what self-signup gives it — the
+// personal organization was once silently missing here.
+func TestCreateUserHandler_ProvisionsPersonalOrganization(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+	enforcer := mocks.NewMockEnforcer()
+
+	originalCreate := adminUsersRoutes.CreateCasdoorUser
+	originalGetByEmail := adminUsersRoutes.GetCasdoorUserByEmail
+	originalNativeRole := adminUsersRoutes.AddCasdoorNativeRole
+	originalEnforcer := casdoor.Enforcer
+	t.Cleanup(func() {
+		adminUsersRoutes.CreateCasdoorUser = originalCreate
+		adminUsersRoutes.GetCasdoorUserByEmail = originalGetByEmail
+		adminUsersRoutes.AddCasdoorNativeRole = originalNativeRole
+		casdoor.Enforcer = originalEnforcer
+	})
+	casdoor.Enforcer = enforcer
+	adminUsersRoutes.AddCasdoorNativeRole = func(_ casdoorsdk.User) error { return nil }
+	adminUsersRoutes.CreateCasdoorUser = func(*casdoorsdk.User) error { return nil }
+	adminUsersRoutes.GetCasdoorUserByEmail = func(email string) (*casdoorsdk.User, error) {
+		u := fakeUser("newteacher-id", "newteacher", "New Teacher", email, "")
+		// Verified, so the real setup skips the verification email (SMTP).
+		u.EmailVerified = true
+		return u, nil
+	}
+
+	body := validCreateUserBody()
+	body.EmailVerified = true
+	payload, _ := json.Marshal(body)
+
+	r := newAdminRouter(http.MethodPost, "/admin/users",
+		adminUsersRoutes.NewCreateUserHandler(enforcer, db), true)
+	req := httptest.NewRequest(http.MethodPost, "/admin/users", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code, "body=%s", w.Body.String())
+
+	var org orgModels.Organization
+	require.NoError(t, db.Where("owner_user_id = ? AND organization_type = ?", "newteacher-id", orgModels.OrgTypePersonal).
+		First(&org).Error, "an admin-created account must get its personal organization")
+	var owners int64
+	require.NoError(t, db.Model(&orgModels.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ? AND role = ?", org.ID, "newteacher-id", orgModels.OrgRoleOwner).
+		Count(&owners).Error)
+	assert.EqualValues(t, 1, owners)
+
+	require.GreaterOrEqual(t, enforcer.GetAddGroupingPolicyCallCount(), 1)
+	assert.Equal(t, []any{"newteacher-id", "member"}, enforcer.AddGroupingPolicyCalls[0][:2])
+}
+
+func TestCreateUserHandler_RejectsInvalidInput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+
+	original := adminUsersRoutes.CreateCasdoorUser
+	t.Cleanup(func() { adminUsersRoutes.CreateCasdoorUser = original })
+	called := false
+	adminUsersRoutes.CreateCasdoorUser = func(*casdoorsdk.User) error {
+		called = true
+		return nil
+	}
+
+	cases := map[string]struct {
+		mutate func(*adminUsersRoutes.AdminCreateUserInput)
+		code   string
+	}{
+		"short password": {func(in *adminUsersRoutes.AdminCreateUserInput) { in.Password = "short" }, "password_too_short"},
+		"invalid email":  {func(in *adminUsersRoutes.AdminCreateUserInput) { in.Email = "not-an-email" }, "invalid_email"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			body := validCreateUserBody()
+			tc.mutate(&body)
+			payload, _ := json.Marshal(body)
+
+			r := newAdminRouter(http.MethodPost, "/admin/users",
+				adminUsersRoutes.NewCreateUserHandler(mocks.NewMockEnforcer(), db), true)
+			req := httptest.NewRequest(http.MethodPost, "/admin/users", bytes.NewReader(payload))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			var got apiErrors.APIError
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+			assert.Equal(t, tc.code, got.ErrorMessage)
+		})
+	}
+	assert.False(t, called, "must refuse before creating anything in the identity provider")
 }
 
 // --- Verify email -----------------------------------------------------------

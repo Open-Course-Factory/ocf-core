@@ -8,6 +8,7 @@ import (
 
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
+	"soli/formations/src/auth/interfaces"
 	"soli/formations/src/auth/models"
 	sqldb "soli/formations/src/db"
 	organizationServices "soli/formations/src/organizations/services"
@@ -110,68 +111,52 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		return nil, errGet
 	}
 
-	// This ensures compatibility with both Casdoor role names and OCF role names
-	rolesToAdd := []string{}
-	if userCreateDTO.DefaultRole != "" {
-		rolesToAdd = append(rolesToAdd, userCreateDTO.DefaultRole)
-	}
-
-	rolesToAdd = append(rolesToAdd, "member")
-
-	// Add all roles to the user
-	opts := utils.DefaultPermissionOptions()
-	opts.WarnOnError = true
-
-	for _, role := range rolesToAdd {
-		errAddRole := utils.AddGroupingPolicy(casdoor.Enforcer, createdUser.Id, role, opts)
-		if errAddRole != nil {
-			utils.Warn("Could not add role %s to user %s: %v", role, createdUser.Id, errAddRole)
-			// Continue adding other roles even if one fails
-		} else {
-			utils.Info("Successfully added role '%s' to user %s", role, createdUser.Id)
-		}
-	}
-
-	terminalService := ttServices.NewTerminalTrainerService(sqldb.DB)
-	errCreateUserKey := terminalService.CreateUserKey(createdUser.Id, createdUser.Name)
-	if errCreateUserKey != nil {
-		utils.Warn("Could not create terminal trainer key for user %s: %v", createdUser.Id, errCreateUserKey)
-		// On ne fait pas échouer l'inscription pour ça, juste un warning
-	}
-
-	// Create default user settings
-	errCreateSettings := CreateDefaultUserSettings(createdUser.Id)
-	if errCreateSettings != nil {
-		utils.Warn("Could not create default settings for user %s: %v", createdUser.Id, errCreateSettings)
-		// Don't fail registration for this, just log warning
-	}
-
-	// Assign free Trial plan to new user
-	errTrialSubscription := AssignFreeTrialPlan(createdUser.Id)
-	if errTrialSubscription != nil {
-		utils.Warn("Could not create Trial subscription for user %s: %v", createdUser.Id, errTrialSubscription)
-		// Don't fail registration for this, just log warning
-	}
-
-	// Create personal organization for new user
-	orgService := organizationServices.NewOrganizationService(sqldb.DB)
-	_, errPersonalOrg := orgService.CreatePersonalOrganization(createdUser.Id, createdUser.DisplayName)
-	if errPersonalOrg != nil {
-		utils.Warn("Could not create personal organization for user %s: %v", createdUser.Id, errPersonalOrg)
-		// Don't fail registration for this, just log warning
-	} else {
-		utils.Info("Successfully created personal organization for user %s", createdUser.Id)
-	}
-
-	// Send verification email
-	verificationService := NewEmailVerificationService(sqldb.DB)
-	err = verificationService.CreateVerificationToken(createdUser.Id, createdUser.Email)
-	if err != nil {
-		// Log but don't fail registration
-		utils.Warn("Could not send verification email to %s: %v", createdUser.Email, err)
-	}
+	ProvisionNewUser(casdoor.Enforcer, sqldb.DB, createdUser, userCreateDTO.DefaultRole)
 
 	return dto.UserModelToUserOutput(createdUser), nil
+}
+
+// ProvisionNewUser gives a just-created account everything a new account gets,
+// whichever path created it (self-signup, admin creation): its Casbin roles, a
+// terminal key, default settings, the free Trial plan, a personal organization
+// and, unless the address is already verified, a verification email. Every
+// step is best-effort: a failure is logged and never undoes the account.
+func ProvisionNewUser(enforcer interfaces.EnforcerInterface, db *gorm.DB, user *casdoorsdk.User, defaultRole string) {
+	grantInitialRoles(enforcer, user.Id, defaultRole)
+
+	if err := ttServices.NewTerminalTrainerService(db).CreateUserKey(user.Id, user.Name); err != nil {
+		utils.Warn("Could not create terminal trainer key for user %s: %v", user.Id, err)
+	}
+	if err := createDefaultUserSettings(db, user.Id); err != nil {
+		utils.Warn("Could not create default settings for user %s: %v", user.Id, err)
+	}
+	if err := AssignFreeTrialPlan(db, user.Id); err != nil {
+		utils.Warn("Could not create Trial subscription for user %s: %v", user.Id, err)
+	}
+	if _, err := organizationServices.NewOrganizationService(db).CreatePersonalOrganization(user.Id, user.DisplayName); err != nil {
+		utils.Warn("Could not create personal organization for user %s: %v", user.Id, err)
+	}
+	if !user.EmailVerified {
+		if err := NewEmailVerificationService(db).CreateVerificationToken(user.Id, user.Email); err != nil {
+			utils.Warn("Could not send verification email to %s: %v", user.Email, err)
+		}
+	}
+}
+
+// grantInitialRoles binds the account to "member" plus the optional default
+// role in Casbin, which is what authorization actually reads.
+func grantInitialRoles(enforcer interfaces.EnforcerInterface, userID, defaultRole string) {
+	roles := []string{"member"}
+	if defaultRole != "" {
+		roles = append(roles, defaultRole)
+	}
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true
+	for _, role := range roles {
+		if err := utils.AddGroupingPolicy(enforcer, userID, role, opts); err != nil {
+			utils.Warn("Could not add role %s to user %s: %v", role, userID, err)
+		}
+	}
 }
 
 func NewTerminalTrainerService(db *gorm.DB) ttServices.TerminalTrainerService {
@@ -383,11 +368,11 @@ func (us *userService) SearchUsers(query string) (*[]dto.UserOutput, error) {
 	return &results, nil
 }
 
-// CreateDefaultUserSettings creates default settings for a new user
-func CreateDefaultUserSettings(userID string) error {
+// createDefaultUserSettings creates default settings for a new user
+func createDefaultUserSettings(db *gorm.DB, userID string) error {
 	// Check if settings already exist
 	var existingSettings models.UserSettings
-	result := sqldb.DB.Where("user_id = ?", userID).First(&existingSettings)
+	result := db.Where("user_id = ?", userID).First(&existingSettings)
 	if result.Error == nil {
 		return nil // Settings already exist
 	}
@@ -405,16 +390,16 @@ func CreateDefaultUserSettings(userID string) error {
 		TwoFactorEnabled:     false,
 	}
 
-	return sqldb.DB.Create(&defaultSettings).Error
+	return db.Create(&defaultSettings).Error
 }
 
 // AssignFreeTrialPlan assigns the free Trial plan to a new user
-func AssignFreeTrialPlan(userID string) error {
+func AssignFreeTrialPlan(db *gorm.DB, userID string) error {
 	// Delegates to the payment-side helper so the "already has a subscription"
 	// test uses the canonical entitling predicate. This function previously
 	// checked status='active' alone, which meant a user in dunning (past_due)
 	// was handed a second subscription on top of the one they already held.
-	assigned, err := paymentServices.EnsureFreeTrialAssigned(sqldb.DB, userID)
+	assigned, err := paymentServices.EnsureFreeTrialAssigned(db, userID)
 	if err != nil {
 		return err
 	}

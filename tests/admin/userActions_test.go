@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
@@ -16,8 +17,10 @@ import (
 
 	"soli/formations/src/admin/routes/adminUsersRoutes"
 	"soli/formations/src/auth/mocks"
+	authServices "soli/formations/src/auth/services"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 )
 
 // ---------------------------------------------------------------------------
@@ -136,6 +139,12 @@ func TestGrantAdminRoleHandler_Success(t *testing.T) {
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
+	originalGet := adminUsersRoutes.GetCasdoorUserByID
+	t.Cleanup(func() { adminUsersRoutes.GetCasdoorUserByID = originalGet })
+	adminUsersRoutes.GetCasdoorUserByID = func(userID string) (*casdoorsdk.User, error) {
+		return fakeUser(userID, "bob", "Bob", "bob@example.com", ""), nil
+	}
+
 	r := newAdminRouter(http.MethodPost, "/admin/users/:id/admin-role",
 		adminUsersRoutes.NewGrantAdminRoleHandler(enforcer, db), true)
 
@@ -148,6 +157,28 @@ func TestGrantAdminRoleHandler_Success(t *testing.T) {
 	call := enforcer.AddGroupingPolicyCalls[0]
 	assert.Equal(t, uidBob, call[0])
 	assert.Equal(t, "administrator", call[1])
+}
+
+func TestGrantAdminRoleHandler_UnknownUser_404(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+	enforcer := mocks.NewMockEnforcer()
+
+	originalGet := adminUsersRoutes.GetCasdoorUserByID
+	t.Cleanup(func() { adminUsersRoutes.GetCasdoorUserByID = originalGet })
+	adminUsersRoutes.GetCasdoorUserByID = func(string) (*casdoorsdk.User, error) { return nil, nil }
+
+	r := newAdminRouter(http.MethodPost, "/admin/users/:id/admin-role",
+		adminUsersRoutes.NewGrantAdminRoleHandler(enforcer, db), true)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/users/"+uidNobody+"/admin-role", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, 0, enforcer.GetAddGroupingPolicyCallCount(), "must not bind a role to an id nobody owns")
 }
 
 func TestGrantAdminRoleHandler_NonAdmin_403(t *testing.T) {
@@ -319,6 +350,68 @@ func TestSetForbiddenHandler_UnblockDoesNotTouchTerminalKey(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 	assert.False(t, keyDisableCalled)
+}
+
+// A running terminal must not outlive the block: TerminateUserTerminals
+// revokes it, which also frees its slot and budget.
+func TestSetForbiddenHandler_BlockRevokesRunningTerminals(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+
+	originalForbidden := adminUsersRoutes.SetAccountForbidden
+	originalKeyDisable := adminUsersRoutes.DisableUserTerminalKey
+	t.Cleanup(func() {
+		adminUsersRoutes.SetAccountForbidden = originalForbidden
+		adminUsersRoutes.DisableUserTerminalKey = originalKeyDisable
+	})
+	adminUsersRoutes.SetAccountForbidden = func(string, bool) error { return nil }
+	adminUsersRoutes.DisableUserTerminalKey = func(*gorm.DB, string) error { return nil }
+
+	key := terminalModels.UserTerminalKey{UserID: uidBob, APIKey: "key-bob", KeyName: "bob", IsActive: true}
+	require.NoError(t, db.Create(&key).Error)
+	term := terminalModels.Terminal{
+		SessionID: "sess-bob", UserID: uidBob, State: terminalModels.StateRunning,
+		ExpiresAt: time.Now().Add(time.Hour), UserTerminalKeyID: key.ID,
+	}
+	require.NoError(t, db.Create(&term).Error)
+
+	r := newAdminRouter(http.MethodPut, "/admin/users/:id/forbidden",
+		adminUsersRoutes.NewSetForbiddenHandler(db), true)
+	body, _ := json.Marshal(adminUsersRoutes.SetForbiddenInput{Forbidden: true})
+	req := httptest.NewRequest(http.MethodPut, "/admin/users/"+uidBob+"/forbidden", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	var after terminalModels.Terminal
+	require.NoError(t, db.First(&after, "id = ?", term.ID).Error)
+	assert.Equal(t, terminalModels.StateRevoked, after.State)
+}
+
+func TestSetForbiddenHandler_UnknownUser_404(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+
+	original := adminUsersRoutes.SetAccountForbidden
+	t.Cleanup(func() { adminUsersRoutes.SetAccountForbidden = original })
+	adminUsersRoutes.SetAccountForbidden = func(userID string, _ bool) error {
+		return fmt.Errorf("%w: %s", authServices.ErrUserNotFound, userID)
+	}
+
+	r := newAdminRouter(http.MethodPut, "/admin/users/:id/forbidden",
+		adminUsersRoutes.NewSetForbiddenHandler(db), true)
+	body, _ := json.Marshal(adminUsersRoutes.SetForbiddenInput{Forbidden: true})
+	req := httptest.NewRequest(http.MethodPut, "/admin/users/"+uidNobody+"/forbidden", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestSetForbiddenHandler_CannotBlockOwnAccount(t *testing.T) {
