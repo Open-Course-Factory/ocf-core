@@ -148,7 +148,6 @@ func (s *EmailVerificationService) sendVerificationEmail(email, token, userName 
 		"VerificationLink": fmt.Sprintf("%s/verify-email?token=%s", frontendURL, token),
 		"Token":            token,
 		"UserName":         userName,
-		"PlatformName":     "OCF Platform",
 		"ExpiryHours":      fmt.Sprintf("%.0f", expiryHours),
 	})
 }

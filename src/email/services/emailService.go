@@ -9,6 +9,7 @@ import (
 	"time"
 
 	config "soli/formations/src/configuration"
+	configServices "soli/formations/src/configuration/services"
 	"soli/formations/src/utils"
 
 	"gorm.io/gorm"
@@ -227,6 +228,12 @@ func (s *emailService) SendTemplatedEmail(to, templateName string, variables map
 		return fmt.Errorf("template service not initialized - use NewEmailServiceWithDB")
 	}
 
+	if variables == nil {
+		variables = map[string]any{}
+	}
+	if _, set := variables["PlatformName"]; !set {
+		variables["PlatformName"] = configServices.NewBrandingService(s.db).InstanceName()
+	}
 	subject, body, err := s.templateService.RenderTemplate(templateName, variables)
 	if err != nil {
 		return fmt.Errorf("failed to render template: %w", err)
