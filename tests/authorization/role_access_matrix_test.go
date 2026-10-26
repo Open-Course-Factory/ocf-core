@@ -635,7 +635,7 @@ func migrateMatrixDB(t *testing.T, db *gorm.DB) {
 		&terminalModels.Terminal{}, &terminalModels.UserTerminalKey{},
 		&paymentModels.SubscriptionPlan{}, &paymentModels.UserSubscription{}, &paymentModels.OrganizationSubscription{},
 		&paymentModels.OrganizationRolePlan{}, &paymentModels.UsageMetrics{},
-		&configModels.Feature{}, &auditModels.AuditLog{}, &authModels.TokenBlacklist{},
+		&configModels.Feature{}, &auditModels.AuditLog{}, &authModels.TokenBlacklist{}, &authModels.BlockedAccount{},
 	))
 }
 

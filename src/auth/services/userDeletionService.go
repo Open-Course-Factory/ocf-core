@@ -374,11 +374,14 @@ func (s *userDeletionService) anonymizeAuditLogs(tx *gorm.DB, userID string) err
 	return nil
 }
 
-// deleteAuthTokens deletes the user's blacklist, email-verification and
-// password-reset tokens.
+// deleteAuthTokens deletes the user's blacklist, account block,
+// email-verification and password-reset tokens.
 func (s *userDeletionService) deleteAuthTokens(tx *gorm.DB, userID string) error {
 	if err := tx.Where("user_id = ?", userID).Delete(&authModels.TokenBlacklist{}).Error; err != nil {
 		return fmt.Errorf("failed to delete token blacklist: %w", err)
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&authModels.BlockedAccount{}).Error; err != nil {
+		return fmt.Errorf("failed to delete account block: %w", err)
 	}
 	if err := tx.Unscoped().Where("user_id = ?", userID).Delete(&authModels.EmailVerificationToken{}).Error; err != nil {
 		return fmt.Errorf("failed to delete email verification tokens: %w", err)

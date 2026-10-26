@@ -13,6 +13,10 @@ import (
 	"fmt"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+
+	authModels "soli/formations/src/auth/models"
+	sqldb "soli/formations/src/db"
+	"soli/formations/src/utils"
 )
 
 // ErrCasdoorWriteNotPersisted means Casdoor answered the update with
@@ -86,6 +90,61 @@ func (c *defaultCasdoorUserClient) SetForbidden(userID string, forbidden bool) e
 	}
 	if !affected {
 		return fmt.Errorf("%w (is_forbidden=%t for %s)", ErrCasdoorWriteNotPersisted, forbidden, userID)
+	}
+	// Every block and unblock (admin portal, organization offboarding) goes
+	// through here, so this is the one place the mirror the auth middleware
+	// reads can be kept in step with Casdoor.
+	if err := authModels.SetAccountBlocked(sqldb.DB, userID, forbidden); err != nil {
+		return fmt.Errorf("account %s is forbidden=%t in Casdoor but the local block was not recorded: %w", userID, forbidden, err)
+	}
+	if forbidden {
+		// Best-effort: the mirror already refuses the account's JWTs; this
+		// also kills the refresh tokens Casdoor holds for it.
+		if err := revokeCasdoorTokens(user); err != nil {
+			utils.Warn("could not revoke Casdoor tokens of blocked account %s: %v", userID, err)
+		}
+	}
+	return nil
+}
+
+// revokeCasdoorTokens is swappable so tests never reach Casdoor's token API.
+var revokeCasdoorTokens = deleteCasdoorTokensOf
+
+// SwapCasdoorTokenRevoker replaces the token-revocation seam for a test and
+// returns a function restoring it.
+func SwapCasdoorTokenRevoker(revoke func(user *casdoorsdk.User) error) func() {
+	prev := revokeCasdoorTokens
+	revokeCasdoorTokens = revoke
+	return func() { revokeCasdoorTokens = prev }
+}
+
+const casdoorTokenPageSize = 100
+
+// deleteCasdoorTokensOf deletes every OAuth token Casdoor issued to user. All
+// pages are listed before any deletion, so deleting cannot shift a page.
+func deleteCasdoorTokensOf(user *casdoorsdk.User) error {
+	var owned []*casdoorsdk.Token
+	for page := 1; ; page++ {
+		tokens, total, err := casdoorsdk.GetPaginationTokens(page, casdoorTokenPageSize,
+			map[string]string{"field": "user", "value": user.Name})
+		if err != nil {
+			return fmt.Errorf("failed to list tokens: %w", err)
+		}
+		for _, token := range tokens {
+			// The filter matches the user name alone; names are unique only
+			// within an organization.
+			if token.User == user.Name && token.Organization == user.Owner {
+				owned = append(owned, token)
+			}
+		}
+		if len(tokens) < casdoorTokenPageSize || page*casdoorTokenPageSize >= total {
+			break
+		}
+	}
+	for _, token := range owned {
+		if _, err := casdoorsdk.DeleteToken(token); err != nil {
+			return fmt.Errorf("failed to delete token %s: %w", token.Name, err)
+		}
 	}
 	return nil
 }

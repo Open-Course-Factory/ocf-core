@@ -135,6 +135,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&authModels.SshKey{})
 	db.AutoMigrate(&authModels.UserSettings{})
 	db.AutoMigrate(&authModels.TokenBlacklist{})
+	db.AutoMigrate(&authModels.BlockedAccount{})
 	db.AutoMigrate(&authModels.PasswordResetToken{})
 	db.AutoMigrate(&authModels.EmailVerificationToken{})
 	db.AutoMigrate(&authModels.ImpersonationSession{})
@@ -285,6 +286,10 @@ func AutoMigrateAll(db *gorm.DB) {
 	// any org subscription over the personal fallback — so every trainer who
 	// created an org lost the plan they had just bought, on every restart (#448).
 	ensureUsersHaveTrialPlan(db)
+
+	// Accounts forbidden before blocked_accounts existed, or directly in the
+	// Casdoor console, must be refused by the auth middleware too.
+	syncBlockedAccountsFromCasdoor(db)
 
 	// One-shot cleanup for #448. Removing the auto-assignment stopped new team
 	// orgs acquiring a shadowing Trial, but every org created before that still
@@ -725,6 +730,26 @@ func MigrateTrialingStatusToActive(db *gorm.DB) {
 		if res.RowsAffected > 0 {
 			log.Printf("[TRIALING-MIGRATION] Converted %d trialing subscription(s) to active in %s",
 				res.RowsAffected, table)
+		}
+	}
+}
+
+// syncBlockedAccountsFromCasdoor brings blocked_accounts in line with
+// Casdoor's is_forbidden flag for every account Casdoor returns. An account
+// absent from the answer keeps its row: an empty or partial user list must
+// never silently unblock anyone.
+func syncBlockedAccountsFromCasdoor(db *gorm.DB) {
+	users, err := casdoorsdk.GetUsers()
+	if err != nil {
+		log.Printf("[BLOCK-SYNC] Could not get Casdoor users: %v", err)
+		return
+	}
+	for _, user := range users {
+		if user == nil || user.IsDeleted {
+			continue
+		}
+		if err := authModels.SetAccountBlocked(db, user.Id, user.IsForbidden); err != nil {
+			log.Printf("[BLOCK-SYNC] Could not record block=%t for %s: %v", user.IsForbidden, user.Id, err)
 		}
 	}
 }

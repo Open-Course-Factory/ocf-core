@@ -36,6 +36,7 @@ import (
 	authModels "soli/formations/src/auth/models"
 	authServices "soli/formations/src/auth/services"
 	"soli/formations/src/cron"
+	sqldb "soli/formations/src/db"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupModels "soli/formations/src/groups/models"
@@ -46,6 +47,7 @@ import (
 	paymentServices "soli/formations/src/payment/services"
 	scenarioModels "soli/formations/src/scenarios/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
+	testTools "soli/formations/tests/testTools"
 )
 
 // ---------------------------------------------------------------------------
@@ -176,6 +178,7 @@ func newOffboardingDB(t *testing.T) *gorm.DB {
 		&paymentModels.OrganizationRolePlan{},
 		&authModels.UserSettings{},
 		&authModels.TokenBlacklist{},
+		&authModels.BlockedAccount{},
 		&authModels.EmailVerificationToken{},
 		&authModels.PasswordResetToken{},
 		&authModels.SshKey{},
@@ -344,11 +347,23 @@ func TestOffboardMembers_ForbidsTheCasdoorAccount_WithColumnList(t *testing.T) {
 	)
 	t.Cleanup(restore)
 
+	// The real client also mirrors the block and revokes Casdoor tokens. The
+	// mirror gets its own database: it is written outside the offboarding
+	// transaction, which shared-cache SQLite would see as a table lock.
+	mirrorDB := testTools.MemoryDB(&authModels.BlockedAccount{})
+	prevDB := sqldb.DB
+	sqldb.DB = mirrorDB
+	t.Cleanup(func() { sqldb.DB = prevDB })
+	t.Cleanup(authServices.SwapCasdoorTokenRevoker(func(*casdoorsdk.User) error { return nil }))
+
 	realClient := authServices.NewCasdoorUserClient()
 	svc := services.NewMemberOffboardingService(db, realClient, paymentServices.NewBulkLicenseService(db), nil)
 
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
 	require.NotNil(t, writtenUser)
+	blocked, err := authModels.IsAccountBlocked(mirrorDB, "student-a")
+	require.NoError(t, err)
+	assert.True(t, blocked, "the offboarded account is refused by the auth middleware too")
 	assert.True(t, writtenUser.IsForbidden, "the account must be sent with is_forbidden=true")
 	assert.Equal(t, []string{"is_forbidden"}, writtenColumns,
 		"UpdateUserForColumns must name the column: a bare UpdateUser silently drops it")
@@ -357,7 +372,7 @@ func TestOffboardMembers_ForbidsTheCasdoorAccount_WithColumnList(t *testing.T) {
 	// must fail and the membership must be rolled back to active.
 	seedMember(t, db, orgID, "student-b", models.OrgRoleMember)
 	affected = false
-	err := svc.Offboard(orgID, []string{"student-b"}, "owner-1")
+	err = svc.Offboard(orgID, []string{"student-b"}, "owner-1")
 	require.Error(t, err, "affected=false must be treated as a failure")
 	b := loadMember(t, db, orgID, "student-b")
 	assert.True(t, b.IsActive, "the transaction must be rolled back when the account was not forbidden")

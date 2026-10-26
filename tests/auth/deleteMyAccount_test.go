@@ -111,6 +111,7 @@ func setupDeleteMyAccountDB(t *testing.T) *gorm.DB {
 	require.NoError(t, db.AutoMigrate(
 		&authModels.UserSettings{},
 		&authModels.TokenBlacklist{},
+		&authModels.BlockedAccount{},
 		&authModels.EmailVerificationToken{},
 		&authModels.PasswordResetToken{},
 		&authModels.SshKey{},
@@ -892,6 +893,7 @@ func TestDeleteMyAccount_CascadeFailsAfterCasdoor_RollsBack(t *testing.T) {
 		&groupModels.ClassGroup{},
 		&groupModels.GroupMember{},
 		&authModels.TokenBlacklist{},
+		&authModels.BlockedAccount{},
 		&authModels.EmailVerificationToken{},
 		&authModels.PasswordResetToken{},
 		&auditModels.AuditLog{},

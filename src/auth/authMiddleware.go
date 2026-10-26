@@ -9,6 +9,7 @@ import (
 	"soli/formations/src/auth/errors"
 	authModels "soli/formations/src/auth/models"
 	sqldb "soli/formations/src/db"
+	"soli/formations/src/utils"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -65,6 +66,15 @@ func (am *AuthMiddleware) AuthManagement() gin.HandlerFunc {
 			userUUID, _ := uuid.Parse(userId)
 			am.auditService.LogSecurityEvent(ctx, models.AuditEventAccessDenied, &userUUID, nil, "Attempted use of revoked token", models.AuditSeverityWarning)
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"msg": "token has been invalidated"})
+			return
+		}
+
+		// A blocked account's JWT is still cryptographically valid until it
+		// expires; 401 makes the front log the user out.
+		if isAccountBlocked(userId) {
+			userUUID, _ := uuid.Parse(userId)
+			am.auditService.LogSecurityEvent(ctx, models.AuditEventAccessDenied, &userUUID, nil, "Attempted use of a blocked account's token", models.AuditSeverityWarning)
+			errors.Abort(ctx, http.StatusUnauthorized, authModels.ErrAccountBlocked.Error())
 			return
 		}
 
@@ -151,7 +161,7 @@ func (am *AuthMiddleware) IdentifyIfPresent() gin.HandlerFunc {
 			ctx.Next()
 			return
 		}
-		if isTokenBlacklisted(tokenJTI) {
+		if isTokenBlacklisted(tokenJTI) || isAccountBlocked(userId) {
 			ctx.Next()
 			return
 		}
@@ -179,6 +189,16 @@ func isTokenBlacklisted(tokenJTI string) bool {
 		Count(&count)
 
 	return count > 0
+}
+
+// isAccountBlocked fails open on a database error, like isTokenBlacklisted:
+// with the database down the request cannot do anything anyway.
+func isAccountBlocked(userID string) bool {
+	blocked, err := authModels.IsAccountBlocked(sqldb.DB, userID)
+	if err != nil {
+		utils.Warn("could not check whether account %s is blocked: %v", userID, err)
+	}
+	return blocked
 }
 
 func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
