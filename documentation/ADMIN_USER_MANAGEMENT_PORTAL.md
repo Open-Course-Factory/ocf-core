@@ -84,15 +84,15 @@ Layer 2 together), `routes.go` wires the gin handlers.
   are synthesized at creation time instead, the same way the organization
   bulk-import path already does for its own admin-created accounts
   (`src/organizations/services/importService.go`); a `created_by_admin`
-  property marks the account's origin. The account gets the same starter
-  resources a self-registered account gets — Casbin's `member` role (plus an
-  optional `default_role`), a terminal trainer key, default settings, and
-  the free Trial plan — via `AddDefaultRoleToUser`/`CreateDefaultUserSettings`
-  (newly exported from `userService.go` for reuse) and the existing
-  `AssignFreeTrialPlan`. The `email_verified` checkbox marks the account
-  verified immediately (`casdoor.MarkEmailVerified`) when checked; left
-  unchecked, the account goes through the normal self-service verification
-  flow like any other. The password is whatever the admin typed — this is
+  property marks the account's origin. The account then goes through
+  `authServices.ProvisionNewUser`, the same post-creation setup self-signup
+  runs: Casbin's `member` role (plus an optional `default_role`), a terminal
+  trainer key, default settings, the free Trial plan, a personal
+  organization and, unless the address is already verified, the
+  verification email. The `email_verified` checkbox marks the account
+  verified immediately (`casdoor.MarkEmailVerified`) when checked. The
+  handler refuses an invalid email (`invalid_email`) or a password shorter
+  than 8 characters (`password_too_short`), the same minimum as set-password. The password is whatever the admin typed — this is
   the one write action in the module that doesn't hide a secret from the
   admin, because they are the one who typed it.
 - **Verify email** (`actions.go`) force-verifies an *existing* account with
@@ -126,7 +126,9 @@ Layer 2 together), `routes.go` wires the gin handlers.
   offboarding. An admin cannot block their own account through this
   endpoint.
 
-  Blocking also disables the account's tt-backend terminal trainer API key
+  Blocking also revokes the account's running terminals
+  (`paymentServices.TerminateUserTerminals`, the call member offboarding
+  uses) and disables its tt-backend terminal trainer API key
   (`DisableUserTerminalKey`, same fault-tolerant call the self-service
   key-regenerate endpoint and account erasure already use). This matters
   because that key is a separate, long-lived credential the frontend holds
@@ -139,6 +141,11 @@ Layer 2 together), `routes.go` wires the gin handlers.
   account's key, if any, is already inactive from the original block; the
   user gets a working one back through the existing self-service
   `POST /user-terminal-keys/regenerate`.
+
+  Known limits: a Casdoor JWT already issued to the blocked user stays valid
+  until it expires, and the paths that auto-provision a missing terminal key
+  (teacher bulk-start, scenario launch) do not check `is_forbidden`, so a
+  blocked user who still holds a valid JWT can get a fresh key that way.
 - **Assign a subscription plan** needed no new backend code — the
   `POST /user-subscriptions/admin-assign` endpoint
   (`SubscriptionController.AdminAssignSubscription`) already existed and is
@@ -160,6 +167,12 @@ Layer 2 together), `routes.go` wires the gin handlers.
   naming the reason) while the account still owns a non-personal
   organization or group, and 404 for an unknown id. This slice only adds
   the row action in `AdminUsers.vue`.
+
+Errors use the module-wide `{error_code, error_message}` shape
+(`src/auth/errors`), with `error_message` carrying a stable code
+(`user_not_found`, `invalid_email`, `password_too_short`, `create_failed`, …)
+the frontend translates. Raw identity-provider errors are logged, never
+returned.
 
 Every write action is recorded to the audit log (`AuditService.LogSecurityEvent`)
 with the acting admin, the target user, and a human-readable action string —
@@ -214,8 +227,11 @@ Everything lives on the existing `AdminUsers.vue` page
   modal (`showActionModal` / `pendingAction`), keyed by action type so the
   title/message/success text come from one translation lookup
   (`adminUsers.actionTitle.<type>` etc.) instead of near-duplicate modals.
-  Set password gets its own dedicated modal instead, since it needs two
-  masked input fields rather than a yes/no confirmation.
+  Create user, set password and delete user each have their own modal
+  component (`AdminCreateUserModal`, `AdminSetPasswordModal`,
+  `AdminDeleteUserModal` in `src/components/Modals/`); the first two share
+  `PasswordConfirmFields` (masked password + confirmation, 8-character
+  minimum, matching the backend).
 - **Assign plan** reuses `AdminAssignPlanModal.vue` (previously reachable
   only from the subscription-plans page with a hand-typed user id). It
   gained two optional props, `presetUserId` / `presetUserName`, that
@@ -224,17 +240,18 @@ Everything lives on the existing `AdminUsers.vue` page
   name. Its `:value` is bound straight to the source membership object (not
   a local copy), so a failed update simply re-renders the original role —
   no manual revert logic needed. Organizations use
-  `organizationService.updateMemberRole`; groups PATCH
-  `/group-members/:member_id` directly (no dedicated group-role service
-  existed, unlike organizations).
+  `organizationService.updateMemberRole`; groups use
+  `adminUsersService.updateGroupMemberRole`, which PATCHes
+  `/group-members/:member_id`.
 - **Create user** is a button in the page header (`.page-header`, next to
-  the title) rather than a row action, opening a dedicated `BaseModal` form
+  the title) rather than a row action, opening `AdminCreateUserModal`
   (first/last/display name, username, email, password, the "email already
-  verified" checkbox). On success the new row is appended to the table
+  verified" checkbox). Its submit button sits in the modal footer but is
+  bound to the form (`form` attribute), so native validation runs. On success the new row is appended to the table
   locally — no full refetch needed.
-- **Verify email** is a row action, conditionally rendered
-  (`v-if="!row.email_verified"`) — it disappears once the account is
-  verified, and shares the same generic action-confirm modal as reset
+- **Verify email** is a row action shown only for unverified accounts; on
+  verified rows an invisible placeholder keeps its slot so the other
+  buttons do not move, and shares the same generic action-confirm modal as reset
   password / grant admin / block account.
 - The email cell gained a small verified/unverified icon badge next to the
   address (`email_verified`).
@@ -252,7 +269,8 @@ Everything lives on the existing `AdminUsers.vue` page
   is removed from the table locally.
 - `src/services/admin/usersService.ts` gained `createUser`, `verifyEmail`,
   `setPassword`, `deleteUser`, `sendPasswordResetEmail`, `grantAdminRole`,
-  `revokeAdminRole`, `setForbidden`; `AdminUserListing` gained
+  `revokeAdminRole`, `setForbidden`, `updateGroupMemberRole`;
+  `useAdminUserError` translates the backend's error codes; `AdminUserListing` gained
   `email_verified`; `OrgMembership` / `GroupMembership` gained `member_id`.
 
 All new strings are translated (English + French), following the project's
