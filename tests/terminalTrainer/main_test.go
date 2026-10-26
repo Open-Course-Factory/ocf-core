@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	authModels "soli/formations/src/auth/models"
 	configModels "soli/formations/src/configuration/models"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
@@ -37,6 +38,7 @@ var terminalTestModels = []any{
 	&paymentModels.UserSubscription{},
 	&paymentModels.UsageMetrics{},
 	&configModels.Feature{},
+	&authModels.BlockedAccount{},
 }
 
 func TestMain(m *testing.M) {
@@ -133,6 +135,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 		"organizations",
 		"subscription_plans",
 		"features",
+		"blocked_accounts",
 	)
 	return sharedTestDB
 }

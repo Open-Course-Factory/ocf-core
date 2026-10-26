@@ -13,6 +13,7 @@ import (
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
+	authModels "soli/formations/src/auth/models"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	paymentMiddleware "soli/formations/src/payment/middleware"
@@ -622,6 +623,10 @@ func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, 
 			keyName = "auto-" + user.Email
 		}
 		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
+			if stderrors.Is(createErr, authModels.ErrAccountBlocked) {
+				errors.Respond(ctx, http.StatusForbidden, createErr.Error())
+				return nil, false
+			}
 			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
 			errors.Respond(ctx, http.StatusInternalServerError, "Failed to provision terminal access")
 			return nil, false

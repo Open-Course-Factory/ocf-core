@@ -220,16 +220,7 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 		}
 	}
 
-	// Auto-provision terminal keys for members who don't have one
-	for _, member := range activeMembers {
-		_, err := c.repository.GetUserTerminalKeyByUserID(member.UserID, true)
-		if err != nil {
-			keyName := "auto-" + userEmails[member.UserID]
-			if createErr := c.createUserKey(member.UserID, keyName); createErr != nil {
-				utils.Warn("failed to auto-provision terminal key for user %s: %v", member.UserID, createErr)
-			}
-		}
-	}
+	blocked := c.provisionMissingKeys(activeMembers, userEmails)
 
 	// Resolve the machine size once: an explicit size from the request wins,
 	// otherwise we fall back to the historical default of "S" so existing
@@ -242,6 +233,15 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 	// Create terminals for each member
 	for _, member := range activeMembers {
 		userEmail := userEmails[member.UserID]
+
+		if blocked[member.UserID] {
+			response.FailedCount++
+			response.Errors = append(response.Errors, fmt.Sprintf("Failed for user %s (%s): %v", userEmail, member.UserID, authModels.ErrAccountBlocked))
+			response.Terminals = append(response.Terminals, dto.BulkTerminalCreationResult{
+				UserID: member.UserID, UserEmail: userEmail, Error: authModels.ErrAccountBlocked.Error(),
+			})
+			continue
+		}
 
 		// Generate terminal name using template
 		terminalName := ApplyNameTemplate(request.NameTemplate, group.DisplayName, userEmail, member.UserID, bulkSize)
@@ -294,6 +294,26 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 	}
 
 	return response, nil
+}
+
+// provisionMissingKeys gives every member without a terminal key a new one,
+// and returns the members refused one because their account is blocked: those
+// must be reported, not started.
+func (c *terminalComposer) provisionMissingKeys(members []groupModels.GroupMember, userEmails map[string]string) map[string]bool {
+	blocked := make(map[string]bool)
+	for _, member := range members {
+		if _, err := c.repository.GetUserTerminalKeyByUserID(member.UserID, true); err == nil {
+			continue
+		}
+		createErr := c.createUserKey(member.UserID, "auto-"+userEmails[member.UserID])
+		switch {
+		case errors.Is(createErr, authModels.ErrAccountBlocked):
+			blocked[member.UserID] = true
+		case createErr != nil:
+			utils.Warn("failed to auto-provision terminal key for user %s: %v", member.UserID, createErr)
+		}
+	}
+	return blocked
 }
 
 // validateBackendForContext resolves the backend using a multi-level chain:

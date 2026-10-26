@@ -15,6 +15,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
+	authModels "soli/formations/src/auth/models"
 	groupModels "soli/formations/src/groups/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
@@ -386,6 +387,9 @@ type UserKeyMissing struct {
 	UserID    string `json:"user_id"`
 	UserName  string `json:"user_name,omitempty"`
 	UserEmail string `json:"user_email,omitempty"`
+	// Reason is "user_blocked" when the account is blocked, empty when the key
+	// could not be made for any other reason.
+	Reason string `json:"reason,omitempty"`
 }
 
 // BulkStartError represents an error for a specific user during bulk start
@@ -624,10 +628,14 @@ func (s *TeacherDashboardService) ensureTerminalKey(userID string) *UserKeyMissi
 	if userErr == nil && user != nil && user.Email != "" {
 		keyName = "auto-" + user.Email
 	}
-	if createErr := s.terminalService.CreateUserKey(userID, keyName); createErr == nil {
+	createErr := s.terminalService.CreateUserKey(userID, keyName)
+	if createErr == nil {
 		return nil
 	}
 	missing := &UserKeyMissing{UserID: userID}
+	if errors.Is(createErr, authModels.ErrAccountBlocked) {
+		missing.Reason = createErr.Error()
+	}
 	if userErr == nil && user != nil {
 		missing.UserName = user.DisplayName
 		if missing.UserName == "" {

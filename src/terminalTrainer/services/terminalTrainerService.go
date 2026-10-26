@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	authModels "soli/formations/src/auth/models"
 	configRepositories "soli/formations/src/configuration/repositories"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
@@ -219,6 +220,16 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 
 // CreateUserKey crée une clé Terminal Trainer et la stocke en DB
 func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
+	// Blocking disables the account's key; every launch path re-creates a
+	// missing key on the fly, so this is the one gate that keeps it disabled.
+	blocked, err := authModels.IsAccountBlocked(tts.db, userID)
+	if err != nil {
+		return fmt.Errorf("could not check whether account %s is blocked: %w", userID, err)
+	}
+	if blocked {
+		return authModels.ErrAccountBlocked
+	}
+
 	// Skip if Terminal Trainer is not configured
 	if tts.baseURL == "" || tts.adminKey == "" {
 		return fmt.Errorf("terminal trainer not configured")
