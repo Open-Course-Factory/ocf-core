@@ -142,10 +142,30 @@ Layer 2 together), `routes.go` wires the gin handlers.
   user gets a working one back through the existing self-service
   `POST /user-terminal-keys/regenerate`.
 
-  Known limits: a Casdoor JWT already issued to the blocked user stays valid
-  until it expires, and the paths that auto-provision a missing terminal key
-  (teacher bulk-start, scenario launch) do not check `is_forbidden`, so a
-  blocked user who still holds a valid JWT can get a fresh key that way.
+  A block takes effect on requests already signed in, not only on the next
+  sign-in. ocf-core validates Casdoor JWTs locally, so `is_forbidden` alone
+  would leave an already-issued token valid until it expired. Instead,
+  `CasdoorUserClient.SetForbidden` — the one call both this endpoint and
+  member offboarding block through — mirrors the flag into the
+  `blocked_accounts` table right after Casdoor persists it, and on a block
+  also deletes the account's Casdoor OAuth tokens (refresh tokens included;
+  best-effort, a failure only warns). The startup sequence reconciles the
+  table from Casdoor, so accounts forbidden before it existed, or directly in
+  the Casdoor console, are covered too; an account Casdoor does not return is
+  left as it is.
+
+  - `AuthManagement()` answers **401 `user_blocked`** to any token of a
+    blocked account, which makes the frontend log the user out; the cost is
+    one primary-key lookup per request, next to the existing token-blacklist
+    lookup — no call to Casdoor. The table is shared by every replica, so the
+    block applies everywhere at once. Unblocking deletes the row and the same
+    token works again.
+  - `CreateUserKey` refuses a blocked account with `user_blocked`, so the
+    paths that re-create a missing terminal key cannot hand one back: a
+    scenario launch (or preview, or rebuild) answers **403 `user_blocked`**;
+    a class scenario bulk-start lists the learner under `no_key_users` with
+    `reason: "user_blocked"` and still starts the others; a group terminal
+    bulk-create reports that member with `error: "user_blocked"`.
 - **Assign a subscription plan** needed no new backend code — the
   `POST /user-subscriptions/admin-assign` endpoint
   (`SubscriptionController.AdminAssignSubscription`) already existed and is
