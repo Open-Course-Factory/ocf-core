@@ -203,9 +203,9 @@ func TestOrganizationAiService_UpdateConfig_EndpointChangeWithNewKeyIsAccepted(t
 	assert.True(t, out.HasAPIKey)
 }
 
-// --- Fix 3: generate is manager+, body capped ----------------------------
+// --- Fix 3: generate is teacher+, body capped ----------------------------
 
-func TestOrganizationAiGenerate_Route_DeclaredForManagerOrgRole(t *testing.T) {
+func TestOrganizationAiGenerate_Route_DeclaredForTeacherOrgRole(t *testing.T) {
 	access.RouteRegistry.Reset()
 	t.Cleanup(func() { access.RouteRegistry.Reset() })
 
@@ -214,7 +214,8 @@ func TestOrganizationAiGenerate_Route_DeclaredForManagerOrgRole(t *testing.T) {
 	perm, found := access.RouteRegistry.Lookup("POST", "/api/v1/organizations/:id/ai-config/generate")
 	require.True(t, found)
 	assert.Equal(t, access.OrgRole, perm.Access.Type)
-	assert.Equal(t, "manager", perm.Access.MinRole, "students must not spend the organization's AI key")
+	assert.Equal(t, access.RoleMinimumForClassrooms, perm.Access.MinRole,
+		"teachers author scenarios with it; students must not spend the organization's AI key")
 	assert.Equal(t, "id", perm.Access.Param)
 }
 

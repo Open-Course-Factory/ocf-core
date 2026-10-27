@@ -83,7 +83,7 @@ const maxAiGenerateRequestBytes = 512 << 10
 
 // GenerateWithAi godoc
 // @Summary Generate a scenario answer with the organization's configured AI assistant
-// @Description Sends the given prompt to the organization's configured OpenAI-compatible endpoint and returns the raw completion text — the same text a teacher would otherwise paste in manually. Organization managers and owners only. Refuses with 409 if the organization has no usable configuration.
+// @Description Sends the given prompt to the organization's configured OpenAI-compatible endpoint and returns the raw completion text — the same text a teacher would otherwise paste in manually. Organization teachers, managers and owners only. Refuses with 409 if the organization has no usable configuration.
 // @Tags organizations
 // @Accept json
 // @Produce json

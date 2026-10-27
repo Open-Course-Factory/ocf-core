@@ -55,7 +55,7 @@ organization by Layer-2 `OrgRole` permissions
 |---|---|---|---|
 | `GET` | `/organizations/:id/ai-config` | member | Read the config (never the key). |
 | `PUT` | `/organizations/:id/ai-config` | manager | Create or update the config. |
-| `POST` | `/organizations/:id/ai-config/generate` | manager | Send a prompt, get the assistant's raw answer back. |
+| `POST` | `/organizations/:id/ai-config/generate` | teacher | Send a prompt, get the assistant's raw answer back. |
 
 ### `GET /organizations/:id/ai-config`
 
@@ -161,9 +161,10 @@ teacher ever sees, exactly like before this feature existed.
 - Encryption follows the existing field-encryption pattern
   (`src/utils/crypto`, `FIELD_ENCRYPTION_SECRET` env var) already used for
   SSH private keys — no new secret-management mechanism was introduced.
-- A manager is required both to change the configuration and to trigger a
-  generation: every call spends the organization's own provider credit, so
-  students (plain members) cannot reach it.
+- A manager is required to change the configuration. Generating needs at
+  least the teacher role (`access.RoleMinimumForClassrooms`): teachers author
+  scenarios with it, while students (plain members) cannot spend the
+  organization's provider credit.
 - The key never reaches a log: errors from the provider call name the
   failure (status code, timeout, size) but never carry the request, its
   headers or the provider's body, which some providers use to echo the key.
