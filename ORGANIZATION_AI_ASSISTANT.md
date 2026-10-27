@@ -55,7 +55,7 @@ organization by Layer-2 `OrgRole` permissions
 |---|---|---|---|
 | `GET` | `/organizations/:id/ai-config` | member | Read the config (never the key). |
 | `PUT` | `/organizations/:id/ai-config` | manager | Create or update the config. |
-| `POST` | `/organizations/:id/ai-config/generate` | member | Send a prompt, get the assistant's raw answer back. |
+| `POST` | `/organizations/:id/ai-config/generate` | manager | Send a prompt, get the assistant's raw answer back. |
 
 ### `GET /organizations/:id/ai-config`
 
@@ -78,6 +78,16 @@ This is why the frontend never pre-fills the key field — there is nothing
 to pre-fill it with, and leaving it blank must mean "keep what's there",
 not "clear it".
 
+The endpoint must be an `https` URL to a public host: no credentials in the
+URL, no `localhost`, no loopback, private, link-local (cloud metadata) or
+shared-address IP. Changing the endpoint while a key is stored requires a
+new `api_key` in the same request, so a stored key is never sent to a host
+its owner didn't enter it for.
+
+Errors (`error_message` carries the code):
+- **400 `ai_endpoint_invalid`** — the endpoint fails the rules above.
+- **400 `ai_key_required`** — the endpoint changed but no new key was sent.
+
 ### `POST /organizations/:id/ai-config/generate`
 
 ```json
@@ -87,18 +97,21 @@ not "clear it".
 { "answer": "..." }
 ```
 
-Errors:
-- **409 Conflict** — the organization has no usable configuration (never
-  set, or set but `enabled: false`, or missing endpoint/key). The message
-  names the gap so a manager knows to go configure it, rather than retry.
-- **502 Bad Gateway** — the configured endpoint itself failed or returned
-  nothing usable (network error, bad credentials, empty `choices`, etc.).
-  This is a problem with the organization's own endpoint, not with OCF.
+Errors (`error_message` carries the code):
+- **409 `ai_not_configured`** — the organization has no usable configuration
+  (never set, or set but `enabled: false`, or missing endpoint/key).
+- **413 `ai_request_too_large`** — the request body is over 512 KiB.
+- **502 `ai_provider_error`** — the configured endpoint failed, timed out,
+  redirected, answered a non-200 status, answered more than 2 MiB or
+  returned nothing usable. This is a problem with the organization's own
+  endpoint, not with OCF.
 
 The request sent to the configured endpoint is the standard chat-completions
 shape: `{"model": "...", "messages": [{"role": "user", "content": "<prompt>"}]}`,
 with `Authorization: Bearer <api_key>`, and a 90-second timeout (scenario
-generation prompts are long, and so are some answers).
+generation prompts are long, and so are some answers). The client re-checks
+every resolved address when it connects (so DNS rebinding can't reach an
+internal host), never follows redirects and uses no proxy.
 
 ## Frontend usage
 
@@ -148,9 +161,12 @@ teacher ever sees, exactly like before this feature existed.
 - Encryption follows the existing field-encryption pattern
   (`src/utils/crypto`, `FIELD_ENCRYPTION_SECRET` env var) already used for
   SSH private keys — no new secret-management mechanism was introduced.
-- A manager is required to change the configuration (write), but any member
-  can trigger a generation (read-level use) — the same split already used
-  for other org-scoped settings vs. org-scoped actions.
+- A manager is required both to change the configuration and to trigger a
+  generation: every call spends the organization's own provider credit, so
+  students (plain members) cannot reach it.
+- The key never reaches a log: errors from the provider call name the
+  failure (status code, timeout, size) but never carry the request, its
+  headers or the provider's body, which some providers use to echo the key.
 
 ## Files
 
@@ -161,7 +177,9 @@ teacher ever sees, exactly like before this feature existed.
 - `src/organizations/controller/organizationAiConfigController.go`
 - `src/organizations/routes/organizationRoutes.go`, `permissions.go`
 - `src/initialization/database.go` (migration)
+- `src/organizations/services/organizationAiProviderClient.go`
 - `tests/organizations/organizationAiConfig_test.go`,
+  `tests/organizations/organizationAiSecurity_test.go`,
   `tests/authorization/all_permissions_test.go`
 
 **Frontend (`ocf-front`):**
