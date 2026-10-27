@@ -1,13 +1,15 @@
 package services
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
+	"io"
+	"net/http"
 
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
-	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -19,6 +21,21 @@ import (
 // rather than a generic failure, since the fix is "configure it", not
 // "retry".
 var ErrAiNotConfigured = errors.New("AI assistant is not configured for this organization")
+
+// ErrAiKeyRequired is returned when an update moves the endpoint while
+// keeping the stored key: the key would otherwise be sent to a host its owner
+// never approved.
+var ErrAiKeyRequired = errors.New("changing the AI endpoint requires a new API key")
+
+// ErrAiProvider wraps every failure on the provider side: unreachable,
+// refused address, timeout, redirect, error status, oversized or unusable
+// answer. Its message never carries the key, the request or the provider's
+// body, so it is safe to log.
+var ErrAiProvider = errors.New("AI provider request failed")
+
+// maxAiResponseBytes caps what is read from the provider; a scenario answer
+// is a few dozen kilobytes.
+const maxAiResponseBytes = 2 << 20
 
 // aiChatCompletionsRequest / aiChatCompletionsResponse are the OpenAI
 // "chat completions" shapes — the de-facto standard every provider this
@@ -52,11 +69,18 @@ type OrganizationAiService interface {
 }
 
 type organizationAiService struct {
-	db *gorm.DB
+	db     *gorm.DB
+	client *http.Client
 }
 
+// NewOrganizationAiService only ever reaches public https hosts (see
+// NewAiProviderClient).
 func NewOrganizationAiService(db *gorm.DB) OrganizationAiService {
-	return &organizationAiService{db: db}
+	return NewOrganizationAiServiceWithClient(db, NewAiProviderClient(isPublicAddr, nil))
+}
+
+func NewOrganizationAiServiceWithClient(db *gorm.DB, client *http.Client) OrganizationAiService {
+	return &organizationAiService{db: db, client: client}
 }
 
 // loadConfig returns the organization's config row, or a zero-value
@@ -88,11 +112,22 @@ func (s *organizationAiService) GetConfig(orgID uuid.UUID) (*dto.AiConfigOutput,
 }
 
 // UpdateConfig upserts the organization's row. APIKey nil leaves whatever
-// key is already stored untouched; APIKey pointing at "" clears it.
+// key is already stored untouched; APIKey pointing at "" clears it. An empty
+// endpoint is allowed (not configured yet); any other must pass
+// validateAiEndpoint, and moving it away from where a stored key was meant to
+// go needs a new key in the same request.
 func (s *organizationAiService) UpdateConfig(orgID uuid.UUID, input dto.UpdateAiConfigInput) (*dto.AiConfigOutput, error) {
+	if input.Endpoint != "" {
+		if err := validateAiEndpoint(input.Endpoint); err != nil {
+			return nil, err
+		}
+	}
 	cfg, err := s.loadConfig(orgID)
 	if err != nil {
 		return nil, err
+	}
+	if input.Endpoint != cfg.Endpoint && cfg.APIKey != "" && input.APIKey == nil {
+		return nil, ErrAiKeyRequired
 	}
 
 	cfg.Enabled = input.Enabled
@@ -139,21 +174,51 @@ func (s *organizationAiService) Generate(orgID uuid.UUID, prompt string) (string
 		return "", ErrAiNotConfigured
 	}
 
-	payload := aiChatCompletionsRequest{
+	answer, err := s.complete(cfg, prompt)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrAiProvider, err)
+	}
+	return answer, nil
+}
+
+// complete POSTs one chat-completions request. Its errors name what went
+// wrong, never the key, the request or the provider's body.
+func (s *organizationAiService) complete(cfg *models.OrganizationAiConfig, prompt string) (string, error) {
+	body, err := json.Marshal(aiChatCompletionsRequest{
 		Model:    cfg.Model,
 		Messages: []aiChatMessage{{Role: "user", Content: prompt}},
+	})
+	if err != nil {
+		return "", errors.New("could not encode the request")
 	}
+	req, err := http.NewRequest(http.MethodPost, cfg.Endpoint, bytes.NewReader(body))
+	// Rows saved before endpoint validation existed may still be plain http;
+	// the key must never travel unencrypted.
+	if err != nil || req.URL.Scheme != "https" {
+		return "", errors.New("endpoint is not a valid https URL")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 
-	opts := utils.DefaultHTTPClientOptions()
-	opts.Timeout = 90 * time.Second
-	opts.Headers["Authorization"] = "Bearer " + cfg.APIKey
-
-	var result aiChatCompletionsResponse
-	if err := utils.MakeExternalAPIJSONRequest("AI assistant", "POST", cfg.Endpoint, payload, &result, opts); err != nil {
+	resp, err := s.client.Do(req)
+	if err != nil {
 		return "", err
 	}
-	if len(result.Choices) == 0 {
-		return "", fmt.Errorf("AI assistant returned no choices")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("provider answered HTTP %d", resp.StatusCode)
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxAiResponseBytes+1))
+	if err != nil {
+		return "", errors.New("could not read the answer")
+	}
+	if len(raw) > maxAiResponseBytes {
+		return "", fmt.Errorf("answer larger than %d bytes", maxAiResponseBytes)
+	}
+	var result aiChatCompletionsResponse
+	if err := json.Unmarshal(raw, &result); err != nil || len(result.Choices) == 0 {
+		return "", errors.New("answer is not a chat completion")
 	}
 	return result.Choices[0].Message.Content, nil
 }

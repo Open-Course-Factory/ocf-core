@@ -101,18 +101,11 @@ func TestOrganizationAiService_UpdateConfig_OmittedAPIKeyKeepsTheStoredOne(t *te
 	assert.Equal(t, "m2", out.Model)
 	assert.True(t, out.HasAPIKey, "omitting api_key must not clear a previously stored key")
 
-	// Generate must still be able to decrypt and use the original key —
-	// proof the stored ciphertext wasn't corrupted by the no-op update.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "Bearer sk-original", r.Header.Get("Authorization"))
-		w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
-	}))
-	defer server.Close()
-	_, err = svc.UpdateConfig(orgID, dto.UpdateAiConfigInput{Enabled: true, Endpoint: server.URL, Model: "m2", APIKey: nil})
-	require.NoError(t, err)
-	answer, err := svc.Generate(orgID, "hello")
-	require.NoError(t, err)
-	assert.Equal(t, "ok", answer)
+	// The stored ciphertext must still decrypt to the original key — proof
+	// the no-op update didn't corrupt it.
+	var stored models.OrganizationAiConfig
+	require.NoError(t, db.Where("organization_id = ?", orgID).First(&stored).Error)
+	assert.Equal(t, "sk-original", stored.APIKey)
 }
 
 func TestOrganizationAiService_UpdateConfig_EmptyStringAPIKeyClearsIt(t *testing.T) {
@@ -155,12 +148,11 @@ func TestOrganizationAiService_Generate_RefusesWhenDisabledDespiteFullConfig(t *
 
 func TestOrganizationAiService_Generate_SendsOpenAIShapedRequestAndParsesAnswer(t *testing.T) {
 	db := newAiConfigDB(t)
-	svc := services.NewOrganizationAiService(db)
 	orgID := uuid.New()
 	key := "sk-live"
 
 	var gotAuth, gotBody string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		body, _ := io.ReadAll(r.Body)
 		gotBody = string(body)
@@ -168,12 +160,11 @@ func TestOrganizationAiService_Generate_SendsOpenAIShapedRequestAndParsesAnswer(
 	}))
 	defer server.Close()
 
-	_, err := svc.UpdateConfig(orgID, dto.UpdateAiConfigInput{
-		Enabled: true, Endpoint: server.URL, Model: "gpt-test", APIKey: &key,
-	})
-	require.NoError(t, err)
+	require.NoError(t, db.Create(&models.OrganizationAiConfig{
+		OrganizationID: orgID, Enabled: true, Endpoint: server.URL, Model: "gpt-test", APIKey: key,
+	}).Error)
 
-	answer, err := svc.Generate(orgID, "describe a scenario about SSH")
+	answer, err := aiTestService(db, server).Generate(orgID, "describe a scenario about SSH")
 	require.NoError(t, err)
 	assert.Equal(t, `{"title":"Hi"}`, answer)
 	assert.Equal(t, "Bearer sk-live", gotAuth)
@@ -183,22 +174,20 @@ func TestOrganizationAiService_Generate_SendsOpenAIShapedRequestAndParsesAnswer(
 
 func TestOrganizationAiService_Generate_SurfacesEndpointFailure(t *testing.T) {
 	db := newAiConfigDB(t)
-	svc := services.NewOrganizationAiService(db)
 	orgID := uuid.New()
 	key := "sk-x"
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":"invalid key"}`))
 	}))
 	defer server.Close()
 
-	_, err := svc.UpdateConfig(orgID, dto.UpdateAiConfigInput{
-		Enabled: true, Endpoint: server.URL, Model: "m", APIKey: &key,
-	})
-	require.NoError(t, err)
+	require.NoError(t, db.Create(&models.OrganizationAiConfig{
+		OrganizationID: orgID, Enabled: true, Endpoint: server.URL, Model: "m", APIKey: key,
+	}).Error)
 
-	_, err = svc.Generate(orgID, "hello")
-	require.Error(t, err)
+	_, err := aiTestService(db, server).Generate(orgID, "hello")
+	require.ErrorIs(t, err, services.ErrAiProvider)
 	assert.NotErrorIs(t, err, services.ErrAiNotConfigured, "an endpoint failure is a different problem than a missing configuration")
 }

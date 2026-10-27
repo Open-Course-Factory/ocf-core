@@ -75,8 +75,8 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/ai-config/generate", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
-			Description: "Generate a scenario answer with the organization's configured AI assistant",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Generate a scenario answer with the organization's configured AI assistant (manager and owner only)",
 		},
 	)
 
