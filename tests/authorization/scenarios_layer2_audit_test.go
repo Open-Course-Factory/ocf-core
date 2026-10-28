@@ -7,7 +7,7 @@ package authorization_tests
 // the Layer2Enforcement middleware. The module exposes three enforcer types
 // (SelfScoped routes are documentation-only and not audited here):
 //
-//   - EntityOwner (11 routes, Entity="ScenarioSession", Field="UserID"):
+//   - EntityOwner (12 routes, Entity="ScenarioSession", Field="UserID"):
 //       GET    /api/v1/scenario-sessions/:id/info
 //       GET    /api/v1/scenario-sessions/:id/flags
 //       GET    /api/v1/scenario-sessions/:id/current-step
@@ -18,6 +18,7 @@ package authorization_tests
 //       POST   /api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal
 //       POST   /api/v1/scenario-sessions/:id/abandon
 //       POST   /api/v1/scenario-sessions/:id/reprovision-step
+//       POST   /api/v1/scenario-sessions/:id/skip-to-step
 //       POST   /api/v1/scenario-sessions/:id/resume
 //
 //   - GroupRole (10 routes, MinRole="manager", Param="groupId"):
@@ -97,6 +98,7 @@ var scenariosAuditEntityOwnerRoutes = []scenariosAuditRoute{
 	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", requestPath: "/api/v1/scenario-sessions/sess-audit-hint/steps/1/hints/2/reveal", scopeID: "sess-audit-hint", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/abandon", requestPath: "/api/v1/scenario-sessions/sess-audit-aban/abandon", scopeID: "sess-audit-aban", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/reprovision-step", requestPath: "/api/v1/scenario-sessions/sess-audit-repro/reprovision-step", scopeID: "sess-audit-repro", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
+	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/skip-to-step", requestPath: "/api/v1/scenario-sessions/sess-audit-skip/skip-to-step", scopeID: "sess-audit-skip", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/resume", requestPath: "/api/v1/scenario-sessions/sess-audit-resume/resume", scopeID: "sess-audit-resume", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 }
 

@@ -30,6 +30,7 @@ type ScenarioProgressController interface {
 	RevealHint(ctx *gin.Context)
 	AbandonSession(ctx *gin.Context)
 	ReprovisionStep(ctx *gin.Context)
+	SkipToStep(ctx *gin.Context)
 	GetSessionFlags(ctx *gin.Context)
 }
 
@@ -478,6 +479,61 @@ func (pc *scenarioProgressController) ReprovisionStep(ctx *gin.Context) {
 		return
 	}
 
+	ctx.JSON(http.StatusOK, result)
+}
+
+// SkipToStep godoc
+// @Summary Skip one's own run to a later step
+// @Description Moves the caller's own active session forward to the given step, as a trainer
+// @Description does for a learner: the steps in between are marked skipped and only the target
+// @Description step's setup runs. Only for a caller who may run the scenario with a class
+// @Description (CanRunScenario), who can already preview it from any step.
+// @Tags scenario-sessions
+// @Accept json
+// @Produce json
+// @Param id path string true "Session ID"
+// @Param body body dto.SkipToStepInput true "Target step"
+// @Success 200 {object} dto.SkipToStepResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 409 {object} errors.APIError
+// @Router /scenario-sessions/{id}/skip-to-step [post]
+// @Security BearerAuth
+func (pc *scenarioProgressController) SkipToStep(ctx *gin.Context) {
+	session, err := pc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+	// A learner skipping their own graded run would defeat the grade; a teacher
+	// running the lab themselves gains nothing a preview from that step would
+	// not already give them.
+	_, allowed, err := pc.canRunScenarioByID(ctx, session.ScenarioID)
+	if err != nil {
+		slog.Error("failed to check scenario run access", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check scenario access")
+		return
+	}
+	if !allowed {
+		errors.Respond(ctx, http.StatusForbidden, "Only a trainer of this scenario can skip steps")
+		return
+	}
+
+	var input dto.SkipToStepInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := pc.sessionService.SkipToStep(session.ID, input.StepOrder)
+	switch {
+	case stderrors.Is(err, services.ErrSessionNotActive), stderrors.Is(err, services.ErrSkipRaced):
+		errors.Respond(ctx, http.StatusConflict, err.Error())
+		return
+	case err != nil:
+		slog.Warn("failed to skip to step", "session_id", session.ID, "step_order", input.StepOrder, "err", err)
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
 	ctx.JSON(http.StatusOK, result)
 }
 
