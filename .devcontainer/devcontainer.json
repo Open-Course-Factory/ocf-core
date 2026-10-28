@@ -94,7 +94,7 @@
 	"features": {
 		"ghcr.io/devcontainers/features/git:1": {},
 		"ghcr.io/warrenbuckley/codespace-features/sqlite:1": {},
-		"ghcr.io/devcontainers/features/docker-in-docker:2.12.4": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:2.17.0": {},
 		"ghcr.io/devcontainers/features/sshd:1": {},
 		"ghcr.io/stu-bell/devcontainer-features/claude-code:0": {}
 	}
