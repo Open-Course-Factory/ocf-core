@@ -1656,6 +1656,77 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	return response, nil
 }
 
+// ErrSkipNotForward rejects a skip to the current step or an earlier one: the
+// steps a learner already went through cannot be replayed on the same
+// container, whose state has moved on.
+var ErrSkipNotForward = errors.New("can only skip forward, to a later step")
+
+// ErrSkipRaced rejects a skip whose run moved on (a verify, another skip)
+// between the read and the write.
+var ErrSkipRaced = errors.New("the session moved to another step meanwhile, reload and retry")
+
+// SkipToStep moves an active run forward to a later step, on a trainer's
+// decision. The steps in between are marked skipped, not completed, so the
+// grade does not count them.
+//
+// Only the target step's setup runs. A step that can be skipped to must
+// therefore build its own preconditions from whatever state the container is
+// in — the same contract pause/resume already relies on.
+func (s *ScenarioSessionService) SkipToStep(sessionID uuid.UUID, targetOrder int) (*dto.SkipToStepResponse, error) {
+	var session models.ScenarioSession
+	if err := s.db.Preload("Scenario.Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+	if err := requireActiveSession(&session); err != nil {
+		return nil, err
+	}
+	if session.TerminalSessionID == nil {
+		return nil, fmt.Errorf("no terminal session attached")
+	}
+	if FindStepByOrder(session.Scenario.Steps, targetOrder) == nil {
+		return nil, fmt.Errorf("step (order=%d) not found", targetOrder)
+	}
+	leftStep := session.CurrentStep
+	if targetOrder <= leftStep {
+		return nil, ErrSkipNotForward
+	}
+
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		// Conditional on the step read above, so a verify landing meanwhile
+		// is not overwritten.
+		moved := tx.Model(&models.ScenarioSession{}).
+			Where("id = ? AND current_step = ?", session.ID, leftStep).
+			Update("current_step", targetOrder)
+		if moved.Error != nil {
+			return fmt.Errorf("failed to move session: %w", moved.Error)
+		}
+		if moved.RowsAffected == 0 {
+			return ErrSkipRaced
+		}
+		if err := tx.Model(&models.ScenarioStepProgress{}).
+			Where("session_id = ? AND step_order >= ? AND step_order < ? AND status <> ?", session.ID, leftStep, targetOrder, "completed").
+			Update("status", "skipped").Error; err != nil {
+			return fmt.Errorf("failed to mark steps skipped: %w", err)
+		}
+		return tx.Model(&models.ScenarioStepProgress{}).
+			Where("session_id = ? AND step_order = ?", session.ID, targetOrder).
+			Update("status", "active").Error
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+	session.CurrentStep = targetOrder
+
+	// No outro banner: the learner did not finish the step they leave.
+	status := s.provisionNextStep(&session, targetOrder)
+	if !status.NextStepProvisioning && !status.NextStepProvisioningFailed {
+		s.emitIntroBanner(&session, targetOrder)
+	}
+	return &dto.SkipToStepResponse{StepOrder: targetOrder, StepProvisioningStatus: status}, nil
+}
+
 // testVerifyOutputLimit caps the output returned to the author: a runaway
 // script must not turn into a megabyte JSON response.
 const testVerifyOutputLimit = 16 * 1024

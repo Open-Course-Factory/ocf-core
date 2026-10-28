@@ -14,6 +14,7 @@ import (
 
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentServices "soli/formations/src/payment/services"
+	"soli/formations/src/scenarios/dto"
 	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
@@ -256,6 +257,68 @@ func (tc *TeacherController) GetSessionDetail(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, detail)
+}
+
+// SkipToStep godoc
+// @Summary Skip a learner's run to a later step
+// @Description Moves an active session of the group forward to the given step: the steps in
+// @Description between are marked skipped (not graded as completed) and only the target step's
+// @Description setup runs. Group managers (and platform admins) only.
+// @Tags scenario-teacher
+// @Accept json
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param sessionId path string true "Session ID (UUID)"
+// @Param body body dto.SkipToStepInput true "Target step"
+// @Success 200 {object} dto.SkipToStepResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/sessions/{sessionId}/skip-to-step [post]
+// @Security BearerAuth
+func (tc *TeacherController) SkipToStep(c *gin.Context) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return
+	}
+	sessionID, err := uuid.Parse(c.Param("sessionId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
+		return
+	}
+	var input dto.SkipToStepInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	// Layer 2 proves the caller manages :groupId; this proves the session is
+	// one of that group's (member + assigned scenario), the same IDOR check as
+	// the detail view.
+	if _, err := tc.dashboardService.GetSessionDetail(groupID, sessionID); err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "session not found") || strings.Contains(errStr, "does not belong") || strings.Contains(errStr, "scenario is not assigned") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errStr})
+			return
+		}
+		slog.Error("failed to check session before skip", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
+		return
+	}
+
+	result, err := tc.sessionService.SkipToStep(sessionID, input.StepOrder)
+	switch {
+	case errors.Is(err, services.ErrSessionNotActive), errors.Is(err, services.ErrSkipRaced):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	case err != nil:
+		slog.Warn("failed to skip to step", "session_id", sessionID, "step_order", input.StepOrder, "err", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // GetSessionDetailsBulkRequest is the body of POST /teacher/groups/:groupId/sessions/details.

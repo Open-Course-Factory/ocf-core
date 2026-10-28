@@ -146,6 +146,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "View terminal command history for a student's scenario session (proxies to tt-backend)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/skip-to-step", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "Move a learner's active scenario session forward to a later step",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/bulk-start", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Bulk-start scenario sessions for group members",

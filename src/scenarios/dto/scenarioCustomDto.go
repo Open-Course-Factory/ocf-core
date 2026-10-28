@@ -117,6 +117,17 @@ type ReprovisionStepResponse struct {
 	Status string `json:"status"`
 }
 
+// SkipToStepInput - DTO for a trainer moving a learner's run to a later step
+type SkipToStepInput struct {
+	StepOrder int `json:"step_order"`
+}
+
+// SkipToStepResponse - DTO for the result of a skip
+type SkipToStepResponse struct {
+	StepOrder int `json:"step_order"`
+	StepProvisioningStatus
+}
+
 // SubmitFlagInput - DTO for submitting a flag answer
 type SubmitFlagInput struct {
 	Flag string `json:"flag" binding:"required,max=1000"`
