@@ -2557,42 +2557,8 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 	bgScript = injectSetE(bgScript)
 
 	var stdout string
-
-	if len(bgScript) <= maxInlineScriptSize {
-		// Small scripts: pass inline (fast, single API call)
-		exitCode, stdout, stderr, err = s.verificationService.ExecInContainer(
-			terminalSessionID,
-			[]string{interpreter, "-c", bgScript},
-			env,
-			timeout,
-		)
-	} else {
-		// Large scripts: push as temp file then execute.
-		//
-		// /root/, not /tmp/: the file holds a step's provisioning logic — how the
-		// level is built, where it hides things — and challenge scenarios exist to
-		// teach learners to go looking. A world-readable /tmp path hands them the
-		// answers. /root/ is in tt-backend's push allowlist and is unreadable to
-		// the learner's account, and the file is removed after the run regardless.
-		tmpPath := fmt.Sprintf("/root/.ocf_bg_%d.sh", step.Order)
-		if pushErr := s.verificationService.PushFile(terminalSessionID, tmpPath, bgScript, "0700"); pushErr != nil {
-			slog.Warn("failed to push background script to container", "step_order", step.Order, "err", pushErr)
-			return "", fmt.Errorf("failed to push script: %w", pushErr)
-		}
-		exitCode, stdout, stderr, err = s.verificationService.ExecInContainer(
-			terminalSessionID,
-			[]string{interpreter, tmpPath},
-			env,
-			timeout,
-		)
-		// Best-effort cleanup — no env, the flag has nothing to do with rm.
-		_, _, _, _ = s.verificationService.ExecInContainer(
-			terminalSessionID,
-			[]string{"rm", "-f", tmpPath},
-			nil,
-			5,
-		)
-	}
+	tmpPath := fmt.Sprintf("/root/.ocf_bg_%d.sh", step.Order)
+	exitCode, stdout, stderr, err = runScriptInContainer(s.verificationService, terminalSessionID, interpreter, bgScript, tmpPath, env, timeout)
 
 	if err != nil {
 		slog.Error("background script failed to execute", "step_order", step.Order, "err", err, "stdout", truncateLog(stdout), "stderr", truncateLog(stderr))
