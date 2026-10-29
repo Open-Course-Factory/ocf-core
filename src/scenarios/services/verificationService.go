@@ -151,9 +151,30 @@ func (s *VerificationService) VerifyStep(terminalSessionID string, step *models.
 	return exitCode == 0, output, nil
 }
 
-// containerExecer is the one call RunVerifyScript needs from tt-backend.
+// containerExecer is what running a script in a session's container needs
+// from tt-backend.
 type containerExecer interface {
 	ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (exitCode int, stdout string, stderr string, err error)
+	PushFile(sessionID string, targetPath string, content string, mode string) error
+}
+
+// runScriptInContainer runs a script with its interpreter: inline when it fits
+// in one exec argument, otherwise pushed to tmpPath and run from disk, then
+// removed. tt-backend caps each exec argument at 4 KB.
+//
+// tmpPath must sit under /root/: a script holds a step's logic — how a level
+// is built, what a check looks for — and /root/ is unreadable to the learner.
+func runScriptInContainer(execer containerExecer, sessionID, interpreter, script, tmpPath string, env map[string]string, timeout int) (int, string, string, error) {
+	if len(script) <= maxInlineScriptSize {
+		return execer.ExecInContainer(sessionID, []string{interpreter, "-c", script}, env, timeout)
+	}
+	if err := execer.PushFile(sessionID, tmpPath, script, "0700"); err != nil {
+		return -1, "", "", fmt.Errorf("failed to push script: %w", err)
+	}
+	exitCode, stdout, stderr, err := execer.ExecInContainer(sessionID, []string{interpreter, tmpPath}, env, timeout)
+	// Best-effort cleanup — no env, the flag has nothing to do with rm.
+	_, _, _, _ = execer.ExecInContainer(sessionID, []string{"rm", "-f", tmpPath}, nil, 5)
+	return exitCode, stdout, stderr, err
 }
 
 // RunVerifyScript runs a verify script in a session's container exactly as a
@@ -161,13 +182,15 @@ type containerExecer interface {
 // shared by VerifyStep and the author's "test this check", so a script that
 // passes the test passes for the learner.
 func RunVerifyScript(execer containerExecer, terminalSessionID string, script string) (exitCode int, output string, err error) {
-	// Execute the verify script inline with a 10s timeout.
-	// Parse the shebang to use the correct interpreter (e.g., bash vs sh).
+	// 10s timeout; the shebang picks the interpreter (e.g., bash vs sh).
 	// No env: a verify script checks the learner's work, so handing it the
 	// step's flag would only widen the flag's exposure for nothing.
-	exitCode, stdout, stderr, err := execer.ExecInContainer(
+	exitCode, stdout, stderr, err := runScriptInContainer(
+		execer,
 		terminalSessionID,
-		[]string{parseShebang(script), "-c", script},
+		parseShebang(script),
+		script,
+		"/root/.ocf_verify.sh",
 		nil,
 		10,
 	)
