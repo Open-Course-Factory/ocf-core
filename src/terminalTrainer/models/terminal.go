@@ -68,11 +68,6 @@ const (
 // console URL and may linger up to its TTL after a crash.
 var TerminalStatesOccupyingSlot = []TerminalState{StateRunning, StateStarting}
 
-// terminalStatesListedInUsage are the states of the sessions the usage panel
-// lists: the ones consuming the budget plus the paused ones, which the user
-// still has and can resume.
-var terminalStatesListedInUsage = append([]TerminalState{StateStopped}, TerminalStatesOccupyingSlot...)
-
 // TerminalReservationSessionIDPrefix marks a Terminal row as a budget
 // reservation placeholder rather than a real session. The composed-session
 // reserve-first flow inserts a StateStarting row before it provisions the
@@ -147,7 +142,7 @@ func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
 // are still the user's. Each listed row says whether it is charged through
 // Terminal.CountsTowardQuota.
 func UsageListScope(tx *gorm.DB) *gorm.DB {
-	return liveInStates(tx, terminalStatesListedInUsage)
+	return liveInStates(tx, append([]TerminalState{StateStopped}, TerminalStatesOccupyingSlot...))
 }
 
 func liveInStates(tx *gorm.DB, states []TerminalState) *gorm.DB {

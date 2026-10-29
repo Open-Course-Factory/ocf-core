@@ -281,9 +281,6 @@ func (l *terminalLifecycleService) reserveResumeBudget(terminal *models.Terminal
 	if terminal.CountsTowardQuota() {
 		return false, nil
 	}
-	if plan == nil {
-		return false, fmt.Errorf("resume of session %s: no plan to charge its budget to", terminal.SessionID)
-	}
 	err := l.db.Transaction(func(tx *gorm.DB) error {
 		enforcement, err := l.quotaService.EnforceBudgetTx(tx, terminal.UserID, nil, plan, terminal.SizeCPU, terminal.SizeMemoryMB)
 		if err != nil {
