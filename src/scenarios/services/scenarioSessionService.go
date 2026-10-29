@@ -2545,10 +2545,6 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 
 	timeout := effectiveTimeout(scenario.Steps, step)
 
-	var exitCode int
-	var stderr string
-	var err error
-
 	interpreter := parseShebang(bgScript)
 
 	// Inject "set -e" so any failing command stops the script immediately.
@@ -2556,9 +2552,8 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 	// after failures (e.g., failed downloads) and exit 0.
 	bgScript = injectSetE(bgScript)
 
-	var stdout string
 	tmpPath := fmt.Sprintf("/root/.ocf_bg_%d.sh", step.Order)
-	exitCode, stdout, stderr, err = runScriptInContainer(s.verificationService, terminalSessionID, interpreter, bgScript, tmpPath, env, timeout)
+	exitCode, stdout, stderr, err := runScriptInContainer(s.verificationService, terminalSessionID, interpreter, bgScript, tmpPath, env, timeout)
 
 	if err != nil {
 		slog.Error("background script failed to execute", "step_order", step.Order, "err", err, "stdout", truncateLog(stdout), "stderr", truncateLog(stderr))
