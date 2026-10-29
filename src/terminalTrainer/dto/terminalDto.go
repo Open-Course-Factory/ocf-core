@@ -56,6 +56,10 @@ type TerminalOutput struct {
 	// backend deliberately does NOT compute a derived boolean here (SSOT).
 	ComposedFeatures string    `json:"composed_features,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
+	// CountsTowardQuota says whether the session consumes the plan's CPU/RAM
+	// budget right now (models.Terminal.CountsTowardQuota): true while it runs
+	// or starts, false once stopped — a paused machine holds only its disk.
+	CountsTowardQuota bool `json:"counts_toward_quota"`
 }
 
 // UserTerminalKey DTOs for generic system
@@ -564,15 +568,13 @@ type CommandHistoryResponse struct {
 // OrgTerminalUsageUser holds per-user terminal counts for an organization.
 //
 // ActiveCount reports running sessions only (state='running'). OccupyingSlots
-// reports every session that still consumes a slot under the canonical rule
-// in models.TerminalStatesOccupyingSlot (currently running+stopped). The two
-// values differ because a stopped session keeps disk and a quota slot until
-// it is deleted — see models.OccupiesSlotScope for the single source of truth.
+// reports every session that consumes the budget under the canonical rule in
+// models.TerminalStatesOccupyingSlot (running + starting). The two values
+// differ only by in-flight starts: a stopped session consumes nothing — see
+// models.OccupiesSlotScope for the single source of truth.
 //
 // ActiveCPU / ActiveMemoryMB sum the budget-counted resources for this user
-// (state='running' OR persistence_mode='persistent', not past expiry). In
-// count-mode they are reported alongside the slot count for parity but
-// quotas are still enforced by the slot counter.
+// under the same scope.
 type OrgTerminalUsageUser struct {
 	UserID         string `json:"user_id"`
 	DisplayName    string `json:"display_name"`
@@ -591,8 +593,8 @@ type SizeRemainingDTO = paymentDto.SizeRemaining
 // OrgTerminalUsageResponse is returned by GET /organizations/:id/terminal-usage.
 //
 // ActiveTerminals is the "what's running right now" display count. OccupyingSlots
-// is the count of sessions that still occupy a slot (stopped persistent sessions
-// included — see models.TerminalStatesOccupyingSlot). The dashboard pairs both
+// is the count of sessions that consume the budget (running + starting — see
+// models.TerminalStatesOccupyingSlot; stopped sessions are not charged). The dashboard pairs both
 // with the Quota envelope to show "5 running / 7 slots used / X vCPU left".
 //
 // Budget fields (Quota, RemainingBySize) reflect the org's current CPU/RAM
@@ -609,9 +611,10 @@ type OrgTerminalUsageResponse struct {
 	RemainingBySize []SizeRemainingDTO     `json:"remaining_by_size,omitempty"`
 }
 
-// MyTerminalUsageSession is one entry of the active-session list returned by
-// GET /terminals/my-usage. The list mirrors the budget bars: same scope
-// (OccupiesSlotScope) so the two cannot disagree.
+// MyTerminalUsageSession is one entry of the session list returned by
+// GET /terminals/my-usage. The list (models.UsageListScope) holds the sessions
+// the bars charge plus the paused ones; CountsTowardQuota tells them apart
+// with the bars' own rule, so the two cannot disagree.
 //
 // Name falls back to InstanceType when the user-provided name is blank — the
 // list is user-facing.
@@ -625,6 +628,8 @@ type MyTerminalUsageSession struct {
 	PersistenceMode string               `json:"persistence_mode"`
 	LastStartedAt   time.Time `json:"last_started_at"`
 	ExpiresAt       time.Time `json:"expires_at"`
+	// CountsTowardQuota: see TerminalOutput.CountsTowardQuota.
+	CountsTowardQuota bool `json:"counts_toward_quota"`
 }
 
 // MyTerminalUsageResponse is returned by GET /terminals/my-usage. It is the
@@ -632,9 +637,9 @@ type MyTerminalUsageSession struct {
 //
 // Plan envelope (plan_name / plan_source / plan_source_name / max_*) comes
 // from EffectivePlanService.GetUserEffectivePlan. Live counters
-// (used_cpu / used_memory_mb / active_sessions) come from QuotaService and
-// OccupiesSlotScope so the bars and the session list cannot diverge from
-// the budget gate.
+// (used_cpu / used_memory_mb) come from QuotaService and OccupiesSlotScope, the
+// budget gate's own sum; active_sessions also lists paused sessions, each
+// flagged by counts_toward_quota.
 type MyTerminalUsageResponse struct {
 	PlanName                  string                   `json:"plan_name"`
 	PlanSource                string                   `json:"plan_source"`       // "personal" | "organization"

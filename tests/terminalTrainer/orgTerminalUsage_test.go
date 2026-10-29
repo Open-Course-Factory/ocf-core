@@ -305,12 +305,11 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 	assert.Equal(t, 1, len(users), "There should be 1 user entry (student1)")
 }
 
-// TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped verifies that the
-// new OccupyingSlots field reports the quota-relevant count (active + stopped)
-// while ActiveTerminals continues to report only running sessions. This is the
-// SSOT rule documented in models.TerminalStatusesOccupyingSlot: a stopped
-// session still occupies a slot until it is deleted.
-func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
+// TestGetOrgTerminalUsage_OccupyingSlotsExcludesStopped verifies that the
+// OccupyingSlots field reports the budget-relevant count, the SSOT rule in
+// models.TerminalStatesOccupyingSlot: a stopped session holds no CPU/RAM, so
+// it is not counted.
+func TestGetOrgTerminalUsage_OccupyingSlotsExcludesStopped(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
 	org := createTestOrgForHistory(t, db, "owner1")
@@ -333,7 +332,7 @@ func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
 	}
 	require.NoError(t, db.Create(activeTerminal).Error)
 
-	// 1 stopped terminal for student1 — still occupies a slot per
+	// 1 stopped terminal for student1 — consumes nothing per
 	// models.OccupiesSlotScope (the SSOT rule).
 	stoppedTerminal := &models.Terminal{
 		SessionID:         "stopped-session-" + uuid.New().String(),
@@ -370,9 +369,9 @@ func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
 	// active_terminals = 1 (the running one)
 	assert.Equal(t, float64(1), resp["active_terminals"],
 		"active_terminals reports running-only sessions")
-	// occupying_slots = 2 (active + stopped) — matches the quota rule
-	assert.Equal(t, float64(2), resp["occupying_slots"],
-		"occupying_slots must include stopped sessions per OccupiesSlotScope")
+	// occupying_slots = 1 (the running one) — matches the budget rule
+	assert.Equal(t, float64(1), resp["occupying_slots"],
+		"occupying_slots must exclude stopped sessions per OccupiesSlotScope")
 
 	// Per-user breakdown carries both counts as well.
 	users, ok := resp["users"].([]any)
@@ -382,14 +381,13 @@ func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
 	assert.Equal(t, "student1", userEntry["user_id"])
 	assert.Equal(t, float64(1), userEntry["active_count"],
 		"per-user active_count reports running-only sessions")
-	assert.Equal(t, float64(2), userEntry["occupying_slots"],
-		"per-user occupying_slots must include stopped sessions")
+	assert.Equal(t, float64(1), userEntry["occupying_slots"],
+		"per-user occupying_slots must exclude stopped sessions")
 }
 
 // TestGetOrgTerminalUsage_OccupyingSlotsAllStopped verifies that a user whose
-// only sessions are stopped still appears in the breakdown with active_count=0
-// and occupying_slots>0 — the field union must not drop users that have no
-// running sessions.
+// only sessions are stopped consumes nothing of the org's budget: the
+// breakdown reports budget consumption, so they do not appear in it.
 func TestGetOrgTerminalUsage_OccupyingSlotsAllStopped(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
@@ -433,16 +431,11 @@ func TestGetOrgTerminalUsage_OccupyingSlotsAllStopped(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, float64(0), resp["active_terminals"])
-	assert.Equal(t, float64(1), resp["occupying_slots"])
+	assert.Equal(t, float64(0), resp["occupying_slots"])
 
 	users, ok := resp["users"].([]any)
 	require.True(t, ok)
-	require.Equal(t, 1, len(users),
-		"user with only stopped sessions must still appear in the breakdown")
-	userEntry := users[0].(map[string]any)
-	assert.Equal(t, "student2", userEntry["user_id"])
-	assert.Equal(t, float64(0), userEntry["active_count"])
-	assert.Equal(t, float64(1), userEntry["occupying_slots"])
+	assert.Empty(t, users, "a user with only stopped sessions consumes nothing of the budget")
 }
 
 // TestGetOrgTerminalUsage_PlanLimitsFromSubscription verifies that the

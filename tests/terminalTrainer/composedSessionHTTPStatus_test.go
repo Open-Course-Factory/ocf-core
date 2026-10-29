@@ -66,7 +66,7 @@ func (m *mockTerminalTrainerService) GetActiveUserSessions(userID string) (*[]mo
 func (m *mockTerminalTrainerService) StopSession(sessionID string) error {
 	panic("not implemented")
 }
-func (m *mockTerminalTrainerService) StartSession(sessionID string) error {
+func (m *mockTerminalTrainerService) StartSession(sessionID string, _ *paymentModels.SubscriptionPlan) error {
 	panic("not implemented")
 }
 func (m *mockTerminalTrainerService) DeleteSession(sessionID string) error {

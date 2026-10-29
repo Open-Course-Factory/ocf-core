@@ -78,7 +78,7 @@ func (m *capturingTTService) GetActiveUserSessions(string) (*[]ttModels.Terminal
 	return nil, nil
 }
 func (m *capturingTTService) StopSession(string) error   { return nil }
-func (m *capturingTTService) StartSession(string) error  { return nil }
+func (m *capturingTTService) StartSession(string, *paymentModels.SubscriptionPlan) error { return nil }
 func (m *capturingTTService) DeleteSession(string) error { return nil }
 func (m *capturingTTService) HasTerminalAccess(string, string) (bool, error) {
 	return false, nil

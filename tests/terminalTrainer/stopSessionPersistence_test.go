@@ -272,10 +272,11 @@ func TestStopSession_Ephemeral_MarksDeleted(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// (d) End-to-end: stopped persistent stays in budget after original expiry.
+// (d) End-to-end: a persistent stop keeps the row resumable past its original
+// expiry, and frees the budget — a stopped machine holds no CPU/RAM.
 // ---------------------------------------------------------------------------
 
-func TestStopSession_Persistent_StillCountedInBudgetAfterOriginalExpiry(t *testing.T) {
+func TestStopSession_Persistent_ResumableAfterOriginalExpiryAndFreesBudget(t *testing.T) {
 	// idle_until 30 minutes in the future, well past the original expiry.
 	idleUntil := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
 	srv := stopOnlyTTServer(t, ttStoppedBody(idleUntil))
@@ -288,8 +289,8 @@ func TestStopSession_Persistent_StillCountedInBudgetAfterOriginalExpiry(t *testi
 
 	// Original expiry already past — simulates the user's reported scenario:
 	// they stop a session whose creation-time + plan duration has just elapsed
-	// (clock is barely past). Before the fix, OccupiesSlotScope drops the row
-	// the moment now() > original ExpiresAt.
+	// (clock is barely past). The stop must still move ExpiresAt to the reap
+	// window, or the row reads as expired and cannot be resumed.
 	terminal, err := createTestTerminal(db, userID, "running", time.Now().Add(-time.Minute))
 	require.NoError(t, err)
 	terminal.PersistenceMode = "persistent"
@@ -311,12 +312,12 @@ func TestStopSession_Persistent_StillCountedInBudgetAfterOriginalExpiry(t *testi
 	require.True(t, reloaded.ExpiresAt.After(time.Now()),
 		"after persistent stop, ExpiresAt must be in the future, got %v", reloaded.ExpiresAt)
 
-	// Budget panel: GetBudgetUsage must include the stopped persistent.
+	// Budget panel: a stopped machine is not charged.
 	qs := paymentServices.NewQuotaService(db, nil)
 	usedCPU, usedMem, err := qs.GetBudgetUsage(userID, nil)
 	require.NoError(t, err)
-	assert.Equal(t, 2, usedCPU, "stopped persistent terminal must still count CPU in budget")
-	assert.Equal(t, 2048, usedMem, "stopped persistent terminal must still count RAM in budget")
+	assert.Zero(t, usedCPU, "a stopped terminal holds no CPU")
+	assert.Zero(t, usedMem, "a stopped terminal holds no RAM")
 }
 
 // ---------------------------------------------------------------------------

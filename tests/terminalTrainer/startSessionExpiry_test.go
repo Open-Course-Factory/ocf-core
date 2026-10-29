@@ -127,7 +127,7 @@ func TestStartSession_SendsPlanDerivedExpiryToTTBackend(t *testing.T) {
 	require.NoError(t, db.Create(terminal).Error)
 
 	svc := services.NewTerminalTrainerService(db)
-	err = svc.StartSession(sessionID)
+	err = svc.StartSession(sessionID, roomyResumePlan())
 	require.NoError(t, err, "StartSession must succeed against the fake backend")
 
 	// User-observable contract: tt-backend received a body carrying the
@@ -172,7 +172,7 @@ func TestStartSession_NoPlan_DoesNotSendExpiry(t *testing.T) {
 	require.NoError(t, db.Create(terminal).Error)
 
 	svc := services.NewTerminalTrainerService(db)
-	err = svc.StartSession(sessionID)
+	err = svc.StartSession(sessionID, roomyResumePlan())
 	require.NoError(t, err, "StartSession must succeed even without a plan")
 
 	require.Equal(t, 1, rec.calls, "tt-backend /start must be called once")

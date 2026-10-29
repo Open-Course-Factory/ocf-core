@@ -662,8 +662,7 @@ func TestDeleteMyAccount_RemovesMembershipsTokensSettingsSSHKeys(t *testing.T) {
 // ===========================================================================
 
 // seedStoppedTerminal seeds a terminal in a NON-running but non-deleted,
-// non-expired state (stopped). Such a terminal still occupies a slot
-// (TerminalStatesOccupyingSlot) and still allocates disk, so it MUST be
+// non-expired state (stopped). Such a terminal still allocates disk, so it MUST be
 // released on account erasure — but TerminateUserTerminals' running-only scope
 // silently skips it today.
 func seedStoppedTerminal(t *testing.T, db *gorm.DB, userID string) *terminalModels.Terminal {
@@ -797,7 +796,7 @@ func TestDeleteMyAccount_ProceedsWhenTtBackendRevocationFails(t *testing.T) {
 }
 
 // H3 — ALL non-deleted terminals must be released, not just running ones. A
-// stopped terminal still occupies a slot and disk; TerminateUserTerminals is
+// stopped terminal still holds its disk; TerminateUserTerminals is
 // invoked with the running-only scope today, so a stopped terminal survives an
 // account erasure with its resources reserved. After erasure a stopped
 // terminal must be State=StateDeleted.

@@ -1,7 +1,6 @@
 // tests/terminalTrainer/syncStoppedPersistentExpiry_test.go
 //
-// Sync-path contract under D6' (supersedes D6, locked 2026-05-28): "a stop
-// is a stop". When tt-backend auto-stops a session, SyncUserSessions reaches
+// Sync-path contract: when tt-backend auto-stops a session, SyncUserSessions reaches
 // the local row through step 5a and routes through the SSOT helper
 // markSessionStopped, which:
 //   - sets state="stopped"
@@ -10,12 +9,12 @@
 //
 // The persistence_mode distinction is NOT honored here — auto-stopped
 // ephemeral goes through the same transition as auto-stopped persistent.
-// The slot stays reserved until sync's step 5b observes that tt-backend
-// has lost the container (then marks the local row deleted).
+// The row stays resumable until sync's step 5b observes that tt-backend
+// has lost the container (then marks the local row deleted). It consumes no
+// budget meanwhile: a stopped machine holds only its disk.
 //
-// Original motivation (pre-D6'): commit ae8aba7 introduced the persistent-only
-// extension; commit c9814d1 added the helper. D6' generalises both to
-// "any stop", killing the persistence_mode branch.
+// Original motivation: commit ae8aba7 introduced the persistent-only
+// extension; commit c9814d1 added the helper, later generalised to any stop.
 package terminalTrainer_tests
 
 import (
@@ -82,7 +81,7 @@ func syncSessionTTServer(
 
 // ---------------------------------------------------------------------------
 // (a) Auto-stopped: sync must extend ExpiresAt to idle_until — for BOTH
-//     persistence modes (D6': "a stop is a stop").
+//     persistence modes.
 // ---------------------------------------------------------------------------
 
 func TestSyncUserSessions_AutoStopped_ExtendsExpiresAtToIdleUntil(t *testing.T) {
@@ -144,7 +143,7 @@ func TestSyncUserSessions_AutoStopped_ExtendsExpiresAtToIdleUntil(t *testing.T) 
 			// ExpiresAt must be aligned with idle_until (tolerate 1s clock drift).
 			delta := reloaded.ExpiresAt.Sub(idleUntil)
 			if delta < -time.Second || delta > time.Second {
-				t.Errorf("expected ExpiresAt ~= idleUntil (%v), got %v (delta=%v) — sync must extend expires_at on every stopped row (D6') so OccupiesSlotScope keeps counting them",
+				t.Errorf("expected ExpiresAt ~= idleUntil (%v), got %v (delta=%v) — sync must extend expires_at on every stopped row so it stays resumable",
 					idleUntil, reloaded.ExpiresAt, delta)
 			}
 			assert.True(t, reloaded.ExpiresAt.After(time.Now()),

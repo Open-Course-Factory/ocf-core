@@ -497,7 +497,7 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 //	@Success		200	{object}	string
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		404	{object}	errors.APIError	"Session not found"
-//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		403	{object}	errors.APIError	"Access denied, or budget exhausted (source=budget, reason=budget_exhausted)"
 //	@Router			/terminals/{id}/start [post]
 func (tc *terminalController) StartSession(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
@@ -532,15 +532,17 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 	// produces the same answer the create path does, and avoids the
 	// body-less fallback to LargestSize that previously 503'd every Resume
 	// on a well-utilised host.
-	if planVal, exists := ctx.Get("subscription_plan"); exists && planVal != nil {
-		if plan, ok := planVal.(*paymentModels.SubscriptionPlan); ok {
-			if services.EnforceLaunchCapacity(ctx, plan, terminal.MachineSize, tc.service) {
-				return
-			}
-		}
+	plan, _ := ctx.Value("subscription_plan").(*paymentModels.SubscriptionPlan)
+	if plan != nil && services.EnforceLaunchCapacity(ctx, plan, terminal.MachineSize, tc.service) {
+		return
 	}
 
-	if err := tc.service.StartSession(terminal.SessionID); err != nil {
+	// A stopped machine holds no budget, so the resume is charged against the
+	// plan and refused with the creation path's 403 when it does not fit.
+	if err := tc.service.StartSession(terminal.SessionID, plan); err != nil {
+		if httperrors.WriteBudgetRejection(ctx, err, userId) {
+			return
+		}
 		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -702,6 +704,7 @@ func toTerminalOutputs(terminals []models.Terminal) []dto.TerminalOutput {
 			OrganizationID:   terminal.OrganizationID,
 			ComposedFeatures: terminal.ComposedFeatures,
 			CreatedAt:        terminal.CreatedAt,
+			CountsTowardQuota: terminal.CountsTowardQuota(),
 		})
 	}
 	return outputs

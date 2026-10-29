@@ -14,7 +14,8 @@
 //     same OccupiesSlotScope + member-join.
 //
 // OccupiesSlotScope predicate (SSOT):
-//   state IN ('running','stopped') AND deleted_at IS NULL AND expires_at > NOW().
+//   state IN ('running','starting') AND deleted_at IS NULL AND expires_at > NOW().
+// A stopped terminal holds no CPU/RAM, so it is not counted.
 //
 // Today GetOrgTerminalUsage computes its own totals with inline queries keyed
 // on the terminals.organization_id COLUMN (not the member-join) and a
@@ -76,23 +77,22 @@ func TestGetOrgTerminalUsage_TotalsMatchEnforcedBudget(t *testing.T) {
 	require.NoError(t, db.Create(orgSub).Error)
 
 	// Seed terminals owned by the OWNER (an active member) with a known mix.
-	// Counting rows (per OccupiesSlotScope: running/stopped, live, not deleted):
+	// Counting rows (per OccupiesSlotScope: running/starting, live, not deleted):
 	const (
-		runningCPU = 2000
-		runningMem = 1024
-		stoppedCPU = 1000
-		stoppedMem = 512
-		persistCPU = 4000
-		persistMem = 2048
+		runningCPU  = 2000
+		runningMem  = 1024
+		startingCPU = 4000
+		startingMem = 2048
 	)
 	// running terminal — counts.
 	insertExistingTerminal(t, db, "owner1", &org.ID, "running", "ephemeral", runningCPU, runningMem)
-	// stopped, not expired, not persistent — counts under OccupiesSlotScope.
-	insertExistingTerminal(t, db, "owner1", &org.ID, "stopped", "ephemeral", stoppedCPU, stoppedMem)
-	// stopped + persistent — counts.
-	insertExistingTerminal(t, db, "owner1", &org.ID, "stopped", "persistent", persistCPU, persistMem)
+	// starting (a reservation) — counts.
+	insertExistingTerminal(t, db, "owner1", &org.ID, "starting", "persistent", startingCPU, startingMem)
 
 	// Non-counting rows:
+	// stopped terminals, ephemeral or persistent — hold no CPU/RAM.
+	insertExistingTerminal(t, db, "owner1", &org.ID, "stopped", "ephemeral", 1000, 512)
+	insertExistingTerminal(t, db, "owner1", &org.ID, "stopped", "persistent", 3000, 1536)
 	// expired terminal (expires_at in the past) — must NOT count.
 	insertExistingTerminalWithExpiry(t, db, "owner1", &org.ID, "running", "ephemeral", 9999, 9999, time.Now().Add(-time.Hour))
 	// soft-deleted terminal — must NOT count.
@@ -109,9 +109,9 @@ func TestGetOrgTerminalUsage_TotalsMatchEnforcedBudget(t *testing.T) {
 	insertExistingTerminal(t, db, "non-member", &org.ID, "running", "ephemeral", 7000, 7000)
 
 	// Hand-computed expected sums over the counting rows (owner1 only).
-	expectedCPU := runningCPU + stoppedCPU + persistCPU // 7000
-	expectedMem := runningMem + stoppedMem + persistMem // 3584
-	const expectedSlots = int64(3)
+	expectedCPU := runningCPU + startingCPU // 6000
+	expectedMem := runningMem + startingMem // 3072
+	const expectedSlots = int64(2)
 
 	// Enforced source of truth.
 	qs := paymentServices.NewQuotaService(db, nil)
@@ -149,7 +149,7 @@ func TestGetOrgTerminalUsage_TotalsMatchEnforcedBudget(t *testing.T) {
 		"sum of per-user OccupyingSlots must equal CountOrgOccupiedSlots")
 
 	// The non-member's org-tagged terminal's CPU (7000) must NOT be included.
-	// If it were, UsedCPU would be 14000 (column semantics) instead of 7000.
+	// If it were, UsedCPU would be 13000 (column semantics) instead of 6000.
 	assert.NotEqual(t, expectedCPU+7000, resp.Quota.UsedCPU,
 		"non-member org-tagged terminal must be excluded (member-join, not org column)")
 	for _, u := range resp.Users {
@@ -158,19 +158,11 @@ func TestGetOrgTerminalUsage_TotalsMatchEnforcedBudget(t *testing.T) {
 	}
 }
 
-// TestGetOrgTerminalUsage_StoppedSessionCountedAndConsistentWithCpu pins the
-// prod "non-zero sessions / disagreeing CPU" bug. A single stopped-EPHEMERAL
-// terminal for a member occupies a slot (OccupiesSlotScope counts stopped) and
-// carries CPU under the enforced budget. But the dashboard's CPU sum uses the
-// divergent `state='running' OR persistence_mode='persistent'` predicate, which
-// drops a stopped-ephemeral row — so today it reports a non-zero slot count next
-// to ZERO used CPU, the same internal inconsistency users saw in prod.
-//
-// Contract: we assert on OccupyingSlots (the slot-occupying count) — the field
-// that mirrors OccupiesSlotScope and the enforced budget. ActiveTerminals is a
-// running-only display field and is intentionally allowed to be 0 here; it is
-// the slot count that must not disagree with the budgeted CPU.
-func TestGetOrgTerminalUsage_StoppedSessionCountedAndConsistentWithCpu(t *testing.T) {
+// TestGetOrgTerminalUsage_StoppedSessionFreesBudgetConsistently pins that a
+// member whose only terminal is stopped consumes nothing of the org budget, and
+// that the dashboard's slot count and CPU/RAM agree on it with the enforced
+// budget — a stopped machine holds only its disk.
+func TestGetOrgTerminalUsage_StoppedSessionFreesBudgetConsistently(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
 	plan := &paymentModels.SubscriptionPlan{
@@ -198,20 +190,17 @@ func TestGetOrgTerminalUsage_StoppedSessionCountedAndConsistentWithCpu(t *testin
 
 	const stoppedCPU = 2000
 	const stoppedMem = 1024
-	// A single stopped + EPHEMERAL terminal for a member. It occupies a slot
-	// (OccupiesSlotScope counts stopped) but is dropped by the dashboard's
-	// running-or-persistent CPU predicate — the exact divergence under test.
 	insertExistingTerminal(t, db, "student1", &org.ID, "stopped", "ephemeral", stoppedCPU, stoppedMem)
 
 	// Enforced numbers.
 	qs := paymentServices.NewQuotaService(db, nil)
 	budgetCPU, budgetMem, err := qs.GetBudgetUsage("", &org.ID)
 	require.NoError(t, err)
-	require.Equal(t, stoppedCPU, budgetCPU)
-	require.Equal(t, stoppedMem, budgetMem)
+	require.Zero(t, budgetCPU, "a stopped terminal holds no CPU")
+	require.Zero(t, budgetMem, "a stopped terminal holds no RAM")
 	slots, err := terminalModels.CountOrgOccupiedSlots(db, org.ID)
 	require.NoError(t, err)
-	require.Equal(t, int64(1), slots)
+	require.Zero(t, slots)
 
 	svc := terminalServices.NewTerminalTrainerService(db)
 	resp, err := svc.GetOrgTerminalUsage(org.ID)
@@ -222,12 +211,7 @@ func TestGetOrgTerminalUsage_StoppedSessionCountedAndConsistentWithCpu(t *testin
 	assert.Equal(t, budgetCPU, resp.Quota.UsedCPU)
 	assert.Equal(t, budgetMem, resp.Quota.UsedMemoryMB)
 
-	// The headline slot-occupying count must be >= 1 (NOT 0) — the count and
-	// the CPU cannot disagree.
-	assert.GreaterOrEqual(t, resp.OccupyingSlots, 1,
-		"a stopped session that occupies a slot must be counted, not reported as 0")
-
-	// And the count must equal the enforced slot count.
+	// The count must equal the enforced slot count.
 	assert.Equal(t, int(slots), resp.OccupyingSlots,
 		"headline occupying count must equal CountOrgOccupiedSlots")
 }

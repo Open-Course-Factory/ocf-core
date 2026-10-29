@@ -2,6 +2,7 @@ package models
 
 import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,11 +42,14 @@ const (
 	StateRevoked TerminalState = "revoked"
 )
 
-// TerminalStatesOccupyingSlot are the state values that count toward
-// the "occupies a slot" predicate used by the org dashboard and other
-// listing surfaces. Stopped sessions still occupy a slot because they
-// preserve disk and can be resumed — only deleted (or other
-// terminal-state) rows free a slot.
+// TerminalStatesOccupyingSlot are the state values whose terminals consume
+// the plan's CPU/RAM budget: a machine is charged only while it runs. A
+// stopped (paused) machine is NOT charged — an Incus stop releases its CPU and
+// RAM and keeps only the disk — so it frees its share of the budget, and
+// resuming it must pass the budget gate again (terminalLifecycleService.
+// StartSession). This reverses decision D6' of 2026-05-28 ("a stop is a stop,
+// stopped sessions count"), which charged a paused machine for resources it
+// no longer held.
 //
 // StateStarting is included because the composed-session path reserves
 // budget by inserting a `starting` row INSIDE a locked transaction
@@ -55,16 +59,19 @@ const (
 // starts would each read a pre-reservation sum and overshoot. The
 // reservation carries a short expires_at TTL, so the OccupiesSlotScope
 // `expires_at > NOW()` clause auto-reaps abandoned reservations without
-// a sweeper. Note RunningDisplayScope stays `running`-only, so a
-// transient reservation never appears in the user's live-session list.
+// a sweeper.
 //
 // GetUserTerminalUsage reads the budget SUM through OccupiesSlotScope (so
-// reservations correctly count toward the bars), but filters the
-// per-session LIST it returns to the user with
-// IsReservationPlaceholderSessionID, so a placeholder — which has no
-// console URL and may linger up to its TTL after a crash — is never shown
-// as a fake "active session".
-var TerminalStatesOccupyingSlot = []TerminalState{StateRunning, StateStopped, StateStarting}
+// reservations correctly count toward the bars), but lists sessions through
+// UsageListScope, which adds the paused ones, and drops reservation
+// placeholders (IsReservationPlaceholderSessionID) — a placeholder has no
+// console URL and may linger up to its TTL after a crash.
+var TerminalStatesOccupyingSlot = []TerminalState{StateRunning, StateStarting}
+
+// terminalStatesListedInUsage are the states of the sessions the usage panel
+// lists: the ones consuming the budget plus the paused ones, which the user
+// still has and can resume.
+var terminalStatesListedInUsage = append([]TerminalState{StateStopped}, TerminalStatesOccupyingSlot...)
 
 // TerminalReservationSessionIDPrefix marks a Terminal row as a budget
 // reservation placeholder rather than a real session. The composed-session
@@ -88,35 +95,25 @@ func IsReservationPlaceholderSessionID(sessionID string) bool {
 	return strings.HasPrefix(sessionID, TerminalReservationSessionIDPrefix)
 }
 
-// OccupiesSlotScope is a GORM scope that filters terminals which still
-// "occupy capacity" — both in the slot sense (disk/identity reserved)
-// AND in the budget sense (CPU/RAM reserved). Single source of truth
-// for every counting/listing surface that needs to know "is this row
-// still consuming the user's plan?".
+// OccupiesSlotScope is a GORM scope that filters terminals which consume
+// the plan's CPU/RAM budget. Single source of truth for every counting
+// surface that needs to know "is this row consuming the user's plan?".
 //
 // Used by:
-//   - QuotaService.sumActiveResources* — the CPU/RAM budget gate.
+//   - QuotaService.sumActiveResources* / lockAndSumActiveResources — the
+//     CPU/RAM budget gate.
 //   - QuotaService.GetBudgetUsage — the dashboard "Utilisation Actuelle"
 //     bars.
-//   - GetUserTerminalUsage — the dashboard session list.
 //   - CountUserOccupiedSlots / CountOrgOccupiedSlots — org dashboard.
 //
 // The canonical rule is:
 //
-//	state IN ('running', 'stopped')   -- lifecycle still owes capacity
+//	state IN ('running', 'starting')  -- a stopped machine holds no CPU/RAM
 //	AND deleted_at IS NULL            -- gorm-soft-delete excluded
 //	AND expires_at > NOW()            -- past-expiry rows are "zombie" slots
 //
-// Note (decision D6' — locked 2026-05-28, supersedes D6 from
-// project_resource_quota_refactor.md): the persistence_mode distinction
-// is NOT part of this predicate. "A stop is a stop" — every stopped
-// session reserves its slot until tt-backend confirms the container is
-// gone, at which point SyncUserSessions step 5b marks the row deleted
-// and capacity is freed. The previous design carried a separate
-// BudgetOccupyingScope that excluded stopped ephemeral; that scope was
-// removed because it caused user-visible drift between the dashboard
-// session list and the budget bars (commit 1dcc19a introduced it; the
-// supersession deletes it).
+// See TerminalStatesOccupyingSlot for why stopped sessions are not charged.
+// Terminal.CountsTowardQuota is this rule for a row in memory.
 //
 // The expires_at clause aligns the backend with the UI's
 // `getEffectiveSessionState` invariant, which treats any row whose
@@ -142,17 +139,39 @@ func IsReservationPlaceholderSessionID(sessionID string) bool {
 //	db.Table("terminals").Scopes(models.OccupiesSlotScope).
 //	    Where("terminals.user_id = ?", userID).Count(&count)
 func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
+	return liveInStates(tx, TerminalStatesOccupyingSlot)
+}
+
+// UsageListScope filters the sessions the usage panel lists: the ones
+// OccupiesSlotScope charges plus the paused ones, which consume nothing but
+// are still the user's. Each listed row says whether it is charged through
+// Terminal.CountsTowardQuota.
+func UsageListScope(tx *gorm.DB) *gorm.DB {
+	return liveInStates(tx, terminalStatesListedInUsage)
+}
+
+func liveInStates(tx *gorm.DB, states []TerminalState) *gorm.DB {
 	return tx.Where(
 		"terminals.state IN ? AND terminals.deleted_at IS NULL AND terminals.expires_at > ?",
-		TerminalStatesOccupyingSlot,
+		states,
 		time.Now(),
 	)
 }
 
+// CountsTowardQuota is OccupiesSlotScope applied to a row already in memory:
+// does this terminal consume the plan's CPU/RAM budget right now?
+// TestCountsTowardQuota_MatchesOccupiesSlotScope pins the two together.
+func (t *Terminal) CountsTowardQuota() bool {
+	if t == nil || t.DeletedAt.Valid {
+		return false
+	}
+	return slices.Contains(TerminalStatesOccupyingSlot, t.State) && t.ExpiresAt.After(time.Now())
+}
+
 // RunningDisplayScope is a GORM scope that filters terminals currently
 // running and usable — the "is this terminal alive RIGHT NOW?" predicate.
-// Distinct from OccupiesSlotScope, which also counts 'stopped' sessions
-// for quota purposes. Use this for display/listing surfaces that want to
+// Distinct from OccupiesSlotScope, which also counts 'starting'
+// reservations for quota purposes. Use this for display/listing surfaces that want to
 // show only sessions the user can interact with this instant.
 //
 // The canonical rule is:
@@ -314,7 +333,7 @@ func SupervisableByJoinedGroupOrgScope(groupAlias string) func(*gorm.DB) *gorm.D
 }
 
 // CountUserOccupiedSlots returns the number of terminals owned by the
-// user that still "occupy a slot" (running or stopped, not expired,
+// user that consume the budget (running or starting, not expired,
 // not deleted). If orgID is nil, counts all terminals across all orgs
 // (and personal). If orgID is non-nil, counts only terminals tied to
 // that org context via the direct terminals.organization_id column.

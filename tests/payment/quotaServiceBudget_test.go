@@ -5,12 +5,11 @@
 // The service sums per-terminal CPU/RAM footprints against the plan's
 // MaxCPU/MaxMemoryMB caps.
 //
-// Lifecycle rule under test (D6' — supersedes D6, locked 2026-05-28):
-// a terminal counts against the budget iff state IN ('running','stopped')
-// AND deleted_at IS NULL AND expires_at > NOW(). The persistence_mode
-// distinction is irrelevant for quota — "a stop is a stop". Stopped
-// rows reserve their slot until tt-backend confirms the container is
-// gone (sync's step 5b then marks the row deleted).
+// Lifecycle rule under test (2026-10-29, reverses D6'):
+// a terminal counts against the budget iff state IN ('running','starting')
+// AND deleted_at IS NULL AND expires_at > NOW(). A stopped machine holds
+// only its disk — an Incus stop releases CPU and RAM — so it is not
+// charged, whatever its persistence_mode.
 package payment_tests
 
 import (
@@ -201,12 +200,10 @@ func TestQuotaService_CheckBudget_MixedActiveSessions(t *testing.T) {
 	assert.Equal(t, 512, check.RemainingMemMB, "4096 - (1024+512) - 2048 = 512")
 }
 
-// TestQuotaService_CheckBudget_StoppedCountsRegardlessOfPersistence pins the
-// new rule (D6', supersedes D6): every stopped session — persistent OR
-// ephemeral — counts against the budget until tt-backend confirms the
-// container is gone (at which point sync's step 5b marks the row deleted).
-// The persistence_mode distinction is UX-only, not budget logic.
-func TestQuotaService_CheckBudget_StoppedCountsRegardlessOfPersistence(t *testing.T) {
+// TestQuotaService_CheckBudget_StoppedFreesBudgetRegardlessOfPersistence pins
+// that no stopped session — persistent OR ephemeral — counts against the
+// budget: a stopped machine holds no CPU/RAM.
+func TestQuotaService_CheckBudget_StoppedFreesBudgetRegardlessOfPersistence(t *testing.T) {
 	cases := []struct {
 		name        string
 		persistence string
@@ -222,25 +219,23 @@ func TestQuotaService_CheckBudget_StoppedCountsRegardlessOfPersistence(t *testin
 
 			// Budget: 4 vCPU / 2 GiB = 4000 mCPU / 2048 MiB. One stopped
 			// session of size M (2000 mCPU / 1g) in the persistence mode
-			// under test. Request L (4000 mCPU / 2g): 2000 used + 4000
-			// requested > 4000 cap → reject.
+			// under test. Request L (4000 mCPU / 2g): the stopped session
+			// uses nothing, so the whole budget fits it.
 			plan := budgetPlan(t, db, "BudgetStopped-"+tc.persistence, 4000, 2048, nil)
 			insertTerminal(t, db, userID, nil, "stopped", tc.persistence, 2000, 1024)
 
 			check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 2048)
 			require.NoError(t, err)
 			require.NotNil(t, check)
-			assert.False(t, check.Allowed,
-				"a stop is a stop: stopped %s session must count against budget", tc.persistence)
+			assert.True(t, check.Allowed,
+				"a stopped %s session holds no CPU/RAM and must not count against budget", tc.persistence)
 
-			// And GetBudgetUsage must reflect the reservation (the dashboard
-			// /Utilisation Actuelle bars read through the same path).
+			// And GetBudgetUsage agrees (the dashboard /Utilisation Actuelle
+			// bars read through the same path).
 			usedCPU, usedMem, err := newQuotaSvc(t, db).GetBudgetUsage(userID, nil)
 			require.NoError(t, err)
-			assert.Equal(t, 2000, usedCPU,
-				"stopped %s session must report CPU usage in mCPU", tc.persistence)
-			assert.Equal(t, 1024, usedMem,
-				"stopped %s session must report memory usage", tc.persistence)
+			assert.Zero(t, usedCPU, "stopped %s session uses no CPU", tc.persistence)
+			assert.Zero(t, usedMem, "stopped %s session uses no memory", tc.persistence)
 		})
 	}
 }

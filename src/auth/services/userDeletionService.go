@@ -241,8 +241,8 @@ func (s *userDeletionService) cascadeOCFData(tx *gorm.DB, userID string) error {
 // terminateTerminals performs the real terminal teardown (State -> StateDeleted).
 // It first runs the canonical payment-side helper (so the running-terminal path
 // stays identical to subscription cancellation), then releases EVERY remaining
-// non-deleted terminal — stopped/hibernating sessions still occupy a slot and
-// disk, so erasure must free them too. TerminateUserTerminals is shared with the
+// non-deleted terminal — stopped/hibernating sessions still hold disk, so
+// erasure must free them too. TerminateUserTerminals is shared with the
 // license/Stripe cancel paths and intentionally only releases running terminals;
 // widening it there would wipe stopped sessions on a mere sub-cancel, so the
 // extra scope is applied here in the erasure cascade only. Runs on the cascade

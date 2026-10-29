@@ -43,6 +43,9 @@
 //     terminated. The TestCount*_ExpiredByDate tests below pin the corrected
 //     behavior. The "expired status" tests above remain valid: a row with
 //     status='expired' is still excluded the same way it always was.
+//
+//   - UPDATE (2026-10-29): stopped rows no longer count — a stopped machine
+//     holds no CPU/RAM. The scope is now state IN ('running','starting').
 package terminalTrainer_tests
 
 import (
@@ -103,19 +106,19 @@ func TestCountUserOccupiedSlots(t *testing.T) {
 			expected: 1,
 		},
 		{
-			name: "single stopped terminal still occupies a slot (SSOT rule)",
+			name: "single stopped terminal consumes nothing (stopped frees CPU/RAM)",
 			seed: func(t *testing.T, db *gorm.DB, userID string) {
 				seedTerminal(t, db, userID, "stopped", nil, false)
 			},
-			expected: 1,
+			expected: 0,
 		},
 		{
-			name: "active + stopped both count",
+			name: "active + stopped → only the active one counts",
 			seed: func(t *testing.T, db *gorm.DB, userID string) {
 				seedTerminal(t, db, userID, "active", nil, false)
 				seedTerminal(t, db, userID, "stopped", nil, false)
 			},
-			expected: 2,
+			expected: 1,
 		},
 		{
 			name: "expired status is excluded",
@@ -134,14 +137,14 @@ func TestCountUserOccupiedSlots(t *testing.T) {
 			expected: 1,
 		},
 		{
-			name: "active + stopped + expired + deleted → 2",
+			name: "active + stopped + expired + deleted → 1",
 			seed: func(t *testing.T, db *gorm.DB, userID string) {
 				seedTerminal(t, db, userID, "active", nil, false)
 				seedTerminal(t, db, userID, "stopped", nil, false)
 				seedTerminal(t, db, userID, "expired", nil, false)
 				seedTerminal(t, db, userID, "active", nil, true)
 			},
-			expected: 2,
+			expected: 1,
 		},
 		{
 			name:     "user with no terminals returns 0",
@@ -232,7 +235,7 @@ func TestCountOrgOccupiedSlots(t *testing.T) {
 		assert.Equal(t, int64(2), got)
 	})
 
-	t.Run("two members, one active + one stopped → 2", func(t *testing.T) {
+	t.Run("two members, one active + one stopped → 1", func(t *testing.T) {
 		db := freshTestDB(t)
 		org := createTestOrgForHistory(t, db, "owner-2")
 		createTestOrgMember(t, db, org.ID, "owner-2", orgModels.OrgRoleOwner)
@@ -243,8 +246,8 @@ func TestCountOrgOccupiedSlots(t *testing.T) {
 
 		got, err := models.CountOrgOccupiedSlots(db, org.ID)
 		require.NoError(t, err)
-		assert.Equal(t, int64(2), got,
-			"stopped terminals must still count against org quota (SSOT)")
+		assert.Equal(t, int64(1), got,
+			"a stopped terminal holds no CPU/RAM, so it does not count against the org")
 	})
 
 	t.Run("one member with active + expired → 1", func(t *testing.T) {
@@ -351,14 +354,14 @@ func TestCountUserOccupiedSlots_ExpiredByDate(t *testing.T) {
 			expected: 1,
 		},
 		{
-			name: "stopped with expires_at in the future is counted (disk-preserved resumable)",
+			name: "stopped with expires_at in the future is not counted (paused, holds only disk)",
 			seed: func(t *testing.T, db *gorm.DB, userID string) {
 				seedTerminalWithExpiry(t, db, userID, "stopped", nil, future)
 			},
-			expected: 1,
+			expected: 0,
 		},
 		{
-			name: "mix of 2 future + 3 past returns 2",
+			name: "mix of 2 future (one stopped) + 3 past returns 1",
 			seed: func(t *testing.T, db *gorm.DB, userID string) {
 				seedTerminalWithExpiry(t, db, userID, "active", nil, future)
 				seedTerminalWithExpiry(t, db, userID, "stopped", nil, future)
@@ -366,7 +369,7 @@ func TestCountUserOccupiedSlots_ExpiredByDate(t *testing.T) {
 				seedTerminalWithExpiry(t, db, userID, "stopped", nil, past)
 				seedTerminalWithExpiry(t, db, userID, "active", nil, past)
 			},
-			expected: 2,
+			expected: 1,
 		},
 	}
 

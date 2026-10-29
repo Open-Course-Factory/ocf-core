@@ -787,14 +787,16 @@ func TestResume_PausedProvisioningRun_CreatesNoTerminal(t *testing.T) {
 	assert.Empty(t, tt.builtSteps())
 }
 
-// failTerminalUpdates makes every UPDATE of the terminals table fail on db
-// until the test ends: the database refusing the write that records a lost
-// container.
+// failTerminalUpdates makes every UPDATE of the terminals table that marks a
+// terminal deleted fail on db until the test ends: the database refusing the
+// write that records a lost container. Other terminal writes — the resume's
+// budget reservation before tt-backend is called — still go through.
 func failTerminalUpdates(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	const name = "test:fail-terminal-updates"
 	require.NoError(t, db.Callback().Update().Before("gorm:update").Register(name, func(tx *gorm.DB) {
-		if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "terminals" {
+		terminal, ok := tx.Statement.Dest.(*terminalModels.Terminal)
+		if ok && terminal.State == terminalModels.StateDeleted {
 			_ = tx.AddError(fmt.Errorf("terminals update refused by the test"))
 		}
 	}))

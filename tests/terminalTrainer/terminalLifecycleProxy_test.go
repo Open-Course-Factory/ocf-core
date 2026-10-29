@@ -153,9 +153,7 @@ func TestStopSession_CallsNewStopEndpoint(t *testing.T) {
 	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
 	require.NoError(t, err)
 	// Use persistent mode here; ephemeral stops are exercised separately
-	// by TestStopSession_Ephemeral_AlsoMarksStopped_NotDeleted. Under D6'
-	// (locked 2026-05-28), both modes transition to state="stopped" via
-	// the same markSessionStopped helper — the distinction is UX-only.
+	// by TestStopSession_Ephemeral_AlsoMarksStopped_NotDeleted.
 	terminal.PersistenceMode = "persistent"
 	require.NoError(t, db.Save(terminal).Error)
 
@@ -202,7 +200,7 @@ func TestStartSession_Success(t *testing.T) {
 	require.NoError(t, db.Save(terminal).Error)
 
 	svc := services.NewTerminalTrainerService(db)
-	require.NoError(t, svc.StartSession(terminal.SessionID))
+	require.NoError(t, svc.StartSession(terminal.SessionID, roomyResumePlan()))
 
 	assert.True(t,
 		rec.sawCall(http.MethodPost, "/sessions/"+terminal.SessionID+"/start"),
@@ -266,7 +264,7 @@ func TestStartSession_SyncsExpiresAtFromResponse(t *testing.T) {
 	require.NoError(t, db.Save(terminal).Error)
 
 	svc := services.NewTerminalTrainerService(db)
-	require.NoError(t, svc.StartSession(terminal.SessionID))
+	require.NoError(t, svc.StartSession(terminal.SessionID, roomyResumePlan()))
 
 	// The local row's ExpiresAt MUST be updated to the value returned by
 	// tt-backend. Without the fix it stays in the past.
@@ -294,7 +292,7 @@ func TestStartSession_NotFound(t *testing.T) {
 	db := freshTestDB(t)
 	svc := services.NewTerminalTrainerService(db)
 
-	err := svc.StartSession("nonexistent-session")
+	err := svc.StartSession("nonexistent-session", roomyResumePlan())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "session not found")
 

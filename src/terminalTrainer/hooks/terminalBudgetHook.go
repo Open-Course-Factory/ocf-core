@@ -10,8 +10,8 @@
 //  2. Enforces the user's (or org's) effective plan budget atomically.
 //     The check is performed inside a transaction with
 //     `SELECT ... FOR UPDATE` on the rows that contribute to current
-//     usage (running OR stopped — D6': "a stop is a stop", the
-//     persistence_mode distinction is UX-only and not budget logic) so
+//     usage (running OR starting — a stopped machine holds no CPU/RAM,
+//     see models.TerminalStatesOccupyingSlot) so
 //     two concurrent session starts cannot both observe enough budget
 //     for the same slice of resources.
 //

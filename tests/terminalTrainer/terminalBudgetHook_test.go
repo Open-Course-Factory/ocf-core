@@ -294,17 +294,17 @@ func TestTerminalBudgetHook_BeforeCreate_RejectedOverBudget_Memory(t *testing.T)
 }
 
 // ---------------------------------------------------------------------------
-// 6) Persistent stopped sessions count against the budget
+// 6) Stopped sessions do not count: a stopped machine holds no CPU/RAM
 // ---------------------------------------------------------------------------
 
-func TestTerminalBudgetHook_BeforeCreate_PersistentStoppedCounts(t *testing.T) {
+func TestTerminalBudgetHook_BeforeCreate_PersistentStoppedDoesNotCount(t *testing.T) {
 	db := freshTestDB(t)
 	plan := budgetPlanInMem("Tight", 2000, 1024, nil) // 2000 mCPU / 1g — exactly one M
 	hook := newHookForTest(db, plan, nil)
 
 	user := "u-persistent-stopped"
-	// One persistent + stopped M-size terminal already exists. By D6 it
-	// counts: full budget consumed.
+	// One persistent + stopped M-size terminal already exists. It keeps only
+	// its disk, so the whole budget is free.
 	insertExistingTerminal(t, db, user, nil, "stopped", "persistent", 2000, 1024)
 
 	terminal := &terminalModels.Terminal{
@@ -312,25 +312,16 @@ func TestTerminalBudgetHook_BeforeCreate_PersistentStoppedCounts(t *testing.T) {
 		MachineSize: "M",
 	}
 
-	err := execBeforeCreate(hook, terminal)
-	require.Error(t, err, "persistent stopped session must count → second M is rejected")
-	var budgetErr *terminalHooks.ErrBudgetExhausted
-	require.ErrorAs(t, err, &budgetErr)
+	require.NoError(t, execBeforeCreate(hook, terminal),
+		"a stopped persistent session holds no CPU/RAM → the new M fits")
 }
 
-// ---------------------------------------------------------------------------
-// 7) Stopped ephemeral sessions DO count (D6', supersedes D6)
-// ---------------------------------------------------------------------------
-
-func TestTerminalBudgetHook_BeforeCreate_EphemeralStoppedAlsoCounts(t *testing.T) {
+func TestTerminalBudgetHook_BeforeCreate_EphemeralStoppedDoesNotCount(t *testing.T) {
 	db := freshTestDB(t)
 	plan := budgetPlanInMem("Tight", 2000, 1024, nil)
 	hook := newHookForTest(db, plan, nil)
 
 	user := "u-ephemeral-stopped"
-	// One ephemeral + stopped M-size terminal. Under D6' (supersedes D6),
-	// "a stop is a stop": it MUST count against the budget until sync
-	// confirms tt-backend reaped the container.
 	insertExistingTerminal(t, db, user, nil, "stopped", "ephemeral", 2000, 1024)
 
 	terminal := &terminalModels.Terminal{
@@ -338,10 +329,8 @@ func TestTerminalBudgetHook_BeforeCreate_EphemeralStoppedAlsoCounts(t *testing.T
 		MachineSize: "M",
 	}
 
-	err := execBeforeCreate(hook, terminal)
-	require.Error(t, err, "stopped ephemeral must count → new M is rejected (D6')")
-	var budgetErr *terminalHooks.ErrBudgetExhausted
-	require.ErrorAs(t, err, &budgetErr)
+	require.NoError(t, execBeforeCreate(hook, terminal),
+		"a stopped ephemeral session holds no CPU/RAM → the new M fits")
 }
 
 // Past-expiry zombies must not count against the locked budget sum either.

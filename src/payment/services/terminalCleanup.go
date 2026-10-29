@@ -24,14 +24,13 @@ import (
 // caused permanent data loss after the stop→delete change).
 //
 // Semantics: "Terminate" releases the resources — a terminated subscription must not
-// continue to consume quota. Per the SSOT consolidation in MR !218
-// (models.OccupiesSlotScope counts state IN (StateRunning, StateStopped)),
-// StateStopped terminals still occupy a slot. To actually free both the slot
-// and the CPU/RAM budget we mark them State=StateRevoked — a distinct billing-
+// continue to consume quota. Only running terminals consume the CPU/RAM budget
+// (models.OccupiesSlotScope; a stopped machine holds only its disk), so only
+// those are revoked: they are marked State=StateRevoked — a distinct billing-
 // revocation END state (issue #388) that, like StateDeleted, is excluded from
-// OccupiesSlotScope (the single SSOT for slot + budget counting), so the live
-// counters (models.CountUserOccupiedSlots, QuotaService.CheckBudget) reflect
-// the release without any further bookkeeping. The transition is NOT forked
+// OccupiesSlotScope, so the live counters (models.CountUserOccupiedSlots,
+// QuotaService.CheckBudget) reflect the release without any further
+// bookkeeping. The transition is NOT forked
 // from the old "deleted" — only the label differs, so the frontend can tell a
 // revoked learner the truth instead of "Session Expired — time limit"
 // (companion ocf-front #272).

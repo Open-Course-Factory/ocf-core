@@ -1043,9 +1043,12 @@ func (sc *scenarioLaunchController) resumePausedRun(ctx *gin.Context, run *model
 	if terminalServices.EnforceLaunchCapacity(ctx, planResult.Plan, terminal.MachineSize, sc.terminalService) {
 		return true
 	}
-	if err := sc.terminalService.StartSession(terminalID); err != nil {
+	if err := sc.terminalService.StartSession(terminalID, planResult.Plan); err != nil {
 		if stderrors.Is(err, terminalServices.ErrContainerGone) {
 			return false
+		}
+		if httperrors.WriteBudgetRejection(ctx, err, run.UserID) {
+			return true
 		}
 		slog.Error("failed to start a paused scenario terminal", "session_id", run.ID, "terminal_session_id", terminalID, "err", err)
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to resume the scenario run")

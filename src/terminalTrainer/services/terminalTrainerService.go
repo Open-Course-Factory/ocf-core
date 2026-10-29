@@ -7,7 +7,6 @@ import (
 	"slices"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
-	"time"
 
 	authModels "soli/formations/src/auth/models"
 	configRepositories "soli/formations/src/configuration/repositories"
@@ -41,7 +40,7 @@ type TerminalTrainerService interface {
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetActiveUserSessions(userID string) (*[]models.Terminal, error)
 	StopSession(sessionID string) error
-	StartSession(sessionID string) error
+	StartSession(sessionID string, plan *paymentModels.SubscriptionPlan) error
 	DeleteSession(sessionID string) error
 	HasTerminalAccess(terminalIDOrSessionID, userID string) (bool, error)
 
@@ -205,7 +204,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		terminalProxyClient:      proxy,
 		terminalCatalogService:   catalog,
 		terminalSyncService:      sync,
-		terminalLifecycleService: newTerminalLifecycleService(proxy, sync, repository, db),
+		terminalLifecycleService: newTerminalLifecycleService(proxy, sync, repository, quotaService, db),
 		terminalHistoryService:   newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
 		exposedPortService:       newExposedPortService(proxy, repository, db),
 	}
@@ -508,7 +507,7 @@ var LookupCasdoorUserForOrgUsage = casdoorsdk.GetUserByUserId
 // (organization_members) so the breakdown matches the enforced budget and
 // excludes terminals owned by non-members (even if org-tagged).
 type orgUserUsageEntry struct {
-	occupying int // slot occupancy under OccupiesSlotScope (running+stopped, live)
+	occupying int // budget-consuming sessions under OccupiesSlotScope (running+starting, live)
 	running   int // currently-running display count under RunningDisplayScope
 	cpu       int // SUM(size_cpu) under OccupiesSlotScope
 	memMB     int // SUM(size_memory_mb) under OccupiesSlotScope
@@ -523,14 +522,14 @@ type orgUserUsageEntry struct {
 // terminals.user_id WHERE organization_members.organization_id = ? AND
 // organization_members.deleted_at IS NULL). This is the SSOT predicate the
 // budget gate enforces, so the dashboard breakdown cannot drift from it:
-//   - occupancy/cpu/mem route through OccupiesSlotScope (running+stopped,
+//   - occupancy/cpu/mem route through OccupiesSlotScope (running+starting,
 //     live), so sum(occupancy) == CountOrgOccupiedSlots and
 //     sum(cpu)/sum(mem) == GetBudgetUsage(org).
 //   - running routes through RunningDisplayScope (the "what's alive right
 //     now" display field), narrower than occupancy on purpose.
 //
-// A user with only stopped sessions appears in the occupancy set but not the
-// running set, so the two are unioned by user_id.
+// A user with only a starting reservation appears in the occupancy set but not
+// the running set, so the two are unioned by user_id.
 func (tts *terminalTrainerService) perUserOrgOccupancy(orgID uuid.UUID) (map[string]*orgUserUsageEntry, error) {
 	const memberJoin = "JOIN organization_members ON organization_members.user_id = terminals.user_id"
 	const memberWhere = "organization_members.organization_id = ? AND organization_members.deleted_at IS NULL"
@@ -747,12 +746,11 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 //     else "personal". plan_source_name is the org name when source=organization.
 //   - Used CPU/RAM: QuotaService.GetBudgetUsage(userID, orgID) — same path as
 //     CheckBudget, so the bars cannot disagree with the budget gate.
-//   - Active sessions list: queries the terminals table through
-//     terminalModels.OccupiesSlotScope (SSOT) so the list mirrors the
-//     totals. When orgID is non-nil, the listing follows
-//     sumActiveResourcesForOrg semantics: terminals owned by ANY member of
-//     the org, joined through organization_members. Otherwise it filters by
-//     terminals.user_id.
+//   - Session list: the user's own terminals under models.UsageListScope —
+//     the ones the bars charge plus the paused ones, which the user still
+//     has. Each entry carries counts_toward_quota (Terminal.CountsTowardQuota,
+//     the bars' own rule), so the list can show paused sessions without
+//     disagreeing with the totals.
 //
 // The session list is ordered by last_started_at DESC so the newest sessions
 // come first.
@@ -794,29 +792,13 @@ func (tts *terminalTrainerService) GetUserTerminalUsage(userID string, orgID *uu
 		resp.UsedMemoryMB = usedMem
 	}
 
-	// 3. Active sessions — same scope (OccupiesSlotScope) AND the same set as the
-	// totals above: the user's own. Listing a different set of sessions than the
-	// ones summed is how a panel comes to show bars its own list does not account for.
-	q := tts.db.Table("terminals").
-		Scopes(models.OccupiesSlotScope).
-		Select("terminals.session_id, terminals.name, terminals.instance_type, terminals.machine_size, terminals.size_cpu, terminals.size_memory_mb, terminals.state, terminals.persistence_mode, terminals.last_started_at, terminals.expires_at").
+	// 3. Sessions — the user's own, the same owner as the totals above. Paused
+	// sessions are listed too; counts_toward_quota marks which ones the bars sum.
+	var rows []models.Terminal
+	if err := tts.db.Scopes(models.UsageListScope).
 		Order("terminals.last_started_at DESC").
-		Where("terminals.user_id = ?", userID)
-
-	type sessionRow struct {
-		SessionID       string
-		Name            string
-		InstanceType    string
-		MachineSize     string
-		SizeCPU         int
-		SizeMemoryMB    int
-		State           models.TerminalState
-		PersistenceMode string
-		LastStartedAt   time.Time
-		ExpiresAt       time.Time
-	}
-	var rows []sessionRow
-	if err := q.Scan(&rows).Error; err != nil {
+		Where("terminals.user_id = ?", userID).
+		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("failed to load active sessions: %w", err)
 	}
 
@@ -843,6 +825,7 @@ func (tts *terminalTrainerService) GetUserTerminalUsage(userID string, orgID *uu
 			PersistenceMode: r.PersistenceMode,
 			LastStartedAt:   r.LastStartedAt,
 			ExpiresAt:       r.ExpiresAt,
+			CountsTowardQuota: r.CountsTowardQuota(),
 		})
 	}
 	resp.ActiveSessions = sessions

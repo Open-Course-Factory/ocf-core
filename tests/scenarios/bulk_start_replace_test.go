@@ -76,7 +76,7 @@ func (m *mockTTService) StopSession(sessionID string) error {
 	m.stoppedIDs = append(m.stoppedIDs, sessionID)
 	return nil
 }
-func (m *mockTTService) StartSession(string) error { return nil }
+func (m *mockTTService) StartSession(string, *paymentModels.SubscriptionPlan) error { return nil }
 func (m *mockTTService) DeleteSession(sessionID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -12,6 +12,7 @@ import (
 	"soli/formations/src/utils"
 
 	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 
 	"gorm.io/gorm"
 )
@@ -32,22 +33,24 @@ import (
 // StartSession, the group-owner access query, and the scenario-session
 // auto-abandon updates.
 type terminalLifecycleService struct {
-	proxy      *terminalProxyClient
-	sync       *terminalSyncService
-	repository repositories.TerminalRepository
-	db         *gorm.DB
+	proxy        *terminalProxyClient
+	sync         *terminalSyncService
+	repository   repositories.TerminalRepository
+	quotaService paymentServices.QuotaService
+	db           *gorm.DB
 }
 
 // newTerminalLifecycleService returns a lifecycle service driving local-row
 // transitions through the supplied proxy (tt-backend calls) and sync
 // (markSessionStopped SSOT). The proxy, sync, repository and db are shared
 // with the facade so all reuse the same HTTP configuration and DB.
-func newTerminalLifecycleService(proxy *terminalProxyClient, sync *terminalSyncService, repository repositories.TerminalRepository, db *gorm.DB) *terminalLifecycleService {
+func newTerminalLifecycleService(proxy *terminalProxyClient, sync *terminalSyncService, repository repositories.TerminalRepository, quotaService paymentServices.QuotaService, db *gorm.DB) *terminalLifecycleService {
 	return &terminalLifecycleService{
-		proxy:      proxy,
-		sync:       sync,
-		repository: repository,
-		db:         db,
+		proxy:        proxy,
+		sync:         sync,
+		repository:   repository,
+		quotaService: quotaService,
+		db:           db,
 	}
 }
 
@@ -70,10 +73,10 @@ func (l *terminalLifecycleService) GetActiveUserSessions(userID string) (*[]mode
 //   - persistent : tt-backend conserve le disque, la session est résumable.
 //     On délègue à markSessionStopped, qui passe state=StateStopped et étend
 //     ExpiresAt à la fenêtre de reap réelle (idleUntil renvoyé par /stop, ou
-//     fallback plan.MaxSessionDurationMinutes). Tant que la ligne est
-//     StateStopped non supprimée, OccupiesSlotScope la compte dans le budget —
-//     l'utilisateur garde sa capacité réservée jusqu'à ce que sync (étape 5b)
-//     constate la disparition côté tt-backend et marque la ligne deleted.
+//     fallback plan.MaxSessionDurationMinutes). Une ligne StateStopped ne
+//     consomme plus de budget (OccupiesSlotScope ne compte que running et
+//     starting : un stop Incus libère CPU et RAM, seul le disque reste) ;
+//     la reprise repasse donc par le contrôle de budget (StartSession).
 //
 //   - ephemeral (ou non renseigné) : tt-backend détruit le conteneur
 //     immédiatement, il n'y a plus rien à garder en ligne. On passe
@@ -116,7 +119,7 @@ func (l *terminalLifecycleService) StopSession(sessionID string) error {
 	// Relire la ligne : pendant l'appel /stop, quelqu'un d'autre (permadeath
 	// d'un crash trap, suppression admin) a pu la passer à deleted. Réécrire
 	// la copie lue avant l'appel ressusciterait la pierre tombale en
-	// "stopped", qui occuperait le budget jusqu'au reaper.
+	// "stopped", résumable alors que son conteneur est condamné.
 	terminal, err = l.repository.GetTerminalSessionByID(sessionID)
 	if err != nil {
 		return fmt.Errorf("session not found: %w", err)
@@ -194,14 +197,25 @@ func resolvePlanExpirySeconds(plan *paymentModels.SubscriptionPlan) int {
 // Si SubscriptionPlanID est nil (ancien terminal créé avant que le champ
 // existe), on n'envoie pas d'expiry et tt-backend utilise son défaut.
 //
+// Une session arrêtée ne consomme pas de budget : la reprendre la fait
+// consommer à nouveau, elle passe donc le même contrôle transactionnel que la
+// création (reserveResumeBudget) contre le plan fourni par l'appelant. Un
+// budget plein renvoie une *BudgetRejection, comme la création.
+//
 // Si tt-backend ne connaît plus le conteneur, la ligne passe à StateDeleted et
 // l'erreur porte ErrContainerGone.
-func (l *terminalLifecycleService) StartSession(sessionID string) error {
+func (l *terminalLifecycleService) StartSession(sessionID string, plan *paymentModels.SubscriptionPlan) error {
 	utils.Debug("StartSession called for session %s", sessionID)
 
 	terminal, err := l.repository.GetTerminalSessionByID(sessionID)
 	if err != nil {
 		return fmt.Errorf("session not found: %w", err)
+	}
+
+	pausedState, pausedExpiresAt := terminal.State, terminal.ExpiresAt
+	reserved, err := l.reserveResumeBudget(terminal, plan)
+	if err != nil {
+		return err
 	}
 
 	// Resolve the plan-derived expiry cap. When the terminal predates the
@@ -219,21 +233,29 @@ func (l *terminalLifecycleService) StartSession(sessionID string) error {
 	}
 
 	expiresAtUnix, err := l.proxy.startSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey, expirySeconds)
-	if errors.Is(err, ErrContainerGone) {
-		// La ligne disait « arrêté » mais il n'y a plus rien à reprendre :
-		// elle le dit désormais, pour que personne ne retente.
-		terminal.State = models.StateDeleted
-		if updateErr := l.repository.UpdateTerminalSession(terminal); updateErr != nil {
-			utils.Error("Failed to mark session %s deleted after its container vanished: %v", sessionID, updateErr)
-		}
-	}
 	if err != nil {
+		// Released first, even for a lost container: should the deleted
+		// write below fail, the row must read paused again, not live.
+		if reserved {
+			l.releaseResumeReservation(terminal, pausedState, pausedExpiresAt)
+		}
+		if errors.Is(err, ErrContainerGone) {
+			// La ligne disait « arrêté » mais il n'y a plus rien à reprendre :
+			// elle le dit désormais, pour que personne ne retente.
+			terminal.State = models.StateDeleted
+			if updateErr := l.repository.UpdateTerminalSession(terminal); updateErr != nil {
+				utils.Error("Failed to mark session %s deleted after its container vanished: %v", sessionID, updateErr)
+			}
+		}
 		return fmt.Errorf("failed to start session in Terminal Trainer API: %w", err)
 	}
 
 	terminal.State = models.StateRunning
 	terminal.LastStartedAt = time.Now()
 	terminal.IdleUntil = nil
+	// Without an expiry from tt-backend the row keeps the one it had before
+	// the reservation shortened it.
+	terminal.ExpiresAt = pausedExpiresAt
 	if expiresAtUnix > 0 {
 		terminal.ExpiresAt = time.Unix(expiresAtUnix, 0)
 	}
@@ -243,6 +265,50 @@ func (l *terminalLifecycleService) StartSession(sessionID string) error {
 	}
 
 	return nil
+}
+
+// reserveResumeBudget charges a stopped terminal's size to its owner's budget
+// before it is resumed, with the creation path's race-safe gate: inside one
+// transaction it runs EnforceBudgetTx and, when the size fits, marks the row
+// running with a reservationTTL expiry so it counts before tt-backend is
+// called — the composer's reserve-first pattern, so two concurrent resumes
+// cannot both fit into the same headroom. It reports whether it reserved; a
+// terminal that already counts toward the quota is already paid for and is
+// left alone. Running (not starting) is the reservation state because the
+// resume rule and the zombie cron read a starting row as holding no
+// container.
+func (l *terminalLifecycleService) reserveResumeBudget(terminal *models.Terminal, plan *paymentModels.SubscriptionPlan) (bool, error) {
+	if terminal.CountsTowardQuota() {
+		return false, nil
+	}
+	if plan == nil {
+		return false, fmt.Errorf("resume of session %s: no plan to charge its budget to", terminal.SessionID)
+	}
+	err := l.db.Transaction(func(tx *gorm.DB) error {
+		enforcement, err := l.quotaService.EnforceBudgetTx(tx, terminal.UserID, nil, plan, terminal.SizeCPU, terminal.SizeMemoryMB)
+		if err != nil {
+			return fmt.Errorf("budget check failed: %w", err)
+		}
+		if !enforcement.Allowed {
+			return rejectionFromBudgetCheck(enforcement.BudgetCheck)
+		}
+		terminal.State = models.StateRunning
+		terminal.ExpiresAt = time.Now().Add(reservationTTL)
+		return tx.Model(terminal).Select("state", "expires_at").Updates(terminal).Error
+	})
+	return err == nil, err
+}
+
+// releaseResumeReservation gives back the budget a failed resume reserved:
+// the terminal gets back the state and reap deadline it had before. Best-effort,
+// like the composer's releaseReservation — a failure leaves a running row that
+// stops counting once its reservationTTL lapses.
+func (l *terminalLifecycleService) releaseResumeReservation(terminal *models.Terminal, pausedState models.TerminalState, pausedExpiresAt time.Time) {
+	terminal.State = pausedState
+	terminal.ExpiresAt = pausedExpiresAt
+	if err := l.repository.UpdateTerminalSession(terminal); err != nil {
+		utils.Warn("failed to release the resume reservation of session %s: %v", terminal.SessionID, err)
+	}
 }
 
 // DeleteSession supprime définitivement une session via DELETE /sessions/{id}
@@ -258,9 +324,8 @@ func (l *terminalLifecycleService) StartSession(sessionID string) error {
 // Aucune métrique de quota n'est touchée : la capacité terminale est
 // exclusivement régie par le moteur de budget CPU/RAM
 // (QuotaService.CheckBudget via OccupiesSlotScope). La ligne locale
-// passée à state=StateDeleted sort automatiquement de la portée (qui sert
-// à la fois au compte de slots et au budget, cf. D6') sans écriture
-// supplémentaire.
+// passée à state=StateDeleted sort automatiquement de la portée sans
+// écriture supplémentaire.
 func (l *terminalLifecycleService) DeleteSession(sessionID string) error {
 	utils.Debug("DeleteSession called for session %s", sessionID)
 

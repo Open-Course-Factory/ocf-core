@@ -62,9 +62,9 @@ func newTerminalSyncService(proxy *terminalProxyClient, repository repositories.
 //   - IdleUntil populated when idleUntil is non-nil (for traceability /
 //     UI display).
 //
-// The helper does NOT branch on persistence_mode (D6', supersedes D6):
-// "a stop is a stop". The reservation is held until sync confirms
-// tt-backend has reaped the container.
+// The helper does NOT branch on persistence_mode: any stopped row keeps its
+// resume window until sync confirms tt-backend has reaped the container. The
+// row consumes no budget meanwhile (models.TerminalStatesOccupyingSlot).
 //
 // Returns true iff any field on the terminal was modified, so the caller
 // can decide whether to flush. Idempotent: a row already in the correct
@@ -299,7 +299,7 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 
 			// Propager persistence_mode depuis tt-backend (source de vérité
 			// pour ce champ — il pilote l'affordance Resume côté UI mais ne
-			// joue PAS dans la logique budget, cf. D6').
+			// joue PAS dans la logique budget).
 			if apiSession.PersistenceMode != "" && localSession.PersistenceMode != apiSession.PersistenceMode {
 				utils.Debug("SyncUserSessions - PersistenceMode mismatch for session %s: changing '%s' -> '%s'",
 					sessionID, localSession.PersistenceMode, apiSession.PersistenceMode)
@@ -317,16 +317,16 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 			// fixe state, IdleUntil ET ExpiresAt en une passe. Sans cette
 			// extension, expires_at resterait à la deadline de création
 			// (déjà dépassée puisque c'est précisément ce qui a déclenché
-			// l'auto-stop), et OccupiesSlotScope laisserait tomber la ligne :
-			// l'utilisateur perdrait la capacité réservée d'un coup, alors
-			// que le conteneur est toujours résumable côté tt-backend.
+			// l'auto-stop), et la ligne passerait pour expirée : l'utilisateur
+			// ne la verrait plus ni ne pourrait la reprendre, alors que le
+			// conteneur est toujours résumable côté tt-backend.
 			//
 			// Garde SPÉCIFIQUE à StateRevoked et à la pierre tombale
 			// StateDeleted (et non le prédicat stateChangeAllowed complet,
 			// qui bloquerait aussi stopped) : la révocation billing laisse
 			// le conteneur vivant, donc son reaper idle finit par le rapporter
 			// "stopped" — sans cette garde, markSessionStopped ressusciterait la
-			// ligne révoquée en stopped (resumable + ré-occupe le budget),
+			// ligne révoquée en stopped (resumable),
 			// rendant sa session à un utilisateur révoqué. StateStopped, lui,
 			// DOIT continuer à passer par markSessionStopped pour rafraîchir sa
 			// deadline idle (fenêtre de reprise), d'où la garde ciblée.

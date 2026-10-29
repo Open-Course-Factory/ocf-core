@@ -37,13 +37,13 @@ type QuotaService interface {
 	// fits within the user's (or org's) effective plan. There is no unlimited
 	// state: a zero budget on an axis fits nothing.
 	//
-	// Sessions counted toward the budget follow lifecycle rule D6'
-	// (supersedes D6, locked 2026-05-28), encoded in the SSOT
+	// Sessions counted toward the budget follow the SSOT
 	// terminalModels.OccupiesSlotScope:
-	//   state IN ('running','stopped') AND deleted_at IS NULL
+	//   state IN ('running','starting') AND deleted_at IS NULL
 	//   AND expires_at > NOW().
-	// Every stopped session counts — the persistence_mode distinction is
-	// UX-only ("a stop is a stop"). Past-expiry zombie rows are excluded:
+	// A stopped session does not count: an Incus stop releases CPU and RAM,
+	// only the disk remains — so resuming one passes this gate again
+	// (terminalLifecycleService.StartSession). Past-expiry zombie rows are excluded:
 	// a stale row whose proxy session is gone but whose state column was
 	// never reset must not keep eating budget. The dashboard "Actifs"
 	// counter reads through the same scope, so the gate and the dashboard
@@ -84,7 +84,7 @@ type QuotaService interface {
 	PlanAllowsSize(plan *models.SubscriptionPlan, sizeKey string) (bool, error)
 
 	// GetBudgetUsage returns the user's (or org's) current CPU + RAM
-	// footprint under the budget counting rule (D6). It is a thin
+	// footprint under the budget counting rule (OccupiesSlotScope). It is a thin
 	// passthrough over sumActiveResources for callers that need to
 	// surface usage in dashboards without re-implementing the predicate.
 	GetBudgetUsage(userID string, orgID *uuid.UUID) (usedCPU, usedMemMB int, err error)
@@ -176,7 +176,7 @@ func (s *quotaService) GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 		return nil, fmt.Errorf("no active subscription found for organization: %w", err)
 	}
 
-	// Count occupied slots via SSOT helper (active + stopped, not expired).
+	// Count budget-consuming sessions via SSOT helper (running + starting, not expired).
 	// See terminalModels.OccupiesSlotScope for the canonical rule.
 	currentTerminals, _ := terminalModels.CountOrgOccupiedSlots(s.db, orgID)
 
@@ -330,16 +330,13 @@ func (s *quotaService) GetBudgetUsage(userID string, orgID *uuid.UUID) (int, int
 // counted against the budget for this user (or org).
 //
 // The counting predicate is the SSOT terminalModels.OccupiesSlotScope
-// (state IN ('running','stopped') AND deleted_at IS NULL AND
-// expires_at > NOW()). See that scope's doc for the rationale (D6',
-// supersedes D6, locked 2026-05-28): a stop is a stop, every stopped
-// session reserves capacity until sync confirms tt-backend has reaped
-// the container. The persistence_mode distinction is UX-only, not
-// budget logic.
+// (state IN ('running','starting') AND deleted_at IS NULL AND
+// expires_at > NOW()). See TerminalStatesOccupyingSlot for the rationale:
+// a stopped machine holds only its disk, so it is not charged.
 //
 // This is the same scope used to derive remaining capacity for size
-// catalogs and to feed the dashboard session list, so the budget gate
-// and any downstream "remaining" surface cannot drift apart.
+// catalogs and the dashboard bars, so the budget gate and any downstream
+// "remaining" surface cannot drift apart.
 //
 // orgID:
 //   - nil    → personal scope (terminals where user_id matches).

@@ -115,7 +115,7 @@ func TestLifecycleService_StartSession_TransitionsRowToRunning(t *testing.T) {
 		Updates(map[string]any{"state": models.StateStopped, "idle_until": idle}).Error)
 
 	svc := services.NewTerminalTrainerService(db)
-	require.NoError(t, svc.StartSession(terminal.SessionID))
+	require.NoError(t, svc.StartSession(terminal.SessionID, roomyResumePlan()))
 
 	updated, err := svc.GetSessionInfo(terminal.SessionID)
 	require.NoError(t, err)

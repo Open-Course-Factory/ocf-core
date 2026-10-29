@@ -37,6 +37,7 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 						OrganizationID:   model.OrganizationID,
 						ComposedFeatures: model.ComposedFeatures,
 						CreatedAt:        model.CreatedAt,
+						CountsTowardQuota: model.CountsTowardQuota(),
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateTerminalInput) *models.Terminal {

@@ -9,14 +9,13 @@
 //     max_memory_mb, max_session_duration_minutes.
 //   - Live counters: used_cpu, used_memory_mb (sum of CPU/RAM held by
 //     budget-occupying sessions — same predicate as the budget gate).
-//   - active_sessions: per-session list keyed by the same scope as the
-//     bars (OccupiesSlotScope, the SSOT post-D6') so the list cannot
-//     disagree with the totals.
+//   - active_sessions: the sessions the bars charge plus the paused ones
+//     (UsageListScope), each flagged by counts_toward_quota with the bars'
+//     own rule, so the list cannot disagree with the totals.
 //
 // Edge predicates exercised:
-//   - Stopped (persistent OR ephemeral): counted + listed (D6': "a stop
-//     is a stop"; the slot is reserved until sync confirms tt-backend
-//     reaped the container).
+//   - Stopped (persistent OR ephemeral): listed, not charged — a stopped
+//     machine holds only its disk.
 //   - Past-expiry zombie: NOT counted, NOT listed.
 package terminalTrainer_tests
 
@@ -142,10 +141,10 @@ func TestMyTerminalUsage_RunningEphemeral(t *testing.T) {
 	assert.Equal(t, float64(1024), entry["size_memory_mb"])
 }
 
-// TestMyTerminalUsage_Stopped_CountedRegardlessOfPersistence — every
-// stopped session counts and appears in the list, regardless of
-// persistence_mode (D6', supersedes D6).
-func TestMyTerminalUsage_Stopped_CountedRegardlessOfPersistence(t *testing.T) {
+// TestMyTerminalUsage_Stopped_ListedButNotChargedRegardlessOfPersistence —
+// every stopped session appears in the list and is charged nothing,
+// regardless of persistence_mode.
+func TestMyTerminalUsage_Stopped_ListedButNotChargedRegardlessOfPersistence(t *testing.T) {
 	cases := []struct {
 		name string
 		mode string
@@ -170,16 +169,17 @@ func TestMyTerminalUsage_Stopped_CountedRegardlessOfPersistence(t *testing.T) {
 			var resp map[string]any
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-			assert.Equal(t, float64(4000), resp["used_cpu"],
-				"stopped %s reserves CPU under OccupiesSlotScope (D6')", tc.mode)
-			assert.Equal(t, float64(2048), resp["used_memory_mb"])
+			assert.Equal(t, float64(0), resp["used_cpu"],
+				"stopped %s holds no CPU", tc.mode)
+			assert.Equal(t, float64(0), resp["used_memory_mb"])
 
 			sessions, ok := resp["active_sessions"].([]any)
 			require.True(t, ok)
 			require.Equal(t, 1, len(sessions),
-				"stopped %s must appear in the session list (D6': paused = reserved)", tc.mode)
+				"stopped %s must still appear in the session list", tc.mode)
 			entry := sessions[0].(map[string]any)
 			assert.Equal(t, "stopped", entry["state"])
+			assert.Equal(t, false, entry["counts_toward_quota"])
 			assert.Equal(t, tc.mode, entry["persistence_mode"])
 		})
 	}

@@ -84,19 +84,16 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	// ActionConfig on the Terminal entity registration (its ownership gate is the
 	// RequireTerminalAccess middleware carried in the action's Middlewares).
 	//
-	// Resume a stopped session — slot-neutral state transition. The
-	// resumed session may consume paid features so the plan-validity gate
-	// applies, but NO capacity check is needed: the budget engine already
-	// counts the persistent session against the user's CPU/RAM cap at
-	// creation (D6': a stopped session occupies a slot), and tt-backend's
-	// resume handler is a state transition on an existing container — not
-	// a fresh allocation.
+	// Resume a stopped session. A stopped machine holds no CPU/RAM and is
+	// not charged to the budget, so resuming charges it again: the handler
+	// passes the resolved plan to StartSession, which runs the creation
+	// path's transactional budget gate and answers its 403 when the session
+	// no longer fits.
 	//
 	// What stays here:
 	//   - RequireTerminalAccessAllowStopped: Layer 2 ownership.
-	//   - InjectOrgContext / InjectEffectivePlan / RequirePlan: the resumed
-	//     session may consume paid features; the plan-validity gate still
-	//     applies.
+	//   - InjectOrgContext / InjectEffectivePlan / RequirePlan: the plan the
+	//     resume is charged against; the plan-validity gate still applies.
 	//
 	// What was removed (regression: spurious 503 on every Resume):
 	//   - CheckRAMAvailability — Resume sends no body, so the middleware

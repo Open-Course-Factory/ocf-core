@@ -64,7 +64,7 @@ func (m *metricsAwareMockService) GetActiveUserSessions(userID string) (*[]model
 	panic("not implemented")
 }
 func (m *metricsAwareMockService) StopSession(sessionID string) error  { panic("not implemented") }
-func (m *metricsAwareMockService) StartSession(sessionID string) error { panic("not implemented") }
+func (m *metricsAwareMockService) StartSession(sessionID string, _ *paymentModels.SubscriptionPlan) error { panic("not implemented") }
 func (m *metricsAwareMockService) DeleteSession(sessionID string) error {
 	panic("not implemented")
 }
