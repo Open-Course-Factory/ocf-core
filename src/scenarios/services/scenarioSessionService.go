@@ -1705,9 +1705,11 @@ func (s *ScenarioSessionService) SkipToStep(sessionID uuid.UUID, targetOrder int
 		if moved.RowsAffected == 0 {
 			return ErrSkipRaced
 		}
+		// completed_at is when the learner left the step: the target step's
+		// time — its time_spent, the class view's timer — starts there.
 		if err := tx.Model(&models.ScenarioStepProgress{}).
 			Where("session_id = ? AND step_order >= ? AND step_order < ? AND status <> ?", session.ID, leftStep, targetOrder, "completed").
-			Update("status", "skipped").Error; err != nil {
+			Updates(map[string]any{"status": "skipped", "completed_at": time.Now()}).Error; err != nil {
 			return fmt.Errorf("failed to mark steps skipped: %w", err)
 		}
 		return tx.Model(&models.ScenarioStepProgress{}).
@@ -2286,10 +2288,10 @@ func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.
 	var stepProgress models.ScenarioStepProgress
 	if err := tx.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
 		stepStartTime := session.StartedAt
-		// Find the previous step's completion time
+		// Find the previous step's completion time — or the skip that left it
 		var prevStep models.ScenarioStepProgress
-		if err := tx.Where("session_id = ? AND step_order < ? AND status = ?",
-			session.ID, session.CurrentStep, "completed").
+		if err := tx.Where("session_id = ? AND step_order < ? AND status IN ?",
+			session.ID, session.CurrentStep, []string{"completed", "skipped"}).
 			Order("step_order DESC").First(&prevStep).Error; err == nil && prevStep.CompletedAt != nil {
 			stepStartTime = *prevStep.CompletedAt
 		}

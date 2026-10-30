@@ -2,6 +2,7 @@ package scenarios_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -121,4 +122,35 @@ func TestSkipToStep_AsyncTargetParksTheSessionInProvisioning(t *testing.T) {
 	assert.True(t, result.NextStepProvisioning, "the trainer's client polls like the learner's does")
 	assert.Equal(t, "active", waitForSetupDone(t, db, session.ID))
 	require.Len(t, verifySvc.execCalls, 1)
+}
+
+// The step a learner is skipped to starts at the skip: the class view's « Sur
+// l'étape » timer and the step's time_spent must not count from the last step
+// they really finished, hours earlier.
+func TestSkipToStep_TargetStepTimeStartsAtTheSkip(t *testing.T) {
+	db := freshTestDB(t)
+	session := threeStepSession(t, db, "skip-timer", "echo step two setup")
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("id = ?", session.ID).Update("started_at", time.Now().Add(-2*time.Hour)).Error)
+	require.NoError(t, db.Model(&models.ScenarioStep{}).
+		Where("scenario_id = ? AND \"order\" = ?", session.ScenarioID, 2).
+		Update("verify_script", "true").Error)
+
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &bgTrackingVerificationService{})
+	_, err := sessionSvc.SkipToStep(session.ID, 2)
+	require.NoError(t, err)
+
+	var skipped []models.ScenarioStepProgress
+	require.NoError(t, db.Where("session_id = ? AND status = ?", session.ID, "skipped").Find(&skipped).Error)
+	require.Len(t, skipped, 2)
+	for _, p := range skipped {
+		require.NotNil(t, p.CompletedAt, "step %d: the skip is when the learner left it", p.StepOrder)
+		assert.WithinDuration(t, time.Now(), *p.CompletedAt, time.Minute)
+	}
+
+	_, err = sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+	var target models.ScenarioStepProgress
+	require.NoError(t, db.First(&target, "session_id = ? AND step_order = ?", session.ID, 2).Error)
+	assert.Less(t, target.TimeSpentSeconds, 60, "measured from the skip, not from the session start")
 }
