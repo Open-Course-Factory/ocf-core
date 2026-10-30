@@ -532,8 +532,16 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 	// produces the same answer the create path does, and avoids the
 	// body-less fallback to LargestSize that previously 503'd every Resume
 	// on a well-utilised host.
-	plan, _ := ctx.Value("subscription_plan").(*paymentModels.SubscriptionPlan)
-	if plan != nil && services.EnforceLaunchCapacity(ctx, plan, terminal.MachineSize, tc.service) {
+	//
+	// The resume is charged to the plan the machine runs under — its owner's,
+	// in its organization — not to the caller's global plan: the request names
+	// no organization, and a learner's role plan only resolves inside it.
+	planResult, ok := paymentMiddleware.ResolveTerminalPlan(ctx, tc.db, terminal.UserID, terminal.OrganizationID)
+	if !ok {
+		return
+	}
+	plan := planResult.Plan
+	if services.EnforceLaunchCapacity(ctx, plan, terminal.MachineSize, tc.service) {
 		return
 	}
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // InjectOrgContext peeks at the request body to extract organization_id and
@@ -173,3 +174,20 @@ func RequirePlan() gin.HandlerFunc {
 	}
 }
 
+
+// ResolveTerminalPlan resolves the plan that pays for a terminal — its owner's,
+// in the organization the terminal is filed under — for routes where the
+// request does not name that organization (a resume, a scenario relaunch), and
+// applies the dunning gate. On refusal it has answered the request, and
+// reports false.
+func ResolveTerminalPlan(ctx *gin.Context, db *gorm.DB, userID string, orgID *uuid.UUID) (*services.EffectivePlanResult, bool) {
+	planResult, err := services.NewEffectivePlanService(db).GetUserEffectivePlan(userID, orgID)
+	if err != nil || planResult == nil || planResult.Plan == nil {
+		errors.Respond(ctx, http.StatusForbidden, "No active subscription plan")
+		return nil, false
+	}
+	if GatePastDueBeyondGraceForResult(ctx, planResult) {
+		return nil, false
+	}
+	return planResult, true
+}

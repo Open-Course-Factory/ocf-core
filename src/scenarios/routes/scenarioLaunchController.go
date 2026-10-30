@@ -1147,18 +1147,8 @@ func (sc *scenarioLaunchController) runOrganization(run *models.ScenarioSession,
 	return services.RunOrganization(terminal, scenario)
 }
 
-// resolveTerminalPlan resolves the plan that pays for a new terminal — the
-// user's, in the organization it is filed under — for routes without the plan
-// middleware, and applies the dunning gate. On refusal it has answered the
-// request, and reports false.
+// resolveTerminalPlan is paymentMiddleware.ResolveTerminalPlan on this
+// controller's database.
 func (sc *scenarioLaunchController) resolveTerminalPlan(ctx *gin.Context, userID string, orgID *uuid.UUID) (*paymentServices.EffectivePlanResult, bool) {
-	planResult, err := paymentServices.NewEffectivePlanService(sc.db).GetUserEffectivePlan(userID, orgID)
-	if err != nil || planResult == nil || planResult.Plan == nil {
-		errors.Respond(ctx, http.StatusForbidden, "No active subscription plan")
-		return nil, false
-	}
-	if paymentMiddleware.GatePastDueBeyondGraceForResult(ctx, planResult) {
-		return nil, false
-	}
-	return planResult, true
+	return paymentMiddleware.ResolveTerminalPlan(ctx, sc.db, userID, orgID)
 }
