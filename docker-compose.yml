@@ -51,7 +51,7 @@ services:
       - devcontainer-network
 
   casdoor:
-    image: casbin/casdoor:v4.24.0
+    image: casbin/casdoor:v4.25.0
     entrypoint: /bin/sh -c './server --createDatabase=true'
     ports:
       - "8000:8000"
