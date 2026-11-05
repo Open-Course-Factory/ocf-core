@@ -1,6 +1,7 @@
 package scenarioHooks
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -156,6 +157,9 @@ func CanManageAssignment(db *gorm.DB, groupSvc groupServices.GroupService, a *mo
 	}
 	if a.GroupID != nil {
 		ok, err := groupSvc.CanUserManageGroup(*a.GroupID, userID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil // a deleted class keeps its assignments; nobody manages them through it
+		}
 		if err != nil || !ok {
 			return false, err
 		}

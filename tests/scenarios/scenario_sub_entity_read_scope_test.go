@@ -26,6 +26,7 @@ import (
 
 	entityManagementController "soli/formations/src/entityManagement/routes"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	groupModels "soli/formations/src/groups/models"
 	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	"soli/formations/src/scenarios/models"
 
@@ -185,4 +186,22 @@ func TestScenarioAssignments_ListScopedToManagedGroups(t *testing.T) {
 		"a scenario's manager lists every assignment of their scenarios")
 	require.Empty(t, listData(t, setupSubEntityReadTest(t, db, "outsider", []string{"member"}), "/scenario-assignments"))
 	require.Len(t, listData(t, setupSubEntityReadTest(t, db, "x", []string{"administrator"}), "/scenario-assignments"), 2)
+}
+
+// Deleting a class leaves its assignments live. The list scope walks every
+// assignment on the platform, so one such row used to answer 500 to every
+// non-admin, whoever they were.
+func TestScenarioAssignments_AssignedToDeletedGroup_StillListsForMembers(t *testing.T) {
+	db := freshTestDB(t)
+	f := buildSubEntityFixture(t, db)
+	otherScenario := makeScenario(t, db, "other-scenario", f.scenario.CreatedByID, nil, false)
+	deletedGroup := makeGroupWithOwner(t, db, "deleted-class-owner")
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: otherScenario.ID, Scope: "group", GroupID: &deletedGroup, CreatedByID: "deleted-class-owner", IsActive: true,
+	}).Error)
+	require.NoError(t, db.Where("id = ?", deletedGroup).Delete(&groupModels.ClassGroup{}).Error)
+
+	require.Len(t, listData(t, setupSubEntityReadTest(t, db, f.groupManager, []string{"member"}), "/scenario-assignments"), 1,
+		"a manager keeps listing their own class's assignment")
+	require.Empty(t, listData(t, setupSubEntityReadTest(t, db, "outsider", []string{"member"}), "/scenario-assignments"))
 }
