@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -99,6 +100,80 @@ func (tc *TeacherController) GetGroupLiveProgress(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, rows)
+}
+
+// maxParticipationReportDays bounds a report: it reads every terminal in the period.
+const maxParticipationReportDays = 366
+
+// GetParticipationReport godoc
+// @Summary Get a class's participation report
+// @Description What each learner did over a period: first and last recorded activity per day, commands and scenario progress. It reports recorded activity, not hours attended.
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param from query string true "First day, YYYY-MM-DD"
+// @Param to query string true "Last day included, YYYY-MM-DD"
+// @Param tz query string false "IANA timezone that days are cut in (default UTC)"
+// @Success 200 {object} services.ParticipationReport
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/participation-report [get]
+// @Security BearerAuth
+func (tc *TeacherController) GetParticipationReport(c *gin.Context) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return
+	}
+	location, err := time.LoadLocation(c.DefaultQuery("tz", "UTC"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid timezone"})
+		return
+	}
+	from, to, err := parseReportPeriod(c.Query("from"), c.Query("to"), location)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	scope, err := services.NewClassPeriodScope(tc.db, groupID, from, to)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "class not found"})
+		return
+	}
+	if err != nil {
+		slog.Error("failed to load participation scope", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build the report"})
+		return
+	}
+	report, err := services.BuildParticipationReport(tc.db, scope, ttServices.NewCommandActivityReader(), location)
+	if err != nil {
+		slog.Error("failed to build participation report", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build the report"})
+		return
+	}
+	c.JSON(http.StatusOK, report)
+}
+
+// parseReportPeriod turns two inclusive days into a half-open period.
+func parseReportPeriod(fromDay, toDay string, location *time.Location) (from, to time.Time, err error) {
+	from, err = time.ParseInLocation(time.DateOnly, fromDay, location)
+	if err != nil {
+		return from, to, errors.New("from must be a date, YYYY-MM-DD")
+	}
+	lastDay, err := time.ParseInLocation(time.DateOnly, toDay, location)
+	if err != nil {
+		return from, to, errors.New("to must be a date, YYYY-MM-DD")
+	}
+	if lastDay.Before(from) {
+		return from, to, errors.New("to must not be before from")
+	}
+	if lastDay.After(from.AddDate(0, 0, maxParticipationReportDays)) {
+		return from, to, errors.New("the period must not exceed one year")
+	}
+	return from, lastDay.AddDate(0, 0, 1), nil
 }
 
 // GetGroupAssignmentsProgress godoc

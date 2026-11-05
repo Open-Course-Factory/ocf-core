@@ -305,6 +305,7 @@ func classRows() []accessRow {
 			// A personal list: the platform admin teaches no class, so is not judged.
 			allowed: classManagers, judged: except(matrixActors, mxAdmin), verdict: listsClassA},
 		{action: "classA: live progress", request: get(teacherGroup("/live-progress")), allowed: classManagers},
+		{action: "classA: participation report", request: get(teacherGroup("/participation-report?from=2026-03-02&to=2026-03-06")), allowed: classManagers},
 		{action: "classA: assignments progress", request: get(teacherGroup("/assignments-progress")), allowed: classManagers},
 		{action: "classA: scenA results", request: get(teacherGroup("/scenarios/%s/results", scenA)), allowed: classManagers},
 		{action: "classA: scenA analytics", request: get(teacherGroup("/scenarios/%s/analytics", scenA)), allowed: classManagers},
