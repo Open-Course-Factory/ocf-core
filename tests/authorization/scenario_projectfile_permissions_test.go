@@ -123,14 +123,9 @@ func TestRegisterScenarioPermissions_ProjectFileMemberFacingRoutesStayMember(t *
 		desc   string
 	}{
 		{
-			path:   "/api/v1/project-files/:id/content",
-			method: "GET",
-			desc:   "project file content (member-facing, Public)",
-		},
-		{
 			path:   "/api/v1/project-files/image/:scenarioId/*",
 			method: "GET",
-			desc:   "scenario image (member-facing, Public)",
+			desc:   "scenario image (member-facing, the handler scopes it)",
 		},
 	}
 

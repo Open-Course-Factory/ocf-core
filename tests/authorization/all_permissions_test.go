@@ -441,7 +441,6 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		// NOTE: /project-files/by-scenario/:scenarioId is admin-only at Layer 1
 		// and asserted in TestSetupScenarioPermissions_AdminRoutes.
 		{"/api/v1/project-files/image/:scenarioId/*", "GET"},
-		{"/api/v1/project-files/:id/content", "GET"},
 	}
 
 	for _, r := range memberRoutes {

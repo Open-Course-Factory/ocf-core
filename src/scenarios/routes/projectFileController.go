@@ -2,6 +2,7 @@ package scenarioController
 
 import (
 	"encoding/base64"
+	stderrors "errors"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -13,68 +14,16 @@ import (
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
+	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 )
 
 type projectFileController struct {
-	db *gorm.DB
+	scenarioControllerBase
 }
 
 func NewProjectFileController(db *gorm.DB) *projectFileController {
-	return &projectFileController{db: db}
-}
-
-// GetContent returns the raw content of a ProjectFile with an appropriate Content-Type header.
-// GET /api/v1/project-files/:id/content
-func (c *projectFileController) GetContent(ctx *gin.Context) {
-	fileID, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		errors.Respond(ctx, http.StatusBadRequest, "Invalid project file ID")
-		return
-	}
-
-	var file models.ProjectFile
-	if err := c.db.First(&file, "id = ?", fileID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			errors.Respond(ctx, http.StatusNotFound, "Project file not found")
-			return
-		}
-		slog.Error("failed to load project file", "id", fileID, "err", err)
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve file")
-		return
-	}
-
-	// Block script content for non-admin users (prevents verify script answer leakage)
-	if file.ContentType == "script" && !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-		errors.Respond(ctx, http.StatusForbidden, "Admin access required for script files")
-		return
-	}
-
-	// Images are stored as base64 — decode and serve with proper MIME type
-	if file.ContentType == "image" {
-		data, err := base64.StdEncoding.DecodeString(file.Content)
-		if err != nil {
-			slog.Error("failed to decode image content", "id", fileID, "err", err)
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to decode image")
-			return
-		}
-		mimeType := file.MimeType
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
-		}
-		ctx.Data(http.StatusOK, mimeType, data)
-		return
-	}
-
-	contentType := "text/plain; charset=utf-8"
-	switch file.ContentType {
-	case "markdown":
-		contentType = "text/markdown; charset=utf-8"
-	case "script":
-		contentType = "text/x-shellscript; charset=utf-8"
-	}
-
-	ctx.Data(http.StatusOK, contentType, []byte(file.Content))
+	return &projectFileController{scenarioControllerBase: newScenarioControllerBase(db)}
 }
 
 // projectFileListItem is a DTO for the by-scenario list (metadata only, no content).
@@ -137,6 +86,41 @@ func (c *projectFileController) GetByScenario(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, result)
 }
 
+// canReadImagesOf answers whether the caller may see a scenario's images: they
+// can see the scenario, it is assigned to them, or they ran it and may review
+// that run after its assignment has ended. A scenario never leaves its
+// organisation, and its images don't either.
+func (c *projectFileController) canReadImagesOf(ctx *gin.Context, scenarioID uuid.UUID) (bool, error) {
+	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		return true, nil
+	}
+	userID := ctx.GetString("userId")
+
+	var scenario models.Scenario
+	err := c.db.First(&scenario, "id = ?", scenarioID).Error
+	if stderrors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	canSee, err := scenarioHooks.CanSeeScenario(c.db, c.groupService, &scenario, userID)
+	if canSee || err != nil {
+		return canSee, err
+	}
+
+	var runs int64
+	err = c.db.Model(&models.ScenarioSession{}).
+		Where("scenario_id = ? AND user_id = ?", scenarioID, userID).
+		Count(&runs).Error
+	if runs > 0 || err != nil {
+		return runs > 0, err
+	}
+
+	return c.checkScenarioAccess(userID, scenarioID)
+}
+
 // GetImage serves a scenario image by its relative path within the scenario directory.
 // GET /api/v1/project-files/image/:scenarioId/*relPath
 func (c *projectFileController) GetImage(ctx *gin.Context) {
@@ -153,6 +137,17 @@ func (c *projectFileController) GetImage(ctx *gin.Context) {
 	}
 	if relPath == "" {
 		errors.Respond(ctx, http.StatusBadRequest, "Missing image path")
+		return
+	}
+
+	canRead, err := c.canReadImagesOf(ctx, scenarioID)
+	if err != nil {
+		slog.Error("failed to check access to scenario images", "scenarioId", scenarioID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to retrieve image")
+		return
+	}
+	if !canRead {
+		errors.Respond(ctx, http.StatusNotFound, "Image not found") // does not confirm what exists
 		return
 	}
 

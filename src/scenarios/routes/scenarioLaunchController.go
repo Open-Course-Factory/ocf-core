@@ -706,9 +706,9 @@ func (sc *scenarioLaunchController) launchResponse(session *models.ScenarioSessi
 // openClassMembershipIDs lists the classes userID is an active member of,
 // skipping archived ones: an assignment on an archived class authorises
 // nothing, which is why every access decision below reads its groups here.
-func (sc *scenarioLaunchController) openClassMembershipIDs(userID string) ([]uuid.UUID, error) {
+func (b *scenarioControllerBase) openClassMembershipIDs(userID string) ([]uuid.UUID, error) {
 	var groupIDs []uuid.UUID
-	err := sc.db.Model(&groupModels.GroupMember{}).
+	err := b.db.Model(&groupModels.GroupMember{}).
 		Joins("JOIN class_groups ON class_groups.id = group_members.group_id AND class_groups.deleted_at IS NULL").
 		Where("group_members.user_id = ? AND group_members.is_active = true", userID).
 		Scopes(entityManagementModels.NotArchived("class_groups")).
@@ -717,21 +717,21 @@ func (sc *scenarioLaunchController) openClassMembershipIDs(userID string) ([]uui
 }
 
 // checkScenarioAccess checks if a user has access to a scenario via group or org assignments
-func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioID uuid.UUID) (bool, error) {
+func (b *scenarioControllerBase) checkScenarioAccess(userID string, scenarioID uuid.UUID) (bool, error) {
 	// Public scenarios are accessible to everyone
 	var scenario models.Scenario
-	if err := sc.db.First(&scenario, "id = ?", scenarioID).Error; err == nil && scenario.InPublicCatalogue() {
+	if err := b.db.First(&scenario, "id = ?", scenarioID).Error; err == nil && scenario.InPublicCatalogue() {
 		return true, nil
 	}
 
-	groupIDs, err := sc.openClassMembershipIDs(userID)
+	groupIDs, err := b.openClassMembershipIDs(userID)
 	if err != nil {
 		return false, err
 	}
 
 	// Get user's org IDs
 	var orgIDs []uuid.UUID
-	if err := sc.db.Model(&orgModels.OrganizationMember{}).
+	if err := b.db.Model(&orgModels.OrganizationMember{}).
 		Where("user_id = ? AND is_active = true", userID).
 		Pluck("organization_id", &orgIDs).Error; err != nil {
 		return false, err
@@ -760,7 +760,7 @@ func (sc *scenarioLaunchController) checkScenarioAccess(userID string, scenarioI
 	combined := strings.Join(conditions, " OR ")
 
 	var count int64
-	if err := sc.db.Model(&models.ScenarioAssignment{}).
+	if err := b.db.Model(&models.ScenarioAssignment{}).
 		Where("scenario_id = ? AND is_active = true AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)", args[0], now, now).
 		Where(combined, args[1:]...).
 		Count(&count).Error; err != nil {

@@ -320,14 +320,9 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "List project files for a scenario (admin only)",
 		},
 		access.RoutePermission{
-			Path: "/api/v1/project-files/:id/content", Method: "GET",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
-			Description: "Get project file content (scripts require admin, others public)",
-		},
-		access.RoutePermission{
 			Path: "/api/v1/project-files/image/:scenarioId/*", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
-			Description: "Get scenario image (public to all authenticated users)",
+			Description: "Get scenario image (the handler checks who may see the scenario)",
 		},
 	)
 
