@@ -30,6 +30,7 @@ type EditGroupInput struct {
 	MaxMembers         *int            `json:"max_members,omitempty" mapstructure:"max_members" binding:"omitempty,gte=0"`
 	ExpiresAt          *time.Time      `json:"expires_at,omitempty" mapstructure:"expires_at"`
 	Metadata           *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
+	CourseDays         *[]string       `json:"course_days,omitempty" mapstructure:"course_days"`
 }
 
 // GroupOutput - DTO for group responses
@@ -54,6 +55,7 @@ type GroupOutput struct {
 	IsExpired          bool           `json:"is_expired"`
 	IsFull             bool           `json:"is_full"`
 	Metadata           map[string]any `json:"metadata,omitempty"`
+	CourseDays         []string       `json:"course_days"`
 	CreatedAt          time.Time      `json:"created_at"`
 	UpdatedAt          time.Time      `json:"updated_at"`
 
@@ -174,6 +176,7 @@ func GroupModelToGroupOutput(group *models.ClassGroup) *GroupOutput {
 		IsExpired:          group.IsExpired(),
 		IsFull:             group.IsFull(),
 		Metadata:           group.Metadata,
+		CourseDays:         append([]string{}, group.CourseDays...), // an empty list in JSON, not null
 		CreatedAt:          group.CreatedAt,
 		UpdatedAt:          group.UpdatedAt,
 	}

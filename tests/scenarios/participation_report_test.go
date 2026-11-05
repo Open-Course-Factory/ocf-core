@@ -51,12 +51,11 @@ func (f fakeCommandActivity) CommandTimes([]string, time.Time, time.Time) (map[s
 }
 
 type reportFixture struct {
-	db         *gorm.DB
-	orgID      uuid.UUID
-	groupID    uuid.UUID
-	scenario   *models.Scenario
-	learner    string
-	otherAdult string
+	db       *gorm.DB
+	orgID    uuid.UUID
+	groupID  uuid.UUID
+	scenario *models.Scenario
+	learner  string
 }
 
 func newReportFixture(t *testing.T) *reportFixture {
@@ -104,7 +103,12 @@ func (f *reportFixture) seedRun(t *testing.T, scenarioID uuid.UUID, userID strin
 
 func (f *reportFixture) build(t *testing.T, commands services.CommandActivitySource) *services.ParticipationReport {
 	t.Helper()
-	scope, err := services.NewClassPeriodScope(f.db, f.groupID, reportStart, reportEnd)
+	return f.buildForCourseDays(t, commands, nil)
+}
+
+func (f *reportFixture) buildForCourseDays(t *testing.T, commands services.CommandActivitySource, courseDays []string) *services.ParticipationReport {
+	t.Helper()
+	scope, err := services.NewClassPeriodScope(f.db, f.groupID, reportStart, reportEnd, courseDays)
 	require.NoError(t, err)
 	report, err := services.BuildParticipationReport(f.db, scope, commands, paris)
 	require.NoError(t, err)
@@ -141,10 +145,10 @@ func TestParticipationReport_DescribesTheClassAndPeriod(t *testing.T) {
 func TestClassPeriodScope_TrainersAreTheOwnerAndManagers(t *testing.T) {
 	f := newReportFixture(t)
 
-	scope, err := services.NewClassPeriodScope(f.db, f.groupID, reportStart, reportEnd)
+	scope, err := services.NewClassPeriodScope(f.db, f.groupID, reportStart, reportEnd, nil)
 
 	require.NoError(t, err)
-	assert.Len(t, scope.TrainerIDs(), 2)
+	assert.ElementsMatch(t, []string{"report-owner", "report-trainer"}, scope.TrainerIDs())
 }
 
 // An abandoned run keeps a null completed_at, so without this it would appear in
@@ -327,7 +331,7 @@ func TestParticipationReport_CommandsUnavailable_StillReportsAndSaysSo(t *testin
 func TestClassPeriodScope_UnknownClass_ReportsIt(t *testing.T) {
 	db := freshTestDB(t)
 
-	_, err := services.NewClassPeriodScope(db, uuid.New(), reportStart, reportEnd)
+	_, err := services.NewClassPeriodScope(db, uuid.New(), reportStart, reportEnd, nil)
 
 	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
@@ -337,7 +341,7 @@ func TestParticipationReport_ClassWithNoLearners_IsEmptyNotAnError(t *testing.T)
 	db := freshTestDB(t)
 	orgID := createTestOrg(t, db, "report-owner")
 	groupID := createTestGroupInOrg(t, db, orgID, "report-owner")
-	scope, err := services.NewClassPeriodScope(db, groupID, reportStart, reportEnd)
+	scope, err := services.NewClassPeriodScope(db, groupID, reportStart, reportEnd, nil)
 	require.NoError(t, err)
 
 	report, err := services.BuildParticipationReport(db, scope, noCommands(), paris)
@@ -364,7 +368,8 @@ func TestGetParticipationReport_RefusesABadPeriod(t *testing.T) {
 		"no end":           "from=2026-03-02",
 		"not a date":       "from=monday&to=2026-03-06",
 		"end before start": "from=2026-03-06&to=2026-03-02",
-		"more than a year": "from=2025-01-01&to=2026-03-06",
+		"more than a year": "from=2025-03-02&to=2026-03-02",
+		"not a course day": "from=2026-03-02&to=2026-03-06&days=2026-03-02,monday",
 		"unknown timezone": "from=2026-03-02&to=2026-03-06&tz=Mars/Olympus",
 	}
 	f := newReportFixture(t)
@@ -373,6 +378,26 @@ func TestGetParticipationReport_RefusesABadPeriod(t *testing.T) {
 			assert.Equal(t, http.StatusBadRequest, requestParticipationReport(t, f.db, f.groupID, query).Code)
 		})
 	}
+}
+
+func TestGetParticipationReport_AcceptsAWholeYear(t *testing.T) {
+	f := newReportFixture(t)
+
+	recorder := requestParticipationReport(t, f.db, f.groupID, "from=2025-03-02&to=2026-03-01")
+
+	assert.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+}
+
+func TestGetParticipationReport_ReportsTheCourseDaysAsked(t *testing.T) {
+	f := newReportFixture(t)
+	f.seedRun(t, f.scenario.ID, f.learner, mondayAt9)
+
+	recorder := requestParticipationReport(t, f.db, f.groupID, "from=2026-03-02&to=2026-03-04&tz=Europe/Paris&days=2026-03-03,2026-03-02,2026-03-03")
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var report services.ParticipationReport
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &report))
+	assert.Equal(t, []string{"2026-03-02", "2026-03-03"}, report.Days, "sorted, without duplicates")
 }
 
 func TestGetParticipationReport_UnknownClass_IsNotFound(t *testing.T) {
@@ -396,4 +421,113 @@ func TestGetParticipationReport_IncludesTheLastDayInTheTimezoneAsked(t *testing.
 	require.Len(t, report.Learners, 1)
 	require.Len(t, report.Learners[0].Days, 1)
 	assert.Equal(t, "2026-03-02", report.Learners[0].Days[0].Date)
+}
+
+func TestParticipationReport_LearnerWhoLeft_StaysListedAndMarked(t *testing.T) {
+	f := newReportFixture(t)
+	addGroupMember(t, f.db, f.groupID, "report-dropout", groupModels.GroupMemberRoleMember)
+	require.NoError(t, f.db.Model(&groupModels.GroupMember{}).
+		Where("user_id = ?", "report-dropout").Update("is_active", false).Error)
+
+	report := f.build(t, noCommands())
+
+	assert.True(t, learnerRow(t, report, "report-dropout").HasLeft)
+	assert.False(t, learnerRow(t, report, f.learner).HasLeft)
+}
+
+func TestParticipationReport_LearnerEnrolledAgain_HasOneRowAndHasNotLeft(t *testing.T) {
+	f := newReportFixture(t)
+	require.NoError(t, f.db.Model(&groupModels.GroupMember{}).
+		Where("user_id = ?", f.learner).Update("is_active", false).Error)
+	addGroupMember(t, f.db, f.groupID, f.learner, groupModels.GroupMemberRoleMember)
+
+	report := f.build(t, noCommands())
+
+	require.Len(t, report.Learners, 1)
+	assert.False(t, report.Learners[0].HasLeft)
+}
+
+func TestParticipationReport_CourseDays_LeaveOutOtherDaysAndTheirCommands(t *testing.T) {
+	f := newReportFixture(t)
+	f.seedTerminal(t, f.learner, "long-terminal", mondayAt9)
+	commands := fakeCommandActivity{times: map[string][]time.Time{"long-terminal": {mondayAt17, tuesdayAt10, tuesdayAt10.Add(time.Hour)}}}
+
+	report := f.buildForCourseDays(t, commands, []string{"2026-03-02"})
+
+	assert.Equal(t, []string{"2026-03-02"}, report.Days)
+	assert.Equal(t, 1, report.OtherActivityDays)
+	row := learnerRow(t, report, f.learner)
+	require.Len(t, row.Days, 1)
+	assert.Equal(t, 1, row.Days[0].Commands)
+	assert.Equal(t, 1, row.Commands, "commands of other days must not sit beside the kept days")
+}
+
+func TestParticipationReport_CourseDayOutsideThePeriod_IsNotAColumn(t *testing.T) {
+	f := newReportFixture(t)
+
+	report := f.buildForCourseDays(t, noCommands(), []string{"2026-03-02", "2026-04-01"})
+
+	assert.Equal(t, []string{"2026-03-02"}, report.Days)
+}
+
+func TestParticipationReport_CourseDayWithNoActivity_RemainsAColumn(t *testing.T) {
+	f := newReportFixture(t)
+
+	report := f.buildForCourseDays(t, noCommands(), []string{"2026-03-03"})
+
+	assert.Equal(t, []string{"2026-03-03"}, report.Days)
+	assert.Empty(t, learnerRow(t, report, f.learner).Days)
+}
+
+func TestParticipationReport_ActivityDays_CountLearnersWhateverTheCourseDays(t *testing.T) {
+	f := newReportFixture(t)
+	addGroupMember(t, f.db, f.groupID, "report-second", groupModels.GroupMemberRoleMember)
+	f.seedTerminal(t, f.learner, "first", mondayAt9)
+	f.seedTerminal(t, f.learner, "first-again", mondayAt17)
+	f.seedTerminal(t, "report-second", "second", mondayAt9)
+	f.seedTerminal(t, "report-second", "second-tuesday", tuesdayAt10)
+
+	report := f.buildForCourseDays(t, noCommands(), []string{"2026-03-03"})
+
+	assert.Equal(t, []services.ActivityDay{
+		{Date: "2026-03-02", ActiveLearners: 2},
+		{Date: "2026-03-03", ActiveLearners: 1},
+	}, report.ActivityDays)
+}
+
+// Work done outside the course days still counts, without saying when it happened.
+func TestParticipationReport_RunOutsideTheCourseDays_KeepsItsResultButNotItsDay(t *testing.T) {
+	f := newReportFixture(t)
+	f.seedRun(t, f.scenario.ID, f.learner, tuesdayAt10)
+
+	row := learnerRow(t, f.buildForCourseDays(t, noCommands(), []string{"2026-03-02"}), f.learner)
+
+	assert.Len(t, row.Scenarios, 1)
+	assert.Empty(t, row.Days)
+}
+
+func TestParticipationReport_ReservationPlaceholder_IsNotActivity(t *testing.T) {
+	f := newReportFixture(t)
+	f.seedTerminal(t, f.learner, terminalModels.TerminalReservationSessionIDPrefix+"pending", mondayAt9)
+
+	assert.Empty(t, learnerRow(t, f.build(t, noCommands()), f.learner).Days)
+}
+
+func TestParticipationReport_RemovedStep_DoesNotCountInTheTotal(t *testing.T) {
+	f := newReportFixture(t)
+	removed := &models.ScenarioStep{ScenarioID: f.scenario.ID, Order: 99, Title: "removed"}
+	require.NoError(t, f.db.Create(removed).Error)
+	require.NoError(t, f.db.Delete(removed).Error)
+	f.seedRun(t, f.scenario.ID, f.learner, mondayAt9)
+
+	scenarios := learnerRow(t, f.build(t, noCommands()), f.learner).Scenarios
+
+	require.Len(t, scenarios, 1)
+	assert.Equal(t, 1, scenarios[0].StepsTotal)
+}
+
+func TestValidateCourseDays(t *testing.T) {
+	assert.NoError(t, groupModels.ValidateCourseDays(nil))
+	assert.NoError(t, groupModels.ValidateCourseDays([]string{"2026-03-02"}))
+	assert.Error(t, groupModels.ValidateCourseDays([]string{"2026-03-02", "monday"}))
 }

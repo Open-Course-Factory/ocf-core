@@ -58,8 +58,8 @@ func TestCommandTimes_ReadsEveryPageAndKeepsOnlyThePeriod(t *testing.T) {
 	requests := newFakeHistoryAPI(t, []historyCommand{
 		{"s-1", from.Unix()},
 		{"s-1", from.Add(time.Hour).Unix()},
-		{"s-1", to.Unix()}, // the end of the period is excluded
 		{"s-2", from.Add(2 * time.Hour).Unix()},
+		{"s-1", to.Unix()}, // the end of the period is excluded
 	}, 2)
 
 	times, err := services.NewCommandActivityReader().CommandTimes([]string{"s-1", "s-2"}, from, to)
@@ -69,6 +69,23 @@ func TestCommandTimes_ReadsEveryPageAndKeepsOnlyThePeriod(t *testing.T) {
 	assert.Len(t, times["s-2"], 1)
 	assert.Len(t, *requests, 2, "two pages")
 	assert.Equal(t, from.Unix()-1, (*requests)[0].Since, "tt-backend excludes this bound, and a command at exactly from counts")
+}
+
+func TestCommandTimes_StopsReadingOnceCommandsPassTheEndOfThePeriod(t *testing.T) {
+	from := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 0, 1)
+	requests := newFakeHistoryAPI(t, []historyCommand{
+		{"s-1", from.Unix()},
+		{"s-1", to.Unix()},
+		{"s-1", to.Add(time.Hour).Unix()},
+		{"s-1", to.Add(2 * time.Hour).Unix()},
+	}, 2)
+
+	times, err := services.NewCommandActivityReader().CommandTimes([]string{"s-1"}, from, to)
+
+	require.NoError(t, err)
+	assert.Len(t, times["s-1"], 1)
+	assert.Len(t, *requests, 1, "the second page is all after the period")
 }
 
 func TestCommandTimes_SplitsSessionsToRespectTheLimitOfTheAPI(t *testing.T) {

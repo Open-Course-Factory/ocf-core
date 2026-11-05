@@ -11,6 +11,7 @@ import (
 	groupRoutes "soli/formations/src/groups/routes"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -66,6 +67,9 @@ func RegisterGroup(service *ems.EntityRegistrationService) {
 					}
 					if input.Metadata != nil {
 						updates["metadata"] = *input.Metadata
+					}
+					if input.CourseDays != nil {
+						updates["course_days"] = pq.StringArray(*input.CourseDays)
 					}
 					return updates
 				},

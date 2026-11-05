@@ -1,10 +1,12 @@
 package models
 
 import (
+	"fmt"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // ClassGroup represents a collection of users (class, team, organization unit)
@@ -32,6 +34,10 @@ type ClassGroup struct {
 	// nil = inherit from organization, true = consent handled by contract, false = require per-session consent.
 	RecordingConsentHandled *bool `gorm:"default:null" json:"recording_consent_handled,omitempty"`
 
+	// CourseDays are the days that belong to the training, YYYY-MM-DD, kept so a
+	// participation report comes out the same each time. Empty means not chosen yet.
+	CourseDays pq.StringArray `gorm:"type:text[]" json:"course_days,omitempty"`
+
 	// Metadata for custom fields (schedules, locations, etc.)
 	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
 
@@ -42,6 +48,16 @@ type ClassGroup struct {
 	Members     []GroupMember `gorm:"foreignKey:GroupID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`
 	SubGroups   []ClassGroup  `gorm:"foreignKey:ParentGroupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"sub_groups,omitempty"`
 	ParentGroup *ClassGroup   `gorm:"foreignKey:ParentGroupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"parent_group,omitempty"`
+}
+
+// ValidateCourseDays refuses anything but YYYY-MM-DD dates.
+func ValidateCourseDays(days []string) error {
+	for _, day := range days {
+		if _, err := time.Parse(time.DateOnly, day); err != nil {
+			return fmt.Errorf("%q is not a date, YYYY-MM-DD", day)
+		}
+	}
+	return nil
 }
 
 // Implement interfaces for entity management system

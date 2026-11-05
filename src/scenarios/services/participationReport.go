@@ -22,7 +22,11 @@ type ParticipationScope interface {
 	Title() string
 	OrganizationID() *uuid.UUID
 	Period() (from, to time.Time) // to is exclusive
-	LearnerIDs() []string
+	// CourseDays lists the days that belong to the training, YYYY-MM-DD. Empty means
+	// every day with activity counts.
+	CourseDays() []string
+	LearnerIDs() []string       // everyone who took part, including those who left
+	FormerLearnerIDs() []string // those of LearnerIDs who no longer belong
 	TrainerIDs() []string
 	ScenarioIDs() []uuid.UUID
 }
@@ -44,10 +48,25 @@ type ParticipationReport struct {
 	Timezone         string                 `json:"timezone"` // IANA name the days are cut in
 	GeneratedAt      time.Time              `json:"generated_at"`
 	Trainers         []string               `json:"trainers"`
-	Learners         []LearnerParticipation `json:"learners"`
+	// Days are the report's columns: the course days in the period, or every day
+	// with activity when no course day is set.
+	Days []string `json:"days"`
+	// ActivityDays lists every day of the period with activity, whether or not it
+	// is reported, so a manager can pick the course days from them.
+	ActivityDays []ActivityDay `json:"activity_days"`
+	// OtherActivityDays counts the days with activity that the report leaves out. It
+	// says so, or the report would read as edited evidence.
+	OtherActivityDays int                    `json:"other_activity_days"`
+	Learners          []LearnerParticipation `json:"learners"`
 	// CommandsAvailable is false when tt-backend could not answer: the counts are
 	// then unknown, not zero.
 	CommandsAvailable bool `json:"commands_available"`
+}
+
+// ActivityDay says how many learners were active on a day.
+type ActivityDay struct {
+	Date           string `json:"date"` // YYYY-MM-DD in the report's timezone
+	ActiveLearners int    `json:"active_learners"`
 }
 
 // LearnerParticipation is one learner's row; empty lists mean no recorded activity.
@@ -55,53 +74,65 @@ type LearnerParticipation struct {
 	UserID    string                  `json:"user_id"`
 	Name      string                  `json:"name"`
 	Email     string                  `json:"email"`
-	Commands  int                     `json:"commands"`
+	HasLeft   bool                    `json:"has_left"` // no longer in the class
+	Commands  int                     `json:"commands"` // on the reported days
 	Days      []ParticipationDay      `json:"days"`
 	Scenarios []ScenarioParticipation `json:"scenarios"`
 }
 
-// ParticipationDay holds a day's first and last recorded activity.
+// ParticipationDay holds a day's first and last recorded activity and its commands.
 type ParticipationDay struct {
 	Date          string    `json:"date"` // YYYY-MM-DD in the report's timezone
+	Commands      int       `json:"commands"`
 	FirstActivity time.Time `json:"first_activity"`
 	LastActivity  time.Time `json:"last_activity"`
 }
 
-// ScenarioParticipation is a learner's progress in one run of a scenario.
+// ScenarioParticipation is a learner's progress in one run of a scenario. It has no
+// dates: a lab finished outside the course days keeps its result, not when it happened.
 type ScenarioParticipation struct {
-	Title          string     `json:"title"`
-	Status         string     `json:"status"`
-	StartedAt      time.Time  `json:"started_at"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
-	Grade          *float64   `json:"grade,omitempty"`
-	StepsCompleted int        `json:"steps_completed"`
-	StepsTotal     int        `json:"steps_total"`
-	VerifyAttempts int        `json:"verify_attempts"`
+	Title          string   `json:"title"`
+	Status         string   `json:"status"`
+	Grade          *float64 `json:"grade,omitempty"`
+	StepsCompleted int      `json:"steps_completed"`
+	StepsTotal     int      `json:"steps_total"`
+	VerifyAttempts int      `json:"verify_attempts"`
 }
 
 // classPeriodScope is a class over a date range, until training sessions exist.
 type classPeriodScope struct {
-	group       groupModels.ClassGroup
-	from, to    time.Time
-	learnerIDs  []string
-	trainerIDs  []string
-	scenarioIDs []uuid.UUID
+	group            groupModels.ClassGroup
+	from, to         time.Time
+	courseDays       []string
+	learnerIDs       []string
+	formerLearnerIDs []string
+	trainerIDs       []string
+	scenarioIDs      []uuid.UUID
 }
 
 // NewClassPeriodScope loads a class. An unknown class returns gorm.ErrRecordNotFound.
-func NewClassPeriodScope(db *gorm.DB, groupID uuid.UUID, from, to time.Time) (ParticipationScope, error) {
-	scope := &classPeriodScope{from: from, to: to}
+func NewClassPeriodScope(db *gorm.DB, groupID uuid.UUID, from, to time.Time, courseDays []string) (ParticipationScope, error) {
+	scope := &classPeriodScope{from: from, to: to, courseDays: courseDays}
 	if err := db.First(&scope.group, "id = ?", groupID).Error; err != nil {
 		return nil, err
 	}
-	activeMembers := db.Model(&groupModels.GroupMember{}).Where("group_id = ? AND is_active = ?", groupID, true)
-	if err := activeMembers.Session(&gorm.Session{}).
-		Scopes(groupModels.LearnerRoleScope("group_members")).
-		Pluck("user_id", &scope.learnerIDs).Error; err != nil {
+	members := db.Model(&groupModels.GroupMember{}).Where("group_id = ?", groupID)
+	learners := members.Session(&gorm.Session{}).Scopes(groupModels.LearnerRoleScope("group_members"))
+	if err := learners.Session(&gorm.Session{}).Distinct().Pluck("user_id", &scope.learnerIDs).Error; err != nil {
 		return nil, err
 	}
-	if err := activeMembers.Session(&gorm.Session{}).
-		Where("role IN ?", []groupModels.GroupMemberRole{groupModels.GroupMemberRoleOwner, groupModels.GroupMemberRoleManager}).
+	// Someone removed and enrolled again has both an inactive and an active row.
+	var currentLearnerIDs []string
+	if err := learners.Session(&gorm.Session{}).Where("is_active = ?", true).Pluck("user_id", &currentLearnerIDs).Error; err != nil {
+		return nil, err
+	}
+	for _, userID := range scope.learnerIDs {
+		if !slices.Contains(currentLearnerIDs, userID) {
+			scope.formerLearnerIDs = append(scope.formerLearnerIDs, userID)
+		}
+	}
+	if err := members.Session(&gorm.Session{}).
+		Where("is_active = ? AND role IN ?", true, groupModels.ManagerRoles).
 		Pluck("user_id", &scope.trainerIDs).Error; err != nil {
 		return nil, err
 	}
@@ -116,7 +147,9 @@ func NewClassPeriodScope(db *gorm.DB, groupID uuid.UUID, from, to time.Time) (Pa
 func (s *classPeriodScope) Title() string                  { return s.group.DisplayName }
 func (s *classPeriodScope) OrganizationID() *uuid.UUID     { return s.group.OrganizationID }
 func (s *classPeriodScope) Period() (time.Time, time.Time) { return s.from, s.to }
+func (s *classPeriodScope) CourseDays() []string           { return s.courseDays }
 func (s *classPeriodScope) LearnerIDs() []string           { return s.learnerIDs }
+func (s *classPeriodScope) FormerLearnerIDs() []string     { return s.formerLearnerIDs }
 func (s *classPeriodScope) TrainerIDs() []string           { return s.trainerIDs }
 func (s *classPeriodScope) ScenarioIDs() []uuid.UUID       { return s.scenarioIDs }
 
@@ -146,26 +179,41 @@ func BuildParticipationReport(db *gorm.DB, scope ParticipationScope, commands Co
 		slog.Warn("participation report: commands unavailable", "err", err)
 		report.CommandsAvailable = false
 	}
-	commandCounts := map[string]int{}
-	for _, terminal := range terminals {
-		collector.add(terminal.UserID, terminal.CreatedAt)
-		commandCounts[terminal.UserID] += len(commandTimes[terminal.SessionID])
-		for _, at := range commandTimes[terminal.SessionID] {
-			collector.add(terminal.UserID, at)
+	collector.addTerminals(terminals, commandTimes)
+
+	runs, err := loadScenarioRuns(db, scope, sessionIDs)
+	if err != nil {
+		return nil, err
+	}
+	runs = slices.DeleteFunc(runs, func(run models.ScenarioSession) bool {
+		return !slices.ContainsFunc(runTimestamps(run), collector.inPeriod)
+	})
+	for _, run := range runs {
+		for _, at := range runTimestamps(run) {
+			collector.addActivity(run.UserID, at)
 		}
 	}
-
-	scenarioRows, err := loadScenarioParticipation(db, scope, sessionIDs, collector)
+	scenarioRows, err := scenarioRowsByLearner(db, runs)
 	if err != nil {
 		return nil, err
 	}
 
+	report.ActivityDays = collector.activityDays()
+	report.Days = reportedDays(scope.CourseDays(), report.From, report.To, report.ActivityDays)
+	for _, day := range report.ActivityDays {
+		if !slices.Contains(report.Days, day.Date) {
+			report.OtherActivityDays++
+		}
+	}
+
 	report.Learners = make([]LearnerParticipation, 0, len(scope.LearnerIDs()))
 	for _, userID := range scope.LearnerIDs() {
+		days := collector.daysOf(userID, report.Days)
 		report.Learners = append(report.Learners, LearnerParticipation{
 			UserID:    userID,
-			Commands:  commandCounts[userID],
-			Days:      collector.daysOf(userID),
+			HasLeft:   slices.Contains(scope.FormerLearnerIDs(), userID),
+			Commands:  totalCommands(days),
+			Days:      days,
 			Scenarios: append([]ScenarioParticipation{}, scenarioRows[userID]...), // an empty list in JSON, not null
 		})
 	}
@@ -178,6 +226,32 @@ func BuildParticipationReport(db *gorm.DB, scope ParticipationScope, commands Co
 		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.UserID, b.UserID))
 	})
 	return report, nil
+}
+
+// reportedDays are the course days within the period (YYYY-MM-DD strings sort as dates
+// do), or every day with activity when the scope sets no course day.
+func reportedDays(courseDays []string, firstDay, lastDay string, activityDays []ActivityDay) []string {
+	days := []string{}
+	if len(courseDays) == 0 {
+		for _, day := range activityDays {
+			days = append(days, day.Date)
+		}
+		return days
+	}
+	for _, day := range courseDays {
+		if firstDay <= day && day <= lastDay {
+			days = append(days, day)
+		}
+	}
+	return days
+}
+
+func totalCommands(days []ParticipationDay) int {
+	total := 0
+	for _, day := range days {
+		total += day.Commands
+	}
+	return total
 }
 
 func organizationName(db *gorm.DB, organizationID *uuid.UUID) string {
@@ -193,9 +267,10 @@ func organizationName(db *gorm.DB, organizationID *uuid.UUID) string {
 }
 
 func displayNames(userIDs []string) []string {
+	users := fetchUserMap(userIDs)
 	names := make([]string, 0, len(userIDs))
-	for _, info := range fetchUserMap(userIDs) {
-		names = append(names, info.Name)
+	for _, userID := range userIDs {
+		names = append(names, cmp.Or(users[userID].Name, userID))
 	}
 	slices.Sort(names)
 	return names
@@ -212,7 +287,10 @@ func loadScopeTerminals(db *gorm.DB, scope ParticipationScope) ([]terminalModels
 		Where("terminals.created_at < ?", to.UTC()).
 		Scopes(terminalModels.SupervisableByGroupOrgScope(scope.OrganizationID())).
 		Find(&terminals).Error
-	return terminals, err
+	// A reservation placeholder holds budget: nobody has used a terminal yet.
+	return slices.DeleteFunc(terminals, func(terminal terminalModels.Terminal) bool {
+		return terminalModels.IsReservationPlaceholderSessionID(terminal.SessionID)
+	}), err
 }
 
 func sessionIDsOf(terminals []terminalModels.Terminal) []string {
@@ -223,11 +301,11 @@ func sessionIDsOf(terminals []terminalModels.Terminal) []string {
 	return ids
 }
 
-// loadScenarioParticipation returns each learner's runs with something recorded in
-// the period, and records those timestamps as activity. A run belongs to the training
-// if the class assigns its scenario or it ran in one of the class's terminals: a
-// scenario can be started without being assigned.
-func loadScenarioParticipation(db *gorm.DB, scope ParticipationScope, terminalSessionIDs []string, collector *activityCollector) (map[string][]ScenarioParticipation, error) {
+// loadScenarioRuns returns each learner's runs that may fall in the period; the
+// caller keeps those with a timestamp in it, since an abandoned run keeps a null
+// completed_at. A run belongs to the training if the class assigns its scenario or it
+// ran in one of the class's terminals: a scenario can be started without being assigned.
+func loadScenarioRuns(db *gorm.DB, scope ParticipationScope, terminalSessionIDs []string) ([]models.ScenarioSession, error) {
 	from, to := scope.Period()
 	var runs []models.ScenarioSession
 	err := db.
@@ -237,17 +315,18 @@ func loadScenarioParticipation(db *gorm.DB, scope ParticipationScope, terminalSe
 		Where("started_at < ? AND (completed_at IS NULL OR completed_at >= ?)", to.UTC(), from.UTC()).
 		Order("started_at").
 		Find(&runs).Error
-	if err != nil {
-		return nil, err
-	}
+	return runs, err
+}
 
+func scenarioRowsByLearner(db *gorm.DB, runs []models.ScenarioSession) (map[string][]ScenarioParticipation, error) {
 	scenarioIDs := make([]uuid.UUID, 0, len(runs))
 	for _, run := range runs {
 		scenarioIDs = append(scenarioIDs, run.ScenarioID)
 	}
 	var scenarios []models.Scenario
-	// Unscoped: evidence of past work must keep its title once a scenario is deleted.
-	if err := db.Unscoped().Preload("Steps").Find(&scenarios, "id IN ?", scenarioIDs).Error; err != nil {
+	// Unscoped keeps a deleted scenario's title, as evidence of past work. It carries
+	// over to the preload, whose removed steps must still not count.
+	if err := db.Unscoped().Preload("Steps", "deleted_at IS NULL").Find(&scenarios, "id IN ?", scenarioIDs).Error; err != nil {
 		return nil, err
 	}
 	scenarioByID := make(map[uuid.UUID]models.Scenario, len(scenarios))
@@ -255,16 +334,8 @@ func loadScenarioParticipation(db *gorm.DB, scope ParticipationScope, terminalSe
 		scenarioByID[scenario.ID] = scenario
 	}
 
-	rows := make(map[string][]ScenarioParticipation, len(scope.LearnerIDs()))
+	rows := map[string][]ScenarioParticipation{}
 	for _, run := range runs {
-		timestamps := runTimestamps(run)
-		// An abandoned run keeps a null completed_at, so the query above cannot tell.
-		if !slices.ContainsFunc(timestamps, collector.inPeriod) {
-			continue
-		}
-		for _, at := range timestamps {
-			collector.add(run.UserID, at)
-		}
 		rows[run.UserID] = append(rows[run.UserID], scenarioParticipationOf(run, scenarioByID[run.ScenarioID]))
 	}
 	return rows, nil
@@ -285,12 +356,10 @@ func runTimestamps(run models.ScenarioSession) []time.Time {
 
 func scenarioParticipationOf(run models.ScenarioSession, scenario models.Scenario) ScenarioParticipation {
 	row := ScenarioParticipation{
-		Title:       scenario.Title,
-		Status:      run.Status,
-		StartedAt:   run.StartedAt,
-		CompletedAt: run.CompletedAt,
-		Grade:       run.Grade,
-		StepsTotal:  len(scenario.Steps),
+		Title:      scenario.Title,
+		Status:     run.Status,
+		Grade:      run.Grade,
+		StepsTotal: len(scenario.Steps),
 	}
 	for _, step := range run.StepProgress {
 		row.VerifyAttempts += step.VerifyAttempts
@@ -317,9 +386,21 @@ func (c *activityCollector) inPeriod(at time.Time) bool {
 	return !at.Before(c.from) && at.Before(c.to)
 }
 
-func (c *activityCollector) add(userID string, at time.Time) {
+func (c *activityCollector) addTerminals(terminals []terminalModels.Terminal, commandTimes map[string][]time.Time) {
+	for _, terminal := range terminals {
+		c.addActivity(terminal.UserID, terminal.CreatedAt)
+		for _, at := range commandTimes[terminal.SessionID] {
+			if day := c.addActivity(terminal.UserID, at); day != nil {
+				day.Commands++
+			}
+		}
+	}
+}
+
+// addActivity returns the day the activity falls on, nil when outside the period.
+func (c *activityCollector) addActivity(userID string, at time.Time) *ParticipationDay {
 	if !c.inPeriod(at) {
-		return
+		return nil
 	}
 	date := at.In(c.location).Format(time.DateOnly)
 	if c.days[userID] == nil {
@@ -327,8 +408,8 @@ func (c *activityCollector) add(userID string, at time.Time) {
 	}
 	day, seen := c.days[userID][date]
 	if !seen {
-		c.days[userID][date] = &ParticipationDay{Date: date, FirstActivity: at, LastActivity: at}
-		return
+		day = &ParticipationDay{Date: date, FirstActivity: at, LastActivity: at}
+		c.days[userID][date] = day
 	}
 	if at.Before(day.FirstActivity) {
 		day.FirstActivity = at
@@ -336,12 +417,31 @@ func (c *activityCollector) add(userID string, at time.Time) {
 	if at.After(day.LastActivity) {
 		day.LastActivity = at
 	}
+	return day
 }
 
-func (c *activityCollector) daysOf(userID string) []ParticipationDay {
+func (c *activityCollector) activityDays() []ActivityDay {
+	activeLearners := map[string]int{}
+	for _, days := range c.days {
+		for date := range days {
+			activeLearners[date]++
+		}
+	}
+	activityDays := make([]ActivityDay, 0, len(activeLearners))
+	for date, count := range activeLearners {
+		activityDays = append(activityDays, ActivityDay{Date: date, ActiveLearners: count})
+	}
+	slices.SortFunc(activityDays, func(a, b ActivityDay) int { return cmp.Compare(a.Date, b.Date) })
+	return activityDays
+}
+
+// daysOf returns the learner's activity on the given days, sorted.
+func (c *activityCollector) daysOf(userID string, reported []string) []ParticipationDay {
 	days := make([]ParticipationDay, 0, len(c.days[userID]))
-	for _, day := range c.days[userID] {
-		days = append(days, *day)
+	for date, day := range c.days[userID] {
+		if slices.Contains(reported, date) {
+			days = append(days, *day)
+		}
 	}
 	slices.SortFunc(days, func(a, b ParticipationDay) int { return cmp.Compare(a.Date, b.Date) })
 	return days

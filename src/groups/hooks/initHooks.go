@@ -23,6 +23,9 @@ func InitGroupHooks(db *gorm.DB) {
 	// Hook deciding who may modify or delete an existing group. Registered
 	// alongside the placement hook because both gate the write.
 	writeAuthHook := NewGroupWriteAuthorizationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(NewGroupCourseDaysValidationHook()); err != nil {
+		log.Printf("❌ Failed to register group course days validation hook: %v", err)
+	}
 	if err := hooks.GlobalHookRegistry.RegisterHook(writeAuthHook); err != nil {
 		log.Printf("❌ Failed to register group write authorization hook: %v", err)
 	} else {

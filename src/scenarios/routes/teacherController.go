@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -102,9 +103,6 @@ func (tc *TeacherController) GetGroupLiveProgress(c *gin.Context) {
 	c.JSON(http.StatusOK, rows)
 }
 
-// maxParticipationReportDays bounds a report: it reads every terminal in the period.
-const maxParticipationReportDays = 366
-
 // GetParticipationReport godoc
 // @Summary Get a class's participation report
 // @Description What each learner did over a period: first and last recorded activity per day, commands and scenario progress. It reports recorded activity, not hours attended.
@@ -114,6 +112,7 @@ const maxParticipationReportDays = 366
 // @Param from query string true "First day, YYYY-MM-DD"
 // @Param to query string true "Last day included, YYYY-MM-DD"
 // @Param tz query string false "IANA timezone that days are cut in (default UTC)"
+// @Param days query string false "Course days to report, YYYY-MM-DD separated by commas (default: every day with activity)"
 // @Success 200 {object} services.ParticipationReport
 // @Failure 400 {object} map[string]string
 // @Failure 403 {object} map[string]string
@@ -138,7 +137,13 @@ func (tc *TeacherController) GetParticipationReport(c *gin.Context) {
 		return
 	}
 
-	scope, err := services.NewClassPeriodScope(tc.db, groupID, from, to)
+	courseDays, err := parseCourseDays(c.Query("days"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	scope, err := services.NewClassPeriodScope(tc.db, groupID, from, to, courseDays)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "class not found"})
 		return
@@ -170,10 +175,23 @@ func parseReportPeriod(fromDay, toDay string, location *time.Location) (from, to
 	if lastDay.Before(from) {
 		return from, to, errors.New("to must not be before from")
 	}
-	if lastDay.After(from.AddDate(0, 0, maxParticipationReportDays)) {
+	if !lastDay.Before(from.AddDate(1, 0, 0)) {
 		return from, to, errors.New("the period must not exceed one year")
 	}
 	return from, lastDay.AddDate(0, 0, 1), nil
+}
+
+// parseCourseDays reads a comma-separated list of days, sorted and without duplicates.
+func parseCourseDays(param string) ([]string, error) {
+	if param == "" {
+		return nil, nil
+	}
+	days := strings.Split(param, ",")
+	if err := groupModels.ValidateCourseDays(days); err != nil {
+		return nil, err
+	}
+	slices.Sort(days)
+	return slices.Compact(days), nil
 }
 
 // GetGroupAssignmentsProgress godoc

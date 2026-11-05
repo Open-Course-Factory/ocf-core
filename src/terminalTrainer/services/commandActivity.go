@@ -57,7 +57,11 @@ func (r *CommandActivityReader) collectCommandTimes(sessionUUIDs []string, from,
 			return err
 		}
 		for _, command := range page.Commands {
-			if executedAt := time.Unix(command.ExecutedAt, 0); !executedAt.Before(from) && executedAt.Before(to) {
+			executedAt := time.Unix(command.ExecutedAt, 0)
+			if !executedAt.Before(to) {
+				return nil // tt-backend sorts by time, so the rest is later still
+			}
+			if !executedAt.Before(from) {
 				times[command.SessionUUID] = append(times[command.SessionUUID], executedAt)
 			}
 		}
