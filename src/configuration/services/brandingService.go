@@ -72,7 +72,7 @@ func (s *BrandingService) GetLogo() (logo string, version string, err error) {
 	return b.Logo, b.LogoVersion, err
 }
 
-// InstanceName is the display name of this OCF instance, for emails and other
+// InstanceName is the display name of this instance, for emails and other
 // server-rendered text. It falls back to the default on any read error.
 func (s *BrandingService) InstanceName() string {
 	b, err := s.GetBranding()
