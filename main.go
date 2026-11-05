@@ -218,7 +218,8 @@ func main() {
 	generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
 
 	// Initialize Gin router
-	r := gin.Default()
+	r := gin.New()
+	r.Use(casdoor.MoveQueryTokenToHeader(), gin.Logger(), gin.Recovery()) // token first, so nothing logs it
 
 	// Setup CORS middleware - SECURE CONFIGURATION
 	allowedOrigins := config.InitAllowedOrigins()
