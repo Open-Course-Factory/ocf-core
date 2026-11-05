@@ -219,7 +219,7 @@ func main() {
 
 	// Initialize Gin router
 	r := gin.New()
-	r.Use(casdoor.MoveQueryTokenToHeader(), gin.Logger(), gin.Recovery()) // token first, so nothing logs it
+	r.Use(casdoor.MoveWebSocketTokenToHeader(), gin.Logger(), gin.Recovery()) // token first, so nothing logs it
 
 	// Setup CORS middleware - SECURE CONFIGURATION
 	allowedOrigins := config.InitAllowedOrigins()

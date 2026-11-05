@@ -1,13 +1,16 @@
 package casdoor
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
 // JwtTokenParser is the package-level seam used to parse JWT tokens.
@@ -17,21 +20,45 @@ var JwtTokenParser = func(token string) (*casdoorsdk.Claims, error) {
 	return casdoorsdk.ParseJwtToken(token)
 }
 
-// MoveQueryTokenToHeader keeps access tokens out of logs and proxied requests,
-// so it must run before anything that logs or forwards the request.
+// WebSocketAuthProtocol is the subprotocol a browser offers next to its access
+// token, as new WebSocket(url, [WebSocketAuthProtocol, token]). Browsers cannot
+// set any other header on a WebSocket.
+const WebSocketAuthProtocol = "ocf.bearer"
+
+// MoveWebSocketTokenToHeader keeps access tokens out of logs and proxied
+// requests, so it must run before anything that logs or forwards the request.
 //
-// Browsers cannot set headers on a WebSocket, so the front sends its token as
-// ?token=. Only a WebSocket upgrade may authenticate that way; on any other
-// request the token is removed and ignored.
-func MoveQueryTokenToHeader() gin.HandlerFunc {
+// A WebSocket upgrade may authenticate with a token in its subprotocols, or in
+// ?token= for a front that predates them. On any other request the token is
+// removed and ignored.
+func MoveWebSocketTokenToHeader() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		req := ctx.Request
-		token := removeQueryToken(req)
+		protocolToken := removeProtocolToken(req)
+		queryToken := removeQueryToken(req)
+		token := cmp.Or(protocolToken, queryToken)
 		if token != "" && req.Header.Get("Authorization") == "" && isWebSocketUpgrade(req) {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		ctx.Next()
 	}
+}
+
+// removeProtocolToken returns the token offered next to WebSocketAuthProtocol
+// and leaves only that protocol's name in the header, for the upgrader to echo.
+func removeProtocolToken(req *http.Request) string {
+	offered := websocket.Subprotocols(req)
+	if !slices.Contains(offered, WebSocketAuthProtocol) {
+		return ""
+	}
+	req.Header.Set("Sec-WebSocket-Protocol", WebSocketAuthProtocol)
+
+	for _, protocol := range offered {
+		if protocol != WebSocketAuthProtocol {
+			return protocol
+		}
+	}
+	return ""
 }
 
 // removeQueryToken removes the token from the request URL and returns it. A
@@ -56,7 +83,7 @@ func isWebSocketUpgrade(req *http.Request) bool {
 }
 
 // extractBearerToken reads the raw bearer token from the request's
-// Authorization header, where MoveQueryTokenToHeader also puts a WebSocket's
+// Authorization header, where MoveWebSocketTokenToHeader also puts a WebSocket's
 // token. It returns an error when the token is missing or empty after
 // stripping the "Bearer " prefix.
 func extractBearerToken(ctx *gin.Context) (string, error) {

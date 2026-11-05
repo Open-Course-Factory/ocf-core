@@ -162,6 +162,7 @@ func (tc *terminalController) hasTerminalAccess(ctx *gin.Context, terminalID, us
 }
 
 var upgrader = websocket.Upgrader{
+	Subprotocols: []string{casdoor.WebSocketAuthProtocol},
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
