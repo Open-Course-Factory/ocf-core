@@ -103,6 +103,10 @@ const (
 	// internet, from which container, when".
 	AuditEventPortExposed   AuditEventType = "terminal.port.exposed"
 	AuditEventPortUnexposed AuditEventType = "terminal.port.unexposed"
+
+	// A manager reading a frozen participation report, which keeps learners' names
+	// after their erasure.
+	AuditEventParticipationArchiveRead AuditEventType = "participation.archive.read"
 )
 
 // AuditSeverity represents the importance level of an audit event

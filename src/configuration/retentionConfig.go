@@ -14,6 +14,10 @@ func DefaultRetentionDays() int {
 // ErasureMaxPerRun caps how many members one run of the erasure job may erase.
 // Erasure is irreversible, so an unexpected spike (a bad retention edit, a
 // clock jump) is logged and refused rather than executed.
+func DefaultReportArchiveYears() int {
+	return getIntEnv("OCF_DEFAULT_REPORT_ARCHIVE_YEARS", 5)
+}
+
 func ErasureMaxPerRun() int {
 	return getIntEnv("OCF_ERASURE_MAX_PER_RUN", 50)
 }

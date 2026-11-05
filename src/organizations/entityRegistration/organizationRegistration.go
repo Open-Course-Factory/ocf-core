@@ -41,6 +41,7 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 						IdleWindowPersistentSeconds: org.IdleWindowPersistentSeconds,
 						IdleWindowHardCapSeconds:    org.IdleWindowHardCapSeconds,
 						RetentionDays:               org.RetentionDays,
+						ReportArchiveYears:          org.ReportArchiveYears,
 						CreatedAt:                   org.CreatedAt,
 						UpdatedAt:                   org.UpdatedAt,
 					}
@@ -176,6 +177,9 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 					}
 					if input.RetentionDays != nil {
 						updates["retention_days"] = *input.RetentionDays
+					}
+					if input.ReportArchiveYears != nil {
+						updates["report_archive_years"] = *input.ReportArchiveYears
 					}
 					return updates
 				},

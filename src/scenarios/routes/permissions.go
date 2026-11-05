@@ -121,6 +121,16 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "View the merged per-learner live class view (presence + scenario position + results)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/participation-archives", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "List an organization's archived participation reports",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/participation-archives/:archiveId", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Read an archived participation report; each read is logged",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/participation-report", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View a class's participation report over a period",

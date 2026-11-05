@@ -38,7 +38,9 @@ func (h *OrganizationRetentionAuthorizationHook) Execute(ctx *hooks.HookContext)
 	if !ok {
 		return fmt.Errorf("expected map[string]any for BeforeUpdate, got %T", ctx.NewEntity)
 	}
-	if _, present := patch["retention_days"]; !present || ctx.IsAdmin() {
+	_, retentionChanged := patch["retention_days"]
+	_, archiveYearsChanged := patch["report_archive_years"]
+	if (!retentionChanged && !archiveYearsChanged) || ctx.IsAdmin() {
 		return nil
 	}
 	org, ok := ctx.OldEntity.(*models.Organization)

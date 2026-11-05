@@ -54,6 +54,7 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	scenarioController "soli/formations/src/scenarios/routes"
+	scenarioServices "soli/formations/src/scenarios/services"
 	versionController "soli/formations/src/version"
 
 	sqldb "soli/formations/src/db"
@@ -190,10 +191,11 @@ func main() {
 	cron.StartAuditLogCleanupJob(sqldb.DB) // Start audit log cleanup (retention management)
 	cron.StartEmailVerificationCleanupJob(sqldb.DB)    // Clean up expired email verification tokens
 	cron.StartScenarioSessionCleanupJob(sqldb.DB)      // Abandon zombie scenario sessions with dead terminals
+	cron.StartParticipationArchiveJob(sqldb.DB)        // Freeze reports of finished classes, delete expired copies (#560)
 	cron.StartClassAutoArchiveJob(sqldb.DB)            // Archive classes past their expires_at (#491)
 	cron.StartExposedPortReconcileJob(sqldb.DB)        // Drop exposed ports whose container is gone on tt-backend
 	cron.StartExposedPortRetentionJob(sqldb.DB)        // Hard-delete exposure rows 30 days past their expiry (RGPD register)
-	cron.StartMemberErasureJob(sqldb.DB, authServices.NewUserDeletionService(sqldb.DB, authServices.NewUserService(authServices.NewCasdoorUserClient(), paymentServices.NewPaymentDeletionHelper(sqldb.DB)), authServices.NewTerminalTrainerService(sqldb.DB))) // Erase offboarded members past their retention
+	cron.StartMemberErasureJob(sqldb.DB, authServices.NewUserDeletionService(sqldb.DB, authServices.NewUserService(authServices.NewCasdoorUserClient(), paymentServices.NewPaymentDeletionHelper(sqldb.DB)), authServices.NewTerminalTrainerService(sqldb.DB), scenarioServices.NewTTBackendParticipationArchiver(sqldb.DB))) // Erase offboarded members past their retention
 
 	// Background job: close idle impersonation sessions every minute. Mirrors
 	// the safety net described in src/auth/services/impersonationService.go.

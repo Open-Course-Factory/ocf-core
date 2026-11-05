@@ -84,6 +84,10 @@ type Organization struct {
 	// (config.DefaultRetentionDays). Read it through EffectiveRetentionDays.
 	RetentionDays *int `json:"retention_days,omitempty"`
 
+	// How many years a participation report's copy is kept after the training's
+	// end. nil means the platform default. Read it through EffectiveReportArchiveYears.
+	ReportArchiveYears *int `json:"report_archive_years,omitempty"`
+
 	// Relations
 	Groups  []groupModels.ClassGroup `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"groups,omitempty"`
 	Members []OrganizationMember     `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`
@@ -157,6 +161,16 @@ func (o *Organization) EffectiveRetentionDays() int {
 		return *o.RetentionDays
 	}
 	return config.DefaultRetentionDays()
+}
+
+// EffectiveReportArchiveYears is the single owner of "how long is a report's copy
+// kept". A figure below one year falls back to the default: it would delete
+// training evidence on the next run.
+func (o *Organization) EffectiveReportArchiveYears() int {
+	if o.ReportArchiveYears != nil && *o.ReportArchiveYears >= 1 {
+		return *o.ReportArchiveYears
+	}
+	return config.DefaultReportArchiveYears()
 }
 
 // IsFull checks if the organization has reached its member limit

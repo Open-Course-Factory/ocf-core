@@ -40,6 +40,10 @@ type EditOrganizationInput struct {
 	// Retention of a departed member's data, in days. Owner-only (enforced by
 	// OrganizationRetentionAuthorizationHook); nil/omitted = platform default.
 	RetentionDays *int `json:"retention_days,omitempty" mapstructure:"retention_days"`
+
+	// Years a participation report's copy is kept. Owner-only, like RetentionDays;
+	// nil/omitted = platform default.
+	ReportArchiveYears *int `json:"report_archive_years,omitempty" mapstructure:"report_archive_years"`
 }
 
 // OrganizationOutput represents the output for an organization
@@ -67,6 +71,9 @@ type OrganizationOutput struct {
 
 	// Retention of a departed member's data (nil = platform default)
 	RetentionDays *int `json:"retention_days,omitempty"`
+
+	// Years a participation report's copy is kept (nil = platform default)
+	ReportArchiveYears *int `json:"report_archive_years,omitempty"`
 
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`

@@ -855,7 +855,8 @@ func createTestServiceWithEntityDB(t *testing.T, mockEnforcer *mocks.MockEnforce
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
 		display_name TEXT NOT NULL DEFAULT '',
-		retention_days INTEGER
+		retention_days INTEGER,
+		report_archive_years INTEGER
 	)`).Error
 	require.NoError(t, err)
 

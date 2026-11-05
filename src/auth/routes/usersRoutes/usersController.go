@@ -9,6 +9,7 @@ import (
 	sqldb "soli/formations/src/db"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	paymentServices "soli/formations/src/payment/services"
+	scenarioServices "soli/formations/src/scenarios/services"
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
@@ -30,7 +31,7 @@ func NewUserController() *UserController {
 	return NewUserControllerWithServices(
 		userService,
 		services.NewUserSettingsService(),
-		services.NewUserDeletionService(sqldb.DB, userService, services.NewTerminalTrainerService(sqldb.DB)),
+		services.NewUserDeletionService(sqldb.DB, userService, services.NewTerminalTrainerService(sqldb.DB), scenarioServices.NewTTBackendParticipationArchiver(sqldb.DB)),
 	)
 }
 

@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	authModels "soli/formations/src/auth/models"
 	auditModels "soli/formations/src/audit/models"
@@ -56,10 +57,17 @@ type TerminalKeyRevoker interface {
 	DisableUserKey(userID string) error
 }
 
+// TrainingEvidenceArchiver saves what a departed member's erasure would remove.
+// scenarios/services' ParticipationArchiver satisfies it.
+type TrainingEvidenceArchiver interface {
+	ArchiveClassesOfMember(organizationID uuid.UUID, userID string, now time.Time) error
+}
+
 type userDeletionService struct {
 	db          *gorm.DB
 	userService UserService
 	keyRevoker  TerminalKeyRevoker
+	evidence    TrainingEvidenceArchiver
 }
 
 // NewUserDeletionService creates a new UserDeletionService.
@@ -68,8 +76,8 @@ type userDeletionService struct {
 // pseudonymize → Casdoor delete → RBAC removal). DeleteMyAccount composes it
 // rather than re-implementing the identity/billing cascade, so there is a
 // single source of truth for that security-critical ordering.
-func NewUserDeletionService(db *gorm.DB, userSvc UserService, keyRevoker TerminalKeyRevoker) UserDeletionService {
-	return &userDeletionService{db: db, userService: userSvc, keyRevoker: keyRevoker}
+func NewUserDeletionService(db *gorm.DB, userSvc UserService, keyRevoker TerminalKeyRevoker, evidence TrainingEvidenceArchiver) UserDeletionService {
+	return &userDeletionService{db: db, userService: userSvc, keyRevoker: keyRevoker, evidence: evidence}
 }
 
 // DeleteMyAccount performs the self-service RGPD right-to-erasure flow for the
@@ -127,6 +135,11 @@ func (s *userDeletionService) revokeTerminalKey(userID string) {
 func (s *userDeletionService) EraseDepartedMember(orgID uuid.UUID, userID string) error {
 	if err := s.assertNotActiveElsewhere(orgID, userID); err != nil {
 		return err
+	}
+	// Before anything is erased: evidence once erased cannot be archived, whereas
+	// a refused erasure only waits for the next run.
+	if err := s.evidence.ArchiveClassesOfMember(orgID, userID, time.Now()); err != nil {
+		return fmt.Errorf("archive participation before erasure: %w", err)
 	}
 	return s.EraseUser(userID)
 }

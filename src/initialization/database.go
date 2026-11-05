@@ -178,6 +178,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&scenarioModels.ScenarioStepProgress{})
 	db.AutoMigrate(&scenarioModels.ScenarioFlag{})
 	db.AutoMigrate(&scenarioModels.ScenarioAssignment{})
+	db.AutoMigrate(&scenarioModels.ParticipationArchive{})
 	db.AutoMigrate(&scenarioModels.ScenarioInstanceType{})
 	db.AutoMigrate(&scenarioModels.ScenarioStepQuestion{})
 	db.AutoMigrate(&scenarioModels.ScenarioTranslation{})

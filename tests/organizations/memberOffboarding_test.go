@@ -18,6 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -46,6 +48,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	scenarioModels "soli/formations/src/scenarios/models"
+	scenarioServices "soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	testTools "soli/formations/tests/testTools"
 )
@@ -162,6 +165,7 @@ func newOffboardingDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	offboardingDBSeq++
 	dsn := fmt.Sprintf("file:offboarding_%d?mode=memory&cache=shared", offboardingDBSeq)
+	fakeCasdoorNames(t)
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
@@ -188,6 +192,7 @@ func newOffboardingDB(t *testing.T) *gorm.DB {
 		&scenarioModels.ScenarioStepProgress{},
 		&scenarioModels.ScenarioFlag{},
 		&scenarioModels.ScenarioAssignment{},
+		&scenarioModels.ParticipationArchive{},
 	))
 	return db
 }
@@ -278,14 +283,39 @@ func seedClassWithMember(t *testing.T, db *gorm.DB, orgID uuid.UUID, teacherID, 
 	return class.ID
 }
 
+// fakeCasdoorNames names every user the participation archive asks about.
+func fakeCasdoorNames(t *testing.T) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","data":{"name":"learner","displayName":"A Learner"}}`))
+	}))
+	casdoorsdk.InitConfig(server.URL, "dummy", "dummy", "dummy", "dummy", "dummy")
+	t.Cleanup(server.Close)
+}
+
 // noopKeyRevoker stands in for tt-backend key revocation, which offboarding
 // tests do not observe.
 type noopKeyRevoker struct{}
 
+// noCommandHistory answers for tt-backend with no command.
+type noCommandHistory struct{}
+
+func (noCommandHistory) CommandTimes([]string, time.Time, time.Time) (map[string][]time.Time, error) {
+	return nil, nil
+}
+
+// unreachableCommandHistory answers like a tt-backend that is down.
+type unreachableCommandHistory struct{}
+
+func (unreachableCommandHistory) CommandTimes([]string, time.Time, time.Time) (map[string][]time.Time, error) {
+	return nil, errors.New("tt-backend down")
+}
+
 func (noopKeyRevoker) DisableUserKey(string) error { return nil }
 
 func newDeletionService(db *gorm.DB, identity *fakeIdentity) authServices.UserDeletionService {
-	return authServices.NewUserDeletionService(db, authServices.NewUserService(identity, fakePaymentHelper{}), noopKeyRevoker{})
+	return authServices.NewUserDeletionService(db, authServices.NewUserService(identity, fakePaymentHelper{}), noopKeyRevoker{}, scenarioServices.NewParticipationArchiver(db, noCommandHistory{}))
 }
 
 func newOffboardingService(db *gorm.DB, identity *fakeIdentity) services.MemberOffboardingService {
@@ -602,6 +632,12 @@ func TestRetentionDays_OnlyOwnerMayChangeIt(t *testing.T) {
 	require.NoError(t, patch("owner-1", platformMember), "the owner (data controller) may")
 	require.NoError(t, patch("platform-admin", []string{"administrator"}), "platform administrators bypass")
 
+	archiveYearsPatch := &hooks.HookContext{
+		EntityName: "Organization", HookType: hooks.BeforeUpdate, EntityID: orgID, OldEntity: &org,
+		NewEntity: map[string]any{"report_archive_years": 10}, UserID: "manager-1", UserRoles: platformMember,
+	}
+	require.Error(t, hooks.GlobalHookRegistry.ExecuteHooks(archiveYearsPatch), "a manager must not change how long evidence is kept")
+
 	// A PATCH that does not touch retention_days is not the hook's business.
 	require.NoError(t, hooks.GlobalHookRegistry.ExecuteHooks(&hooks.HookContext{
 		EntityName: "Organization", HookType: hooks.BeforeUpdate, EntityID: orgID, OldEntity: &org,
@@ -658,6 +694,25 @@ func TestMemberErasureJob_ErasesOnlyDueMembers(t *testing.T) {
 	})
 }
 
+// Evidence once erased cannot be archived, whereas a refused erasure only waits
+// for the next run.
+func TestEraseDepartedMember_WaitsWhenTheArchiveCannotBeSaved(t *testing.T) {
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("student-a")
+	eraser := authServices.NewUserDeletionService(db, authServices.NewUserService(identity, fakePaymentHelper{}), noopKeyRevoker{},
+		scenarioServices.NewParticipationArchiver(db, unreachableCommandHistory{}))
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	seedClassWithMember(t, db, orgID, "owner-1", "student-a")
+	seedRunningTerminal(t, db, "student-a")
+
+	err := eraser.EraseDepartedMember(orgID, "student-a")
+
+	require.ErrorIs(t, err, scenarioServices.ErrCommandsUnavailable)
+	assert.Empty(t, identity.deleted)
+	assert.Equal(t, int64(1), countMemberRows(t, db, orgID, "student-a"))
+}
+
 func TestEraseNow_RunsTheSharedCascade(t *testing.T) {
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
@@ -688,6 +743,10 @@ func TestEraseNow_RunsTheSharedCascade(t *testing.T) {
 	assert.Equal(t, int64(0), keys, "terminal credentials removed by the cascade")
 	assert.Equal(t, int64(0), liveTerminals, "terminal rows no longer link to the erased user")
 	assert.Equal(t, []string{"student-a"}, identity.deleted, "the Casdoor identity is deleted")
+
+	var archive scenarioModels.ParticipationArchive
+	require.NoError(t, db.First(&archive, "group_id = ?", classID).Error, "the class's copy is saved before the erasure")
+	assert.Contains(t, archive.Report, "student-a")
 
 	var teamOrgCount int64
 	db.Model(&models.Organization{}).Where("id = ?", orgID).Count(&teamOrgCount)

@@ -116,6 +116,11 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	projectFileRoutes.GET("/by-scenario/:scenarioId", middleware.AuthManagement(), projectFileCtrl.GetByScenario)
 	projectFileRoutes.GET("/image/:scenarioId/*relPath", middleware.AuthManagement(), projectFileCtrl.GetImage)
 
+	// An organization's archived participation reports
+	archiveCtrl := NewParticipationArchiveController(db)
+	router.GET("/organizations/:id/participation-archives", middleware.AuthManagement(), archiveCtrl.List)
+	router.GET("/organizations/:id/participation-archives/:archiveId", middleware.AuthManagement(), archiveCtrl.Get)
+
 	// Teacher dashboard routes
 	teacherCtrl := NewTeacherController(db)
 	teacherRoutes := router.Group("/teacher")

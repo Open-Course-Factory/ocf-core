@@ -6,6 +6,7 @@ import (
 	"soli/formations/src/organizations/controller"
 	"soli/formations/src/organizations/services"
 	paymentServices "soli/formations/src/payment/services"
+	scenarioServices "soli/formations/src/scenarios/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -17,7 +18,7 @@ func OrganizationRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	casdoorClient := authServices.NewCasdoorUserClient()
 	orgService := services.NewOrganizationServiceWithIdentity(db, casdoorClient)
 	userService := authServices.NewUserService(casdoorClient, paymentServices.NewPaymentDeletionHelper(db))
-	deletionService := authServices.NewUserDeletionService(db, userService, authServices.NewTerminalTrainerService(db))
+	deletionService := authServices.NewUserDeletionService(db, userService, authServices.NewTerminalTrainerService(db), scenarioServices.NewTTBackendParticipationArchiver(db))
 	offboardingService := services.NewMemberOffboardingService(db, casdoorClient, paymentServices.NewBulkLicenseService(db), deletionService)
 	importService := services.NewImportService(db, casdoorClient, offboardingService)
 

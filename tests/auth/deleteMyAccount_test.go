@@ -27,7 +27,7 @@
 //     actor_email AND actor_ip), delete auth tokens/settings/SSH keys.
 //
 // TARGET API the backend-dev must introduce (these tests are RED until then):
-//   - services.NewUserDeletionService(db *gorm.DB, userSvc authServices.UserService, keyRevoker authServices.TerminalKeyRevoker) UserDeletionService
+//   - services.NewUserDeletionService(db *gorm.DB, userSvc authServices.UserService, keyRevoker authServices.TerminalKeyRevoker, evidence authServices.TrainingEvidenceArchiver) UserDeletionService
 //   - the existing services.ErrOwnsOrganizations / services.ErrOwnsGroups sentinels stay.
 //
 // SHARED HELPERS/MOCKS are defined in userDeletion_test.go (same package):
@@ -161,11 +161,16 @@ func composedUserDeletionService(
 	helperMock *mockPaymentDeletionHelper,
 ) authServices.UserDeletionService {
 	userSvc := authServices.NewUserService(casdoorMock, helperMock)
-	return authServices.NewUserDeletionService(db, userSvc, &recordingKeyRevoker{})
+	return authServices.NewUserDeletionService(db, userSvc, &recordingKeyRevoker{}, noEvidenceToArchive{})
 }
 
 // recordingKeyRevoker stands in for tt-backend key revocation and remembers
 // who it was asked to revoke. err, when set, is what the revocation returns.
+// noEvidenceToArchive stands in for the archive, which these tests do not observe.
+type noEvidenceToArchive struct{}
+
+func (noEvidenceToArchive) ArchiveClassesOfMember(uuid.UUID, string, time.Time) error { return nil }
+
 type recordingKeyRevoker struct {
 	revoked []string
 	err     error
@@ -427,7 +432,7 @@ func TestDeleteMyAccount_PseudonymizesBilling_PreservesCountryAndPMID(t *testing
 	// actual mutation contract, not a hand-mocked one.
 	realHelper := paymentServices.NewPaymentDeletionHelperWithDeps(db, &stubStripeService{})
 	userSvc := authServices.NewUserService(casdoorMock, realHelper)
-	svc := authServices.NewUserDeletionService(db, userSvc, &recordingKeyRevoker{})
+	svc := authServices.NewUserDeletionService(db, userSvc, &recordingKeyRevoker{}, noEvidenceToArchive{})
 
 	require.NoError(t, svc.DeleteMyAccount(userID))
 
@@ -768,7 +773,7 @@ func TestDeleteMyAccount_RevokesTerminalKeyOnTtBackend(t *testing.T) {
 
 	casdoorMock, helperMock, _ := happyMocks(userID)
 	revoker := &recordingKeyRevoker{}
-	svc := authServices.NewUserDeletionService(db, authServices.NewUserService(casdoorMock, helperMock), revoker)
+	svc := authServices.NewUserDeletionService(db, authServices.NewUserService(casdoorMock, helperMock), revoker, noEvidenceToArchive{})
 
 	require.NoError(t, svc.DeleteMyAccount(userID))
 
@@ -786,7 +791,7 @@ func TestDeleteMyAccount_ProceedsWhenTtBackendRevocationFails(t *testing.T) {
 
 	casdoorMock, helperMock, _ := happyMocks(userID)
 	revoker := &recordingKeyRevoker{err: errors.New("tt-backend unreachable")}
-	svc := authServices.NewUserDeletionService(db, authServices.NewUserService(casdoorMock, helperMock), revoker)
+	svc := authServices.NewUserDeletionService(db, authServices.NewUserService(casdoorMock, helperMock), revoker, noEvidenceToArchive{})
 
 	require.NoError(t, svc.DeleteMyAccount(userID))
 
