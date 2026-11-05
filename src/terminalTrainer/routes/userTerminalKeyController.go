@@ -1,6 +1,7 @@
 package terminalController
 
 import (
+	"log/slog"
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	authMiddleware "soli/formations/src/auth/middleware"
@@ -57,12 +58,11 @@ func (utc *UserTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 	existingKey, _ := utc.service.GetUserKey(userId)
 
 	if existingKey != nil {
-		// FAULT-TOLERANT: DisableUserKey now handles orphaned keys gracefully
-		// If Terminal Trainer rejects it, we still disable locally and continue
+		// Stop here if tt-backend could not disable the old key: the row stays
+		// active, so retrying regenerates it instead of leaving it working.
 		if err := utc.service.DisableUserKey(userId); err != nil {
-			// Only fail if the LOCAL database update failed
-			// (Terminal Trainer errors are logged as warnings)
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to disable old key in local database: "+err.Error())
+			slog.Error("failed to disable old terminal key", "user", userId, "err", err)
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to disable old key, please try again")
 			return
 		}
 	}

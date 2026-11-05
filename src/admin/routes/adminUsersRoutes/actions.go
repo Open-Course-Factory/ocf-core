@@ -55,11 +55,10 @@ var (
 	// (SetAccountForbidden) stops a NEW login from ever getting that JWT,
 	// but does nothing to a key the browser already has: without this call,
 	// a blocked user keeps every terminal capability tt-backend grants that
-	// key until it expires on its own. Same fault-tolerant call the
-	// self-service key-regenerate endpoint and account erasure already use
+	// key until it expires on its own. Same call the self-service
+	// key-regenerate endpoint and account erasure use
 	// (src/terminalTrainer/routes/userTerminalKeyController.go,
-	// src/auth/services/userDeletionService.go) — a tt-backend-side failure
-	// is only ever a warning; the local row still flips to inactive.
+	// src/auth/services/userDeletionService.go).
 	DisableUserTerminalKey = func(db *gorm.DB, userID string) error {
 		return ttServices.NewTerminalTrainerService(db).DisableUserKey(userID)
 	}

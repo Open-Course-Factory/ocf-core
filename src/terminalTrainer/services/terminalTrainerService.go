@@ -2,7 +2,10 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
+	"net/http"
 	"os"
 	"slices"
 	entityManagementModels "soli/formations/src/entityManagement/models"
@@ -299,35 +302,76 @@ func (tts *terminalTrainerService) GetUserKey(userID string) (*models.UserTermin
 	return tts.repository.GetUserTerminalKeyByUserID(userID, true)
 }
 
-// DisableUserKey désactive la clé d'un utilisateur
-// FAULT-TOLERANT: If Terminal Trainer rejects the request (key doesn't exist in TT),
-// we still disable it locally to allow creating a new key (auto-repair)
+// DisableUserKey deactivates a user's key on tt-backend, then locally. If
+// tt-backend cannot confirm it, the error comes back and the local row stays
+// active, so a key that still works is never reported as revoked and a retry
+// can still find it.
 func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	key, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
 	if err != nil {
 		return err
 	}
 
-	// Désactiver côté Terminal Trainer
-	payload := map[string]any{
-		"is_active": false,
+	if err := tts.deactivateKeyOnTTBackend(key); err != nil {
+		return fmt.Errorf("disable terminal key of user %s on tt-backend: %w", userID, err)
 	}
 
-	url := fmt.Sprintf("%s/%s/admin/api-keys/%s", tts.baseURL, tts.apiVersion, key.APIKey)
+	key.IsActive = false
+	return tts.repository.UpdateUserTerminalKey(key)
+}
+
+// deactivateKeyOnTTBackend returns nil for the two keys it can do nothing about,
+// so that the caller can still disable them locally and a new key can be
+// created: one with no recorded tt-backend id, and one tt-backend no longer has.
+func (tts *terminalTrainerService) deactivateKeyOnTTBackend(key *models.UserTerminalKey) error {
+	if key.TerminalTrainerKeyID == 0 {
+		utils.Warn("terminal key of user %s has no tt-backend id: it stays active on tt-backend until it expires", key.UserID)
+		return nil
+	}
+
+	err := tts.updateKeyOnTTBackend(key.TerminalTrainerKeyID, map[string]any{"is_active": false})
+	if errors.Is(err, errKeyNotOnTTBackend) {
+		utils.Warn("terminal key %d of user %s no longer exists on tt-backend", key.TerminalTrainerKeyID, key.UserID)
+		return nil
+	}
+	return err
+}
+
+// errKeyNotOnTTBackend means tt-backend answered 404 for a key id.
+var errKeyNotOnTTBackend = errors.New("key not found on tt-backend")
+
+// updateKeyOnTTBackend applies changes to a key on tt-backend. Its update
+// endpoint requires name, is_active and limits_disabled on every call and keeps
+// any budget field left out, so the current key is read first and written back
+// with only the changes applied.
+func (tts *terminalTrainerService) updateKeyOnTTBackend(keyID int64, changes map[string]any) error {
+	keyURL := fmt.Sprintf("%s/%s/admin/api-keys/%d", tts.baseURL, tts.apiVersion, keyID)
 	opts := utils.DefaultHTTPClientOptions()
 	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
 
-	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", url, payload, opts)
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "GET", keyURL, nil, opts)
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return errKeyNotOnTTBackend
+	}
 	if err != nil {
-		// FAULT TOLERANCE: If Terminal Trainer doesn't have this key (databases out of sync),
-		// log a warning but continue to disable locally (auto-repair)
-		utils.Warn("Failed to disable key in Terminal Trainer (possibly orphaned): %v", err)
-		utils.Debug("Continuing to disable key locally for auto-repair...")
+		return fmt.Errorf("read key %d: %w", keyID, err)
+	}
+	var current dto.TerminalTrainerAPIKeyResponse
+	if err := resp.DecodeJSON(&current); err != nil {
+		return fmt.Errorf("decode key %d: %w", keyID, err)
 	}
 
-	// Désactiver en base locale (always do this, even if Terminal Trainer failed)
-	key.IsActive = false
-	return tts.repository.UpdateUserTerminalKey(key)
+	update := map[string]any{
+		"name":            current.Data.Name,
+		"is_active":       current.Data.IsActive,
+		"limits_disabled": current.Data.LimitsDisabled,
+	}
+	maps.Copy(update, changes)
+
+	if _, err := utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", keyURL, update, opts); err != nil {
+		return fmt.Errorf("update key %d: %w", keyID, err)
+	}
+	return nil
 }
 
 // GetRepository expose le repository pour les contrôleurs
