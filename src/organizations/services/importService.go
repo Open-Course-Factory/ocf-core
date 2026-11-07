@@ -347,7 +347,7 @@ func (s *importService) ImportOrganizationData(
 	// 9. Calculate summary
 	response.Summary.TotalProcessed = response.Summary.UsersCreated + response.Summary.UsersUpdated +
 		response.Summary.UsersSkipped + response.Summary.GroupsCreated + response.Summary.MembershipsCreated
-	response.Summary.ProcessingTime = time.Since(startTime).String()
+	response.Summary.ProcessingTime = time.Since(startTime).Round(time.Millisecond).String()
 	response.Success = len(response.Errors) == 0
 
 	return response, nil
