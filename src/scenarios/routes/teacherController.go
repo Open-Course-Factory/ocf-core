@@ -678,3 +678,72 @@ func (tc *TeacherController) ResetGroupScenarioSessions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"abandoned": count})
 }
+
+// PublishScenarioResults godoc
+// @Summary Release a class's exam grades
+// @Description Learners of the class see their grades on this scenario's exam quizzes from now on.
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param scenarioId path string true "Scenario ID (UUID)"
+// @Success 200 {object} map[string]any "results_published_at"
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /teacher/groups/{groupId}/scenarios/{scenarioId}/results/publish [post]
+// @Security BearerAuth
+func (tc *TeacherController) PublishScenarioResults(c *gin.Context) {
+	groupID, scenarioID, ok := parseGroupScenarioParams(c)
+	if !ok {
+		return
+	}
+	publishedAt, err := tc.dashboardService.PublishScenarioResults(groupID, scenarioID)
+	respondResultsPublication(c, publishedAt, err)
+}
+
+// UnpublishScenarioResults godoc
+// @Summary Withhold a class's exam grades again
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param scenarioId path string true "Scenario ID (UUID)"
+// @Success 200 {object} map[string]any "results_published_at: null"
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /teacher/groups/{groupId}/scenarios/{scenarioId}/results/publish [delete]
+// @Security BearerAuth
+func (tc *TeacherController) UnpublishScenarioResults(c *gin.Context) {
+	groupID, scenarioID, ok := parseGroupScenarioParams(c)
+	if !ok {
+		return
+	}
+	respondResultsPublication(c, nil, tc.dashboardService.UnpublishScenarioResults(groupID, scenarioID))
+}
+
+func parseGroupScenarioParams(c *gin.Context) (uuid.UUID, uuid.UUID, bool) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return uuid.Nil, uuid.Nil, false
+	}
+	scenarioID, err := uuid.Parse(c.Param("scenarioId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario ID"})
+		return uuid.Nil, uuid.Nil, false
+	}
+	return groupID, scenarioID, true
+}
+
+func respondResultsPublication(c *gin.Context, publishedAt *time.Time, err error) {
+	if err == nil {
+		c.JSON(http.StatusOK, gin.H{"results_published_at": publishedAt})
+		return
+	}
+	if errors.Is(err, services.ErrScenarioNotAssignedToGroup) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "scenario is not assigned to this group"})
+		return
+	}
+	slog.Error("failed to change results publication", "err", err)
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to change results publication"})
+}

@@ -440,6 +440,8 @@ func setupRealTeacherRouter(t *testing.T, db *gorm.DB, userID string, roles []st
 	teacher.POST("/groups/:groupId/scenarios/:scenarioId/bulk-start", ctrl.BulkStartScenario)
 	teacher.POST("/groups/:groupId/scenarios/:scenarioId/reset-sessions", ctrl.ResetGroupScenarioSessions)
 	teacher.POST("/groups/:groupId/sessions/details", ctrl.GetSessionDetailsBulk)
+	teacher.POST("/groups/:groupId/scenarios/:scenarioId/results/publish", ctrl.PublishScenarioResults)
+	teacher.DELETE("/groups/:groupId/scenarios/:scenarioId/results/publish", ctrl.UnpublishScenarioResults)
 
 	return r
 }

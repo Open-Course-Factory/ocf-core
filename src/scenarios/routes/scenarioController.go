@@ -132,6 +132,10 @@ func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) d
 		Grade:                      session.Grade,
 		StartedAt:                  session.StartedAt,
 	}
+	if services.GradeWithheldForLearner(sc.db, session) {
+		response.Grade = nil
+		response.GradeWithheld = true
+	}
 
 	// The scenario's prose in the language this session was started in. The
 	// steps have always resolved this way; the briefing was read straight off

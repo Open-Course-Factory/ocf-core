@@ -2040,6 +2040,10 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 	if err != nil {
 		return nil, err
 	}
+	withheld, err := WithheldGradeSessions(s.db, sessions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve grade visibility: %w", err)
+	}
 
 	result := make([]dto.MySessionResponse, 0, len(sessions))
 	for _, session := range sessions {
@@ -2061,6 +2065,7 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			Status:            session.Status,
 			ProvisioningPhase: session.ProvisioningPhase,
 			Grade:             session.Grade,
+			GradeWithheld:     withheld[session.ID],
 			CurrentStep:       session.CurrentStep,
 			TotalSteps:        totalSteps,
 			CompletedSteps:    completedSteps,
@@ -2072,6 +2077,9 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			ResumeMode:        string(mode),
 			OrganizationID:    RunOrganization(terminal, &session.Scenario),
 			Locale:            session.Locale,
+		}
+		if resp.GradeWithheld {
+			resp.Grade = nil
 		}
 		result = append(result, resp)
 	}

@@ -180,6 +180,16 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Reset scenario sessions for group members",
 		},
+		access.RoutePermission{
+			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results/publish", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "Release a class's exam grades on a scenario to its learners",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results/publish", Method: "DELETE",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "Withhold a class's exam grades on a scenario from its learners again",
+		},
 	)
 
 	access.RegisterEnforced(enforcer, "Scenario Management",

@@ -26,7 +26,10 @@ type SessionResponse struct {
 	ResumeMode string    `json:"resume_mode,omitempty"`
 	IsPreview  bool      `json:"is_preview,omitempty"`
 	Grade      *float64  `json:"grade,omitempty"`
-	StartedAt  time.Time `json:"started_at"`
+	// GradeWithheld means Grade was left out until the teacher publishes the
+	// class's exam results.
+	GradeWithheld bool      `json:"grade_withheld,omitempty"`
+	StartedAt     time.Time `json:"started_at"`
 	// ScenarioText is the scenario's own prose in the language this session was
 	// started in. Served from here rather than left to the client to fetch,
 	// because the session is what knows the locale — a client asking the plain
@@ -478,6 +481,9 @@ type MySessionResponse struct {
 	Status            string     `json:"status"`
 	ProvisioningPhase string     `json:"provisioning_phase,omitempty"`
 	Grade             *float64   `json:"grade,omitempty"`
+	// GradeWithheld means Grade was left out until the teacher publishes the
+	// class's exam results.
+	GradeWithheld     bool       `json:"grade_withheld,omitempty"`
 	CurrentStep       int        `json:"current_step"`
 	TotalSteps        int        `json:"total_steps"`
 	CompletedSteps    int        `json:"completed_steps"`
