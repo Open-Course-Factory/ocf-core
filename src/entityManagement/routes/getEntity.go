@@ -73,6 +73,15 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 		}
 	}
 
+	allowed, err := genericController.mayReadItem(ctx, entityName, id, entity)
+	if errors.HandleError(http.StatusInternalServerError, err, ctx) {
+		return
+	}
+	if !allowed {
+		errors.HandleError(http.StatusNotFound, &errors.APIError{ErrorMessage: "Entity Not Found"}, ctx)
+		return
+	}
+
 	var entityDto any
 
 	// Fast path: use typed operations (no reflect)
