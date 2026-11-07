@@ -10,6 +10,7 @@ package scenarios_test
 // just the UI rendering (scenarios-e2e-test-plan.md §7.5, decided 2026-08-06).
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -104,8 +105,8 @@ func TestSubmitQuiz_AllCorrect_ReturnsFullScore(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.InDelta(t, 1.0, result.Score, 0.001, "all-correct quiz must score 1.0")
-	assert.Equal(t, 3, result.CorrectCount)
+	assert.InDelta(t, 1.0, *result.Score, 0.001, "all-correct quiz must score 1.0")
+	assert.Equal(t, 3, *result.CorrectCount)
 	assert.Equal(t, 3, result.Total)
 	require.NotNil(t, result.NextStep, "all-correct quiz must advance to next step")
 	assert.Equal(t, 1, *result.NextStep)
@@ -132,8 +133,8 @@ func TestSubmitQuiz_AllWrong_ReturnsZeroScore(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.InDelta(t, 0.0, result.Score, 0.001, "all-wrong quiz must score 0.0")
-	assert.Equal(t, 0, result.CorrectCount)
+	assert.InDelta(t, 0.0, *result.Score, 0.001, "all-wrong quiz must score 0.0")
+	assert.Equal(t, 0, *result.CorrectCount)
 	assert.Equal(t, 3, result.Total)
 	require.NotNil(t, result.NextStep, "all-wrong quiz must still advance — quiz is graded, not gated")
 	assert.Equal(t, 1, *result.NextStep)
@@ -160,8 +161,8 @@ func TestSubmitQuiz_PartialCorrect_ReturnsPartialScore(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.InDelta(t, 2.0/3.0, result.Score, 0.01, "2 of 3 correct must score ~0.67")
-	assert.Equal(t, 2, result.CorrectCount)
+	assert.InDelta(t, 2.0/3.0, *result.Score, 0.01, "2 of 3 correct must score ~0.67")
+	assert.Equal(t, 2, *result.CorrectCount)
 	assert.Equal(t, 3, result.Total)
 }
 
@@ -357,11 +358,94 @@ func TestSubmitQuiz_ExamMode_OmitsPerQuestionResults(t *testing.T) {
 	assert.Empty(t, result.PerQuestionResults,
 		"exam mode must not return per-question results — the breakdown "+
 			"carries correct answers and explanations")
-	// The score line and advancement stay intact.
-	assert.InDelta(t, 2.0/3.0, result.Score, 0.01)
-	assert.Equal(t, 2, result.CorrectCount)
+	// The grade itself is withheld too: a learner who sees "2/3" in exam mode
+	// knows how they did, which is what the teacher chose to keep for later.
+	assert.Nil(t, result.Score, "exam mode must not return the score")
+	assert.Nil(t, result.CorrectCount, "exam mode must not return the correct count")
 	assert.Equal(t, 3, result.Total)
 	require.NotNil(t, result.NextStep, "exam mode still advances")
+
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &payload))
+	for _, key := range []string{"score", "correct_count", "per_question_results"} {
+		assert.NotContains(t, payload, key, "exam-mode payload must not carry %s", key)
+	}
+	assert.Contains(t, payload, "total")
+
+	// The grade is still recorded for the teacher.
+	var progress models.ScenarioStepProgress
+	require.NoError(t, sharedTestDB.Where("session_id = ? AND step_order = 0", sessionID).First(&progress).Error)
+	require.NotNil(t, progress.QuizScore)
+	assert.InDelta(t, 2.0/3.0, *progress.QuizScore, 0.01)
+}
+
+// TestSubmitQuiz_ExamModePreview_RevealsFullCorrection — a preview session is
+// the author testing their own quiz, so exam mode must not hide anything
+// from them: they need the score and every correct answer to check it.
+func TestSubmitQuiz_ExamModePreview_RevealsFullCorrection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := quizFixture(t, true)
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioStep{}).
+		Where("step_type = ?", "quiz").
+		Update("show_immediate_feedback", false).Error)
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioSession{}).
+		Where("id = ?", sessionID).Update("is_preview", true).Error)
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.SubmitQuiz(sessionID, dto.SubmitQuizInput{
+		Answers: map[uuid.UUID]string{qIDs[0]: "cd", qIDs[1]: "true", qIDs[2]: "/root"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Score)
+	assert.InDelta(t, 2.0/3.0, *result.Score, 0.01)
+	require.NotNil(t, result.CorrectCount)
+	assert.Equal(t, 2, *result.CorrectCount)
+	require.Len(t, result.PerQuestionResults, 3)
+	assert.Equal(t, "ls", result.PerQuestionResults[0].CorrectAnswer)
+	assert.False(t, result.PerQuestionResults[0].Correct)
+}
+
+// TestSubmitQuiz_PartialMode_ScoresTicksAndPersists — a partial-scoring step
+// gives credit per right tick, reports each question's points, and stores the
+// same score on the progress row.
+func TestSubmitQuiz_PartialMode_ScoresTicksAndPersists(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := quizFixture(t, true)
+	var step models.ScenarioStep
+	require.NoError(t, sharedTestDB.Where("step_type = ?", "quiz").First(&step).Error)
+	require.NoError(t, sharedTestDB.Model(&step).Update("quiz_scoring_mode", models.QuizScoringPartial).Error)
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioStepQuestion{}).Where("id = ?", qIDs[0]).
+		Updates(map[string]any{"question_type": "multi_answer", "options": `["ls","cd","rm","dir"]`, "correct_answer": "[0,3]"}).Error)
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.SubmitQuiz(sessionID, dto.SubmitQuizInput{
+		// Q1: one right tick of two (+0.5) and one wrong (-0.5) → 0;
+		// Q2 right (+1); Q3 wrong (-1). Total max(0, 0) / 3.
+		Answers: map[uuid.UUID]string{qIDs[0]: "[0,1]", qIDs[1]: "true", qIDs[2]: "/home"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Score)
+	assert.InDelta(t, 0.0, *result.Score, 1e-9)
+	assert.Equal(t, 1, *result.CorrectCount)
+	require.Len(t, result.PerQuestionResults, 3)
+	assert.InDelta(t, 0.0, result.PerQuestionResults[0].PointsEarned, 1e-9)
+	assert.InDelta(t, 1.0, result.PerQuestionResults[1].PointsEarned, 1e-9)
+	assert.InDelta(t, -1.0, result.PerQuestionResults[2].PointsEarned, 1e-9)
+
+	var progress models.ScenarioStepProgress
+	require.NoError(t, sharedTestDB.Where("session_id = ? AND step_order = 0", sessionID).First(&progress).Error)
+	require.NotNil(t, progress.QuizScore)
+	assert.InDelta(t, 0.0, *progress.QuizScore, 1e-9)
+	require.NotNil(t, progress.QuizCorrectCount)
+	assert.Equal(t, 1, *progress.QuizCorrectCount)
 }
 
 // TestSubmitQuiz_LearningMode_ExposesCorrectAnswers — with

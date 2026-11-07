@@ -18,5 +18,6 @@ type SessionStepQuestionDetail struct {
 	StudentAnswer string    `json:"student_answer"`
 	IsCorrect     bool      `json:"is_correct"`
 	Points        int       `json:"points"`
+	PointsEarned  float64   `json:"points_earned"`
 	Explanation   string    `json:"explanation,omitempty"`
 }

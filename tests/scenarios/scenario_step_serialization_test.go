@@ -265,3 +265,18 @@ func TestScenarioStepOutput_PreservesShowImmediateFeedback(t *testing.T) {
 	assert.True(t, scenarioOutput.Steps[0].ShowImmediateFeedback,
 		"Scenario.Steps[0] must preserve show_immediate_feedback through the Steps loop")
 }
+
+// The editor reads the quiz scoring settings resolved: a step stored before
+// they existed shows the defaults, a configured one shows its own values.
+func TestScenarioStepToOutput_QuizScoring_ResolvesDefaults(t *testing.T) {
+	legacy := scenarioRegistration.ScenarioStepToOutput(&models.ScenarioStep{StepType: "quiz"})
+	assert.Equal(t, models.QuizScoringAllOrNothing, legacy.QuizScoringMode)
+	assert.InDelta(t, 1.0, legacy.QuizWrongPenalty, 1e-9)
+
+	half := 0.5
+	configured := scenarioRegistration.ScenarioStepToOutput(&models.ScenarioStep{
+		StepType: "quiz", QuizScoringMode: models.QuizScoringPartial, QuizWrongPenalty: &half,
+	})
+	assert.Equal(t, models.QuizScoringPartial, configured.QuizScoringMode)
+	assert.InDelta(t, 0.5, configured.QuizWrongPenalty, 1e-9)
+}

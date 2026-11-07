@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1220,13 +1219,14 @@ func populateQuizQuestionsFromLoaded(
 			}
 		}
 
-		details := make([]dto.SessionStepQuestionDetail, 0, len(questions))
+		answers := make(map[uuid.UUID]string, len(questions))
 		for _, q := range questions {
-			submitted := studentAnswers[q.ID.String()]
-			isCorrect := false
-			if submitted != "" {
-				isCorrect = subtle.ConstantTimeCompare([]byte(submitted), []byte(q.CorrectAnswer)) == 1
-			}
+			answers[q.ID] = studentAnswers[q.ID.String()]
+		}
+		graded := ScoreQuiz(st, questions, answers)
+
+		details := make([]dto.SessionStepQuestionDetail, 0, len(questions))
+		for qi, q := range questions {
 			details = append(details, dto.SessionStepQuestionDetail{
 				ID:            q.ID,
 				Order:         q.Order,
@@ -1234,9 +1234,10 @@ func populateQuizQuestionsFromLoaded(
 				QuestionType:  q.QuestionType,
 				Options:       q.Options,
 				CorrectAnswer: q.CorrectAnswer,
-				StudentAnswer: submitted,
-				IsCorrect:     isCorrect,
+				StudentAnswer: answers[q.ID],
+				IsCorrect:     graded.Questions[qi].Correct,
 				Points:        q.Points,
+				PointsEarned:  graded.Questions[qi].Earned,
 				Explanation:   q.Explanation,
 			})
 		}

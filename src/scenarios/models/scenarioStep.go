@@ -1,7 +1,9 @@
 package models
 
 import (
+	"fmt"
 	"log"
+	"math"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
@@ -17,7 +19,14 @@ type ScenarioStep struct {
 	Title                 string    `gorm:"type:varchar(500);not null" json:"title"`
 	StepType              string    `gorm:"type:varchar(50);default:'terminal'" json:"step_type"`
 	ShowImmediateFeedback bool      `gorm:"default:false" json:"show_immediate_feedback"`
-	TextContent           string    `gorm:"type:text" json:"text_content,omitempty"` // markdown
+	// QuizScoringMode is how a quiz step turns answers into a score; empty
+	// means QuizScoringAllOrNothing. See services.ScoreQuiz.
+	QuizScoringMode string `gorm:"type:varchar(32)" json:"quiz_scoring_mode,omitempty" mapstructure:"quiz_scoring_mode"`
+	// QuizWrongPenalty is a pointer because GORM skips a zero value on insert
+	// when the column has a default: a plain float64 would turn an author's
+	// "no penalty" (0) into 1. Read it through WrongPenalty.
+	QuizWrongPenalty *float64 `gorm:"default:1" json:"quiz_wrong_penalty,omitempty" mapstructure:"quiz_wrong_penalty"`
+	TextContent          string    `gorm:"type:text" json:"text_content,omitempty"` // markdown
 	HintContent           string    `gorm:"type:text" json:"hint_content,omitempty"` // markdown
 	VerifyScript          string    `gorm:"type:text" json:"-"`
 	BackgroundScript      string    `gorm:"type:text" json:"-"`
@@ -86,6 +95,47 @@ const (
 	StepTypeTerminal = "terminal"
 	StepTypeFlag     = "flag"
 )
+
+// Quiz scoring modes. All-or-nothing counts a question only when answered
+// exactly right; partial gives credit per correct tick and takes some back
+// per wrong one.
+const (
+	QuizScoringAllOrNothing = "all_or_nothing"
+	QuizScoringPartial      = "partial"
+
+	DefaultQuizWrongPenalty = 1.0
+	MaxQuizWrongPenalty     = 10.0
+)
+
+// ScoringMode is the step's quiz scoring mode, empty resolved to the default.
+func (s ScenarioStep) ScoringMode() string {
+	if s.QuizScoringMode == "" {
+		return QuizScoringAllOrNothing
+	}
+	return s.QuizScoringMode
+}
+
+// WrongPenalty is the step's wrong-answer penalty, unset resolved to the
+// default.
+func (s ScenarioStep) WrongPenalty() float64 {
+	if s.QuizWrongPenalty == nil {
+		return DefaultQuizWrongPenalty
+	}
+	return *s.QuizWrongPenalty
+}
+
+// QuizScoringProblem says what is wrong with a quiz scoring setting, or "".
+// Binding tags are inert on entity routes, so the step hooks and the import
+// validation both call this.
+func QuizScoringProblem(mode string, penalty *float64) string {
+	if mode != "" && mode != QuizScoringAllOrNothing && mode != QuizScoringPartial {
+		return fmt.Sprintf("quiz_scoring_mode %q is not one of %s, %s", mode, QuizScoringAllOrNothing, QuizScoringPartial)
+	}
+	if penalty != nil && (*penalty < 0 || *penalty > MaxQuizWrongPenalty || math.IsNaN(*penalty)) {
+		return fmt.Sprintf("quiz_wrong_penalty %v must be between 0 and %v", *penalty, MaxQuizWrongPenalty)
+	}
+	return ""
+}
 
 // NormalizeFlagStep is the one rule linking a step's type to its flag: a step
 // carries a flag exactly when it is a flag step.

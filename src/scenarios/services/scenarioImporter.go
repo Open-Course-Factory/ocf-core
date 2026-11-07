@@ -443,6 +443,8 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		} else if sidecar != nil {
 			step.StepType = sidecar.StepType
 			step.ShowImmediateFeedback = sidecar.ShowImmediateFeedback
+			step.QuizScoringMode = sidecar.QuizScoringMode
+			step.QuizWrongPenalty = sidecar.QuizWrongPenalty
 			if len(sidecar.Questions) > 0 {
 				questions := make([]models.ScenarioStepQuestion, len(sidecar.Questions))
 				for j, q := range sidecar.Questions {
@@ -487,6 +489,8 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 type stepExtensions struct {
 	StepType              string                   `json:"step_type,omitempty"`
 	ShowImmediateFeedback bool                     `json:"show_immediate_feedback,omitempty"`
+	QuizScoringMode       string                   `json:"quiz_scoring_mode,omitempty"`
+	QuizWrongPenalty      *float64                 `json:"quiz_wrong_penalty,omitempty"`
 	Questions             []stepExtensionsQuestion `json:"questions,omitempty"`
 }
 

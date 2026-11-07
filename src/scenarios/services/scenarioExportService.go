@@ -125,6 +125,8 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*d
 			Title:                    step.Title,
 			StepType:                 step.StepType,
 			ShowImmediateFeedback:    step.ShowImmediateFeedback,
+			QuizScoringMode:          step.QuizScoringMode,
+			QuizWrongPenalty:         exportedWrongPenalty(step),
 			TextContent:              step.TextContent,
 			HintContent:              step.HintContent,
 			VerifyScript:             step.VerifyScript,
@@ -483,13 +485,23 @@ func needsStepExtensions(step *models.ScenarioStep) bool {
 	if len(step.Questions) > 0 {
 		return true
 	}
-	if step.ShowImmediateFeedback {
+	if step.ShowImmediateFeedback || step.QuizScoringMode != "" || exportedWrongPenalty(*step) != nil {
 		return true
 	}
 	if step.StepType != "" && step.StepType != "terminal" {
 		return true
 	}
 	return false
+}
+
+// exportedWrongPenalty leaves the default penalty out of an export: the column
+// default stores it on every step, and writing it back would put a quiz
+// setting on terminal steps and a sidecar next to each of them.
+func exportedWrongPenalty(step models.ScenarioStep) *float64 {
+	if step.WrongPenalty() == models.DefaultQuizWrongPenalty {
+		return nil
+	}
+	return step.QuizWrongPenalty
 }
 
 // buildStepExtensions converts a step's extension fields into the sidecar payload.
@@ -519,6 +531,8 @@ func buildStepExtensions(step *models.ScenarioStep) *stepExtensions {
 	return &stepExtensions{
 		StepType:              stepType,
 		ShowImmediateFeedback: step.ShowImmediateFeedback,
+		QuizScoringMode:       step.QuizScoringMode,
+		QuizWrongPenalty:      exportedWrongPenalty(*step),
 		Questions:             questions,
 	}
 }

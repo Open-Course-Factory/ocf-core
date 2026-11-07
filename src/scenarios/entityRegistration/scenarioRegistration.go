@@ -245,6 +245,8 @@ func ScenarioToOutput(model *models.Scenario) dto.ScenarioOutput {
 				Title:              step.Title,
 				StepType:           step.StepType,
 				ShowImmediateFeedback: step.ShowImmediateFeedback,
+				QuizScoringMode:    step.ScoringMode(),
+				QuizWrongPenalty:   step.WrongPenalty(),
 				TextContent:        step.TextContent,
 				HintContent:        step.HintContent,
 				HasFlag:            step.HasFlag,

@@ -77,6 +77,9 @@ func stepContentProblems(number int, step models.ScenarioStep) []string {
 		return append(problems, fmt.Sprintf("%s: step_type %q is not one of %s",
 			label, step.StepType, strings.Join(knownStepTypes, ", ")))
 	}
+	if problem := models.QuizScoringProblem(step.QuizScoringMode, step.QuizWrongPenalty); problem != "" {
+		problems = append(problems, label+": "+problem)
+	}
 	if !stepHasAWayThrough(step) {
 		problems = append(problems, label+": a quiz step needs at least one question")
 	}

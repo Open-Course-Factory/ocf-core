@@ -23,6 +23,10 @@ type ScenarioStepProgress struct {
 	// QuizScore is the fraction of correct answers in [0, 1] for quiz steps.
 	// Nil for non-quiz steps or quizzes that have not been submitted yet.
 	QuizScore *float64 `json:"quiz_score,omitempty"`
+	// QuizCorrectCount is how many questions were answered exactly right. It
+	// cannot be derived from QuizScore once a step uses partial scoring; nil on
+	// rows written before it existed, where QuizScore × questions still holds.
+	QuizCorrectCount *int `json:"quiz_correct_count,omitempty"`
 	// QuizAnswers is the JSON-encoded map of question_id -> submitted answer.
 	// Empty for non-quiz steps.
 	QuizAnswers string `gorm:"type:text" json:"quiz_answers,omitempty"`

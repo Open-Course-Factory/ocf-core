@@ -1,7 +1,6 @@
 package services
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1538,6 +1537,8 @@ func (s *ScenarioSessionService) buildStepResponse(session *models.ScenarioSessi
 		StepType:              step.StepType,
 		TextContent:           textContent,
 		ShowImmediateFeedback: step.ShowImmediateFeedback,
+		QuizScoringMode:       step.ScoringMode(),
+		QuizWrongPenalty:      step.WrongPenalty(),
 	}
 
 	// Quiz steps: populate the sanitized question list (no correct_answer/explanation)
@@ -1793,8 +1794,7 @@ func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSessio
 }
 
 // SubmitQuiz scores a quiz answer set for the current step and advances the
-// session. Each answer is compared with constant-time equality (mirrors the
-// flag-submit pattern). The score is correct_count / total. The full submitted
+// session. ScoreQuiz grades the answers under the step's scoring mode. The full submitted
 // answer set is persisted as JSON on ScenarioStepProgress for the teacher
 // dashboard. Quiz steps are graded but NOT gated — even a 0% quiz advances.
 //
@@ -1851,38 +1851,19 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		}
 	}
 
-	// The per-question breakdown carries correct_answer + explanation, and
-	// anything in the HTTP response is readable from the browser's devtools.
-	// In exam mode (show_immediate_feedback=false) the teacher chose to
-	// withhold answers, so the breakdown is never even built — the flag gates
-	// the API payload, not just what the UI renders (§7.5, decided 2026-08-06).
-	revealBreakdown := currentStep.ShowImmediateFeedback
-
-	total := len(questions)
-	correctCount := 0
-	var results []dto.QuizQuestionResult
-	if revealBreakdown {
-		results = make([]dto.QuizQuestionResult, 0, total)
-	}
-	for _, q := range questions {
-		submitted := input.Answers[q.ID]
-		correct := subtle.ConstantTimeCompare([]byte(submitted), []byte(q.CorrectAnswer)) == 1
-		if correct {
-			correctCount++
-		}
-		if revealBreakdown {
-			results = append(results, dto.QuizQuestionResult{
-				QuestionID:    q.ID,
-				Correct:       correct,
-				CorrectAnswer: q.CorrectAnswer,
-				Explanation:   q.Explanation,
-			})
-		}
-	}
-
-	score := 0.0
-	if total > 0 {
-		score = float64(correctCount) / float64(total)
+	graded := ScoreQuiz(*currentStep, questions, input.Answers)
+	score := graded.Score
+	response := &dto.SubmitQuizResponse{Total: len(questions)}
+	// The grade and the per-question breakdown (correct_answer + explanation)
+	// are readable from the browser's devtools once in the response. In exam
+	// mode (show_immediate_feedback=false) the teacher chose to withhold both,
+	// so the flag gates the API payload, not just what the UI renders (§7.5,
+	// decided 2026-08-06). A preview is the author checking their own quiz, so
+	// it always gets the full correction.
+	if currentStep.ShowImmediateFeedback || session.IsPreview {
+		response.Score = &score
+		response.CorrectCount = &graded.CorrectCount
+		response.PerQuestionResults = quizQuestionResults(questions, graded)
 	}
 
 	answersJSON, err := json.Marshal(input.Answers)
@@ -1890,15 +1871,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		return nil, fmt.Errorf("failed to encode answers: %w", err)
 	}
 
-	response := &dto.SubmitQuizResponse{
-		Score:              score,
-		CorrectCount:       correctCount,
-		Total:              total,
-		PerQuestionResults: results,
-	}
-
 	now := time.Now()
-	scoreCopy := score
 	// Captured before the transaction: advanceToNextStep updates current_step
 	// through GORM, which writes the new value back onto this struct, so after
 	// the transaction session.CurrentStep is already the step just entered.
@@ -1911,8 +1884,9 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 			Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
 			Updates(map[string]any{
 				"step_type":    "quiz",
-				"quiz_score":   &scoreCopy,
-				"quiz_answers": string(answersJSON),
+				"quiz_score":         &score,
+				"quiz_correct_count": graded.CorrectCount,
+				"quiz_answers":       string(answersJSON),
 			}).Error; err != nil {
 			return fmt.Errorf("failed to persist quiz progress: %w", err)
 		}
@@ -1923,7 +1897,8 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		for i := range session.StepProgress {
 			if session.StepProgress[i].StepOrder == session.CurrentStep {
 				session.StepProgress[i].StepType = "quiz"
-				session.StepProgress[i].QuizScore = &scoreCopy
+				session.StepProgress[i].QuizScore = &score
+				session.StepProgress[i].QuizCorrectCount = &graded.CorrectCount
 				break
 			}
 		}
@@ -1944,6 +1919,22 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 	}
 
 	return response, nil
+}
+
+// quizQuestionResults is the post-submission correction, one entry per
+// question in graded order.
+func quizQuestionResults(questions []models.ScenarioStepQuestion, graded QuizGrade) []dto.QuizQuestionResult {
+	results := make([]dto.QuizQuestionResult, 0, len(questions))
+	for i, q := range questions {
+		results = append(results, dto.QuizQuestionResult{
+			QuestionID:    q.ID,
+			Correct:       graded.Questions[i].Correct,
+			CorrectAnswer: q.CorrectAnswer,
+			Explanation:   q.Explanation,
+			PointsEarned:  graded.Questions[i].Earned,
+		})
+	}
+	return results
 }
 
 // SubmitFlag validates a flag submission for the current step.

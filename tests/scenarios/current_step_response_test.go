@@ -248,6 +248,7 @@ func TestGetCurrentStep_QuizStep_IncludesShowImmediateFeedback(t *testing.T) {
 		Title:                 "Quiz Step",
 		StepType:              "quiz",
 		ShowImmediateFeedback: true,
+		QuizScoringMode:       models.QuizScoringPartial,
 	}
 	require.NoError(t, db.Create(&step).Error)
 
@@ -268,6 +269,9 @@ func TestGetCurrentStep_QuizStep_IncludesShowImmediateFeedback(t *testing.T) {
 	assert.Equal(t, "quiz", response.StepType, "quiz step must expose StepType=\"quiz\"")
 	assert.True(t, response.ShowImmediateFeedback,
 		"CurrentStepResponse must expose show_immediate_feedback=true when the step opted in")
+	assert.Equal(t, models.QuizScoringPartial, response.QuizScoringMode,
+		"the learner is told how the quiz is scored")
+	assert.InDelta(t, 1.0, response.QuizWrongPenalty, 1e-9, "an unset penalty reads as the default")
 }
 
 // TestGetCurrentStep_TerminalStep_OmitsQuestions — terminal/flag/info steps

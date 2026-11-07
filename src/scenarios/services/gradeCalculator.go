@@ -112,9 +112,7 @@ func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []mode
 // progress (e.g. 3/15) rather than a ratio of attempted (3/5).
 //
 // Numerator semantics:
-//   - quiz step: math.Round(QuizScore * questionCount) when progress has a
-//     non-nil QuizScore; 0 otherwise. math.Round avoids float drift
-//     (e.g. 0.6*5 = 2.9999... must yield 3, not 2).
+//   - quiz step: the progress row's correct count (see quizCorrectCount).
 //   - flag-bearing step: 1 if a ScenarioFlag row for that step exists with
 //     IsCorrect=true; 0 otherwise (including missing row).
 //   - terminal/info steps: ignored entirely.
@@ -157,8 +155,8 @@ func ComputeCorrectCountsFromLoaded(
 				continue
 			}
 			total += int64(n)
-			if p, ok := progressByOrder[step.Order]; ok && p.QuizScore != nil {
-				correct += int64(math.Round(*p.QuizScore * float64(n)))
+			if p, ok := progressByOrder[step.Order]; ok {
+				correct += quizCorrectCount(p, n)
 			}
 		case stepType == "flag":
 			total += 1
@@ -169,4 +167,19 @@ func ComputeCorrectCountsFromLoaded(
 	}
 
 	return correct, total
+}
+
+// quizCorrectCount is how many of a quiz step's questions were answered right.
+// Rows from before QuizCorrectCount existed were all-or-nothing, so their
+// score × questions is exact; math.Round avoids float drift (0.6*5 must yield
+// 3, not 2).
+func quizCorrectCount(p models.ScenarioStepProgress, questionCount int) int64 {
+	switch {
+	case p.QuizCorrectCount != nil:
+		return int64(*p.QuizCorrectCount)
+	case p.QuizScore != nil:
+		return int64(math.Round(*p.QuizScore * float64(questionCount)))
+	default:
+		return 0
+	}
 }

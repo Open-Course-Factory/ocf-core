@@ -189,6 +189,8 @@ func copyStepInto(tx *gorm.DB, src models.ScenarioStep, scenarioID uuid.UUID, or
 		Title:                    src.Title,
 		StepType:                 src.StepType,
 		ShowImmediateFeedback:    src.ShowImmediateFeedback,
+		QuizScoringMode:          src.QuizScoringMode,
+		QuizWrongPenalty:         src.QuizWrongPenalty,
 		TextContent:              src.TextContent,
 		HintContent:              src.HintContent,
 		VerifyScript:             src.VerifyScript,

@@ -164,6 +164,8 @@ type CurrentStepResponse struct {
 	TextContent           string                `json:"text_content,omitempty"`
 	Questions             []CurrentStepQuestion `json:"questions,omitempty"`
 	ShowImmediateFeedback bool                  `json:"show_immediate_feedback"`
+	QuizScoringMode       string                `json:"quiz_scoring_mode,omitempty"`
+	QuizWrongPenalty      float64               `json:"quiz_wrong_penalty"`
 }
 
 // CurrentStepQuestion - sanitized public DTO for a quiz question.
@@ -184,12 +186,13 @@ type SubmitQuizInput struct {
 }
 
 // SubmitQuizResponse - DTO for quiz submission results.
-// PerQuestionResults is only populated in learning mode
-// (show_immediate_feedback=true); exam mode returns the score line alone so
-// the correct answers never reach the learner's browser.
+// Score, CorrectCount and PerQuestionResults are only populated in learning
+// mode (show_immediate_feedback=true) or in a preview session; exam mode
+// returns the question count alone so neither the grade nor the correct
+// answers reach the learner's browser.
 type SubmitQuizResponse struct {
-	Score              float64              `json:"score"`
-	CorrectCount       int                  `json:"correct_count"`
+	Score              *float64             `json:"score,omitempty"`
+	CorrectCount       *int                 `json:"correct_count,omitempty"`
 	Total              int                  `json:"total"`
 	PerQuestionResults []QuizQuestionResult `json:"per_question_results,omitempty"`
 	NextStep           *int                 `json:"next_step,omitempty"`
@@ -205,6 +208,8 @@ type QuizQuestionResult struct {
 	Correct       bool      `json:"correct"`
 	CorrectAnswer string    `json:"correct_answer,omitempty"`
 	Explanation   string    `json:"explanation,omitempty"`
+	// PointsEarned may be negative under partial scoring.
+	PointsEarned float64 `json:"points_earned"`
 }
 
 // RevealHintResponse - DTO for revealing a progressive hint
@@ -319,6 +324,8 @@ type SeedStepInput struct {
 	Title                    string              `json:"title" binding:"required,max=1000"`
 	StepType                 string              `json:"step_type,omitempty"`
 	ShowImmediateFeedback    bool                `json:"show_immediate_feedback,omitempty"`
+	QuizScoringMode          string              `json:"quiz_scoring_mode,omitempty"`
+	QuizWrongPenalty         *float64            `json:"quiz_wrong_penalty,omitempty"`
 	TextContent              string              `json:"text_content,omitempty" binding:"max=65536"`
 	HintContent              string              `json:"hint_content,omitempty" binding:"max=65536"`
 	VerifyScript             string              `json:"verify_script,omitempty"`

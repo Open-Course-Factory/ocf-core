@@ -67,6 +67,8 @@ func buildSeedScenario(input dto.SeedScenarioInput) (*models.Scenario, error) {
 			Title:                    st.Title,
 			StepType:                 stepType,
 			ShowImmediateFeedback:    st.ShowImmediateFeedback,
+			QuizScoringMode:          st.QuizScoringMode,
+			QuizWrongPenalty:         st.QuizWrongPenalty,
 			TextContent:              st.TextContent,
 			HintContent:              st.HintContent,
 			VerifyScript:             st.VerifyScript,
