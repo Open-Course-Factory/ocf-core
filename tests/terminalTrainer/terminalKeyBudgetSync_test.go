@@ -19,9 +19,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
+	genericServices "soli/formations/src/entityManagement/services"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	orgModels "soli/formations/src/organizations/models"
+	paymentDto "soli/formations/src/payment/dto"
+	paymentRegistration "soli/formations/src/payment/entityRegistration"
 	paymentModels "soli/formations/src/payment/models"
 	terminalHooks "soli/formations/src/terminalTrainer/hooks"
 	"soli/formations/src/terminalTrainer/models"
@@ -253,4 +257,39 @@ func TestTerminalKeyBudgetSyncHook_OrganizationRolePlan_SyncsEveryActiveMember(t
 	require.NoError(t, execAfter(hook, "OrganizationRolePlan", hooks.AfterUpdate, &paymentModels.OrganizationRolePlan{OrganizationID: orgID, Role: "member"}))
 
 	assert.ElementsMatch(t, []string{"m-active-1", "m-active-2"}, syncer.users, "a role plan moves every active member's ceiling; a departed member has no ceiling to move")
+}
+
+// Seen on production (#531): a role plan created for an organization whose
+// members already held keys left those keys on their old budget.
+func TestRolePlanCreated_MembersKeysGetTheNewBudget(t *testing.T) {
+	srv := newKeyAdminTTServer(t, 42, false)
+	configureTTServer(t, srv.URL)
+	db := freshTestDB(t)
+
+	original := ems.GlobalEntityRegistrationService
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	t.Cleanup(func() { ems.GlobalEntityRegistrationService = original })
+	paymentRegistration.RegisterOrganizationRolePlan(ems.GlobalEntityRegistrationService)
+
+	hook := terminalHooks.NewTerminalKeyBudgetSyncHook(db, services.NewTerminalTrainerService(db), "OrganizationRolePlan")
+	hooks.GlobalHookRegistry.DisableAllHooks(false)
+	require.NoError(t, hooks.GlobalHookRegistry.RegisterHook(hook))
+	t.Cleanup(func() { _ = hooks.GlobalHookRegistry.UnregisterHook(hook.GetName()) })
+
+	org := &orgModels.Organization{Name: "org-" + uuid.NewString(), DisplayName: "Org", OwnerUserID: "owner", OrganizationType: orgModels.OrgTypeTeam, IsActive: true}
+	require.NoError(t, db.Omit("Metadata", "AllowedBackends").Create(org).Error)
+	require.NoError(t, db.Omit("Metadata").Create(&orgModels.OrganizationMember{OrganizationID: org.ID, UserID: "seat-learner", Role: "member", IsActive: true}).Error)
+	seedProvisionedKey(t, db, "seat-learner", 42)
+	plan := &paymentModels.SubscriptionPlan{Name: "XL-" + uuid.NewString(), MaxCPU: 4000, MaxMemoryMB: 4096, IsActive: true}
+	require.NoError(t, db.Create(plan).Error)
+
+	_, err := genericServices.NewGenericService(db, nil).CreateEntityWithUser(
+		paymentDto.CreateOrganizationRolePlanInput{OrganizationID: org.ID, Role: "member", SubscriptionPlanID: plan.ID},
+		"OrganizationRolePlan", "platform-admin", "administrator")
+	require.NoError(t, err)
+
+	updates := srv.recordedUpdates()
+	require.Len(t, updates, 1, "the member's key must be re-provisioned on creation")
+	assert.EqualValues(t, 4, updates[0]["max_cpu_total"])
+	assert.EqualValues(t, 4096, updates[0]["max_memory_mb_total"])
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -57,12 +58,14 @@ type terminalComposer struct {
 	baseURL       string
 	apiVersion    string
 	createUserKey func(userID, keyName string) error
+	syncKeyBudget func(userID string) error
 }
 
 // newTerminalComposer returns a composer wired to the supplied
 // collaborators. createUserKey is the facade's CreateUserKey method,
 // injected so the bulk flow can auto-provision missing keys without the
-// composer owning key management.
+// composer owning key management; syncKeyBudget, the same way, so a launch can
+// repair a key whose budget fell behind the plan.
 func newTerminalComposer(
 	proxy *terminalProxyClient,
 	catalog *terminalCatalogService,
@@ -72,6 +75,7 @@ func newTerminalComposer(
 	db *gorm.DB,
 	baseURL, apiVersion string,
 	createUserKey func(userID, keyName string) error,
+	syncKeyBudget func(userID string) error,
 ) *terminalComposer {
 	return &terminalComposer{
 		proxy:         proxy,
@@ -83,6 +87,7 @@ func newTerminalComposer(
 		baseURL:       baseURL,
 		apiVersion:    apiVersion,
 		createUserKey: createUserKey,
+		syncKeyBudget: syncKeyBudget,
 	}
 }
 
@@ -666,6 +671,47 @@ func (c *terminalComposer) releaseReservation(reservationID uuid.UUID) {
 // frees the budget quickly without a background sweeper.
 const reservationTTL = 3 * time.Minute
 
+// postComposedSession asks tt-backend for the session. ocf-core has already
+// approved the budget by now, so a refusal from tt-backend means the key's own
+// budget fell behind the plan: not every plan change reaches the key (#496, #531).
+// The key is refreshed and the request tried once more. A second refusal is a
+// budget refusal for the caller, not a server error.
+func (c *terminalComposer) postComposedSession(userID, url string, body map[string]any, opts utils.HTTPClientOptions) (*utils.HTTPResponse, error) {
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, body, opts)
+	refusal := keyBudgetRefusalIn(resp)
+	if refusal == nil {
+		return resp, err
+	}
+	if syncErr := c.syncKeyBudget(userID); syncErr != nil {
+		utils.Warn("terminal key budget refresh failed after a tt-backend refusal: user %s: %v", userID, syncErr)
+		return nil, refusal
+	}
+	resp, err = utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, body, opts)
+	if refusal := keyBudgetRefusalIn(resp); refusal != nil {
+		return nil, refusal
+	}
+	return resp, err
+}
+
+// keyBudgetRefusalIn reads tt-backend's budget refusal, nil for any other answer.
+// Its 429 can also mean rate limiting, which the body tells apart.
+func keyBudgetRefusalIn(resp *utils.HTTPResponse) *BudgetRejection {
+	if resp == nil || resp.StatusCode != http.StatusTooManyRequests {
+		return nil
+	}
+	var refusal struct {
+		Error string `json:"error"`
+		Axis  string `json:"axis"`
+	}
+	if err := json.Unmarshal(resp.Body, &refusal); err != nil || refusal.Error != "budget_exhausted" {
+		return nil
+	}
+	if refusal.Axis == "memory" {
+		return &BudgetRejection{Reason: "budget_memory_exceeded"}
+	}
+	return &BudgetRejection{Reason: "budget_cpu_exceeded"}
+}
+
 // startComposedSession reserves budget atomically, then provisions the
 // container. It inserts a StateStarting row inside a locked transaction
 // (so the reservation counts under OccupiesSlotScope before any container
@@ -783,7 +829,7 @@ func (c *terminalComposer) startComposedSession(
 	// tt-backend may stream NDJSON, use the same pattern as startSession.
 	// Any failure from here on releases the reservation so its budget is
 	// returned to the scope (the placeholder row never backed a container).
-	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, ttReqBody, opts)
+	resp, err := c.postComposedSession(userID, url, ttReqBody, opts)
 	if err != nil {
 		c.releaseReservation(reservation.ID)
 		return nil, err
