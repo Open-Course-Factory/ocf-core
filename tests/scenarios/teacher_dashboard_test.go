@@ -442,6 +442,7 @@ func setupRealTeacherRouter(t *testing.T, db *gorm.DB, userID string, roles []st
 	teacher.POST("/groups/:groupId/sessions/details", ctrl.GetSessionDetailsBulk)
 	teacher.POST("/groups/:groupId/scenarios/:scenarioId/results/publish", ctrl.PublishScenarioResults)
 	teacher.DELETE("/groups/:groupId/scenarios/:scenarioId/results/publish", ctrl.UnpublishScenarioResults)
+	teacher.POST("/groups/:groupId/sessions/:sessionId/allow-retake", ctrl.AllowRetake)
 
 	return r
 }
@@ -574,7 +575,7 @@ func TestResetGroupScenarioSessions_ResetsActiveSessions(t *testing.T) {
 	}).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
-	count, err := svc.ResetGroupScenarioSessions(groupID, scenario.ID)
+	count, _, err := svc.ResetGroupScenarioSessions(groupID, scenario.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 
@@ -610,7 +611,7 @@ func TestResetGroupScenarioSessions_SkipsCompletedAndAbandoned(t *testing.T) {
 	}).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
-	count, err := svc.ResetGroupScenarioSessions(groupID, scenario.ID)
+	count, _, err := svc.ResetGroupScenarioSessions(groupID, scenario.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 
@@ -636,7 +637,7 @@ func TestResetGroupScenarioSessions_NoActiveSessions(t *testing.T) {
 	require.NoError(t, db.Create(&scenario).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
-	count, err := svc.ResetGroupScenarioSessions(groupID, scenario.ID)
+	count, _, err := svc.ResetGroupScenarioSessions(groupID, scenario.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 }
@@ -668,7 +669,7 @@ func TestResetGroupScenarioSessions_OnlyAffectsGroupMembers(t *testing.T) {
 
 	// Reset only group A
 	svc := services.NewTeacherDashboardService(db, nil, nil)
-	count, err := svc.ResetGroupScenarioSessions(groupA, scenario.ID)
+	count, _, err := svc.ResetGroupScenarioSessions(groupA, scenario.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 

@@ -190,6 +190,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Withhold a class's exam grades on a scenario from its learners again",
 		},
+		access.RoutePermission{
+			Path: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/allow-retake", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "Allow a learner of the class one more attempt at a submitted exam",
+		},
 	)
 
 	access.RegisterEnforced(enforcer, "Scenario Management",

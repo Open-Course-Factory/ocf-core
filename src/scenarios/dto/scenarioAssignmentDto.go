@@ -35,6 +35,9 @@ type ScenarioAssignmentOutput struct {
 	StartDate      *time.Time      `json:"start_date,omitempty"`
 	Deadline       *time.Time      `json:"deadline,omitempty"`
 	IsActive       bool            `json:"is_active"`
+	// ResultsPublishedAt is read-only here: only the teacher publish route
+	// writes it.
+	ResultsPublishedAt *time.Time  `json:"results_published_at"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
 	Scenario       *ScenarioOutput `json:"scenario,omitempty"`

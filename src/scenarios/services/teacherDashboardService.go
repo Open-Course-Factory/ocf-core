@@ -46,6 +46,11 @@ type ScenarioResultItem struct {
 	UserEmail      string    `json:"user_email,omitempty"`
 	Status         string    `json:"status"`
 	Grade          *float64  `json:"grade,omitempty"`
+	// ExamLocked means the learner used their exam attempt on this scenario;
+	// the teacher may allow a retake. RetakeAllowedAt is set on a run that a
+	// retake already released.
+	ExamLocked      bool       `json:"exam_locked"`
+	RetakeAllowedAt *time.Time `json:"retake_allowed_at"`
 	CurrentStep    int       `json:"current_step"`
 	TotalSteps     int64     `json:"total_steps"`
 	CompletedSteps int64     `json:"completed_steps"`
@@ -207,6 +212,14 @@ func (s *TeacherDashboardService) GetGroupAssignmentsProgress(groupID uuid.UUID)
 		return nil, err
 	}
 	rows := byGroup[groupID]
+	scenarioIDs := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		scenarioIDs = append(scenarioIDs, row.ScenarioID)
+	}
+	exam, err := ExamScenarios(s.db, scenarioIDs)
+	if err != nil {
+		return nil, err
+	}
 	items := make([]AssignmentProgressItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, AssignmentProgressItem{
@@ -214,6 +227,7 @@ func (s *TeacherDashboardService) GetGroupAssignmentsProgress(groupID uuid.UUID)
 			TotalCount:     row.StartedCount,
 			CompletedCount: row.CompletedCount,
 			AvgGrade:       row.AvgGrade,
+			HasExamQuiz:    exam[row.ScenarioID],
 		})
 	}
 	return items, nil
@@ -245,7 +259,7 @@ func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UU
 
 	// Build paginated query
 	query := `
-		SELECT ss.id as session_id, ss.user_id, ss.status, ss.grade, ss.started_at, ss.completed_at, ss.current_step,
+		SELECT ss.id as session_id, ss.user_id, ss.status, ss.grade, ss.retake_allowed_at, ss.started_at, ss.completed_at, ss.current_step,
 		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = ss.scenario_id AND deleted_at IS NULL) as total_steps,
 		       (SELECT COUNT(*) FROM scenario_step_progress WHERE session_id = ss.id AND status = 'completed') as completed_steps,
 		       ` + sessionHintsUsedExpr + ` as total_hints_used
@@ -279,6 +293,9 @@ func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UU
 		results = []ScenarioResultItem{}
 	}
 	enrichResultUsers(results)
+	if err := markExamLockedResults(s.db, scenarioID, results); err != nil {
+		return nil, err
+	}
 
 	// Calculate partial grade for active sessions using the weighted formula
 	// (terminal/flag/info → 1.0 if completed else 0; quiz → QuizScore).
@@ -378,7 +395,15 @@ type BulkStartResult struct {
 	Skipped    int              `json:"skipped"`
 	NoKey      int              `json:"no_key"`
 	NoKeyUsers []UserKeyMissing `json:"no_key_users,omitempty"`
-	Errors     []BulkStartError `json:"errors,omitempty"`
+	// SkippedUsers names who was left alone and why; Skipped counts them.
+	SkippedUsers []SkippedLearner `json:"skipped_users,omitempty"`
+	Errors       []BulkStartError `json:"errors,omitempty"`
+}
+
+// SkippedLearner is a learner a class-wide action deliberately left alone.
+type SkippedLearner struct {
+	UserID string `json:"user_id"`
+	Reason string `json:"reason"`
 }
 
 // UserKeyMissing identifies a user who doesn't have a terminal key
@@ -462,6 +487,13 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 		Errors:     make([]BulkStartError, 0),
 	}
 
+	// A learner who used their exam attempt keeps their run: restarting the
+	// class must not wipe it, and StartScenario would refuse them anyway.
+	locked, err := ExamLockedRuns(s.db, []uuid.UUID{scenarioID}, memberUserIDs(members))
+	if err != nil {
+		return nil, fmt.Errorf("failed to check exam attempts: %w", err)
+	}
+
 	// Default session duration: 4 hours
 	if sessionDurationMinutes <= 0 {
 		sessionDurationMinutes = 240
@@ -493,7 +525,12 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 	var mu sync.Mutex
 	for _, member := range members {
 		g.Go(func() error {
-			outcome := s.startScenarioForMember(run, member.UserID)
+			var outcome memberOutcome
+			if locked[learnerRun{ScenarioID: scenarioID, UserID: member.UserID}] {
+				outcome = memberOutcome{userID: member.UserID, skipped: ExamLockReason}
+			} else {
+				outcome = s.startScenarioForMember(run, member.UserID)
+			}
 			mu.Lock()
 			result.record(outcome)
 			mu.Unlock()
@@ -528,6 +565,7 @@ type memberOutcome struct {
 	created  bool
 	noKey    *UserKeyMissing
 	failure  string // non-empty: the error to report for this learner
+	skipped  string // non-empty: why this learner was left alone
 	userID   string
 }
 
@@ -537,6 +575,9 @@ func (r *BulkStartResult) record(o memberOutcome) {
 		r.Replaced++
 	}
 	switch {
+	case o.skipped != "":
+		r.Skipped++
+		r.SkippedUsers = append(r.SkippedUsers, SkippedLearner{UserID: o.userID, Reason: o.skipped})
 	case o.noKey != nil:
 		r.NoKey++
 		r.NoKeyUsers = append(r.NoKeyUsers, *o.noKey)
@@ -713,17 +754,21 @@ func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID st
 // Learners only, the mirror of BulkStartScenario: the runs a reset clears are
 // the ones a start creates, and groupModels.LearnerRoles is the one definition
 // of who that is.
-func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, scenarioID uuid.UUID) (int64, error) {
-	var memberUserIDs []string
+func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, scenarioID uuid.UUID) (int64, []SkippedLearner, error) {
+	var learnerIDs []string
 	if err := s.db.Model(&groupModels.GroupMember{}).
 		Where("group_id = ? AND is_active = ?", groupID, true).
 		Scopes(groupModels.LearnerRoleScope("group_members")).
-		Pluck("user_id", &memberUserIDs).Error; err != nil {
-		return 0, fmt.Errorf("failed to load group members: %w", err)
+		Pluck("user_id", &learnerIDs).Error; err != nil {
+		return 0, nil, fmt.Errorf("failed to load group members: %w", err)
 	}
 
-	if len(memberUserIDs) == 0 {
-		return 0, nil
+	resettable, skipped, err := s.splitExamLockedLearners(scenarioID, learnerIDs)
+	if err != nil {
+		return 0, nil, err
+	}
+	if len(resettable) == 0 {
+		return 0, skipped, nil
 	}
 
 	// Abandon every session these users could still resume on this scenario.
@@ -733,14 +778,41 @@ func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, 
 	// class whose launch died is exactly the one a trainer resets.
 	result := s.db.Model(&models.ScenarioSession{}).
 		Where("user_id IN ? AND scenario_id = ? AND status IN ?",
-			memberUserIDs, scenarioID, models.OpenSessionStatuses).
+			resettable, scenarioID, models.OpenSessionStatuses).
 		Updates(map[string]any{"status": "abandoned"})
 
 	if result.Error != nil {
-		return 0, fmt.Errorf("failed to reset sessions: %w", result.Error)
+		return 0, nil, fmt.Errorf("failed to reset sessions: %w", result.Error)
 	}
 
-	return result.RowsAffected, nil
+	return result.RowsAffected, skipped, nil
+}
+
+// splitExamLockedLearners separates the learners a reset may touch from those
+// who used their exam attempt, whose run a reset would destroy for good.
+func (s *TeacherDashboardService) splitExamLockedLearners(scenarioID uuid.UUID, userIDs []string) ([]string, []SkippedLearner, error) {
+	locked, err := ExamLockedRuns(s.db, []uuid.UUID{scenarioID}, userIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to check exam attempts: %w", err)
+	}
+	resettable := make([]string, 0, len(userIDs))
+	var skipped []SkippedLearner
+	for _, id := range userIDs {
+		if locked[learnerRun{ScenarioID: scenarioID, UserID: id}] {
+			skipped = append(skipped, SkippedLearner{UserID: id, Reason: ExamLockReason})
+			continue
+		}
+		resettable = append(resettable, id)
+	}
+	return resettable, skipped, nil
+}
+
+func memberUserIDs(members []groupModels.GroupMember) []string {
+	ids := make([]string, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.UserID)
+	}
+	return ids
 }
 
 // SessionStepDetail represents a single step's progress with its metadata

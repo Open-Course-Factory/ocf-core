@@ -669,14 +669,14 @@ func (tc *TeacherController) ResetGroupScenarioSessions(c *gin.Context) {
 		return
 	}
 
-	count, err := tc.dashboardService.ResetGroupScenarioSessions(groupID, scenarioID)
+	count, skipped, err := tc.dashboardService.ResetGroupScenarioSessions(groupID, scenarioID)
 	if err != nil {
 		slog.Error("failed to reset sessions", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"abandoned": count})
+	c.JSON(http.StatusOK, gin.H{"abandoned": count, "skipped_users": skipped})
 }
 
 // PublishScenarioResults godoc
@@ -746,4 +746,47 @@ func respondResultsPublication(c *gin.Context, publishedAt *time.Time, err error
 	}
 	slog.Error("failed to change results publication", "err", err)
 	c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to change results publication"})
+}
+
+// AllowRetake godoc
+// @Summary Allow a learner one more exam attempt
+// @Description Releases the learner of this class session from their submitted exam so they can start a new run. Their previous runs and grades are kept.
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param sessionId path string true "Session ID (UUID)"
+// @Success 200 {object} map[string]any "retake_allowed_at"
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string "reason: exam_not_locked"
+// @Router /teacher/groups/{groupId}/sessions/{sessionId}/allow-retake [post]
+// @Security BearerAuth
+func (tc *TeacherController) AllowRetake(c *gin.Context) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return
+	}
+	sessionID, err := uuid.Parse(c.Param("sessionId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
+		return
+	}
+
+	retakeAllowedAt, err := tc.dashboardService.AllowRetake(groupID, sessionID)
+	if err == nil {
+		c.JSON(http.StatusOK, gin.H{"retake_allowed_at": retakeAllowedAt})
+		return
+	}
+	if errors.Is(err, services.ErrSessionNotInGroup) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+	if errors.Is(err, services.ErrExamNotLocked) {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "reason": "exam_not_locked"})
+		return
+	}
+	slog.Error("failed to allow a retake", "err", err)
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to allow a retake"})
 }

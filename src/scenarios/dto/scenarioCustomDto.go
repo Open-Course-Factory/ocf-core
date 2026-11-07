@@ -419,6 +419,10 @@ type AvailableScenarioOutput struct {
 	// "paused" (its terminal must be started again first) or "rebuild" (its
 	// container is gone and is rebuilt at the current step).
 	ActiveSessionResumeMode string `json:"active_session_resume_mode,omitempty"`
+	// ExamLocked means the learner used their exam attempt: no new run starts
+	// until the teacher allows a retake. A run still in progress may be
+	// resumed, which is why BlockReason stays session_exists then.
+	ExamLocked bool `json:"exam_locked"`
 	// ResolvedDistribution and ResolvedSize are what a launch would actually
 	// use, after image matching and size fallback. InstanceType above is only
 	// what the scenario asked for, and the two diverge routinely — an unknown
@@ -470,6 +474,9 @@ type AssignmentProgressItem struct {
 	TotalCount     int       `json:"total_count"`
 	CompletedCount int       `json:"completed_count"`
 	AvgGrade       *float64  `json:"avg_grade"`
+	// HasExamQuiz means the scenario has an exam-mode quiz step, so its
+	// grades wait for the teacher to publish them.
+	HasExamQuiz bool `json:"has_exam_quiz"`
 }
 
 // MySessionResponse - DTO for a learner's own scenario session
@@ -484,6 +491,9 @@ type MySessionResponse struct {
 	// GradeWithheld means Grade was left out until the teacher publishes the
 	// class's exam results.
 	GradeWithheld     bool       `json:"grade_withheld,omitempty"`
+	// ExamLocked means the learner used their exam attempt on this scenario:
+	// neither relaunch nor start-over is possible until a retake is allowed.
+	ExamLocked        bool       `json:"exam_locked"`
 	CurrentStep       int        `json:"current_step"`
 	TotalSteps        int        `json:"total_steps"`
 	CompletedSteps    int        `json:"completed_steps"`

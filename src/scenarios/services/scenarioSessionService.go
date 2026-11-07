@@ -260,6 +260,9 @@ func (s *ScenarioSessionService) assertLocaleLaunchable(scenarioID uuid.UUID, lo
 }
 
 func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UUID, terminalSessionID string, locale string) (*models.ScenarioSession, error) {
+	if err := RefuseIfExamLocked(s.db, userID, scenarioID); err != nil {
+		return nil, err
+	}
 	scenario, err := s.loadScenarioWithSteps(scenarioID)
 	if err != nil {
 		return nil, err
@@ -2044,6 +2047,11 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve grade visibility: %w", err)
 	}
+	scenarioIDs, _ := gradedRunKeys(sessions)
+	examLocked, err := ExamLockedRuns(s.db, scenarioIDs, []string{userID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve exam attempts: %w", err)
+	}
 
 	result := make([]dto.MySessionResponse, 0, len(sessions))
 	for _, session := range sessions {
@@ -2066,6 +2074,7 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			ProvisioningPhase: session.ProvisioningPhase,
 			Grade:             session.Grade,
 			GradeWithheld:     withheld[session.ID],
+			ExamLocked:        lockedRunOf(examLocked, session),
 			CurrentStep:       session.CurrentStep,
 			TotalSteps:        totalSteps,
 			CompletedSteps:    completedSteps,
@@ -2093,6 +2102,18 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 // reaction to that is to retry a call that will refuse again for the same
 // reason.
 var ErrSessionNotAbandonable = errors.New("session is not abandonable")
+
+// AbandonOwnRun is the learner's own abandon. A run whose exam was submitted
+// is refused: abandoning it is the first half of starting over, and the second
+// half would be refused, leaving the learner with neither run.
+func (s *ScenarioSessionService) AbandonOwnRun(session *models.ScenarioSession) error {
+	if !session.IsPreview {
+		if err := RefuseIfExamLocked(s.db, session.UserID, session.ScenarioID); err != nil {
+			return err
+		}
+	}
+	return s.AbandonSession(session.ID)
+}
 
 // AbandonSession marks a session as abandoned. Which statuses qualify is
 // owned by models.OpenSessionStatuses; see there for why each one is in.

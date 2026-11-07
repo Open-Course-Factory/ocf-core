@@ -48,6 +48,10 @@ type ScenarioSession struct {
 	Grade             *float64   `gorm:"type:decimal(5,2)" json:"grade,omitempty"`
 	TrainerID         *string    `gorm:"type:varchar(255)" json:"trainer_id,omitempty" mapstructure:"trainer_id"`
 	IsPreview         bool       `gorm:"default:false" json:"is_preview,omitempty" mapstructure:"is_preview"`
+	// RetakeAllowedAt is when the teacher released this run's submitted exam,
+	// letting the learner start one more attempt (services.ExamLockedRuns).
+	// The run and its grade stay as history.
+	RetakeAllowedAt *time.Time `json:"retake_allowed_at,omitempty"`
 
 	// Locale is fixed when the session starts and never changes. The container
 	// was built in one language — its directories carry that language's names —

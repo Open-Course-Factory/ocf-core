@@ -409,7 +409,11 @@ func (pc *scenarioProgressController) AbandonSession(ctx *gin.Context) {
 		return
 	}
 
-	err = pc.sessionService.AbandonSession(session.ID)
+	err = pc.sessionService.AbandonOwnRun(session)
+	if stderrors.Is(err, services.ErrExamAlreadySubmitted) {
+		respondExamLocked(ctx)
+		return
+	}
 	if stderrors.Is(err, services.ErrSessionNotAbandonable) {
 		// The run is already over. That is a state the client can read — the
 		// session it holds is stale — not a server failure: as a 500 it made an

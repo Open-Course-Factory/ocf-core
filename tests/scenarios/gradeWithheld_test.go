@@ -227,3 +227,31 @@ func TestGetSessionInfo_ExamGradeUnpublished_IsWithheld(t *testing.T) {
 	assert.Nil(t, body["grade"])
 	assert.Equal(t, true, body["grade_withheld"])
 }
+
+// The publish button is offered only where grades actually wait for it.
+func TestTeacherAssignmentViews_FlagExamScenarios(t *testing.T) {
+	db := freshTestDB(t)
+	exam := gradedRunFixture(t, db, true, false)
+	dashboard := services.NewTeacherDashboardService(sharedTestDB, nil, nil)
+
+	overview, err := dashboard.GetManagedGroupsOverview("creator-1")
+	require.NoError(t, err)
+	require.Len(t, overview, 1)
+	require.Len(t, overview[0].Assignments, 1)
+	assert.True(t, overview[0].Assignments[0].HasExamQuiz)
+
+	progress, err := dashboard.GetGroupAssignmentsProgress(exam.group.ID)
+	require.NoError(t, err)
+	require.Len(t, progress, 1)
+	assert.True(t, progress[0].HasExamQuiz)
+
+	learning := gradedRunFixture(t, db, false, false)
+	progress, err = dashboard.GetGroupAssignmentsProgress(learning.group.ID)
+	require.NoError(t, err)
+	flags := map[uuid.UUID]bool{}
+	for _, p := range progress {
+		flags[p.ScenarioID] = p.HasExamQuiz
+	}
+	assert.False(t, flags[learning.scenario.ID])
+	assert.True(t, flags[exam.scenario.ID], "the same learner's exam scenario keeps its flag")
+}

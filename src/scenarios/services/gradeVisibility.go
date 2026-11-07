@@ -25,13 +25,11 @@ func WithheldGradeSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[
 		return withheld, nil
 	}
 
-	var examScenarioIDs []uuid.UUID
-	if err := db.Model(&models.ScenarioStep{}).
-		Where("scenario_id IN ? AND step_type = ? AND show_immediate_feedback = ?", scenarioIDs, "quiz", false).
-		Distinct().Pluck("scenario_id", &examScenarioIDs).Error; err != nil {
+	exam, err := ExamScenarios(db, scenarioIDs)
+	if err != nil {
 		return nil, err
 	}
-	if len(examScenarioIDs) == 0 {
+	if len(exam) == 0 {
 		return withheld, nil
 	}
 
@@ -40,15 +38,11 @@ func WithheldGradeSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[
 		Select("DISTINCT sa.scenario_id AS scenario_id, gm.user_id AS user_id").
 		Joins("JOIN group_members gm ON gm.group_id = sa.group_id AND gm.is_active = ? AND gm.deleted_at IS NULL", true).
 		Where("sa.scenario_id IN ? AND gm.user_id IN ? AND sa.results_published_at IS NOT NULL AND sa.deleted_at IS NULL",
-			examScenarioIDs, userIDs).
+			mapKeys(exam), userIDs).
 		Scan(&published).Error; err != nil {
 		return nil, err
 	}
 
-	exam := make(map[uuid.UUID]bool, len(examScenarioIDs))
-	for _, id := range examScenarioIDs {
-		exam[id] = true
-	}
 	released := make(map[learnerRun]bool, len(published))
 	for _, p := range published {
 		released[p] = true
@@ -65,6 +59,44 @@ func WithheldGradeSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[
 type learnerRun struct {
 	ScenarioID uuid.UUID
 	UserID     string
+}
+
+// examQuizStep is the one definition of an exam-mode quiz step: a quiz whose
+// correction is not shown on submit. table names the scenario_steps alias.
+// Grade withholding, the exam lock and the teacher's "has an exam" flag all
+// filter through it.
+func examQuizStep(table string) func(*gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		return db.Where(table+".step_type = ? AND "+table+".show_immediate_feedback = ?", "quiz", false)
+	}
+}
+
+// ExamScenarios is the set of the given scenarios that have at least one
+// exam-mode quiz step. An empty input returns none without a query.
+func ExamScenarios(db *gorm.DB, scenarioIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
+	exam := map[uuid.UUID]bool{}
+	if len(scenarioIDs) == 0 {
+		return exam, nil
+	}
+	var ids []uuid.UUID
+	if err := db.Model(&models.ScenarioStep{}).
+		Scopes(examQuizStep("scenario_steps")).
+		Where("scenario_id IN ?", scenarioIDs).
+		Distinct().Pluck("scenario_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		exam[id] = true
+	}
+	return exam, nil
+}
+
+func mapKeys[K comparable, V any](m map[K]V) []K {
+	keys := make([]K, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // GradeWithheldForLearner is WithheldGradeSessions for one session. A lookup

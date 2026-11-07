@@ -57,6 +57,13 @@ func InitScenarioHooks(db *gorm.DB) {
 		log.Println("Scenario step flag hook registered")
 	}
 
+	examLockHook := NewScenarioSessionExamLockHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(examLockHook); err != nil {
+		log.Printf("Failed to register scenario session exam lock hook: %v", err)
+	} else {
+		log.Println("Scenario session exam lock hook registered")
+	}
+
 	quizScoringHook := NewScenarioStepQuizScoringHook()
 	if err := hooks.GlobalHookRegistry.RegisterHook(quizScoringHook); err != nil {
 		log.Printf("Failed to register scenario step quiz scoring hook: %v", err)

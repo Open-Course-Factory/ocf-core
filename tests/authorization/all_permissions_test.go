@@ -422,6 +422,7 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/reset-sessions", "POST"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results/publish", "POST"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results/publish", "DELETE"},
+		{"/api/v1/teacher/groups/:groupId/sessions/:sessionId/allow-retake", "POST"},
 		// Group scenario routes (existing)
 		{"/api/v1/groups/:groupId/scenarios/upload", "POST"},
 		{"/api/v1/groups/:groupId/scenarios/import-json", "POST"},

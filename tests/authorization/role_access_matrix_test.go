@@ -320,6 +320,8 @@ func classRows() []accessRow {
 			allowed: classManagers},
 		{action: "classA: unpublish scenA results", request: send(http.MethodDelete, teacherGroup("/scenarios/%s/results/publish", scenA), nil),
 			allowed: classManagers},
+		{action: "classA: allow a learner a retake", request: send(http.MethodPost, teacherGroup("/sessions/%s/allow-retake", learnerRun), nil),
+			allowed: classManagers, verdict: pastAuthorization},
 		{action: "classA: list its scenarios", request: get(route("/api/v1/groups/%s/scenarios", classA)), allowed: classManagers},
 		{action: "classA: bulk-create terminals (gates only)", request: send(http.MethodPost, route("/api/v1/class-groups/%s/bulk-create-terminals", classA), nil),
 			allowed: classManagers},

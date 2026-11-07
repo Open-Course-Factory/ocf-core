@@ -270,6 +270,11 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		// would be the worse trade.
 		slog.Warn("could not load existing scenario sessions", "err", resumableErr)
 	}
+	examLocked, lockErr := services.ExamLockedScenarios(sc.db, userID, scenarioIDs)
+	if lockErr != nil {
+		// Not fatal either: the launch itself refuses a locked exam.
+		slog.Warn("could not load exam attempts", "err", lockErr)
+	}
 
 	manageable, manageErr := sc.scenarioVerdicts(ctx, scenarios, scenarioHooks.CanManageScenarios)
 	if manageErr != nil {
@@ -372,6 +377,14 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			}
 		}
 
+		if examLocked[s.ID] {
+			item.ExamLocked = true
+			item.Launchable = false
+			item.BlockReason = services.ExamLockReason
+		}
+
+		// After the exam lock: a run in progress is still resumed, and the
+		// card needs session_exists to offer it.
 		if run, ok := resumableRuns[s.ID]; ok {
 			item.Launchable = false
 			item.BlockReason = blockReasonSessionExists
@@ -432,6 +445,33 @@ func respondSessionExists(ctx *gin.Context) {
 		"error_code":    http.StatusConflict,
 		"error_message": "A run of this scenario is already in progress.",
 		"reason":        blockReasonSessionExists,
+	})
+}
+
+// rejectIfExamLocked answers the request and reports true when the learner
+// has used their exam attempt. Like rejectIfRunInProgress it runs before a
+// terminal exists; StartScenario checks again for the race.
+func (sc *scenarioLaunchController) rejectIfExamLocked(ctx *gin.Context, userID string, scenarioID uuid.UUID) bool {
+	err := services.RefuseIfExamLocked(sc.db, userID, scenarioID)
+	if err == nil {
+		return false
+	}
+	if stderrors.Is(err, services.ErrExamAlreadySubmitted) {
+		respondExamLocked(ctx)
+		return true
+	}
+	slog.Error("failed to check the exam attempt", "userID", userID, "scenarioID", scenarioID, "err", err)
+	errors.Respond(ctx, http.StatusInternalServerError, "Failed to start scenario session. Please try again or contact support.")
+	return true
+}
+
+// respondExamLocked refuses a launch or an abandon because the learner's one
+// exam attempt is used; the launcher hides Relaunch and Start over on it.
+func respondExamLocked(ctx *gin.Context) {
+	ctx.JSON(http.StatusConflict, gin.H{
+		"error_code":    http.StatusConflict,
+		"error_message": services.ErrExamAlreadySubmitted.Error(),
+		"reason":        services.ExamLockReason,
 	})
 }
 
@@ -538,6 +578,9 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	if sc.rejectIfRunInProgress(ctx, userID, scenarioID) {
 		return
 	}
+	if sc.rejectIfExamLocked(ctx, userID, scenarioID) {
+		return
+	}
 
 	// Read org context from middleware (set by InjectOrgContext)
 	var orgID *uuid.UUID
@@ -585,6 +628,10 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		}
 		if stderrors.Is(startErr, services.ErrActiveSessionExists) {
 			respondSessionExists(ctx)
+			return
+		}
+		if stderrors.Is(startErr, services.ErrExamAlreadySubmitted) {
+			respondExamLocked(ctx)
 			return
 		}
 		slog.Error("failed to start scenario session", "userID", userID, "scenarioID", scenarioID, "err", startErr)

@@ -237,7 +237,7 @@ func TestResetGroupScenarioSessions_ClearsFailedRuns(t *testing.T) {
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
 	dashSvc := services.NewTeacherDashboardService(db, newCapturingTTService(), sessionSvc)
 
-	count, err := dashSvc.ResetGroupScenarioSessions(groupID, scenarioID)
+	count, _, err := dashSvc.ResetGroupScenarioSessions(groupID, scenarioID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "a failed run is exactly the one a class reset exists to clear")
 
@@ -268,7 +268,7 @@ func TestResetGroupScenarioSessions_LearnersOnly(t *testing.T) {
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
 	dashSvc := services.NewTeacherDashboardService(db, newCapturingTTService(), sessionSvc)
 
-	count, err := dashSvc.ResetGroupScenarioSessions(groupID, scenarioID)
+	count, _, err := dashSvc.ResetGroupScenarioSessions(groupID, scenarioID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count, "only the learner's run is the class's to reset")
 

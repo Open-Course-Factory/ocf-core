@@ -94,6 +94,9 @@ type TeacherGroupAssignment struct {
 	// ResultsPublishedAt is when exam grades were released to the class; null
 	// while they are withheld.
 	ResultsPublishedAt *time.Time `json:"results_published_at"`
+	// HasExamQuiz means the scenario has an exam-mode quiz step, the only kind
+	// whose grades wait for publication.
+	HasExamQuiz bool `json:"has_exam_quiz"`
 	// StartedCount / CompletedCount count DISTINCT active APPRENANTS, not
 	// sessions and not staff: a teacher walking through their own scenario is
 	// preparation, not class progress (#480).
@@ -170,13 +173,21 @@ func (s *TeacherDashboardService) GetManagedGroupsOverview(callerUserID string) 
 	if err != nil {
 		return nil, err
 	}
+	var assigned []groupAssignmentRow
+	for _, rows := range assignments {
+		assigned = append(assigned, rows...)
+	}
+	exam, err := ExamScenarios(s.db, assignedScenarioIDs(assigned))
+	if err != nil {
+		return nil, err
+	}
 
 	summaries := make([]TeacherGroupSummary, 0, len(groups))
 	for _, group := range groups {
 		counts := headcounts[group.ID]
 		summaries = append(summaries, buildTeacherGroupSummary(
 			group, callerUserID, counts,
-			buildAssignmentItems(assignments[group.ID], progress[group.ID], counts.learners),
+			buildAssignmentItems(assignments[group.ID], progress[group.ID], exam, counts.learners),
 		))
 	}
 	return summaries, nil
@@ -230,7 +241,7 @@ func (s *TeacherDashboardService) headcountsByGroup(groupIDs []uuid.UUID) (map[u
 // progress its apprenants made on that scenario, rating each against
 // learnerCount. An assignment with no matching progress row keeps the zero value
 // — assigned but untouched.
-func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioProgressRow, learnerCount int) []TeacherGroupAssignment {
+func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioProgressRow, examScenarios map[uuid.UUID]bool, learnerCount int) []TeacherGroupAssignment {
 	progressByScenario := make(map[uuid.UUID]scenarioProgressRow, len(progress))
 	for _, row := range progress {
 		progressByScenario[row.ScenarioID] = row
@@ -246,6 +257,7 @@ func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioP
 			StartDate:      assignment.StartDate,
 			Deadline:       assignment.Deadline,
 			ResultsPublishedAt: assignment.ResultsPublishedAt,
+			HasExamQuiz:        examScenarios[assignment.ScenarioID],
 			StartedCount:        done.StartedCount,
 			CompletedCount:      done.CompletedCount,
 			ClassCompletionRate: classCompletionPercent(done.CompletedCount, learnerCount),
