@@ -18,7 +18,7 @@ import (
 // apply it; teacher views and the stored grade are untouched.
 //
 // It returns the ids of the withheld sessions, in two queries whatever the
-// number of sessions. An empty input withholds nothing.
+// number of sessions; learnerClassAssignments defines the classes. An empty input withholds nothing.
 func WithheldGradeSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[uuid.UUID]bool, error) {
 	withheld := map[uuid.UUID]bool{}
 	scenarioIDs, userIDs := gradedRunKeys(sessions)
@@ -34,22 +34,32 @@ func WithheldGradeSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[
 		return withheld, nil
 	}
 
-	awaiting, err := awaitingPublication(db, mapKeys(exam), userIDs)
+	classes, err := learnerClassAssignments(db, mapKeys(exam), userIDs)
 	if err != nil {
 		return nil, err
 	}
 	for _, s := range sessions {
-		if !s.IsPreview && awaiting[learnerRun{ScenarioID: s.ScenarioID, UserID: s.UserID}] {
+		published, hasClass := classes[learnerRun{ScenarioID: s.ScenarioID, UserID: s.UserID}]
+		if !s.IsPreview && hasClass && !published {
 			withheld[s.ID] = true
 		}
 	}
 	return withheld, nil
 }
 
-// awaitingPublication returns the (scenario, learner) pairs where at least one
-// class the learner actively belongs to assigns the scenario, and none of those
-// classes has published its results.
-func awaitingPublication(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string) (map[learnerRun]bool, error) {
+// learnerClassAssignments is the one definition of "the learner's classes
+// assigning the scenario": classes the learner is an active member of that
+// carry an assignment of it. Grade withholding and the exam lock only exist
+// for such pairs, because only their teachers can publish or allow a retake.
+//
+// For each (scenario, learner) pair that has at least one, the value reports
+// whether any of those classes has published its results. A pair with none is
+// absent. One query whatever the number of each.
+func learnerClassAssignments(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string) (map[learnerRun]bool, error) {
+	assigned := map[learnerRun]bool{}
+	if len(scenarioIDs) == 0 || len(userIDs) == 0 {
+		return assigned, nil
+	}
 	var rows []struct {
 		ScenarioID     uuid.UUID
 		UserID         string
@@ -63,13 +73,10 @@ func awaitingPublication(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string)
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	awaiting := make(map[learnerRun]bool, len(rows))
 	for _, r := range rows {
-		if r.PublishedCount == 0 {
-			awaiting[learnerRun{ScenarioID: r.ScenarioID, UserID: r.UserID}] = true
-		}
+		assigned[learnerRun{ScenarioID: r.ScenarioID, UserID: r.UserID}] = r.PublishedCount > 0
 	}
-	return awaiting, nil
+	return assigned, nil
 }
 
 // learnerRun is one learner's runs of one scenario, whatever the attempt.

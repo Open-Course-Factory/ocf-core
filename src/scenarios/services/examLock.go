@@ -22,7 +22,8 @@ const ExamLockReason = "exam_already_submitted"
 // examLockingSessions is the one rule for the exam's single attempt: a
 // learner's non-preview run in which an exam-mode quiz step was submitted
 // (its score recorded), and that the teacher has not released for a retake.
-// Any such run locks the learner out of starting another run of the scenario.
+// Any such run locks the learner out of starting another run of the scenario,
+// provided a class of theirs assigns it (see ExamLockedRuns).
 func examLockingSessions(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string) *gorm.DB {
 	return db.Table("scenario_sessions ss").
 		Joins("JOIN scenario_step_progress sp ON sp.session_id = ss.id AND sp.quiz_score IS NOT NULL AND sp.deleted_at IS NULL").
@@ -32,8 +33,10 @@ func examLockingSessions(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string)
 			scenarioIDs, userIDs, false)
 }
 
-// ExamLockedRuns returns the (scenario, learner) pairs that are locked, in one
-// query whatever the number of each. An empty input locks nothing.
+// ExamLockedRuns returns the (scenario, learner) pairs that are locked, in two
+// queries whatever the number of each. A learner none of whose classes assigns
+// the scenario is never locked: no teacher could allow them a retake. An empty
+// input locks nothing.
 func ExamLockedRuns(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string) (map[learnerRun]bool, error) {
 	locked := map[learnerRun]bool{}
 	if len(scenarioIDs) == 0 || len(userIDs) == 0 {
@@ -45,8 +48,17 @@ func ExamLockedRuns(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string) (map
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
+	if len(rows) == 0 {
+		return locked, nil
+	}
+	classes, err := learnerClassAssignments(db, scenarioIDs, userIDs)
+	if err != nil {
+		return nil, err
+	}
 	for _, r := range rows {
-		locked[r] = true
+		if _, hasClass := classes[r]; hasClass {
+			locked[r] = true
+		}
 	}
 	return locked, nil
 }

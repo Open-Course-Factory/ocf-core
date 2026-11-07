@@ -34,10 +34,13 @@ func addExamQuizStep(t *testing.T, db *gorm.DB, scenarioID uuid.UUID) {
 	}).Error)
 }
 
-// seedExamRun records a run of the scenario by userID. submitted writes the
-// exam step's score, which is what a submission leaves behind.
+// seedExamRun records a run of the scenario by userID, who is enrolled in a
+// class assigning it: the lock only exists where a teacher can lift it.
+// submitted writes the exam step's score, which is what a submission leaves
+// behind.
 func seedExamRun(t *testing.T, db *gorm.DB, scenarioID uuid.UUID, userID, status string, submitted, preview bool) models.ScenarioSession {
 	t.Helper()
+	enrolInExamClass(t, db, scenarioID, userID)
 	session := models.ScenarioSession{
 		ScenarioID: scenarioID, UserID: userID, Status: status, StartedAt: time.Now(), IsPreview: preview,
 	}
@@ -50,6 +53,25 @@ func seedExamRun(t *testing.T, db *gorm.DB, scenarioID uuid.UUID, userID, status
 	}
 	require.NoError(t, db.Create(&progress).Error)
 	return session
+}
+
+// enrolInExamClass makes userID an active member of the class assigned the
+// scenario, creating that class on first use.
+func enrolInExamClass(t *testing.T, db *gorm.DB, scenarioID uuid.UUID, userID string) groupModels.ClassGroup {
+	t.Helper()
+	name := "exam-class-" + scenarioID.String()
+	var group groupModels.ClassGroup
+	if db.Where("name = ?", name).First(&group).Error != nil {
+		group = createClassGroup(t, db, name, "teacher-1", nil)
+		createScenarioAssignment(t, db, scenarioID, &group.ID, nil, "group")
+	}
+	var enrolled int64
+	require.NoError(t, db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ?", group.ID, userID).Count(&enrolled).Error)
+	if enrolled == 0 {
+		addGroupMember(t, db, group.ID, userID, groupModels.GroupMemberRoleMember)
+	}
+	return group
 }
 
 func examScenario(t *testing.T, db *gorm.DB) models.Scenario {
@@ -73,6 +95,28 @@ func TestExamLock_SubmittedExam_LocksTheLearner(t *testing.T) {
 	seedExamRun(t, sharedTestDB, scenario.ID, "learner-a", "completed", true, false)
 	assert.True(t, examLocked(t, scenario.ID, "learner-a"))
 	assert.False(t, examLocked(t, scenario.ID, "learner-b"), "the lock is per learner")
+}
+
+// No class of the learner assigns the scenario: no teacher could ever allow a
+// retake, so there is no lock.
+func TestExamLock_NoClassAssignsTheScenario_DoesNotLock(t *testing.T) {
+	scenario := examScenario(t, freshTestDB(t))
+	seedExamRun(t, sharedTestDB, scenario.ID, "learner-a", "completed", true, false)
+	require.NoError(t, sharedTestDB.Where("scenario_id = ?", scenario.ID).Delete(&models.ScenarioAssignment{}).Error)
+	orgID := uuid.New()
+	createScenarioAssignment(t, sharedTestDB, scenario.ID, nil, &orgID, "org")
+
+	assert.False(t, examLocked(t, scenario.ID, "learner-a"))
+}
+
+// A learner who left the class counts as having no class.
+func TestExamLock_ClassMembershipInactive_DoesNotLock(t *testing.T) {
+	scenario := examScenario(t, freshTestDB(t))
+	seedExamRun(t, sharedTestDB, scenario.ID, "learner-a", "completed", true, false)
+	require.NoError(t, sharedTestDB.Model(&groupModels.GroupMember{}).
+		Where("user_id = ?", "learner-a").Update("is_active", false).Error)
+
+	assert.False(t, examLocked(t, scenario.ID, "learner-a"))
 }
 
 func TestExamLock_ExamNotYetSubmitted_DoesNotLock(t *testing.T) {
