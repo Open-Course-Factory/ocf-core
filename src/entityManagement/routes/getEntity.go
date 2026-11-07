@@ -122,6 +122,11 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 			return
 		}
 	}
+	single := []any{entityDto}
+	if err := applyDtoListEnricher(ctx, entityName, single, genericController.db); err != nil {
+		errors.HandleError(http.StatusInternalServerError, err, ctx)
+		return
+	}
 
-	ctx.JSON(http.StatusOK, entityDto)
+	ctx.JSON(http.StatusOK, single[0])
 }

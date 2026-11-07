@@ -216,6 +216,7 @@ func TestGetSessionInfo_ExamGradeUnpublished_IsWithheld(t *testing.T) {
 	db := freshTestDB(t)
 	run := gradedRunFixture(t, db, true, false)
 	require.NoError(t, db.Model(&run.session).Update("user_id", "test-user-123").Error)
+	addGroupMember(t, db, run.group.ID, "test-user-123", groupModels.GroupMemberRoleMember)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/api/v1/scenario-sessions/"+run.session.ID.String()+"/info", nil)
@@ -254,4 +255,25 @@ func TestTeacherAssignmentViews_FlagExamScenarios(t *testing.T) {
 	}
 	assert.False(t, flags[learning.scenario.ID])
 	assert.True(t, flags[exam.scenario.ID], "the same learner's exam scenario keeps its flag")
+}
+
+// With no class of the learner assigning the scenario there is no teacher to
+// publish, so withholding would hide the grade forever.
+func TestGradeWithheld_NoClassAssignsTheScenario_ShowsGrade(t *testing.T) {
+	db := freshTestDB(t)
+	run := gradedRunFixture(t, db, true, false)
+	require.NoError(t, db.Where("scenario_id = ?", run.scenario.ID).Delete(&models.ScenarioAssignment{}).Error)
+	orgID := uuid.New()
+	createScenarioAssignment(t, db, run.scenario.ID, nil, &orgID, "org")
+
+	assertGradeVisible(t, mySession(t, run.session.ID))
+}
+
+func TestGradeWithheld_ClassMembershipInactive_ShowsGrade(t *testing.T) {
+	db := freshTestDB(t)
+	run := gradedRunFixture(t, db, true, false)
+	require.NoError(t, db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ?", run.group.ID, withheldLearner).Update("is_active", false).Error)
+
+	assertGradeVisible(t, mySession(t, run.session.ID))
 }

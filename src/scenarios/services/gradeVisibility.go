@@ -11,10 +11,11 @@ import (
 
 // WithheldGradeSessions is the one rule for whether a learner may see their own
 // grade yet: a run of a scenario with an exam-mode quiz step keeps its grade
-// hidden until the teacher of a class the learner actively belongs to
-// publishes that scenario's results. A preview is the author's own test and is
-// never withheld. Only learner-facing responses apply it; teacher views and the
-// stored grade are untouched.
+// hidden while a class the learner actively belongs to assigns that scenario
+// and none of those classes has published its results. With no such class
+// there is no teacher who could publish, so the grade is shown. A preview is
+// the author's own test and is never withheld. Only learner-facing responses
+// apply it; teacher views and the stored grade are untouched.
 //
 // It returns the ids of the withheld sessions, in two queries whatever the
 // number of sessions. An empty input withholds nothing.
@@ -33,26 +34,42 @@ func WithheldGradeSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[
 		return withheld, nil
 	}
 
-	var published []learnerRun
-	if err := db.Table("scenario_assignments sa").
-		Select("DISTINCT sa.scenario_id AS scenario_id, gm.user_id AS user_id").
-		Joins("JOIN group_members gm ON gm.group_id = sa.group_id AND gm.is_active = ? AND gm.deleted_at IS NULL", true).
-		Where("sa.scenario_id IN ? AND gm.user_id IN ? AND sa.results_published_at IS NOT NULL AND sa.deleted_at IS NULL",
-			mapKeys(exam), userIDs).
-		Scan(&published).Error; err != nil {
+	awaiting, err := awaitingPublication(db, mapKeys(exam), userIDs)
+	if err != nil {
 		return nil, err
 	}
-
-	released := make(map[learnerRun]bool, len(published))
-	for _, p := range published {
-		released[p] = true
-	}
 	for _, s := range sessions {
-		if !s.IsPreview && exam[s.ScenarioID] && !released[learnerRun{ScenarioID: s.ScenarioID, UserID: s.UserID}] {
+		if !s.IsPreview && awaiting[learnerRun{ScenarioID: s.ScenarioID, UserID: s.UserID}] {
 			withheld[s.ID] = true
 		}
 	}
 	return withheld, nil
+}
+
+// awaitingPublication returns the (scenario, learner) pairs where at least one
+// class the learner actively belongs to assigns the scenario, and none of those
+// classes has published its results.
+func awaitingPublication(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string) (map[learnerRun]bool, error) {
+	var rows []struct {
+		ScenarioID     uuid.UUID
+		UserID         string
+		PublishedCount int
+	}
+	if err := db.Table("scenario_assignments sa").
+		Select("sa.scenario_id AS scenario_id, gm.user_id AS user_id, COUNT(sa.results_published_at) AS published_count").
+		Joins("JOIN group_members gm ON gm.group_id = sa.group_id AND gm.is_active = ? AND gm.deleted_at IS NULL", true).
+		Where("sa.scenario_id IN ? AND gm.user_id IN ? AND sa.deleted_at IS NULL", scenarioIDs, userIDs).
+		Group("sa.scenario_id, gm.user_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	awaiting := make(map[learnerRun]bool, len(rows))
+	for _, r := range rows {
+		if r.PublishedCount == 0 {
+			awaiting[learnerRun{ScenarioID: r.ScenarioID, UserID: r.UserID}] = true
+		}
+	}
+	return awaiting, nil
 }
 
 // learnerRun is one learner's runs of one scenario, whatever the attempt.

@@ -34,6 +34,15 @@ import (
 // redactor does not depend on a stringly-typed gin.Context key.
 type DtoRedactor func(c *gin.Context, dto any, db *gorm.DB) error
 
+// DtoListEnricher adds derived, read-only fields to the output DTOs of a GET,
+// once for the whole page: the list handlers pass every item, the get-by-id
+// handler a one-item slice. It exists so a value that needs a query is loaded
+// in one batch instead of once per row, which a DtoRedactor cannot do.
+//
+// Items are DTO values; an enricher replaces dtos[i] with the enriched copy.
+// It runs after the redactor. Returning an error aborts the request with 500.
+type DtoListEnricher func(c *gin.Context, dtos []any, db *gorm.DB) error
+
 // ListScope narrows the generic list handlers to the rows the caller may see
 // when the rule is neither one owner column (OwnershipConfig) nor one boolean
 // flag (VisibilityScopeConfig). It returns the allowed row ids; nil means
@@ -52,6 +61,7 @@ type EntityRegistrationService struct {
 	typedOps            map[string]entityManagementInterfaces.EntityOperations
 	entityRoles         map[string]entityManagementInterfaces.EntityRoles
 	dtoRedactors        map[string]DtoRedactor
+	dtoListEnrichers    map[string]DtoListEnricher
 	listScopes          map[string]ListScope
 	entityActions       map[string][]entityManagementInterfaces.ActionConfig
 	archivable          map[string]bool
@@ -70,6 +80,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		typedOps:            make(map[string]entityManagementInterfaces.EntityOperations),
 		entityRoles:         make(map[string]entityManagementInterfaces.EntityRoles),
 		dtoRedactors:        make(map[string]DtoRedactor),
+		dtoListEnrichers:    make(map[string]DtoListEnricher),
 		listScopes:          make(map[string]ListScope),
 		entityActions:       make(map[string][]entityManagementInterfaces.ActionConfig),
 		archivable:          make(map[string]bool),
@@ -90,6 +101,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.typedOps = make(map[string]entityManagementInterfaces.EntityOperations)
 	s.entityRoles = make(map[string]entityManagementInterfaces.EntityRoles)
 	s.dtoRedactors = make(map[string]DtoRedactor)
+	s.dtoListEnrichers = make(map[string]DtoListEnricher)
 	s.listScopes = make(map[string]ListScope)
 	s.entityActions = make(map[string][]entityManagementInterfaces.ActionConfig)
 	s.archivable = make(map[string]bool)
@@ -524,6 +536,21 @@ func (s *EntityRegistrationService) RegisterDtoRedactor(name string, r DtoRedact
 func (s *EntityRegistrationService) GetDtoRedactor(name string) (DtoRedactor, bool) {
 	r, ok := s.dtoRedactors[name]
 	return r, ok
+}
+
+// RegisterDtoListEnricher registers the batch enricher the generic GET
+// handlers run on the named entity's output DTOs.
+func (s *EntityRegistrationService) RegisterDtoListEnricher(name string, e DtoListEnricher) {
+	if e == nil {
+		return
+	}
+	s.dtoListEnrichers[name] = e
+}
+
+// GetDtoListEnricher returns the batch enricher for the named entity, if any.
+func (s *EntityRegistrationService) GetDtoListEnricher(name string) (DtoListEnricher, bool) {
+	e, ok := s.dtoListEnrichers[name]
+	return e, ok
 }
 
 // RegisterListScope registers the id filter the generic list handlers apply
