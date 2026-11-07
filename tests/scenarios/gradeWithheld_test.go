@@ -143,23 +143,6 @@ func TestPublishScenarioResults_ScenarioNotAssignedToGroup_ReturnsNotAssigned(t 
 	assert.ErrorIs(t, dashboard.UnpublishScenarioResults(stranger.ID, run.scenario.ID), services.ErrScenarioNotAssignedToGroup)
 }
 
-func TestGetManagedGroupsOverview_PublishedAssignment_ReportsPublishedAt(t *testing.T) {
-	run := gradedRunFixture(t, freshTestDB(t), true, false)
-	dashboard := services.NewTeacherDashboardService(sharedTestDB, nil, nil)
-
-	overview, err := dashboard.GetManagedGroupsOverview("creator-1")
-	require.NoError(t, err)
-	require.Len(t, overview, 1)
-	require.Len(t, overview[0].Assignments, 1)
-	assert.Nil(t, overview[0].Assignments[0].ResultsPublishedAt)
-
-	_, err = dashboard.PublishScenarioResults(run.group.ID, run.scenario.ID)
-	require.NoError(t, err)
-	overview, err = dashboard.GetManagedGroupsOverview("creator-1")
-	require.NoError(t, err)
-	assert.NotNil(t, overview[0].Assignments[0].ResultsPublishedAt)
-}
-
 func publishRequest(t *testing.T, router http.Handler, method string, groupID, scenarioID uuid.UUID) *httptest.ResponseRecorder {
 	t.Helper()
 	w := httptest.NewRecorder()
@@ -234,12 +217,6 @@ func TestTeacherAssignmentViews_FlagExamScenarios(t *testing.T) {
 	db := freshTestDB(t)
 	exam := gradedRunFixture(t, db, true, false)
 	dashboard := services.NewTeacherDashboardService(sharedTestDB, nil, nil)
-
-	overview, err := dashboard.GetManagedGroupsOverview("creator-1")
-	require.NoError(t, err)
-	require.Len(t, overview, 1)
-	require.Len(t, overview[0].Assignments, 1)
-	assert.True(t, overview[0].Assignments[0].HasExamQuiz)
 
 	progress, err := dashboard.GetGroupAssignmentsProgress(exam.group.ID)
 	require.NoError(t, err)

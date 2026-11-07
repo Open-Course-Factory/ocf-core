@@ -91,12 +91,6 @@ type TeacherGroupAssignment struct {
 	ScenarioTitle string     `json:"scenario_title"`
 	StartDate     *time.Time `json:"start_date,omitempty"`
 	Deadline      *time.Time `json:"deadline,omitempty"`
-	// ResultsPublishedAt is when exam grades were released to the class; null
-	// while they are withheld.
-	ResultsPublishedAt *time.Time `json:"results_published_at"`
-	// HasExamQuiz means the scenario has an exam-mode quiz step, the only kind
-	// whose grades wait for publication.
-	HasExamQuiz bool `json:"has_exam_quiz"`
 	// StartedCount / CompletedCount count DISTINCT active APPRENANTS, not
 	// sessions and not staff: a teacher walking through their own scenario is
 	// preparation, not class progress (#480).
@@ -173,21 +167,13 @@ func (s *TeacherDashboardService) GetManagedGroupsOverview(callerUserID string) 
 	if err != nil {
 		return nil, err
 	}
-	var assigned []groupAssignmentRow
-	for _, rows := range assignments {
-		assigned = append(assigned, rows...)
-	}
-	exam, err := ExamScenarios(s.db, assignedScenarioIDs(assigned))
-	if err != nil {
-		return nil, err
-	}
 
 	summaries := make([]TeacherGroupSummary, 0, len(groups))
 	for _, group := range groups {
 		counts := headcounts[group.ID]
 		summaries = append(summaries, buildTeacherGroupSummary(
 			group, callerUserID, counts,
-			buildAssignmentItems(assignments[group.ID], progress[group.ID], exam, counts.learners),
+			buildAssignmentItems(assignments[group.ID], progress[group.ID], counts.learners),
 		))
 	}
 	return summaries, nil
@@ -241,7 +227,7 @@ func (s *TeacherDashboardService) headcountsByGroup(groupIDs []uuid.UUID) (map[u
 // progress its apprenants made on that scenario, rating each against
 // learnerCount. An assignment with no matching progress row keeps the zero value
 // — assigned but untouched.
-func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioProgressRow, examScenarios map[uuid.UUID]bool, learnerCount int) []TeacherGroupAssignment {
+func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioProgressRow, learnerCount int) []TeacherGroupAssignment {
 	progressByScenario := make(map[uuid.UUID]scenarioProgressRow, len(progress))
 	for _, row := range progress {
 		progressByScenario[row.ScenarioID] = row
@@ -256,8 +242,6 @@ func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioP
 			ScenarioTitle:  assignment.ScenarioTitle,
 			StartDate:      assignment.StartDate,
 			Deadline:       assignment.Deadline,
-			ResultsPublishedAt: assignment.ResultsPublishedAt,
-			HasExamQuiz:        examScenarios[assignment.ScenarioID],
 			StartedCount:        done.StartedCount,
 			CompletedCount:      done.CompletedCount,
 			ClassCompletionRate: classCompletionPercent(done.CompletedCount, learnerCount),
@@ -404,7 +388,6 @@ type groupAssignmentRow struct {
 	ScenarioTitle string
 	StartDate     *time.Time
 	Deadline      *time.Time
-	ResultsPublishedAt *time.Time
 }
 
 // activeAssignmentsByGroup loads the active group-scoped assignments of every
@@ -420,7 +403,7 @@ func (s *TeacherDashboardService) activeAssignmentsByGroup(groupIDs []uuid.UUID)
 	}
 	var rows []groupAssignmentRow
 	err := s.db.Table("scenario_assignments sa").
-		Select("sa.group_id as group_id, sa.id as assignment_id, sa.scenario_id as scenario_id, sc.title as scenario_title, sa.start_date as start_date, sa.deadline as deadline, sa.results_published_at as results_published_at").
+		Select("sa.group_id as group_id, sa.id as assignment_id, sa.scenario_id as scenario_id, sc.title as scenario_title, sa.start_date as start_date, sa.deadline as deadline").
 		Joins("LEFT JOIN scenarios sc ON sc.id = sa.scenario_id AND sc.deleted_at IS NULL").
 		Where("sa.group_id IN ? AND sa.is_active = ? AND sa.deleted_at IS NULL", groupIDs, true).
 		Order("(sa.deadline IS NULL), sa.deadline ASC, sc.title ASC").
