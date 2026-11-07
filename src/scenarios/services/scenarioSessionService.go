@@ -1934,7 +1934,6 @@ func quizQuestionResults(questions []models.ScenarioStepQuestion, graded QuizGra
 			Correct:       graded.Questions[i].Correct,
 			CorrectAnswer: q.CorrectAnswer,
 			Explanation:   q.Explanation,
-			PointsEarned:  graded.Questions[i].Earned,
 		})
 	}
 	return results

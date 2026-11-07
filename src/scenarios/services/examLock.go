@@ -77,23 +77,14 @@ func ExamLockedScenarios(db *gorm.DB, userID string, scenarioIDs []uuid.UUID) (m
 	return locked, nil
 }
 
-// ExamLocked is ExamLockedRuns for one learner and one scenario.
-func ExamLocked(db *gorm.DB, userID string, scenarioID uuid.UUID) (bool, error) {
-	locked, err := ExamLockedRuns(db, []uuid.UUID{scenarioID}, []string{userID})
-	if err != nil {
-		return false, err
-	}
-	return locked[learnerRun{ScenarioID: scenarioID, UserID: userID}], nil
-}
-
 // RefuseIfExamLocked returns ErrExamAlreadySubmitted when the learner may not
 // start or abandon a run of the scenario.
 func RefuseIfExamLocked(db *gorm.DB, userID string, scenarioID uuid.UUID) error {
-	locked, err := ExamLocked(db, userID, scenarioID)
+	locked, err := ExamLockedRuns(db, []uuid.UUID{scenarioID}, []string{userID})
 	if err != nil {
 		return err
 	}
-	if locked {
+	if locked[learnerRun{ScenarioID: scenarioID, UserID: userID}] {
 		return ErrExamAlreadySubmitted
 	}
 	return nil

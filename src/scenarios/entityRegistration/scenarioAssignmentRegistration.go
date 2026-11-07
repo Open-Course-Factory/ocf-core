@@ -3,16 +3,11 @@ package scenarioRegistration
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"gorm.io/gorm"
-
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
-	"soli/formations/src/scenarios/services"
 )
 
 func RegisterScenarioAssignment(service *ems.EntityRegistrationService) {
@@ -22,7 +17,41 @@ func RegisterScenarioAssignment(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[models.ScenarioAssignment, dto.CreateScenarioAssignmentInput, dto.EditScenarioAssignmentInput, dto.ScenarioAssignmentOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.ScenarioAssignment, dto.CreateScenarioAssignmentInput, dto.EditScenarioAssignmentInput, dto.ScenarioAssignmentOutput]{
 				ModelToDto: func(model *models.ScenarioAssignment) (dto.ScenarioAssignmentOutput, error) {
-					return ScenarioAssignmentToOutput(model), nil
+					output := dto.ScenarioAssignmentOutput{
+						ID:             model.ID,
+						ScenarioID:     model.ScenarioID,
+						GroupID:        model.GroupID,
+						OrganizationID: model.OrganizationID,
+						Scope:          model.Scope,
+						CreatedByID:    model.CreatedByID,
+						StartDate:      model.StartDate,
+						Deadline:       model.Deadline,
+						IsActive:       model.IsActive,
+						ResultsPublishedAt: model.ResultsPublishedAt,
+						CreatedAt:      model.CreatedAt,
+						UpdatedAt:      model.UpdatedAt,
+					}
+
+					if model.Scenario.ID.String() != "00000000-0000-0000-0000-000000000000" {
+						scenarioOutput := dto.ScenarioOutput{
+							ID:             model.Scenario.ID,
+							Name:           model.Scenario.Name,
+							Title:          model.Scenario.Title,
+							Description:    model.Scenario.Description,
+							Difficulty:     model.Scenario.Difficulty,
+							EstimatedTimeMinutes:  model.Scenario.EstimatedTimeMinutes,
+							InstanceType:   model.Scenario.InstanceType,
+							OsType:         model.Scenario.OsType,
+							SourceType:     model.Scenario.SourceType,
+							CreatedByID:    model.Scenario.CreatedByID,
+							OrganizationID: model.Scenario.OrganizationID,
+							CreatedAt:      model.Scenario.CreatedAt,
+							UpdatedAt:      model.Scenario.UpdatedAt,
+						}
+						output.Scenario = &scenarioOutput
+					}
+
+					return output, nil
 				},
 				DtoToModel: func(input dto.CreateScenarioAssignmentInput) *models.ScenarioAssignment {
 					return &models.ScenarioAssignment{
@@ -93,66 +122,4 @@ func RegisterScenarioAssignment(service *ems.EntityRegistrationService) {
 		},
 	)
 	service.RegisterListScope("ScenarioAssignment", scenarioAssignmentListScope)
-	service.RegisterDtoListEnricher("ScenarioAssignment", EnrichScenarioAssignmentOutputs)
-}
-
-// ScenarioAssignmentToOutput is an assignment as the entity routes return it,
-// before EnrichScenarioAssignmentOutputs adds the derived fields.
-func ScenarioAssignmentToOutput(model *models.ScenarioAssignment) dto.ScenarioAssignmentOutput {
-	output := dto.ScenarioAssignmentOutput{
-		ID:             model.ID,
-		ScenarioID:     model.ScenarioID,
-		GroupID:        model.GroupID,
-		OrganizationID: model.OrganizationID,
-		Scope:          model.Scope,
-		CreatedByID:    model.CreatedByID,
-		StartDate:      model.StartDate,
-		Deadline:       model.Deadline,
-		IsActive:       model.IsActive,
-		ResultsPublishedAt: model.ResultsPublishedAt,
-		CreatedAt:      model.CreatedAt,
-		UpdatedAt:      model.UpdatedAt,
-	}
-
-	if model.Scenario.ID.String() != "00000000-0000-0000-0000-000000000000" {
-		scenarioOutput := dto.ScenarioOutput{
-			ID:             model.Scenario.ID,
-			Name:           model.Scenario.Name,
-			Title:          model.Scenario.Title,
-			Description:    model.Scenario.Description,
-			Difficulty:     model.Scenario.Difficulty,
-			EstimatedTimeMinutes:  model.Scenario.EstimatedTimeMinutes,
-			InstanceType:   model.Scenario.InstanceType,
-			OsType:         model.Scenario.OsType,
-			SourceType:     model.Scenario.SourceType,
-			CreatedByID:    model.Scenario.CreatedByID,
-			OrganizationID: model.Scenario.OrganizationID,
-			CreatedAt:      model.Scenario.CreatedAt,
-			UpdatedAt:      model.Scenario.UpdatedAt,
-		}
-		output.Scenario = &scenarioOutput
-	}
-	return output
-}
-
-// EnrichScenarioAssignmentOutputs sets HasExamQuiz on a page of assignments in
-// one query, with the exam-scenario lookup grade withholding uses.
-func EnrichScenarioAssignmentOutputs(_ *gin.Context, dtos []any, db *gorm.DB) error {
-	scenarioIDs := make([]uuid.UUID, 0, len(dtos))
-	for _, d := range dtos {
-		if out, ok := d.(dto.ScenarioAssignmentOutput); ok {
-			scenarioIDs = append(scenarioIDs, out.ScenarioID)
-		}
-	}
-	exam, err := services.ExamScenarios(db, scenarioIDs)
-	if err != nil {
-		return err
-	}
-	for i, d := range dtos {
-		if out, ok := d.(dto.ScenarioAssignmentOutput); ok {
-			out.HasExamQuiz = exam[out.ScenarioID]
-			dtos[i] = out
-		}
-	}
-	return nil
 }

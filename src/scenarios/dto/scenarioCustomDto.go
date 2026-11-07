@@ -211,8 +211,6 @@ type QuizQuestionResult struct {
 	Correct       bool      `json:"correct"`
 	CorrectAnswer string    `json:"correct_answer,omitempty"`
 	Explanation   string    `json:"explanation,omitempty"`
-	// PointsEarned may be negative under partial scoring.
-	PointsEarned float64 `json:"points_earned"`
 }
 
 // RevealHintResponse - DTO for revealing a progressive hint

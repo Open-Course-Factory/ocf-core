@@ -462,11 +462,11 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 	// is the single definition of who counts as an apprenant; the class card's
 	// own learner_count is computed from it, which is why a class of three
 	// showed three learners and produced five sessions.
-	var members []groupModels.GroupMember
-	if err := s.db.
+	var learnerIDs []string
+	if err := s.db.Model(&groupModels.GroupMember{}).
 		Where("group_id = ? AND is_active = ?", groupID, true).
 		Scopes(groupModels.LearnerRoleScope("group_members")).
-		Find(&members).Error; err != nil {
+		Pluck("user_id", &learnerIDs).Error; err != nil {
 		return nil, fmt.Errorf("failed to load group members: %w", err)
 	}
 
@@ -482,16 +482,17 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 		return nil, models.ErrScenarioArchived
 	}
 
-	result := &BulkStartResult{
-		NoKeyUsers: make([]UserKeyMissing, 0),
-		Errors:     make([]BulkStartError, 0),
-	}
-
 	// A learner who used their exam attempt keeps their run: restarting the
 	// class must not wipe it, and StartScenario would refuse them anyway.
-	locked, err := ExamLockedRuns(s.db, []uuid.UUID{scenarioID}, memberUserIDs(members))
+	startable, skipped, err := s.splitExamLockedLearners(scenarioID, learnerIDs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check exam attempts: %w", err)
+		return nil, err
+	}
+	result := &BulkStartResult{
+		NoKeyUsers:   make([]UserKeyMissing, 0),
+		Errors:       make([]BulkStartError, 0),
+		Skipped:      len(skipped),
+		SkippedUsers: skipped,
 	}
 
 	// Default session duration: 4 hours
@@ -523,14 +524,9 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 	}
 
 	var mu sync.Mutex
-	for _, member := range members {
+	for _, learnerID := range startable {
 		g.Go(func() error {
-			var outcome memberOutcome
-			if locked[learnerRun{ScenarioID: scenarioID, UserID: member.UserID}] {
-				outcome = memberOutcome{userID: member.UserID, skipped: ExamLockReason}
-			} else {
-				outcome = s.startScenarioForMember(run, member.UserID)
-			}
+			outcome := s.startScenarioForMember(run, learnerID)
 			mu.Lock()
 			result.record(outcome)
 			mu.Unlock()
@@ -565,7 +561,6 @@ type memberOutcome struct {
 	created  bool
 	noKey    *UserKeyMissing
 	failure  string // non-empty: the error to report for this learner
-	skipped  string // non-empty: why this learner was left alone
 	userID   string
 }
 
@@ -575,9 +570,6 @@ func (r *BulkStartResult) record(o memberOutcome) {
 		r.Replaced++
 	}
 	switch {
-	case o.skipped != "":
-		r.Skipped++
-		r.SkippedUsers = append(r.SkippedUsers, SkippedLearner{UserID: o.userID, Reason: o.skipped})
 	case o.noKey != nil:
 		r.NoKey++
 		r.NoKeyUsers = append(r.NoKeyUsers, *o.noKey)
@@ -788,8 +780,9 @@ func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, 
 	return result.RowsAffected, skipped, nil
 }
 
-// splitExamLockedLearners separates the learners a reset may touch from those
-// who used their exam attempt, whose run a reset would destroy for good.
+// splitExamLockedLearners separates the learners a class-wide start or reset
+// may touch from those who used their exam attempt, whose run either would
+// destroy for good.
 func (s *TeacherDashboardService) splitExamLockedLearners(scenarioID uuid.UUID, userIDs []string) ([]string, []SkippedLearner, error) {
 	locked, err := ExamLockedRuns(s.db, []uuid.UUID{scenarioID}, userIDs)
 	if err != nil {
@@ -805,14 +798,6 @@ func (s *TeacherDashboardService) splitExamLockedLearners(scenarioID uuid.UUID, 
 		resettable = append(resettable, id)
 	}
 	return resettable, skipped, nil
-}
-
-func memberUserIDs(members []groupModels.GroupMember) []string {
-	ids := make([]string, 0, len(members))
-	for _, m := range members {
-		ids = append(ids, m.UserID)
-	}
-	return ids
 }
 
 // SessionStepDetail represents a single step's progress with its metadata
@@ -1309,7 +1294,6 @@ func populateQuizQuestionsFromLoaded(
 				StudentAnswer: answers[q.ID],
 				IsCorrect:     graded.Questions[qi].Correct,
 				Points:        q.Points,
-				PointsEarned:  graded.Questions[qi].Earned,
 				Explanation:   q.Explanation,
 			})
 		}

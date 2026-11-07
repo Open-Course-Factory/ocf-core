@@ -175,10 +175,6 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 			errors.HandleError(http.StatusInternalServerError, err, ctx)
 			return
 		}
-		if err := applyDtoListEnricher(ctx, entityName, entitiesDto, genericController.db); err != nil {
-			errors.HandleError(http.StatusInternalServerError, err, ctx)
-			return
-		}
 
 		response := CursorPaginationResponse{
 			Data:       entitiesDto,
@@ -212,10 +208,6 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 
 	// Apply per-entity DTO redactor if registered.
 	if err := applyDtoRedactor(ctx, entityName, entitiesDto, genericController.db); err != nil {
-		errors.HandleError(http.StatusInternalServerError, err, ctx)
-		return
-	}
-	if err := applyDtoListEnricher(ctx, entityName, entitiesDto, genericController.db); err != nil {
 		errors.HandleError(http.StatusInternalServerError, err, ctx)
 		return
 	}
@@ -278,16 +270,6 @@ func applyDtoRedactor(ctx *gin.Context, entityName string, entitiesDto []any, db
 		}
 	}
 	return nil
-}
-
-// applyDtoListEnricher runs the entity's batch enricher, if registered, on the
-// whole page at once.
-func applyDtoListEnricher(ctx *gin.Context, entityName string, entitiesDto []any, db *gorm.DB) error {
-	enricher, ok := ems.GlobalEntityRegistrationService.GetDtoListEnricher(entityName)
-	if !ok || len(entitiesDto) == 0 {
-		return nil
-	}
-	return enricher(ctx, entitiesDto, db)
 }
 
 func (genericController genericController) getEntities(ctx *gin.Context, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error) {

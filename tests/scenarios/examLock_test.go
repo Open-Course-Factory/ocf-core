@@ -7,6 +7,7 @@ package scenarios_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -85,9 +86,12 @@ func examScenario(t *testing.T, db *gorm.DB) models.Scenario {
 
 func examLocked(t *testing.T, scenarioID uuid.UUID, userID string) bool {
 	t.Helper()
-	locked, err := services.ExamLocked(sharedTestDB, userID, scenarioID)
+	err := services.RefuseIfExamLocked(sharedTestDB, userID, scenarioID)
+	if errors.Is(err, services.ErrExamAlreadySubmitted) {
+		return true
+	}
 	require.NoError(t, err)
-	return locked
+	return false
 }
 
 func TestExamLock_SubmittedExam_LocksTheLearner(t *testing.T) {

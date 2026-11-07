@@ -38,9 +38,6 @@ type ScenarioAssignmentOutput struct {
 	// ResultsPublishedAt is read-only here: only the teacher publish route
 	// writes it.
 	ResultsPublishedAt *time.Time  `json:"results_published_at"`
-	// HasExamQuiz means the scenario has an exam-mode quiz step, the only kind
-	// whose grades wait for publication. Derived, read-only.
-	HasExamQuiz    bool            `json:"has_exam_quiz"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
 	Scenario       *ScenarioOutput `json:"scenario,omitempty"`

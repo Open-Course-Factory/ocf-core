@@ -436,9 +436,9 @@ func TestSubmitQuiz_PartialMode_ScoresTicksAndPersists(t *testing.T) {
 	assert.InDelta(t, 0.0, *result.Score, 1e-9)
 	assert.Equal(t, 1, *result.CorrectCount)
 	require.Len(t, result.PerQuestionResults, 3)
-	assert.InDelta(t, 0.0, result.PerQuestionResults[0].PointsEarned, 1e-9)
-	assert.InDelta(t, 1.0, result.PerQuestionResults[1].PointsEarned, 1e-9)
-	assert.InDelta(t, -1.0, result.PerQuestionResults[2].PointsEarned, 1e-9)
+	assert.False(t, result.PerQuestionResults[0].Correct)
+	assert.True(t, result.PerQuestionResults[1].Correct)
+	assert.False(t, result.PerQuestionResults[2].Correct)
 
 	var progress models.ScenarioStepProgress
 	require.NoError(t, sharedTestDB.Where("session_id = ? AND step_order = 0", sessionID).First(&progress).Error)
