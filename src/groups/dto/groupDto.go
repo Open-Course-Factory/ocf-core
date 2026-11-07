@@ -31,6 +31,8 @@ type EditGroupInput struct {
 	ExpiresAt          *time.Time      `json:"expires_at,omitempty" mapstructure:"expires_at"`
 	Metadata           *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 	CourseDays         *[]string       `json:"course_days,omitempty" mapstructure:"course_days"`
+	// An empty string clears it.
+	ConventionReference *string `json:"convention_reference,omitempty" mapstructure:"convention_reference"`
 }
 
 // GroupOutput - DTO for group responses
@@ -56,6 +58,7 @@ type GroupOutput struct {
 	IsFull             bool           `json:"is_full"`
 	Metadata           map[string]any `json:"metadata,omitempty"`
 	CourseDays         []string       `json:"course_days"`
+	ConventionReference string `json:"convention_reference,omitempty"`
 	CreatedAt          time.Time      `json:"created_at"`
 	UpdatedAt          time.Time      `json:"updated_at"`
 
@@ -177,6 +180,7 @@ func GroupModelToGroupOutput(group *models.ClassGroup) *GroupOutput {
 		IsFull:             group.IsFull(),
 		Metadata:           group.Metadata,
 		CourseDays:         append([]string{}, group.CourseDays...), // an empty list in JSON, not null
+		ConventionReference: group.ConventionReference,
 		CreatedAt:          group.CreatedAt,
 		UpdatedAt:          group.UpdatedAt,
 	}

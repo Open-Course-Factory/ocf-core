@@ -88,6 +88,11 @@ type Organization struct {
 	// end. nil means the platform default. Read it through EffectiveReportArchiveYears.
 	ReportArchiveYears *int `json:"report_archive_years,omitempty"`
 
+	// Printed on participation reports, for an auditor to identify who delivered
+	// the training. Free text: the organization declares them, nothing checks them.
+	Siret                     string `json:"siret,omitempty"`
+	TrainingDeclarationNumber string `json:"training_declaration_number,omitempty"`
+
 	// Relations
 	Groups  []groupModels.ClassGroup `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"groups,omitempty"`
 	Members []OrganizationMember     `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`

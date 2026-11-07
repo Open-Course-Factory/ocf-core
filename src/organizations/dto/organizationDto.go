@@ -44,6 +44,10 @@ type EditOrganizationInput struct {
 	// Years a participation report's copy is kept. Owner-only, like RetentionDays;
 	// nil/omitted = platform default.
 	ReportArchiveYears *int `json:"report_archive_years,omitempty" mapstructure:"report_archive_years"`
+
+	// Printed on participation reports. An empty string clears them.
+	Siret                     *string `json:"siret,omitempty" mapstructure:"siret"`
+	TrainingDeclarationNumber *string `json:"training_declaration_number,omitempty" mapstructure:"training_declaration_number"`
 }
 
 // OrganizationOutput represents the output for an organization
@@ -74,6 +78,10 @@ type OrganizationOutput struct {
 
 	// Years a participation report's copy is kept (nil = platform default)
 	ReportArchiveYears *int `json:"report_archive_years,omitempty"`
+
+	// Printed on participation reports
+	Siret                     string `json:"siret,omitempty"`
+	TrainingDeclarationNumber string `json:"training_declaration_number,omitempty"`
 
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`
