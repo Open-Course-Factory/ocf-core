@@ -38,6 +38,9 @@ type ClassGroup struct {
 	// participation report comes out the same each time. Empty means not chosen yet.
 	CourseDays pq.StringArray `gorm:"type:text[]" json:"course_days,omitempty"`
 
+	// ConventionReference identifies the training agreement on participation reports.
+	ConventionReference string `json:"convention_reference,omitempty"`
+
 	// Metadata for custom fields (schedules, locations, etc.)
 	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
 

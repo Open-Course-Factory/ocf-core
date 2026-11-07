@@ -20,6 +20,7 @@ import (
 // can replace a class over a date range by implementing this interface.
 type ParticipationScope interface {
 	Title() string
+	ConventionReference() string // the training agreement, empty when not filled in
 	OrganizationID() *uuid.UUID
 	Period() (from, to time.Time) // to is exclusive
 	// CourseDays lists the days that belong to the training, YYYY-MM-DD. Empty means
@@ -43,6 +44,10 @@ type CommandActivitySource interface {
 type ParticipationReport struct {
 	Title            string                 `json:"title"`
 	OrganizationName string                 `json:"organization_name"`
+	// Empty when the organization or the class has not filled them in.
+	OrganizationSiret             string `json:"organization_siret"`
+	OrganizationDeclarationNumber string `json:"organization_declaration_number"`
+	ConventionReference           string `json:"convention_reference"`
 	From             string                 `json:"from"`     // first day, YYYY-MM-DD in Timezone
 	To               string                 `json:"to"`       // last day, inclusive
 	Timezone         string                 `json:"timezone"` // IANA name the days are cut in
@@ -145,6 +150,7 @@ func NewClassPeriodScope(db *gorm.DB, groupID uuid.UUID, from, to time.Time, cou
 }
 
 func (s *classPeriodScope) Title() string                  { return s.group.DisplayName }
+func (s *classPeriodScope) ConventionReference() string   { return s.group.ConventionReference }
 func (s *classPeriodScope) OrganizationID() *uuid.UUID     { return s.group.OrganizationID }
 func (s *classPeriodScope) Period() (time.Time, time.Time) { return s.from, s.to }
 func (s *classPeriodScope) CourseDays() []string           { return s.courseDays }
@@ -156,9 +162,13 @@ func (s *classPeriodScope) ScenarioIDs() []uuid.UUID       { return s.scenarioID
 // BuildParticipationReport assembles the report. Days are cut in location.
 func BuildParticipationReport(db *gorm.DB, scope ParticipationScope, commands CommandActivitySource, location *time.Location) (*ParticipationReport, error) {
 	from, to := scope.Period()
+	organization := reportOrganization(db, scope.OrganizationID())
 	report := &ParticipationReport{
 		Title:             scope.Title(),
-		OrganizationName:  organizationName(db, scope.OrganizationID()),
+		OrganizationName:  organization.DisplayName,
+		OrganizationSiret: organization.Siret,
+		OrganizationDeclarationNumber: organization.TrainingDeclarationNumber,
+		ConventionReference: scope.ConventionReference(),
 		From:              from.In(location).Format(time.DateOnly),
 		To:                to.Add(-time.Nanosecond).In(location).Format(time.DateOnly),
 		Timezone:          location.String(),
@@ -254,16 +264,18 @@ func totalCommands(days []ParticipationDay) int {
 	return total
 }
 
-func organizationName(db *gorm.DB, organizationID *uuid.UUID) string {
-	if organizationID == nil {
-		return ""
-	}
+// reportOrganization returns a blank organization when there is none: the report
+// is still worth having without its header.
+func reportOrganization(db *gorm.DB, organizationID *uuid.UUID) orgModels.Organization {
 	var organization orgModels.Organization
-	if err := db.Select("display_name").First(&organization, "id = ?", *organizationID).Error; err != nil {
-		slog.Warn("participation report: organization not found", "id", organizationID, "err", err)
-		return ""
+	if organizationID == nil {
+		return organization
 	}
-	return organization.DisplayName
+	if err := db.Select("display_name", "siret", "training_declaration_number").First(&organization, "id = ?", *organizationID).Error; err != nil {
+		slog.Warn("participation report: organization not found", "id", organizationID, "err", err)
+		return orgModels.Organization{}
+	}
+	return organization
 }
 
 func displayNames(userIDs []string) []string {

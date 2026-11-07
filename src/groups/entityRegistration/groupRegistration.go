@@ -71,6 +71,9 @@ func RegisterGroup(service *ems.EntityRegistrationService) {
 					if input.CourseDays != nil {
 						updates["course_days"] = pq.StringArray(*input.CourseDays)
 					}
+					if input.ConventionReference != nil {
+						updates["convention_reference"] = *input.ConventionReference
+					}
 					return updates
 				},
 			},

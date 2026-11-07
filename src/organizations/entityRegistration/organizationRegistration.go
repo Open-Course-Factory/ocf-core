@@ -42,6 +42,8 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 						IdleWindowHardCapSeconds:    org.IdleWindowHardCapSeconds,
 						RetentionDays:               org.RetentionDays,
 						ReportArchiveYears:          org.ReportArchiveYears,
+						Siret:                       org.Siret,
+						TrainingDeclarationNumber:   org.TrainingDeclarationNumber,
 						CreatedAt:                   org.CreatedAt,
 						UpdatedAt:                   org.UpdatedAt,
 					}
@@ -180,6 +182,12 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 					}
 					if input.ReportArchiveYears != nil {
 						updates["report_archive_years"] = *input.ReportArchiveYears
+					}
+					if input.Siret != nil {
+						updates["siret"] = *input.Siret
+					}
+					if input.TrainingDeclarationNumber != nil {
+						updates["training_declaration_number"] = *input.TrainingDeclarationNumber
 					}
 					return updates
 				},

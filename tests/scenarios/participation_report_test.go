@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
@@ -140,6 +141,30 @@ func TestParticipationReport_DescribesTheClassAndPeriod(t *testing.T) {
 	assert.Equal(t, "2026-03-02", report.From)
 	assert.Equal(t, "2026-03-04", report.To, "the last day, not the exclusive end of the period")
 	assert.Equal(t, "Europe/Paris", report.Timezone)
+}
+
+func TestParticipationReport_IdentifiesTheTrainingOrganisationAndConvention(t *testing.T) {
+	f := newReportFixture(t)
+	require.NoError(t, f.db.Model(&orgModels.Organization{}).Where("id = ?", f.orgID).Updates(map[string]any{
+		"siret":                       "10299352400010",
+		"training_declaration_number": "11755555575",
+	}).Error)
+	require.NoError(t, f.db.Model(&groupModels.ClassGroup{}).Where("id = ?", f.groupID).
+		Update("convention_reference", "CONV-2026-014").Error)
+
+	report := f.build(t, noCommands())
+
+	assert.Equal(t, "10299352400010", report.OrganizationSiret)
+	assert.Equal(t, "11755555575", report.OrganizationDeclarationNumber)
+	assert.Equal(t, "CONV-2026-014", report.ConventionReference)
+}
+
+func TestParticipationReport_DetailsNotFilledIn_StayEmpty(t *testing.T) {
+	report := newReportFixture(t).build(t, noCommands())
+
+	assert.Empty(t, report.OrganizationSiret)
+	assert.Empty(t, report.OrganizationDeclarationNumber)
+	assert.Empty(t, report.ConventionReference)
 }
 
 func TestClassPeriodScope_TrainersAreTheOwnerAndManagers(t *testing.T) {
