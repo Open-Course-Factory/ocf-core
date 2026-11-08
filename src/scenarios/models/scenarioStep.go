@@ -98,10 +98,13 @@ const (
 
 // Quiz scoring modes. All-or-nothing counts a question only when answered
 // exactly right; partial gives credit per correct tick and takes some back
-// per wrong one.
+// per wrong one, so a question may go negative; partial_question_floor is
+// partial where a question never goes below 0, so a wrong guess cannot pull
+// the grade down.
 const (
-	QuizScoringAllOrNothing = "all_or_nothing"
-	QuizScoringPartial      = "partial"
+	QuizScoringAllOrNothing         = "all_or_nothing"
+	QuizScoringPartial              = "partial"
+	QuizScoringPartialQuestionFloor = "partial_question_floor"
 
 	DefaultQuizWrongPenalty = 1.0
 	MaxQuizWrongPenalty     = 10.0
@@ -113,6 +116,13 @@ func (s ScenarioStep) ScoringMode() string {
 		return QuizScoringAllOrNothing
 	}
 	return s.QuizScoringMode
+}
+
+// IsPartialScoring is true for both partial modes: they share per-tick credit
+// and the penalty, and differ only in flooring each question at 0.
+func (s ScenarioStep) IsPartialScoring() bool {
+	mode := s.ScoringMode()
+	return mode == QuizScoringPartial || mode == QuizScoringPartialQuestionFloor
 }
 
 // WrongPenalty is the step's wrong-answer penalty, unset resolved to the
@@ -128,8 +138,10 @@ func (s ScenarioStep) WrongPenalty() float64 {
 // Binding tags are inert on entity routes, so the step hooks and the import
 // validation both call this.
 func QuizScoringProblem(mode string, penalty *float64) string {
-	if mode != "" && mode != QuizScoringAllOrNothing && mode != QuizScoringPartial {
-		return fmt.Sprintf("quiz_scoring_mode %q is not one of %s, %s", mode, QuizScoringAllOrNothing, QuizScoringPartial)
+	switch mode {
+	case "", QuizScoringAllOrNothing, QuizScoringPartial, QuizScoringPartialQuestionFloor:
+	default:
+		return fmt.Sprintf("quiz_scoring_mode %q is not one of %s, %s, %s", mode, QuizScoringAllOrNothing, QuizScoringPartial, QuizScoringPartialQuestionFloor)
 	}
 	if penalty != nil && (*penalty < 0 || *penalty > MaxQuizWrongPenalty || math.IsNaN(*penalty)) {
 		return fmt.Sprintf("quiz_wrong_penalty %v must be between 0 and %v", *penalty, MaxQuizWrongPenalty)

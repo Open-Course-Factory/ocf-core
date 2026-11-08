@@ -81,6 +81,26 @@ func TestScoreQuiz_PartialSingleChoiceWrong_SubtractsPenaltyAndFloorsAtZero(t *t
 	assert.InDelta(t, 0.0, alone.Score, 1e-9, "a negative total floors at 0")
 }
 
+func TestScoreQuiz_PartialQuestionFloor_NoQuestionGoesBelowZero(t *testing.T) {
+	right := multiAnswerQuestion("[0,2]", 1)
+	wrongTicks := multiAnswerQuestion("[0,2]", 1)
+	wrongSingle := singleChoiceQuestion("0", 1)
+	halfAndWrong := multiAnswerQuestion("[0,2]", 1)
+	got := services.ScoreQuiz(quizScoringStep(models.QuizScoringPartialQuestionFloor, penaltyOf(0.25)),
+		[]models.ScenarioStepQuestion{right, wrongTicks, wrongSingle, halfAndWrong},
+		map[uuid.UUID]string{right.ID: "[0,2]", wrongTicks.ID: "[1,3]", wrongSingle.ID: "1", halfAndWrong.ID: "[0,1]"})
+
+	assert.InDelta(t, 0.0, got.Questions[1].Earned, 1e-9, "only wrong ticks floor at 0, not -0.25")
+	assert.InDelta(t, 0.0, got.Questions[2].Earned, 1e-9, "a wrong single answer floors at 0")
+	assert.InDelta(t, 0.5-0.125, got.Questions[3].Earned, 1e-9, "a positive question keeps its penalty")
+	assert.InDelta(t, (1+0.375)/4, got.Score, 1e-9)
+	assert.Equal(t, 1, got.CorrectCount)
+
+	plain := services.ScoreQuiz(quizScoringStep(models.QuizScoringPartial, penaltyOf(0.25)),
+		[]models.ScenarioStepQuestion{right, wrongTicks}, map[uuid.UUID]string{right.ID: "[0,2]", wrongTicks.ID: "[1,3]"})
+	assert.InDelta(t, -0.25, plain.Questions[1].Earned, 1e-9, "plain partial still lets a question go negative")
+}
+
 func TestScoreQuiz_PartialEmptySingleAnswer_EarnsNothing(t *testing.T) {
 	q := singleChoiceQuestion("0", 1)
 	got := services.ScoreQuiz(quizScoringStep(models.QuizScoringPartial, nil),

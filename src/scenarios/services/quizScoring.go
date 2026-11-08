@@ -33,13 +33,15 @@ type QuizGrade struct {
 // points, which is what every grade before partial scoring was computed with.
 // Partial weights questions by points, credits each right tick of a
 // multi_answer question and takes penalty × its share back per wrong tick;
-// the step total floors at 0.
+// the step total floors at 0. Partial-question-floor also floors each
+// question at 0.
 func ScoreQuiz(step models.ScenarioStep, questions []models.ScenarioStepQuestion, answers map[uuid.UUID]string) QuizGrade {
 	result := QuizGrade{Questions: make([]QuestionScore, 0, len(questions))}
 	if len(questions) == 0 {
 		return result
 	}
-	partial := step.ScoringMode() == models.QuizScoringPartial
+	partial := step.IsPartialScoring()
+	floorEachQuestion := step.ScoringMode() == models.QuizScoringPartialQuestionFloor
 	penalty := step.WrongPenalty()
 	earned, possible := 0.0, 0.0
 	for _, q := range questions {
@@ -47,6 +49,9 @@ func ScoreQuiz(step models.ScenarioStep, questions []models.ScenarioStepQuestion
 		qs := QuestionScore{Correct: answerIsExactlyRight(submitted, q.CorrectAnswer), Max: questionPoints(q)}
 		if partial {
 			qs.Earned = partialEarned(q, submitted, qs.Max, penalty)
+			if floorEachQuestion {
+				qs.Earned = max(0, qs.Earned)
+			}
 		} else if qs.Correct {
 			qs.Earned = qs.Max
 		}
