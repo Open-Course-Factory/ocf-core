@@ -169,6 +169,12 @@ type CurrentStepResponse struct {
 	ShowImmediateFeedback bool                  `json:"show_immediate_feedback"`
 	QuizScoringMode       string                `json:"quiz_scoring_mode,omitempty"`
 	QuizWrongPenalty      float64               `json:"quiz_wrong_penalty"`
+	// QuizAnswers and QuizResult replay a submitted quiz when the learner goes
+	// back to it: their answers and the correction they saw on submitting.
+	// Only where that correction was shown (immediate feedback, or a preview);
+	// an exam step never sends them.
+	QuizAnswers map[uuid.UUID]string `json:"quiz_answers,omitempty"`
+	QuizResult  *SubmitQuizResponse  `json:"quiz_result,omitempty"`
 }
 
 // CurrentStepQuestion - sanitized public DTO for a quiz question.

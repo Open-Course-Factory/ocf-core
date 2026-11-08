@@ -1517,9 +1517,48 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 	return s.buildStepResponse(&session, targetStep, stepStatus)
 }
 
+// attachQuizReview gives a learner back the answers they submitted to a quiz
+// step and its correction, re-graded the way SubmitQuiz graded them. Only where
+// SubmitQuiz showed that correction: never on an exam step.
+func (s *ScenarioSessionService) attachQuizReview(session *models.ScenarioSession, step *models.ScenarioStep, response *dto.CurrentStepResponse) {
+	if step.StepType != "quiz" || !(step.ShowImmediateFeedback || session.IsPreview) {
+		return
+	}
+	recorded := ""
+	for _, sp := range session.StepProgress {
+		if sp.StepOrder == step.Order {
+			recorded = sp.QuizAnswers
+			break
+		}
+	}
+	if recorded == "" {
+		return // not submitted yet
+	}
+	var answers map[uuid.UUID]string
+	if err := json.Unmarshal([]byte(recorded), &answers); err != nil {
+		// The step stays readable; only the replay is lost.
+		slog.Warn("recorded quiz answers are unreadable", "session_id", session.ID, "step_order", step.Order, "err", err)
+		return
+	}
+	var questions []models.ScenarioStepQuestion
+	if err := s.db.Where("step_id = ?", step.ID).Order("\"order\" ASC").Find(&questions).Error; err != nil {
+		slog.Warn("failed to load quiz questions for review", "session_id", session.ID, "step_order", step.Order, "err", err)
+		return
+	}
+	graded := ScoreQuiz(*step, questions, answers)
+	response.QuizAnswers = answers
+	response.QuizResult = &dto.SubmitQuizResponse{
+		Score:              &graded.Score,
+		CorrectCount:       &graded.CorrectCount,
+		Total:              len(questions),
+		PerQuestionResults: quizQuestionResults(questions, graded),
+	}
+}
+
 // buildStepResponse is the one way a learner reads a step, current or past: its
 // prose and progressive hints in the session's language, its quiz questions
-// without their answers, and how many hints were already revealed.
+// without their answers, how many hints were already revealed, and a submitted
+// quiz's replay where its correction may be shown.
 func (s *ScenarioSessionService) buildStepResponse(session *models.ScenarioSession, step *models.ScenarioStep, stepStatus string) (*dto.CurrentStepResponse, error) {
 	// Resolve the step's prose in the language this session was started in.
 	stepText := ResolveStepText(s.db, *step, session.Locale)
@@ -1561,6 +1600,7 @@ func (s *ScenarioSessionService) buildStepResponse(session *models.ScenarioSessi
 		response.Hint = ""
 	}
 
+	s.attachQuizReview(session, step, response)
 	return response, nil
 }
 
