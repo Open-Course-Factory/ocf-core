@@ -105,7 +105,7 @@ func TestBrandingUpdate_Member_IsForbiddenAndLeavesDefaults(t *testing.T) {
 	var count int64
 	require.NoError(t, s.db.Model(&models.Branding{}).Count(&count).Error)
 	assert.Zero(t, count, "a refused update must not write the row")
-	assert.Equal(t, "OCF", services.NewBrandingService(s.db).InstanceName())
+	assert.Equal(t, "Labinux", services.NewBrandingService(s.db).InstanceName())
 }
 
 func TestBrandingUpdate_Administrator_ServesLogoFromCacheableEndpoint(t *testing.T) {
@@ -200,6 +200,6 @@ func TestBrandingUpdate_RejectsUnsafeOrUnreadableInputs(t *testing.T) {
 }
 
 func TestBrandingUpdate_DefaultPaletteIsAccepted(t *testing.T) {
-	_, err := services.NewBrandingService(newBrandingTestServer(t).db).UpdateBranding(brandingInput("OCF", nil))
+	_, err := services.NewBrandingService(newBrandingTestServer(t).db).UpdateBranding(brandingInput("Labinux", nil))
 	assert.NoError(t, err)
 }

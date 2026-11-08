@@ -35,7 +35,7 @@ SMTP_PORT=587
 SMTP_USERNAME=your-email@gmail.com
 SMTP_PASSWORD=your-16-char-app-password
 SMTP_FROM_EMAIL=noreply@ocf.fr
-SMTP_FROM_NAME=OCF Platform
+SMTP_FROM_NAME=Labinux
 FRONTEND_URL=http://localhost:3000
 ```
 
@@ -54,7 +54,7 @@ SMTP_PORT=587
 SMTP_USERNAME=postmaster@your-domain.mailgun.org
 SMTP_PASSWORD=your-mailgun-smtp-password
 SMTP_FROM_EMAIL=noreply@yourdomain.com
-SMTP_FROM_NAME=OCF Platform
+SMTP_FROM_NAME=Labinux
 FRONTEND_URL=https://app.yourdomain.com
 ```
 
@@ -72,7 +72,7 @@ SMTP_PORT=587
 SMTP_USERNAME=apikey
 SMTP_PASSWORD=your-sendgrid-api-key
 SMTP_FROM_EMAIL=noreply@yourdomain.com
-SMTP_FROM_NAME=OCF Platform
+SMTP_FROM_NAME=Labinux
 FRONTEND_URL=https://app.yourdomain.com
 ```
 

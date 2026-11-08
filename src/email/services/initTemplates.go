@@ -25,7 +25,7 @@ func InitDefaultTemplates(db *gorm.DB) {
 					{Name: "ResetLink", Description: "Full URL for password reset", Example: "https://example.com/reset-password?token=abc123"},
 					{Name: "ResetURL", Description: "Base reset URL", Example: "https://example.com/reset-password"},
 					{Name: "Token", Description: "Reset token", Example: "abc123def456"},
-					{Name: "PlatformName", Description: "Name of the platform", Example: "OCF Platform"},
+					{Name: "PlatformName", Description: "Name of the platform", Example: "Labinux"},
 				}
 				data, _ := json.Marshal(vars)
 				return string(data)
@@ -43,7 +43,7 @@ func InitDefaultTemplates(db *gorm.DB) {
 				vars := []models.EmailTemplateVariable{
 					{Name: "UserName", Description: "User's display name", Example: "John Doe"},
 					{Name: "Email", Description: "User's email address", Example: "john@example.com"},
-					{Name: "PlatformName", Description: "Name of the platform", Example: "OCF Platform"},
+					{Name: "PlatformName", Description: "Name of the platform", Example: "Labinux"},
 					{Name: "LoginURL", Description: "URL to login page", Example: "https://example.com/login"},
 				}
 				data, _ := json.Marshal(vars)
@@ -63,7 +63,7 @@ func InitDefaultTemplates(db *gorm.DB) {
 					{Name: "VerificationLink", Description: "Full verification URL", Example: "https://example.com/verify-email?token=abc123"},
 					{Name: "Token", Description: "64-character verification token", Example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2"},
 					{Name: "UserName", Description: "User's display name", Example: "John Doe"},
-					{Name: "PlatformName", Description: "Platform name", Example: "OCF Platform"},
+					{Name: "PlatformName", Description: "Platform name", Example: "Labinux"},
 					{Name: "ExpiryHours", Description: "Hours until expiry", Example: "48"},
 				}
 				data, _ := json.Marshal(vars)

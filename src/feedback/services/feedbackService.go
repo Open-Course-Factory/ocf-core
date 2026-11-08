@@ -64,7 +64,7 @@ func (s *feedbackService) SendFeedback(input dto.SendFeedbackInput, userID, user
 	if len(truncatedMessage) > 50 {
 		truncatedMessage = truncatedMessage[:50]
 	}
-	subject := fmt.Sprintf("[OCF Feedback] %s: %s", input.Type, truncatedMessage)
+	subject := fmt.Sprintf("[Labinux Feedback] %s: %s", input.Type, truncatedMessage)
 
 	// 4. HTML-escape all user-provided values to prevent XSS
 	safeType := html.EscapeString(input.Type)
@@ -75,7 +75,7 @@ func (s *feedbackService) SendFeedback(input dto.SendFeedbackInput, userID, user
 	safeUserID := html.EscapeString(userID)
 
 	// 5. Build HTML email body with escaped values
-	body := fmt.Sprintf(`<h2>OCF Feedback — %s</h2>
+	body := fmt.Sprintf(`<h2>Labinux Feedback — %s</h2>
 <p><strong>Type:</strong> %s</p>
 <p><strong>Message:</strong> %s</p>
 <p><strong>Page URL:</strong> %s</p>

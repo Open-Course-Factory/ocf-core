@@ -40,7 +40,7 @@ func NewEmailService() EmailService {
 		smtpUsername: config.GetEnv("SMTP_USERNAME", ""),
 		smtpPassword: config.GetEnv("SMTP_PASSWORD", ""),
 		fromEmail:    config.GetEnv("SMTP_FROM_EMAIL", "noreply@yourdomain.com"),
-		fromName:     config.GetEnv("SMTP_FROM_NAME", "OCF Platform"),
+		fromName:     config.GetEnv("SMTP_FROM_NAME", "Labinux"),
 		db:           nil, // Will be set when used with templates
 	}
 }
@@ -52,7 +52,7 @@ func NewEmailServiceWithDB(db *gorm.DB) EmailService {
 		smtpUsername:    config.GetEnv("SMTP_USERNAME", ""),
 		smtpPassword:    config.GetEnv("SMTP_PASSWORD", ""),
 		fromEmail:       config.GetEnv("SMTP_FROM_EMAIL", "noreply@yourdomain.com"),
-		fromName:        config.GetEnv("SMTP_FROM_NAME", "OCF Platform"),
+		fromName:        config.GetEnv("SMTP_FROM_NAME", "Labinux"),
 		db:              db,
 		templateService: NewTemplateService(db),
 	}
