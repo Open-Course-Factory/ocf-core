@@ -441,11 +441,29 @@ func (sc *scenarioLaunchController) rejectIfRunInProgress(ctx *gin.Context, user
 // respondSessionExists refuses a launch because the learner already has a run
 // of this scenario to resume; the launcher offers Resume on this reason.
 func respondSessionExists(ctx *gin.Context) {
-	ctx.JSON(http.StatusConflict, gin.H{
+	ctx.JSON(http.StatusConflict, sessionExistsBody())
+}
+
+func sessionExistsBody() gin.H {
+	return gin.H{
 		"error_code":    http.StatusConflict,
 		"error_message": "A run of this scenario is already in progress.",
 		"reason":        blockReasonSessionExists,
-	})
+	}
+}
+
+// respondPreviewBlocked is respondSessionExists for a preview, naming the
+// author's own run that blocks it (session_id) so the editor can offer to
+// abandon that run and preview again. Without the id the refusal is the same.
+func (sc *scenarioLaunchController) respondPreviewBlocked(ctx *gin.Context, userID string, scenarioID uuid.UUID) {
+	body := sessionExistsBody()
+	runs, err := sc.sessionService.GetResumableRuns(userID, []uuid.UUID{scenarioID})
+	if err != nil {
+		slog.Warn("failed to find the run blocking a scenario preview", "userID", userID, "scenarioID", scenarioID, "err", err)
+	} else if run, ok := runs[scenarioID]; ok {
+		body["session_id"] = run.Session.ID
+	}
+	ctx.JSON(http.StatusConflict, body)
 }
 
 // rejectIfExamLocked answers the request and reports true when the learner
@@ -920,7 +938,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	// theirs is never replaced.
 	previousTerminal, replaceErr := sc.sessionService.ReplacePreviewRun(userID, scenarioID)
 	if stderrors.Is(replaceErr, services.ErrActiveSessionExists) {
-		respondSessionExists(ctx)
+		sc.respondPreviewBlocked(ctx, userID, scenarioID)
 		return
 	}
 	if replaceErr != nil {
@@ -960,7 +978,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 				"terminal_session_id", terminalResp.SessionID, "err", delErr)
 		}
 		if stderrors.Is(startErr, services.ErrActiveSessionExists) {
-			respondSessionExists(ctx)
+			sc.respondPreviewBlocked(ctx, userID, scenarioID)
 			return
 		}
 		slog.Error("failed to start preview session", "userID", userID, "scenarioID", scenarioID, "err", startErr)

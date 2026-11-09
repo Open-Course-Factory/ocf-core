@@ -462,6 +462,8 @@ func TestPreview_OpenLearnerRunOfSameScenario_Returns409(t *testing.T) {
 	require.Equal(t, http.StatusConflict, w.Code,
 		"a learner run is never replaced by a preview; body=%s", w.Body.String())
 	assert.Contains(t, w.Body.String(), `"reason":"session_exists"`)
+	assert.Contains(t, w.Body.String(), `"session_id":"`+learnerRun.ID.String()+`"`,
+		"the refusal names the blocking run so the editor can offer to abandon it")
 	assert.Equal(t, 0, tt.createCalls(), "the conflict is detected before a terminal is created")
 	assert.Empty(t, tt.deletedSessions(), "the learner run's terminal is left alone")
 
