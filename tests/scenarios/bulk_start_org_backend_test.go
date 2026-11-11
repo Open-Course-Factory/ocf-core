@@ -99,9 +99,6 @@ func (m *capturingTTService) GetServerMetrics(bool, string) (*ttDto.ServerMetric
 	return nil, nil
 }
 func (m *capturingTTService) GetBackends() ([]ttDto.BackendInfo, error) { return nil, nil }
-func (m *capturingTTService) GetBackendsForOrganization(uuid.UUID) ([]ttDto.BackendInfo, error) {
-	return nil, nil
-}
 func (m *capturingTTService) GetBackendsForContext(uuid.UUID, string) ([]ttDto.BackendInfo, error) {
 	return nil, nil
 }

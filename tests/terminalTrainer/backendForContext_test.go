@@ -266,7 +266,7 @@ func TestValidateBackendForContext_NilOrg_NoPlanRestrictions_ArbitraryBackend_Sh
 }
 
 // TestGetBackendsForContext_OrgHasConfig_UsesOrgBackends verifies that when the org
-// has its own backend config, GetBackendsForContext delegates to GetBackendsForOrganization.
+// has its own backend config, GetBackendsForContext lists the org's backends, not the plan's.
 func TestGetBackendsForContext_OrgHasConfig_UsesOrgBackends(t *testing.T) {
 	db := freshTestDB(t)
 
@@ -296,7 +296,7 @@ func TestGetBackendsForContext_OrgHasConfig_UsesOrgBackends(t *testing.T) {
 	svc := services.NewTerminalTrainerService(db)
 	// GetBackendsForContext should return org's backends (not plan's)
 	// Note: the actual backend IDs won't exist in tt-backend, but the filtering logic
-	// is what we're testing. GetBackendsForOrganization will be called, which filters
+	// is what we're testing. The org's policy decides, which filters
 	// from the cached backend list. Since we can't easily mock tt-backend here,
 	// we just verify it doesn't error out for the org-has-config path.
 	_, err := svc.GetBackendsForContext(org.ID, userID)

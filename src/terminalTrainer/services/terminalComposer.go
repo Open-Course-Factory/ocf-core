@@ -296,7 +296,7 @@ func (c *terminalComposer) bulkFits(request dto.BulkCreateTerminalsRequest, plan
 	if err != nil {
 		return true
 	}
-	return HostsFit(c.proxy.freshHostLoads(candidates), plan, size, members)
+	return HostsFit(c.proxy.currentHostLoads(candidates), plan, size, members)
 }
 
 // parseOrgID reads an optional organization ID; "" is no organization.

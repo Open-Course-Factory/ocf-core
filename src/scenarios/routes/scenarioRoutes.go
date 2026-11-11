@@ -68,9 +68,9 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	// Budget enforcement is performed inside LaunchScenario via
 	// QuotaService.CheckBudget; no middleware-level slot counter is needed.
 	//
-	// Host RAM capacity is checked INSIDE LaunchScenario, because only the
-	// handler knows the scenario's resolved size (scenario.InstanceType +
-	// distribution MinSizeKey + launch-time fallback) and the host it lands on.
+	// Host RAM capacity is checked when StartComposedSession places the session,
+	// because only then are the scenario's resolved size (scenario.InstanceType +
+	// distribution MinSizeKey + launch-time fallback) and its host known.
 	sessionRoutes.POST("/launch", paymentMiddleware.WithPlanChain(
 		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true},
 		[]gin.HandlerFunc{middleware.AuthManagement()},

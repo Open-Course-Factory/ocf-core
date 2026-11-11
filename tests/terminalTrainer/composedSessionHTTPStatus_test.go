@@ -102,9 +102,6 @@ func (m *mockTerminalTrainerService) GetServerMetrics(nocache bool, backend stri
 func (m *mockTerminalTrainerService) GetBackends() ([]dto.BackendInfo, error) {
 	panic("not implemented")
 }
-func (m *mockTerminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error) {
-	panic("not implemented")
-}
 func (m *mockTerminalTrainerService) GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error) {
 	panic("not implemented")
 }

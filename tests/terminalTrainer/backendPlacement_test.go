@@ -125,3 +125,31 @@ func TestHostsFit_CountsWholeSessionsAcrossHosts(t *testing.T) {
 		"unreadable metrics never block")
 	assert.True(t, services.HostsFit(nil, plan, "M", 3), "no host online: each member reports it")
 }
+
+// startOnTwoHosts makes an automatic launch over two allowed hosts. The fake
+// serves no catalog, so the launch stops right after placing the session: the
+// catalog request it then makes names the host it chose.
+func startOnTwoHosts(t *testing.T, first, second *dto.ServerMetricsResponse) error {
+	t.Helper()
+	svc := fakeTTWithMetrics(t,
+		[]dto.BackendInfo{{ID: "first", Connected: true, IsDefault: true}, {ID: "second", Connected: true}},
+		map[string]*dto.ServerMetricsResponse{"first": first, "second": second},
+	)
+	plan := &paymentModels.SubscriptionPlan{AllowedBackends: []string{"first", "second"}, MaxSessionDurationMinutes: 60}
+	_, err := svc.StartComposedSession("placement-user", dto.CreateComposedSessionInput{Distribution: "debian", Size: "S", Terms: "accepted"}, plan)
+	require.Error(t, err)
+	return err
+}
+
+func TestStartComposedSession_Auto_TakesTheFreestHost(t *testing.T) {
+	err := startOnTwoHosts(t, roomy(4), roomy(40))
+	assert.Contains(t, err.Error(), "backend=second", "the default has less room than the other host")
+}
+
+func TestStartComposedSession_Auto_SkipsAHostWithoutRoom(t *testing.T) {
+	// Most free memory, but saturated all the same: the capacity rule refuses
+	// any launch at 99 % used.
+	full := &dto.ServerMetricsResponse{RAMAvailableGB: 50, RAMTotalGB: 64, RAMPercent: 99.5}
+	err := startOnTwoHosts(t, full, roomy(10))
+	assert.Contains(t, err.Error(), "backend=second")
+}

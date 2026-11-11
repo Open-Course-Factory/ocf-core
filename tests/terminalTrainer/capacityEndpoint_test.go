@@ -89,9 +89,6 @@ func (m *metricsAwareMockService) GetTerms() (string, error)     { panic("not im
 func (m *metricsAwareMockService) GetBackends() ([]dto.BackendInfo, error) {
 	panic("not implemented")
 }
-func (m *metricsAwareMockService) GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error) {
-	panic("not implemented")
-}
 func (m *metricsAwareMockService) GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error) {
 	panic("not implemented")
 }

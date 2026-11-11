@@ -114,9 +114,6 @@ func (m *mockTTService) GetServerMetrics(bool, string) (*ttDto.ServerMetricsResp
 	return nil, nil
 }
 func (m *mockTTService) GetBackends() ([]ttDto.BackendInfo, error) { return nil, nil }
-func (m *mockTTService) GetBackendsForOrganization(uuid.UUID) ([]ttDto.BackendInfo, error) {
-	return nil, nil
-}
 func (m *mockTTService) GetBackendsForContext(uuid.UUID, string) ([]ttDto.BackendInfo, error) {
 	return nil, nil
 }

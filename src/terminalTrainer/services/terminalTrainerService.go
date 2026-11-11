@@ -65,7 +65,6 @@ type TerminalTrainerService interface {
 
 	// Backend management
 	GetBackends() ([]dto.BackendInfo, error)
-	GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error)
 	GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error)
 	BackendPolicyFor(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan) (BackendPolicy, error)
 	RankBackends(candidates []string) []string
@@ -419,11 +418,6 @@ func (tts *terminalTrainerService) GetBackendsForContext(orgID uuid.UUID, userID
 		plan = result.Plan
 	}
 	return tts.listBackends(&orgID, plan)
-}
-
-// GetBackendsForOrganization lists the backends an organization's own settings allow.
-func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error) {
-	return tts.listBackends(&orgID, nil)
 }
 
 // listBackends returns the known backends the policy allows, its default marked.

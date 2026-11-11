@@ -105,27 +105,32 @@ func freeRAMGB(h HostLoad) float64 {
 	return h.Metrics.RAMAvailableGB
 }
 
-// pickHost settles where a session of size starts, reading fresh metrics:
-// this is the launch's capacity check.
+// pickHost settles where a session of size starts: this is the launch's
+// capacity check.
 func (p *terminalProxyClient) pickHost(candidates []string, plan *paymentModels.SubscriptionPlan, size string) (string, error) {
-	return ChooseHost(p.freshHostLoads(candidates), plan, size)
+	return ChooseHost(p.currentHostLoads(candidates), plan, size)
 }
 
 // LaunchCapacity answers, without starting anything, whether a session of
 // size would find room among candidates: the same reading pickHost decides on.
 func (p *terminalProxyClient) LaunchCapacity(candidates []string, plan *paymentModels.SubscriptionPlan, size string) CapacityResult {
-	return PlacementCapacity(p.freshHostLoads(candidates), plan, size)
+	return PlacementCapacity(p.currentHostLoads(candidates), plan, size)
 }
 
-func (p *terminalProxyClient) freshHostLoads(candidates []string) []HostLoad {
+// currentHostLoads reads each host through tt-backend's own short metrics
+// cache (8 s) rather than querying Incus every time: a class started ten
+// learners at a time would otherwise query each host once per learner. The
+// figures can be that old; fresh ones would not see the containers still
+// booting either.
+func (p *terminalProxyClient) currentHostLoads(candidates []string) []HostLoad {
 	return p.hostLoads(candidates, func(b string) (*dto.ServerMetricsResponse, error) {
-		return p.GetServerMetrics(true, b)
+		return p.GetServerMetrics(false, b)
 	})
 }
 
 // rankingMetricsTTL bounds how stale the RAM figures used to order hosts may
 // be. Ordering runs once per card in the scenario catalogue; the launch itself
-// re-reads fresh metrics in pickHost.
+// re-reads them in pickHost.
 const rankingMetricsTTL = 15 * time.Second
 
 type timedMetrics struct {

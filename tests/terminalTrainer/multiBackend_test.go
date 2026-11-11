@@ -708,7 +708,8 @@ func TestGetServerMetrics_GenericErrorOnFailure(t *testing.T) {
 }
 
 // =============================================================================
-// GetBackendsForOrganization — service-level filtering
+// GetBackendsForContext — service-level filtering by the organization's settings
+// (the caller resolves no plan, so the organization decides alone)
 // =============================================================================
 
 // setupServiceWithMockBackends creates a TerminalTrainerService backed by a fake
@@ -765,7 +766,7 @@ func createTestOrgWithBackends(t *testing.T, db *gorm.DB, name string, allowedBa
 	return org
 }
 
-func TestGetBackendsForOrganization_Filtering(t *testing.T) {
+func TestGetBackendsForContext_OrgSettingsFiltering(t *testing.T) {
 	allBackends := []dto.BackendInfo{
 		{ID: "default", Name: "Default Backend", Connected: true},
 		{ID: "oracle1", Name: "Oracle Cloud", Connected: true},
@@ -823,7 +824,7 @@ func TestGetBackendsForOrganization_Filtering(t *testing.T) {
 				fmt.Sprintf("filter-%s", uuid.New().String()[:8]),
 				tc.allowedBackends, tc.defaultBackend)
 
-			backends, err := svc.GetBackendsForOrganization(org.ID)
+			backends, err := svc.GetBackendsForContext(org.ID, "user-without-plan")
 			require.NoError(t, err)
 			require.Len(t, backends, len(tc.wantIDs))
 
@@ -848,10 +849,10 @@ func TestGetBackendsForOrganization_Filtering(t *testing.T) {
 	}
 }
 
-// TestGetBackendsForOrganization_NoSystemDefault verifies behavior when no
+// TestGetBackendsForContext_NoSystemDefault verifies behavior when no
 // backend is marked is_default by tt-backend (matches production state where
 // the features table has no terminal_default_backend).
-func TestGetBackendsForOrganization_NoSystemDefault(t *testing.T) {
+func TestGetBackendsForContext_NoSystemDefault(t *testing.T) {
 	allBackends := []dto.BackendInfo{
 		{ID: "default", Name: "Default Backend", Connected: true},
 		{ID: "oracle1", Name: "Oracle Cloud", Connected: true},
@@ -863,7 +864,7 @@ func TestGetBackendsForOrganization_NoSystemDefault(t *testing.T) {
 			fmt.Sprintf("no-sysdefault-%s", uuid.New().String()[:8]),
 			nil, "")
 
-		backends, err := svc.GetBackendsForOrganization(org.ID)
+		backends, err := svc.GetBackendsForContext(org.ID, "user-without-plan")
 		require.NoError(t, err)
 		require.Len(t, backends, 1, "should return only 1 backend, not all")
 		assert.Equal(t, "default", backends[0].ID, "should fall back to first backend")
@@ -874,7 +875,7 @@ func TestGetBackendsForOrganization_NoSystemDefault(t *testing.T) {
 			fmt.Sprintf("explicit-no-sysdefault-%s", uuid.New().String()[:8]),
 			[]string{"default", "oracle1"}, "oracle1")
 
-		backends, err := svc.GetBackendsForOrganization(org.ID)
+		backends, err := svc.GetBackendsForContext(org.ID, "user-without-plan")
 		require.NoError(t, err)
 		assert.Len(t, backends, 2, "explicit config should still return both")
 	})
