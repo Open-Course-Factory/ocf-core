@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -321,105 +320,6 @@ func (c *terminalComposer) provisionMissingKeys(members []groupModels.GroupMembe
 	return blocked
 }
 
-// validateBackendForContext resolves the backend using a multi-level chain:
-// 1. If orgID != nil and the org has backend config → delegate to validateBackendForOrg
-// 2. Otherwise apply the plan-level rules (plan default / AllowedBackends)
-// 3. Final fallback: only the system default is allowed
-func (c *terminalComposer) validateBackendForContext(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, requestedBackend string) (string, error) {
-	if orgID != nil {
-		var org orgModels.Organization
-		if err := c.db.First(&org, "id = ?", *orgID).Error; err != nil {
-			return "", fmt.Errorf("failed to get organization: %w", err)
-		}
-
-		// If the org has its own backend config, delegate to org rules
-		if len(org.AllowedBackends) > 0 || org.DefaultBackend != "" {
-			return c.validateBackendForOrg(orgID, requestedBackend)
-		}
-	}
-
-	// No org backend config (or no org / personal org) → apply plan-level rules
-	if plan != nil {
-		// No backend requested → use plan default, fallback to system default
-		if requestedBackend == "" {
-			if plan.DefaultBackend != "" {
-				return plan.DefaultBackend, nil
-			}
-			return c.proxy.getSystemDefault(), nil
-		}
-
-		// Backend requested → check against plan's AllowedBackends
-		if len(plan.AllowedBackends) > 0 {
-			if slices.Contains(plan.AllowedBackends, requestedBackend) {
-				return requestedBackend, nil
-			}
-			// Requested backend not in allowed list — fall back to plan default
-			// (the user likely didn't explicitly choose; the frontend auto-selected from a stale list)
-			if plan.DefaultBackend != "" {
-				return plan.DefaultBackend, nil
-			}
-			return "", fmt.Errorf("backend '%s' is not allowed by your subscription plan. Allowed backends: %v",
-				requestedBackend, plan.AllowedBackends)
-		}
-
-		// Plan has no AllowedBackends restriction → use plan default or system default
-		if plan.DefaultBackend != "" {
-			return plan.DefaultBackend, nil
-		}
-	}
-
-	// Final fallback: no org config, no plan config — only system default is allowed
-	systemDefault := c.proxy.getSystemDefault()
-	if requestedBackend == "" || requestedBackend == systemDefault {
-		return systemDefault, nil
-	}
-	return "", fmt.Errorf("backend '%s' is not allowed: no backend restrictions configured, only system default is available", requestedBackend)
-}
-
-// validateBackendForOrg validates and resolves the backend for an organization
-func (c *terminalComposer) validateBackendForOrg(orgID *uuid.UUID, requestedBackend string) (string, error) {
-	if orgID == nil {
-		return requestedBackend, nil // No org context, allow any backend
-	}
-
-	var org orgModels.Organization
-	if err := c.db.First(&org, "id = ?", *orgID).Error; err != nil {
-		return "", fmt.Errorf("failed to get organization: %w", err)
-	}
-
-	// Resolve org's effective default: org default → system default → ""
-	effectiveDefault := org.DefaultBackend
-	if effectiveDefault == "" {
-		effectiveDefault = c.proxy.getSystemDefault()
-	}
-
-	// If no backend requested, use the effective default
-	if requestedBackend == "" {
-		return effectiveDefault, nil
-	}
-
-	// If AllowedBackends is empty, only the default backend is allowed
-	// If no default is configured either, allow any backend (no restrictions)
-	if len(org.AllowedBackends) == 0 {
-		if effectiveDefault == "" {
-			return requestedBackend, nil
-		}
-		if requestedBackend == effectiveDefault {
-			return requestedBackend, nil
-		}
-		return "", fmt.Errorf("backend '%s' is not allowed for your organization (no backends configured, default only)",
-			requestedBackend)
-	}
-
-	// Check if requested backend is in allowed list
-	if slices.Contains(org.AllowedBackends, requestedBackend) {
-		return requestedBackend, nil
-	}
-
-	return "", fmt.Errorf("backend '%s' is not allowed for your organization. Allowed backends: %v",
-		requestedBackend, org.AllowedBackends)
-}
-
 // StartComposedSession validates inputs against the plan and starts a composed session
 // sessionCreateTimeout bounds the one call that provisions a container, rather
 // than leaving it on the 30s default meant for ordinary API traffic. It matches
@@ -440,6 +340,24 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 		return nil, persistErr
 	}
 	input.PersistenceMode = effectiveMode
+
+	// The backend is settled first: the options below are read from its
+	// catalog, and a host outside the policy is never asked.
+	var orgID *uuid.UUID
+	if input.OrganizationID != "" {
+		parsed, err := uuid.Parse(input.OrganizationID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid organization_id: %w", err)
+		}
+		orgID = &parsed
+	}
+	policy, err := loadBackendPolicy(c.db, c.proxy, orgID, plan)
+	if err != nil {
+		return nil, err
+	}
+	if input.Backend, err = policy.Pick(input.Backend); err != nil {
+		return nil, err
+	}
 
 	// Compute session options to validate the request
 	options, err := c.catalog.GetSessionOptions(plan, input.Distribution, input.Backend)
@@ -495,16 +413,6 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 		return nil, fmt.Errorf("custom packages require network access, which is not enabled for this session")
 	}
 
-	// Validate backend
-	var orgID *uuid.UUID
-	if input.OrganizationID != "" {
-		parsed, err := uuid.Parse(input.OrganizationID)
-		if err != nil {
-			return nil, fmt.Errorf("invalid organization_id: %w", err)
-		}
-		orgID = &parsed
-	}
-
 	// Snapshot the size catalog footprint onto the input so the persisted
 	// Terminal row carries SizeCPU / SizeMemoryMB even in count-mode. The
 	// budget sum query reads from these columns, so leaving them at zero
@@ -523,12 +431,6 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 	// The TerminalBudgetHook stays a no-op on this path — the composed flow
 	// persists directly via the repository, bypassing the generic Create
 	// hook chain.
-
-	validatedBackend, err := c.validateBackendForContext(orgID, plan, input.Backend)
-	if err != nil {
-		return nil, err
-	}
-	input.Backend = validatedBackend
 
 	// Resolve effective idle window from the org override (if any). nil means
 	// "let tt-backend fall back to its global default".

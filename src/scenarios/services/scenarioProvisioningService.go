@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/catalog"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
 	ttServices "soli/formations/src/terminalTrainer/services"
@@ -27,9 +27,8 @@ import (
 // got a container with no network and died at step 0 for a whole class.
 //
 // The resolution reads the scenario's declaration against a backend's live
-// catalog, which is why it needs the terminal service, and against the
-// organization's backend configuration, which is why it needs the database.
-// Controllers hold neither: they ask this.
+// catalog and the context's backend policy, both from the terminal service.
+// Controllers ask this rather than composing either themselves.
 type ScenarioProvisioningService struct {
 	db              *gorm.DB
 	terminalService ttServices.TerminalTrainerService
@@ -55,37 +54,24 @@ func (s *ScenarioProvisioningService) ScenarioForProvisioning(scenarioID uuid.UU
 // Resolve picks the backend, distribution, size and features for a scenario
 // already in hand.
 //
-// orgID is the organization context the run belongs to, whose configured
-// backends are tried before the system default. preferredBackend, when set,
-// is tried before either: which host to build on is the caller's call, while
-// what to build on it is the scenario's.
+// The backends tried are those the context's backend policy allows — the
+// organization's settings, else the plan's (plan may be nil). An empty
+// preferredBackend lets the system try each allowed backend in turn; a named
+// one is the only backend tried, and must be allowed: which host to build on
+// is the caller's call, while what to build on it is the scenario's.
 func (s *ScenarioProvisioningService) Resolve(
 	scenario models.Scenario,
 	orgID *uuid.UUID,
+	plan *paymentModels.SubscriptionPlan,
 	preferredBackend string,
 ) (ScenarioProvisioning, error) {
-	// Determine candidate backends. A caller that already knows which backend it
-	// wants — the teacher picking one for a whole class — gets it tried first;
-	// the org's own backends follow, then the system default.
-	var candidateBackends []string
-	if preferredBackend != "" {
-		candidateBackends = append(candidateBackends, preferredBackend)
+	policy, err := s.terminalService.BackendPolicyFor(orgID, plan)
+	if err != nil {
+		return ScenarioProvisioning{}, err
 	}
-	if orgID != nil {
-		var org orgModels.Organization
-		if err := s.db.First(&org, "id = ?", *orgID).Error; err == nil {
-			if org.DefaultBackend != "" && org.DefaultBackend != preferredBackend {
-				candidateBackends = append(candidateBackends, org.DefaultBackend)
-			}
-			for _, b := range org.AllowedBackends {
-				if b != org.DefaultBackend && b != preferredBackend {
-					candidateBackends = append(candidateBackends, b)
-				}
-			}
-		}
-	}
-	if len(candidateBackends) == 0 {
-		candidateBackends = []string{""} // system default
+	candidateBackends, err := policy.Candidates(preferredBackend)
+	if err != nil {
+		return ScenarioProvisioning{}, err
 	}
 
 	// Fetch the size catalog once (cached 60s in the service) so resolveDistribution

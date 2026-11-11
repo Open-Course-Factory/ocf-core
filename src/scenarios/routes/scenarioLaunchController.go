@@ -351,7 +351,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 
 		// Determine launchability by checking distribution compatibility.
-		provisioning, resolveErr := sc.provisioningService.Resolve(s, orgID, "")
+		provisioning, resolveErr := sc.provisioningService.Resolve(s, orgID, resolvedPlan, "")
 		item.Launchable = resolveErr == nil && provisioning.CreatesTerminal()
 		item.ResolvedDistribution = provisioning.Distribution
 		item.ResolvedSize = provisioning.Size
@@ -501,6 +501,10 @@ func respondExamLocked(ctx *gin.Context) {
 // disagree about which of the two just happened — before this, an unreachable
 // tt-backend was reported to a learner as "no compatible environment".
 func respondProvisioningFailure(ctx *gin.Context, scenarioName string, err error) {
+	if stderrors.Is(err, terminalServices.ErrBackendNotAllowed) {
+		errors.Respond(ctx, http.StatusForbidden, err.Error())
+		return
+	}
 	if stderrors.Is(err, services.ErrBackendCatalogUnavailable) {
 		slog.Error("backend catalog unavailable for scenario", "scenario", scenarioName, "err", err)
 		errors.Respond(ctx, http.StatusServiceUnavailable, "Terminal service unavailable")
@@ -610,13 +614,6 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		}
 	}
 
-	// Resolve backend + distribution using org-aware logic
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, "")
-	if distErr != nil {
-		respondProvisioningFailure(ctx, scenario.Name, distErr)
-		return
-	}
-
 	// Read plan from middleware context (set by InjectEffectivePlan + RequirePlan)
 	planInterface, exists := ctx.Get("subscription_plan")
 	if !exists {
@@ -626,6 +623,13 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
 	if !ok {
 		errors.Respond(ctx, http.StatusInternalServerError, "Invalid subscription plan")
+		return
+	}
+
+	// Resolve backend + distribution using org-aware logic
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, plan, "")
+	if distErr != nil {
+		respondProvisioningFailure(ctx, scenario.Name, distErr)
 		return
 	}
 
@@ -917,19 +921,20 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		previewOpts = append(previewOpts, services.WithStartAtStep(*body.FromStepOrder))
 	}
 
-	// A preview builds the same machine the learners will get, so it asks the
-	// same question of the same owner rather than composing one of its own.
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, previewOrgID, backend)
-	if distErr != nil {
-		respondProvisioningFailure(ctx, scenario.Name, distErr)
+	// Dunning gate (MANDATORY on every new session-creation route): preview
+	// provisions a real terminal. This route has no InjectEffectivePlan
+	// middleware, so the plan is resolved, and gated, here — before the
+	// resolution, which reads the plan's backends.
+	planResult, ok := sc.resolveTerminalPlan(ctx, userID, previewOrgID)
+	if !ok {
 		return
 	}
 
-	// Dunning gate (MANDATORY on every new session-creation route): preview
-	// provisions a real terminal. This route has no InjectEffectivePlan
-	// middleware, so the plan is resolved, and gated, here.
-	planResult, ok := sc.resolveTerminalPlan(ctx, userID, previewOrgID)
-	if !ok {
+	// A preview builds the same machine the learners will get, so it asks the
+	// same question of the same owner rather than composing one of its own.
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, previewOrgID, planResult.Plan, backend)
+	if distErr != nil {
+		respondProvisioningFailure(ctx, scenario.Name, distErr)
 		return
 	}
 
@@ -1152,7 +1157,7 @@ func (sc *scenarioLaunchController) rebuildRun(ctx *gin.Context, run *models.Sce
 	if !ok {
 		return
 	}
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, "")
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, planResult.Plan, "")
 	if distErr != nil {
 		respondProvisioningFailure(ctx, scenario.Name, distErr)
 		return

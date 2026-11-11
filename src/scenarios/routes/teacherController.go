@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	paymentMiddleware "soli/formations/src/payment/middleware"
+	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
 	scenarioModels "soli/formations/src/scenarios/models"
@@ -623,7 +624,14 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 	// requirement, and substituting one its author never approved is what the
 	// resolution refuses. req.Backend is honoured, since which host to build on
 	// is the teacher's call.
-	provisioning, resolveErr := tc.provisioningService.Resolve(scenario, scenario.OrganizationID, req.Backend)
+	//
+	// The trainer's plan stands in for the class: each member's own start is
+	// checked again against theirs.
+	var trainerPlan *paymentModels.SubscriptionPlan
+	if planErr == nil && planResult != nil {
+		trainerPlan = planResult.Plan
+	}
+	provisioning, resolveErr := tc.provisioningService.Resolve(scenario, scenario.OrganizationID, trainerPlan, req.Backend)
 	if resolveErr != nil {
 		respondProvisioningFailure(c, scenario.Name, resolveErr)
 		return

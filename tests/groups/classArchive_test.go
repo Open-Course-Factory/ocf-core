@@ -379,6 +379,8 @@ func TestArchivedClass_AssignmentNoLongerAuthorisesALaunch(t *testing.T) {
 	router.Use(func(c *gin.Context) {
 		c.Set("userId", "student")
 		c.Set("userRoles", []string{access.RoleMember})
+		// What RequirePlan guarantees in production: a launch always has a plan.
+		c.Set("subscription_plan", &paymentModels.SubscriptionPlan{})
 		c.Next()
 	})
 	router.POST("/api/v1/scenario-sessions/launch", scenarioRoutes.NewScenarioLaunchController(env.db).LaunchScenario)

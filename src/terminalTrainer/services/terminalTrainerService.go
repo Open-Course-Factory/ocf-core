@@ -67,6 +67,7 @@ type TerminalTrainerService interface {
 	GetBackends() ([]dto.BackendInfo, error)
 	GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error)
 	GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error)
+	BackendPolicyFor(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan) (BackendPolicy, error)
 	IsBackendOnline(backendName string) (bool, error)
 	SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error)
 
@@ -402,126 +403,45 @@ func (tts *terminalTrainerService) GetTerms() (string, error) {
 	return termsResp.Terms, nil
 }
 
-// GetBackendsForContext returns backends filtered by org config (if set) or plan config (fallback).
-// This ensures the frontend backend selector shows the correct options for the current org/plan context.
-func (tts *terminalTrainerService) GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error) {
-	var org orgModels.Organization
-	if err := tts.db.First(&org, "id = ?", orgID).Error; err != nil {
-		return nil, fmt.Errorf("organization not found: %w", err)
-	}
-
-	// If org has explicit backend config, use org rules (existing behavior)
-	if len(org.AllowedBackends) > 0 || org.DefaultBackend != "" {
-		return tts.GetBackendsForOrganization(orgID)
-	}
-
-	// No org config → resolve the user's effective plan for this org to get plan-level backends
-	effectivePlanService := paymentServices.NewEffectivePlanService(tts.db)
-	result, err := effectivePlanService.GetUserEffectivePlan(userID, &orgID)
-	if err != nil || result == nil || result.Plan == nil {
-		// No plan resolved — fall back to system default
-		return tts.GetBackendsForOrganization(orgID)
-	}
-
-	plan := result.Plan
-	if len(plan.AllowedBackends) == 0 && plan.DefaultBackend == "" {
-		// Plan has no backend config either — fall back to org logic
-		return tts.GetBackendsForOrganization(orgID)
-	}
-
-	// Filter all backends by plan's AllowedBackends
-	allBackends, err := tts.getBackendsCached()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(plan.AllowedBackends) > 0 {
-		allowedSet := make(map[string]bool, len(plan.AllowedBackends))
-		for _, b := range plan.AllowedBackends {
-			allowedSet[b] = true
-		}
-		var filtered []dto.BackendInfo
-		for _, b := range allBackends {
-			if allowedSet[b.ID] {
-				b.IsDefault = (b.ID == plan.DefaultBackend)
-				filtered = append(filtered, b)
-			}
-		}
-		if len(filtered) > 0 {
-			return filtered, nil
-		}
-	}
-
-	// Plan has DefaultBackend but no AllowedBackends — return just the default
-	if plan.DefaultBackend != "" {
-		for _, b := range allBackends {
-			if b.ID == plan.DefaultBackend {
-				b.IsDefault = true
-				return []dto.BackendInfo{b}, nil
-			}
-		}
-	}
-
-	return tts.GetBackendsForOrganization(orgID)
+// BackendPolicyFor returns the backend policy of an organization context;
+// orgID and plan may each be nil.
+func (tts *terminalTrainerService) BackendPolicyFor(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan) (BackendPolicy, error) {
+	return loadBackendPolicy(tts.db, tts.terminalProxyClient, orgID, plan)
 }
 
-// GetBackendsForOrganization returns backends filtered by org's AllowedBackends/DefaultBackend
-func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error) {
-	var org orgModels.Organization
-	if err := tts.db.First(&org, "id = ?", orgID).Error; err != nil {
-		return nil, fmt.Errorf("organization not found: %w", err)
+// GetBackendsForContext lists the backends a user may pick in an organization:
+// the org's own settings, else those of the user's effective plan there.
+func (tts *terminalTrainerService) GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error) {
+	var plan *paymentModels.SubscriptionPlan
+	if result, err := tts.effectivePlanService.GetUserEffectivePlan(userID, &orgID); err == nil && result != nil {
+		plan = result.Plan
 	}
+	return tts.listBackends(&orgID, plan)
+}
 
+// GetBackendsForOrganization lists the backends an organization's own settings allow.
+func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error) {
+	return tts.listBackends(&orgID, nil)
+}
+
+// listBackends returns the known backends the policy allows, its default marked.
+func (tts *terminalTrainerService) listBackends(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan) ([]dto.BackendInfo, error) {
+	policy, err := tts.BackendPolicyFor(orgID, plan)
+	if err != nil {
+		return nil, err
+	}
 	allBackends, err := tts.getBackendsCached()
 	if err != nil {
 		return nil, err
 	}
-
-	// Determine which backends this org can access
-	if len(org.AllowedBackends) == 0 {
-		// No manual config: return only the default backend.
-		// Priority: org default → system default → first backend in list
-		defaultID := org.DefaultBackend
-		if defaultID == "" {
-			defaultID = tts.getSystemDefault()
-		}
-		if defaultID == "" && len(allBackends) > 0 {
-			defaultID = allBackends[0].ID
-		}
-		var filtered []dto.BackendInfo
-		for _, b := range allBackends {
-			if b.ID == defaultID {
-				b.IsDefault = true
-				filtered = append(filtered, b)
-			}
-		}
-		if len(filtered) == 0 {
-			return allBackends, nil
-		}
-		return filtered, nil
-	}
-
-	// Explicit config: return only the allowed backends
-	allowedSet := make(map[string]bool, len(org.AllowedBackends))
-	for _, b := range org.AllowedBackends {
-		allowedSet[b] = true
-	}
-
-	defaultID := org.DefaultBackend
-	if defaultID == "" {
-		defaultID = tts.getSystemDefault()
-	}
-
-	var filtered []dto.BackendInfo
+	listed := []dto.BackendInfo{}
 	for _, b := range allBackends {
-		if allowedSet[b.ID] {
-			// Reset IsDefault based on org's effective default, not system default
-			b.IsDefault = (b.ID == defaultID)
-			filtered = append(filtered, b)
+		if slices.Contains(policy.Allowed, b.ID) {
+			b.IsDefault = b.ID == policy.Default
+			listed = append(listed, b)
 		}
 	}
-
-	return filtered, nil
+	return listed, nil
 }
 
 // GetEnumService returns the enum service for external access

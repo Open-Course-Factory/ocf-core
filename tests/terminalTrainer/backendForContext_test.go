@@ -101,10 +101,10 @@ func TestValidateBackendForContext_OrgHasBackendConfig_RejectsDisallowed(t *test
 	// The error may come from GetSessionOptions (network) or org restriction
 }
 
-// TestValidateBackendForContext_PlanAllowedBackends_FallsBackToDefault verifies that when
-// requesting a backend not in the plan's AllowedBackends (and org has no config),
-// the system falls back to the plan's default backend (not a hard rejection).
-func TestValidateBackendForContext_PlanAllowedBackends_FallsBackToDefault(t *testing.T) {
+// TestValidateBackendForContext_PlanAllowedBackends_RejectsDisallowed verifies that when
+// requesting a backend not in the plan's AllowedBackends (and org has no config)
+// is refused. It used to fall back to the plan default, which hid the refusal.
+func TestValidateBackendForContext_PlanAllowedBackends_RejectsDisallowed(t *testing.T) {
 	db := freshTestDB(t)
 
 	userID := "user-plan-restricts"
@@ -124,16 +124,13 @@ func TestValidateBackendForContext_PlanAllowedBackends_FallsBackToDefault(t *tes
 		Size:           "S",
 		Terms:          "accepted",
 		OrganizationID: org.ID.String(),
-		Backend:        "premium-pool", // Not in plan's allowed list → falls back to plan default
+		Backend:        "premium-pool", // Not in plan's allowed list
 	}
 
-	// Should NOT reject with plan restriction — falls back to plan default "shared-pool".
-	// The error we get is from GetSessionOptions (network) since tt-backend is not running.
 	_, err = svc.StartComposedSession(userID, composedInput, plan)
-	if err != nil {
-		// If there's an error, it should NOT be about backend restriction
-		assert.NotContains(t, err.Error(), "not allowed by your subscription plan")
-	}
+	require.Error(t, err)
+	assert.ErrorIs(t, err, services.ErrBackendNotAllowed,
+		"an explicit backend outside the plan's list is refused, not silently swapped")
 }
 
 // TestValidateBackendForContext_OrgHasConfig_PlanRestrictionIgnored verifies that
@@ -171,10 +168,9 @@ func TestValidateBackendForContext_OrgHasConfig_PlanRestrictionIgnored(t *testin
 	// The error may come from GetSessionOptions (network) or org restriction
 }
 
-// TestValidateBackendForContext_NilOrg_PlanFallsBackToDefault verifies that when there's no
-// org context and the requested backend isn't in the plan's allowed list, it falls back to
-// the plan's default backend.
-func TestValidateBackendForContext_NilOrg_PlanFallsBackToDefault(t *testing.T) {
+// TestValidateBackendForContext_NilOrg_PlanRejectsDisallowed verifies that when there's no
+// org context and the requested backend isn't in the plan's allowed list, it is refused.
+func TestValidateBackendForContext_NilOrg_PlanRejectsDisallowed(t *testing.T) {
 	db := freshTestDB(t)
 
 	userID := "user-nil-org-plan-restr"
@@ -189,14 +185,14 @@ func TestValidateBackendForContext_NilOrg_PlanFallsBackToDefault(t *testing.T) {
 		Distribution: "debian",
 		Size:         "S",
 		Terms:        "accepted",
-		Backend:      "premium-pool", // Not in plan's allowed list → falls back to plan default
+		Backend:      "premium-pool", // Not in plan's allowed list
 	}
 
-	// Should fall back to plan default, not reject
+	// Refused, not swapped for the plan default
 	_, err = svc.StartComposedSession(userID, composedInput, plan)
-	if err != nil {
-		assert.NotContains(t, err.Error(), "not allowed by your subscription plan")
-	}
+	require.Error(t, err)
+	assert.ErrorIs(t, err, services.ErrBackendNotAllowed,
+		"an explicit backend outside the plan's list is refused, not silently swapped")
 }
 
 // TestValidateBackendForContext_PersonalOrg_NoConfig_PlanRestricts verifies that
@@ -221,14 +217,14 @@ func TestValidateBackendForContext_PersonalOrg_NoConfig_PlanRestricts(t *testing
 		Size:           "S",
 		Terms:          "accepted",
 		OrganizationID: org.ID.String(),
-		Backend:        "premium-pool", // Not in plan's allowed list → falls back to plan default
+		Backend:        "premium-pool", // Not in plan's allowed list
 	}
 
-	// Should fall back to plan default, not reject
+	// Refused, not swapped for the plan default
 	_, err = svc.StartComposedSession(userID, composedInput, plan)
-	if err != nil {
-		assert.NotContains(t, err.Error(), "not allowed by your subscription plan")
-	}
+	require.Error(t, err)
+	assert.ErrorIs(t, err, services.ErrBackendNotAllowed,
+		"an explicit backend outside the plan's list is refused, not silently swapped")
 }
 
 // TestValidateBackendForContext_NilOrg_NoPlanRestrictions_ArbitraryBackend_ShouldRejectOrDefault
@@ -348,10 +344,9 @@ func TestGetBackendsForContext_OrgNoConfig_UsesPlanBackends(t *testing.T) {
 	}
 }
 
-// TestValidateBackendForContext_PlanFallbackToDefault verifies that when a requested
-// backend is not in the plan's allowed list but the plan has a default, the system
-// falls back to the plan default instead of rejecting.
-func TestValidateBackendForContext_PlanFallbackToDefault(t *testing.T) {
+// TestValidateBackendForContext_PlanRejectsUnlistedBackend verifies that a plan
+// default does not turn an unlisted request into a silent swap.
+func TestValidateBackendForContext_PlanRejectsUnlistedBackend(t *testing.T) {
 	db := freshTestDB(t)
 
 	userID := "user-fallback-default"
@@ -366,13 +361,11 @@ func TestValidateBackendForContext_PlanFallbackToDefault(t *testing.T) {
 		Distribution: "debian",
 		Size:         "S",
 		Terms:        "accepted",
-		Backend:      "default", // Not in plan's allowed list — should fall back to plan default
+		Backend:      "default", // Not in plan's allowed list
 	}
 
-	// Should NOT reject with "not allowed" — should fall back to "premium-infra"
 	_, err = svc.StartComposedSession(userID, composedInput, plan)
-	if err != nil {
-		// Error may come from GetSessionOptions (network), but NOT from backend validation
-		assert.NotContains(t, err.Error(), "not allowed by your subscription plan")
-	}
+	require.Error(t, err)
+	assert.ErrorIs(t, err, services.ErrBackendNotAllowed,
+		"an explicit backend outside the plan's list is refused, not silently swapped")
 }

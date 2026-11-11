@@ -108,6 +108,9 @@ func (m *mockTerminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID)
 func (m *mockTerminalTrainerService) GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error) {
 	panic("not implemented")
 }
+func (m *mockTerminalTrainerService) BackendPolicyFor(*uuid.UUID, *paymentModels.SubscriptionPlan) (services.BackendPolicy, error) {
+	return services.BackendPolicy{Allowed: []string{""}}, nil
+}
 func (m *mockTerminalTrainerService) IsBackendOnline(backendName string) (bool, error) {
 	panic("not implemented")
 }

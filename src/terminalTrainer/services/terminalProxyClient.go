@@ -354,19 +354,14 @@ func (p *terminalProxyClient) getBackendsCached() ([]dto.BackendInfo, error) {
 	return v.([]dto.BackendInfo), nil
 }
 
-// getSystemDefault returns the backend ID marked as default by tt-backend.
-// Returns empty string if no backend is marked as default.
+// getSystemDefault returns SystemDefaultOf the cached backend list, or "" when
+// tt-backend cannot be reached.
 func (p *terminalProxyClient) getSystemDefault() string {
 	backends, err := p.getBackendsCached()
-	if err != nil || len(backends) == 0 {
+	if err != nil {
 		return ""
 	}
-	for _, b := range backends {
-		if b.IsDefault {
-			return b.ID
-		}
-	}
-	return ""
+	return SystemDefaultOf(backends)
 }
 
 // invalidateBackendCache clears the cached backends so the next read

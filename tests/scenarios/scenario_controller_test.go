@@ -15,6 +15,7 @@ import (
 
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -914,6 +915,8 @@ func setupTestRouterWithRoles(db *gorm.DB, userID string, roles []string) *gin.E
 	api.Use(func(c *gin.Context) {
 		c.Set("userId", userID)
 		c.Set("userRoles", roles)
+		// What RequirePlan guarantees in production: a launch always has a plan.
+		c.Set("subscription_plan", &paymentModels.SubscriptionPlan{})
 		c.Next()
 	})
 
