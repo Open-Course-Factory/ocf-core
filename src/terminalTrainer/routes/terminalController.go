@@ -104,9 +104,8 @@ type TerminalController interface {
 	GetSessionOptions(ctx *gin.Context)
 	StartComposedSession(ctx *gin.Context)
 
-	// CapacityCheck mirrors the CheckRAMAvailability middleware as a
-	// no-side-effect query, so the frontend can drive its launch
-	// indicator from the same source of truth the launch path enforces.
+	// CapacityCheck answers, without side effects, the host RAM check a
+	// launch makes, so the frontend's indicator reads the same decision.
 	CapacityCheck(ctx *gin.Context)
 
 	// MyTerminalUsage returns the live budget snapshot for the dashboard
@@ -1671,16 +1670,7 @@ func (tc *terminalController) MyTerminalUsage(ctx *gin.Context) {
 	// Org context is set by InjectOrgContext middleware when ?organization_id
 	// is present. Passed as the RESOLUTION input; GetUserTerminalUsage derives the
 	// budget pool from the plan that resolves, not from this (#457).
-	var orgID *uuid.UUID
-	if orgCtx, exists := ctx.Get("org_context_id"); exists {
-		if orgStr, ok := orgCtx.(string); ok && orgStr != "" {
-			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
-				orgID = &parsed
-			}
-		}
-	}
-
-	usage, err := tc.service.GetUserTerminalUsage(userID, orgID)
+	usage, err := tc.service.GetUserTerminalUsage(userID, orgContextID(ctx))
 	if err != nil {
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to get terminal usage")
 		return
@@ -1964,12 +1954,6 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	}
 
 	var input dto.CreateComposedSessionInput
-	// Use ShouldBindBodyWith because the upstream CheckRAMAvailability
-	// middleware already consumed c.Request.Body via ShouldBindBodyWith.
-	// ShouldBindJSON would read from the (now-empty) raw body and fail
-	// with EOF. ShouldBindBodyWith reads from the cached bytes stored in
-	// the gin context, and falls back to reading the raw body when the
-	// cache is empty (e.g. when the middleware skipped parsing).
 	if err := ctx.ShouldBindBodyWith(&input, binding.JSON); err != nil {
 		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
@@ -2014,27 +1998,19 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 // CapacityCheck godoc
 //
 //	@Summary		Check whether a session of the given size can be launched right now
-//	@Description	Returns the same capacity decision CheckRAMAvailability would compute, without provisioning anything. Frontend uses this as its single source of truth for the launch indicator.
+//	@Description	Answers for the host a launch would land on: the allowed, connected host with the most free RAM, or the requested backend. Nothing is provisioned. Frontend uses this as its single source of truth for the launch indicator.
 //	@Tags			terminals
 //	@Produce		json
 //	@Param			distribution	query		string	false	"Distribution name or prefix"
 //	@Param			size			query		string	false	"Machine size key (XS/S/M/L/XL)"
+//	@Param			backend			query		string	false	"Backend the launch will request; omitted, any allowed backend"
+//	@Param			organization_id	query		string	false	"Organization the launch is made in"
 //	@Security		Bearer
 //	@Success		200	{object}	services.CapacityResult
 //	@Router			/terminals/capacity-check [get]
 func (tc *terminalController) CapacityCheck(ctx *gin.Context) {
-	metrics, err := tc.service.GetServerMetrics(true, "")
-	if err != nil {
-		// Backend unreachable — surface "unknown" so the frontend can
-		// show a neutral indicator rather than a blocking error. Always
-		// 200 because this endpoint is a query, not an action.
-		ctx.JSON(http.StatusOK, services.CapacityResult{
-			Status: services.CapacityStatusUnknown,
-			Reason: "metrics_unavailable",
-		})
-		return
-	}
-
+	// Always 200 because this endpoint is a query, not an action; the launch
+	// itself gives the real refusal.
 	planInterface, exists := ctx.Get("subscription_plan")
 	if !exists {
 		ctx.JSON(http.StatusOK, services.CapacityResult{
@@ -2043,9 +2019,29 @@ func (tc *terminalController) CapacityCheck(ctx *gin.Context) {
 		})
 		return
 	}
-
 	plan, _ := planInterface.(*paymentModels.SubscriptionPlan)
 
-	result := services.EvaluateLaunchCapacity(plan, ctx.Query("size"), metrics)
-	ctx.JSON(http.StatusOK, result)
+	policy, err := tc.service.BackendPolicyFor(orgContextID(ctx), plan)
+	if err != nil {
+		ctx.JSON(http.StatusOK, services.CapacityResult{Status: services.CapacityStatusUnknown, Reason: "policy_unavailable"})
+		return
+	}
+	candidates, err := policy.Candidates(ctx.Query("backend"))
+	if err != nil {
+		ctx.JSON(http.StatusOK, services.CapacityResult{Status: services.CapacityStatusUnknown, Reason: "backend_not_allowed"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, tc.service.LaunchCapacity(candidates, plan, ctx.Query("size")))
+}
+
+// orgContextID returns the organization InjectOrgContext put in the context,
+// or nil when there is none.
+func orgContextID(ctx *gin.Context) *uuid.UUID {
+	orgStr, _ := ctx.Value("org_context_id").(string)
+	parsed, err := uuid.Parse(orgStr)
+	if err != nil {
+		return nil
+	}
+	return &parsed
 }

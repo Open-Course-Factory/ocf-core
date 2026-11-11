@@ -124,6 +124,9 @@ func (m *mockTTService) BackendPolicyFor(*uuid.UUID, *paymentModels.Subscription
 	return ttServices.BackendPolicy{Allowed: []string{""}}, nil
 }
 func (m *mockTTService) RankBackends(candidates []string) []string { return candidates }
+func (m *mockTTService) LaunchCapacity([]string, *paymentModels.SubscriptionPlan, string) ttServices.CapacityResult {
+	return ttServices.CapacityResult{Status: ttServices.CapacityStatusOK}
+}
 func (m *mockTTService) IsBackendOnline(string) (bool, error) { return true, nil }
 func (m *mockTTService) SetSystemDefaultBackend(string) (*ttDto.BackendInfo, error) {
 	return nil, nil

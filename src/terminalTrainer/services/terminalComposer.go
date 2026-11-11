@@ -114,8 +114,8 @@ func ApplyNameTemplate(template, groupName, userEmail, userID, machineSize strin
 }
 
 // ErrBulkInsufficientRAM is returned by BulkCreateTerminalsForGroup when the
-// Terminal Trainer server lacks enough RAM to provision terminals for all active
-// group members. Callers should map this to HTTP 503.
+// allowed hosts together lack the RAM for every active group member's
+// terminal. Callers should map this to HTTP 503.
 var ErrBulkInsufficientRAM = errors.New("server at capacity: insufficient RAM for bulk terminal creation")
 
 // BulkCreateTerminalsForGroup creates terminals for all members of a group
@@ -173,33 +173,19 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 		}
 	}
 
-	// Pre-flight RAM check: refuse up-front if the server lacks capacity for all terminals.
-	// Mirrors the logic in src/payment/middleware/ramCheckMiddleware.go.
-	// Fail-open: if metrics are unavailable, skip the check and proceed.
-	if len(activeMembers) > 0 {
-		metrics, metricsErr := c.proxy.GetServerMetrics(true, "")
-		if metricsErr != nil {
-			utils.Warn("bulk terminal creation: could not fetch server metrics, skipping RAM check: %v", metricsErr)
-		} else {
-			plan, _ := planInterface.(*paymentModels.SubscriptionPlan)
-			if plan != nil {
-				// SSOT: derive per-terminal RAM from the canonical catalog
-				// via EstimatePerTerminalRAMGB. Bulk pre-flight uses the
-				// catalog's largest size as a worst-case estimate — the
-				// real per-terminal cost is decided by the launcher.
-				perTerminalRAM := EstimatePerTerminalRAMGB()
+	// Resolve the machine size once: an explicit size from the request wins,
+	// otherwise we fall back to the historical default of "S" so existing
+	// admin tooling keeps the same behaviour.
+	bulkSize := request.Size
+	if bulkSize == "" {
+		bulkSize = "S"
+	}
 
-				totalRequiredRAM := float64(len(activeMembers)) * perTerminalRAM
-				minReservedRAM := metrics.TotalRAMGB() * minRAMReserveFraction
-
-				if metrics.RAMPercent >= 99.0 || metrics.RAMAvailableGB-totalRequiredRAM < minReservedRAM {
-					utils.Warn("bulk terminal creation blocked: insufficient RAM (%d terminals × %.2f GB = %.2f GB required, %.2f GB available)",
-						len(activeMembers), perTerminalRAM, totalRequiredRAM, metrics.RAMAvailableGB)
-					return nil, fmt.Errorf("%w: %d terminals need %.2f GB, %.2f GB available",
-						ErrBulkInsufficientRAM, len(activeMembers), totalRequiredRAM, metrics.RAMAvailableGB)
-				}
-			}
-		}
+	plan, _ := planInterface.(*paymentModels.SubscriptionPlan)
+	if len(activeMembers) > 0 && !c.bulkFits(request, plan, bulkSize, len(activeMembers)) {
+		utils.Warn("bulk terminal creation blocked: %d terminals of size %s do not fit on the allowed hosts", len(activeMembers), bulkSize)
+		return nil, fmt.Errorf("%w: %d terminals of size %s do not fit on the allowed hosts",
+			ErrBulkInsufficientRAM, len(activeMembers), bulkSize)
 	}
 
 	// Initialize response
@@ -225,14 +211,6 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 	}
 
 	blocked := c.provisionMissingKeys(activeMembers, userEmails)
-
-	// Resolve the machine size once: an explicit size from the request wins,
-	// otherwise we fall back to the historical default of "S" so existing
-	// admin tooling keeps the same behaviour.
-	bulkSize := request.Size
-	if bulkSize == "" {
-		bulkSize = "S"
-	}
 
 	// Create terminals for each member
 	for _, member := range activeMembers {
@@ -300,6 +278,39 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 	return response, nil
 }
 
+// bulkFits is the bulk pre-flight (#170): together, the hosts the members may
+// land on must take every member's session before any starts. Each launch
+// checks its own host too, but reads live usage, which lags behind the
+// containers this loop has just started. A policy error is left to each
+// member's launch, which reports it.
+func (c *terminalComposer) bulkFits(request dto.BulkCreateTerminalsRequest, plan *paymentModels.SubscriptionPlan, size string, members int) bool {
+	orgID, err := parseOrgID(request.OrganizationID)
+	if err != nil {
+		return true
+	}
+	policy, err := loadBackendPolicy(c.db, c.proxy, orgID, plan)
+	if err != nil {
+		return true
+	}
+	candidates, err := policy.Candidates(request.Backend)
+	if err != nil {
+		return true
+	}
+	return HostsFit(c.proxy.freshHostLoads(candidates), plan, size, members)
+}
+
+// parseOrgID reads an optional organization ID; "" is no organization.
+func parseOrgID(s string) (*uuid.UUID, error) {
+	if s == "" {
+		return nil, nil
+	}
+	parsed, err := uuid.Parse(s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization_id: %w", err)
+	}
+	return &parsed, nil
+}
+
 // provisionMissingKeys gives every member without a terminal key a new one,
 // and returns the members refused one because their account is blocked: those
 // must be reported, not started.
@@ -344,13 +355,9 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 	// The host is settled first: the options below are read from its catalog,
 	// a host outside the policy is never asked, and one without the RAM for
 	// this size is skipped for the next.
-	var orgID *uuid.UUID
-	if input.OrganizationID != "" {
-		parsed, err := uuid.Parse(input.OrganizationID)
-		if err != nil {
-			return nil, fmt.Errorf("invalid organization_id: %w", err)
-		}
-		orgID = &parsed
+	orgID, err := parseOrgID(input.OrganizationID)
+	if err != nil {
+		return nil, err
 	}
 	policy, err := loadBackendPolicy(c.db, c.proxy, orgID, plan)
 	if err != nil {

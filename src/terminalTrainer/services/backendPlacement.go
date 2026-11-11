@@ -28,15 +28,45 @@ type HostLoad struct {
 // whose metrics could not be read is taken as it comes: unreadable metrics
 // have never blocked a launch.
 func ChooseHost(loads []HostLoad, plan *paymentModels.SubscriptionPlan, size string) (string, error) {
+	host, _, err := place(loads, plan, size)
+	return host, err
+}
+
+// PlacementCapacity is the capacity verdict for the host ChooseHost would pick
+// or, when none has room, for the freest one.
+func PlacementCapacity(loads []HostLoad, plan *paymentModels.SubscriptionPlan, size string) CapacityResult {
+	_, verdict, _ := place(loads, plan, size)
+	return verdict
+}
+
+func place(loads []HostLoad, plan *paymentModels.SubscriptionPlan, size string) (string, CapacityResult, error) {
 	if len(loads) == 0 {
-		return "", ErrBackendOffline
+		return "", CapacityResult{Status: CapacityStatusUnknown, Reason: "metrics_unavailable"}, ErrBackendOffline
 	}
 	for _, h := range loads {
-		if h.Metrics == nil || EvaluateLaunchCapacity(plan, size, h.Metrics).Status != CapacityStatusCritical {
-			return h.Backend, nil
+		if verdict := EvaluateLaunchCapacity(plan, size, h.Metrics); verdict.Status != CapacityStatusCritical {
+			return h.Backend, verdict, nil
 		}
 	}
-	return "", ErrNoBackendCapacity
+	return "", EvaluateLaunchCapacity(plan, size, loads[0].Metrics), ErrNoBackendCapacity
+}
+
+// HostsFit reports whether loads together have room for n sessions of size,
+// each host counted in whole sessions. A host whose metrics could not be read
+// makes the answer yes, as does having no host online: unreadable metrics
+// have never blocked a launch, and each launch reports an offline host itself.
+func HostsFit(loads []HostLoad, plan *paymentModels.SubscriptionPlan, size string, n int) bool {
+	if len(loads) == 0 {
+		return true
+	}
+	fits := 0
+	for _, h := range loads {
+		if h.Metrics == nil {
+			return true
+		}
+		fits += sessionsThatFit(plan, size, h.Metrics)
+	}
+	return fits >= n
 }
 
 // hostLoads returns the connected candidates, most free RAM first; those whose
@@ -78,9 +108,19 @@ func freeRAMGB(h HostLoad) float64 {
 // pickHost settles where a session of size starts, reading fresh metrics:
 // this is the launch's capacity check.
 func (p *terminalProxyClient) pickHost(candidates []string, plan *paymentModels.SubscriptionPlan, size string) (string, error) {
-	return ChooseHost(p.hostLoads(candidates, func(b string) (*dto.ServerMetricsResponse, error) {
+	return ChooseHost(p.freshHostLoads(candidates), plan, size)
+}
+
+// LaunchCapacity answers, without starting anything, whether a session of
+// size would find room among candidates: the same reading pickHost decides on.
+func (p *terminalProxyClient) LaunchCapacity(candidates []string, plan *paymentModels.SubscriptionPlan, size string) CapacityResult {
+	return PlacementCapacity(p.freshHostLoads(candidates), plan, size)
+}
+
+func (p *terminalProxyClient) freshHostLoads(candidates []string) []HostLoad {
+	return p.hostLoads(candidates, func(b string) (*dto.ServerMetricsResponse, error) {
 		return p.GetServerMetrics(true, b)
-	}), plan, size)
+	})
 }
 
 // rankingMetricsTTL bounds how stale the RAM figures used to order hosts may

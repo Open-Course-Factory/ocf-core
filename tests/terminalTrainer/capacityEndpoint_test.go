@@ -1,9 +1,7 @@
-// HTTP-level tests for the new GET /api/v1/terminals/capacity-check
-// endpoint and for the size-aware behaviour of CheckRAMAvailability.
+// HTTP-level tests for GET /api/v1/terminals/capacity-check.
 package terminalTrainer_tests
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authErrors "soli/formations/src/auth/errors"
-	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
@@ -28,11 +25,14 @@ import (
 
 // metricsAwareMockService is a TerminalTrainerService stub that returns a
 // programmable ServerMetricsResponse. Used to drive the capacity-check
-// endpoint and the refactored CheckRAMAvailability middleware in unit
-// tests without standing up a fake tt-backend.
+// endpoint in unit tests without standing up a fake tt-backend.
 type metricsAwareMockService struct {
 	metrics    *dto.ServerMetricsResponse
 	metricsErr error
+	// policy, when set, replaces the single-default-host policy.
+	policy *services.BackendPolicy
+	// gotCandidates records what LaunchCapacity was asked about.
+	gotCandidates []string
 }
 
 func (m *metricsAwareMockService) GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error) {
@@ -96,7 +96,17 @@ func (m *metricsAwareMockService) GetBackendsForContext(orgID uuid.UUID, userID 
 	panic("not implemented")
 }
 func (m *metricsAwareMockService) BackendPolicyFor(*uuid.UUID, *paymentModels.SubscriptionPlan) (services.BackendPolicy, error) {
+	if m.policy != nil {
+		return *m.policy, nil
+	}
 	return services.BackendPolicy{Allowed: []string{""}}, nil
+}
+
+// LaunchCapacity treats every candidate as one host carrying m's metrics.
+func (m *metricsAwareMockService) LaunchCapacity(candidates []string, plan *paymentModels.SubscriptionPlan, size string) services.CapacityResult {
+	m.gotCandidates = candidates
+	metrics, _ := m.GetServerMetrics(true, "")
+	return services.PlacementCapacity([]services.HostLoad{{Backend: candidates[0], Metrics: metrics}}, plan, size)
 }
 func (m *metricsAwareMockService) RankBackends(candidates []string) []string { return candidates }
 func (m *metricsAwareMockService) IsBackendOnline(backendName string) (bool, error) {
@@ -288,126 +298,52 @@ func TestCapacityCheck_ReturnsUnknownWhenMetricsUnavailable(t *testing.T) {
 	var got services.CapacityResult
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
 	assert.Equal(t, services.CapacityStatusUnknown, got.Status)
-	assert.Equal(t, "metrics_unavailable", got.Reason)
 }
 
-// ==========================================
-// CheckRAMAvailability — load-bearing behaviour change
-// ==========================================
-
-// TestCheckRAMAvailability_UsesChosenSizeNotPlanMax verifies the size-aware
-// refactor: a user on a plan whose max is L (2 GB) launching an XS (0.25 GB)
-// when RAM is tight (would have been rejected pre-refactor) is now allowed.
-func TestCheckRAMAvailability_UsesChosenSizeNotPlanMax(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-
+func TestCapacityCheck_AsksAboutEveryAllowedHost(t *testing.T) {
 	svc := &metricsAwareMockService{
-		// Tight RAM: 1.7 GB available, 83% used.
-		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 1.7, RAMPercent: 83.0},
+		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 10.0, RAMPercent: 50.0},
+		policy:  &services.BackendPolicy{Allowed: []string{"a", "b"}, Default: "a"},
 	}
-	plan := &paymentModels.SubscriptionPlan{}
+	router := setupCapacityRouter(svc, &paymentModels.SubscriptionPlan{}, true)
 
-	// Inject auth + plan.
-	router.Use(func(c *gin.Context) {
-		c.Set("userId", "test-user-id")
-		c.Set("userRoles", []string{"member"})
-		c.Set("subscription_plan", plan)
-		c.Next()
-	})
-
-	// Wire the real middleware then a stub handler that returns 200.
-	router.POST("/terminals/start-composed-session",
-		paymentMiddleware.CheckRAMAvailability(svc),
-		func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) },
-	)
-
-	body, _ := json.Marshal(map[string]any{
-		"distribution": "ubuntu-24.04",
-		"size":         "XS",
-		"terms":        "accepted",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/terminals/start-composed-session", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/terminals/capacity-check?size=XS", nil))
 
-	assert.Equal(t, http.StatusOK, w.Code,
-		"middleware must allow XS launch when plan max is L and RAM is tight — was 503 before the refactor")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, []string{"a", "b"}, svc.gotCandidates, "no backend requested: a launch may land on any allowed host")
 }
 
-// TestCheckRAMAvailability_RejectsLargeSizeWhenRAMTight is the symmetric
-// guarantee: a user requesting L on the same tight server is still
-// rejected, because the chosen size is now what's checked.
-func TestCheckRAMAvailability_RejectsLargeSizeWhenRAMTight(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-
+func TestCapacityCheck_RequestedBackendNarrowsToIt(t *testing.T) {
 	svc := &metricsAwareMockService{
-		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 1.7, RAMPercent: 83.0},
+		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 10.0, RAMPercent: 50.0},
+		policy:  &services.BackendPolicy{Allowed: []string{"a", "b"}, Default: "a"},
 	}
-	plan := &paymentModels.SubscriptionPlan{}
+	router := setupCapacityRouter(svc, &paymentModels.SubscriptionPlan{}, true)
 
-	router.Use(func(c *gin.Context) {
-		c.Set("userId", "test-user-id")
-		c.Set("subscription_plan", plan)
-		c.Next()
-	})
-
-	handlerCalled := false
-	router.POST("/terminals/start-composed-session",
-		paymentMiddleware.CheckRAMAvailability(svc),
-		func(c *gin.Context) {
-			handlerCalled = true
-			c.JSON(http.StatusOK, gin.H{"ok": true})
-		},
-	)
-
-	body, _ := json.Marshal(map[string]any{
-		"distribution": "ubuntu-24.04",
-		"size":         "L",
-		"terms":        "accepted",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/terminals/start-composed-session", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/terminals/capacity-check?size=XS&backend=b", nil))
 
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-	assert.False(t, handlerCalled, "handler must not be reached when middleware aborts")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, []string{"b"}, svc.gotCandidates)
 }
 
-// TestCheckRAMAvailability_NoBodyFallsBackToPlanMax confirms the
-// defensive fallback: when the request body is missing/unparseable we
-// still estimate from the plan max — preserves the pre-refactor
-// behaviour for any caller that bypasses the standard input shape.
-func TestCheckRAMAvailability_NoBodyFallsBackToPlanMax(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-
+func TestCapacityCheck_BackendOutsidePolicyIsUnknown(t *testing.T) {
 	svc := &metricsAwareMockService{
-		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 1.7, RAMPercent: 83.0},
+		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 10.0, RAMPercent: 50.0},
+		policy:  &services.BackendPolicy{Allowed: []string{"a"}, Default: "a"},
 	}
-	plan := &paymentModels.SubscriptionPlan{}
+	router := setupCapacityRouter(svc, &paymentModels.SubscriptionPlan{}, true)
 
-	router.Use(func(c *gin.Context) {
-		c.Set("userId", "test-user-id")
-		c.Set("subscription_plan", plan)
-		c.Next()
-	})
-
-	router.POST("/terminals/start-composed-session",
-		paymentMiddleware.CheckRAMAvailability(svc),
-		func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) },
-	)
-
-	// No body — plan max (L = 2 GB) is used → critical → 503.
-	req := httptest.NewRequest(http.MethodPost, "/terminals/start-composed-session", nil)
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/terminals/capacity-check?size=XS&backend=z", nil))
 
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code,
-		"no body must fall back to plan max (defensive)")
+	require.Equal(t, http.StatusOK, w.Code, "endpoint is a query, must always return 200")
+	var got services.CapacityResult
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	assert.Equal(t, services.CapacityStatusUnknown, got.Status)
+	assert.Equal(t, "backend_not_allowed", got.Reason)
+	assert.Nil(t, svc.gotCandidates, "no host is read for a backend the launch would refuse")
 }
 
 // BuildComplete satisfies TerminalTrainerService. These tests never exercise

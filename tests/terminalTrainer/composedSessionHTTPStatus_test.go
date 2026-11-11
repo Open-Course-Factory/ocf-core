@@ -112,6 +112,9 @@ func (m *mockTerminalTrainerService) BackendPolicyFor(*uuid.UUID, *paymentModels
 	return services.BackendPolicy{Allowed: []string{""}}, nil
 }
 func (m *mockTerminalTrainerService) RankBackends(candidates []string) []string { return candidates }
+func (m *mockTerminalTrainerService) LaunchCapacity([]string, *paymentModels.SubscriptionPlan, string) services.CapacityResult {
+	return services.CapacityResult{Status: services.CapacityStatusOK}
+}
 func (m *mockTerminalTrainerService) IsBackendOnline(backendName string) (bool, error) {
 	panic("not implemented")
 }

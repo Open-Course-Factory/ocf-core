@@ -84,3 +84,44 @@ func TestRankBackends_FreestFirst_OfflineDropped_UnknownLast(t *testing.T) {
 
 	assert.Equal(t, []string{"big", "small", "mute"}, svc.RankBackends([]string{"small", "big", "down", "mute"}))
 }
+
+func TestPlacementCapacity(t *testing.T) {
+	plan := &paymentModels.SubscriptionPlan{}
+
+	got := services.PlacementCapacity([]services.HostLoad{{Backend: "a", Metrics: saturated()}, {Backend: "b", Metrics: roomy(30)}}, plan, "S")
+	assert.Equal(t, services.CapacityStatusOK, got.Status, "the verdict is the chosen host's, not the first one's")
+
+	got = services.PlacementCapacity([]services.HostLoad{{Backend: "a", Metrics: saturated()}}, plan, "S")
+	assert.Equal(t, services.CapacityStatusCritical, got.Status)
+
+	got = services.PlacementCapacity([]services.HostLoad{{Backend: "a"}}, plan, "S")
+	assert.Equal(t, services.CapacityStatusUnknown, got.Status)
+
+	got = services.PlacementCapacity(nil, plan, "S")
+	assert.Equal(t, services.CapacityStatusUnknown, got.Status)
+}
+
+func TestLaunchCapacity_AnswersForTheHostALaunchWouldUse(t *testing.T) {
+	svc := fakeTTWithMetrics(t,
+		[]dto.BackendInfo{{ID: "full", Connected: true, IsDefault: true}, {ID: "free", Connected: true}},
+		map[string]*dto.ServerMetricsResponse{"full": saturated(), "free": roomy(30)},
+	)
+	plan := &paymentModels.SubscriptionPlan{}
+
+	assert.Equal(t, services.CapacityStatusOK, svc.LaunchCapacity([]string{"full", "free"}, plan, "S").Status,
+		"a full default host must not hide the free one a launch would land on")
+	assert.Equal(t, services.CapacityStatusCritical, svc.LaunchCapacity([]string{"full"}, plan, "S").Status)
+}
+
+func TestHostsFit_CountsWholeSessionsAcrossHosts(t *testing.T) {
+	plan := &paymentModels.SubscriptionPlan{}
+	// 64 GB hosts keep a 3.2 GB reserve; an M session needs 1 GB.
+	twoEach := []services.HostLoad{{Backend: "a", Metrics: roomy(5.5)}, {Backend: "b", Metrics: roomy(5.5)}}
+
+	assert.True(t, services.HostsFit(twoEach, plan, "M", 4), "two M sessions fit on each host")
+	assert.False(t, services.HostsFit(twoEach, plan, "M", 5), "the half-session left on each host does not add up to a fifth")
+	assert.False(t, services.HostsFit([]services.HostLoad{{Backend: "a", Metrics: saturated()}}, plan, "XS", 1))
+	assert.True(t, services.HostsFit([]services.HostLoad{{Backend: "a", Metrics: saturated()}, {Backend: "b"}}, plan, "M", 50),
+		"unreadable metrics never block")
+	assert.True(t, services.HostsFit(nil, plan, "M", 3), "no host online: each member reports it")
+}

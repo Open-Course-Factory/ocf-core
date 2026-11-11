@@ -1,10 +1,8 @@
 // Package services — capacity evaluation logic.
 //
-// This file extracts the launch-capacity decision out of the
-// CheckRAMAvailability middleware so the same logic can be exposed as a
-// no-side-effect query endpoint (GET /terminals/capacity-check). Both the
-// middleware and the endpoint call EvaluateLaunchCapacity to guarantee the
-// frontend sees the exact same answer the backend would enforce on launch.
+// EvaluateLaunchCapacity is the one host RAM rule: the launch paths enforce it
+// and GET /terminals/capacity-check reports it, so the frontend sees the
+// answer the backend would enforce on launch.
 package services
 
 import (
@@ -29,8 +27,8 @@ const (
 	// server is approaching its safety reserve — surfaces a hint to the
 	// user that capacity is tight.
 	CapacityStatusWarning CapacityStatus = "warning"
-	// CapacityStatusCritical means the launch would be rejected by the
-	// CheckRAMAvailability middleware.
+	// CapacityStatusCritical means the launch would be refused for lack of
+	// host RAM.
 	CapacityStatusCritical CapacityStatus = "critical"
 	// CapacityStatusUnknown means metrics could not be evaluated (no
 	// data, transient backend failure, etc.). The frontend should treat
@@ -45,9 +43,7 @@ type CapacityResult struct {
 	Reason string         `json:"reason"`
 }
 
-// minRAMReserveFraction matches the 5% reserve previously hard-coded in
-// CheckRAMAvailability — kept identical so the middleware behaviour is
-// preserved bit-for-bit when no size is passed in the request body.
+// minRAMReserveFraction is the share of a host's RAM no launch may take.
 const minRAMReserveFraction = 0.05
 
 // sizeRAMGB returns the per-instance RAM estimate (in GB) for a size key,
@@ -67,8 +63,7 @@ func sizeRAMGB(key string) (float64, bool) {
 // EvaluateLaunchCapacity computes whether a session of the given size could
 // be launched right now, given a plan and current server metrics.
 //
-//   - Returns CapacityStatusCritical when launch would be rejected
-//     (matches CheckRAMAvailability's 503 path).
+//   - Returns CapacityStatusCritical when launch would be rejected (503).
 //   - Returns CapacityStatusWarning when launch is borderline (within
 //     ~1.5x of the reject threshold) — surfaces an "approaching capacity"
 //     hint to the user.
@@ -76,36 +71,22 @@ func sizeRAMGB(key string) (float64, bool) {
 //   - Returns CapacityStatusUnknown when metrics are unavailable.
 //
 // requestedSize is the user's chosen machine size (XS/S/M/L/XL). When
-// empty, falls back to the plan's max allowed size — preserves the
-// pre-refactor middleware behaviour for callers that don't pass a size
-// (defensive: an unparseable request body shouldn't accidentally relax
-// the check).
+// empty, falls back to the catalog's largest size, so a missing size never
+// relaxes the check.
 func EvaluateLaunchCapacity(plan *paymentModels.SubscriptionPlan, requestedSize string, metrics *dto.ServerMetricsResponse) CapacityResult {
 	if metrics == nil {
 		return CapacityResult{Status: CapacityStatusUnknown, Reason: "no_metrics"}
 	}
 
-	// Preserve the existing "RAM saturated" short-circuit: even an XS
-	// session is refused once the server is at >=99% RAM.
-	if metrics.RAMPercent >= 99.0 {
-		return CapacityResult{Status: CapacityStatusCritical, Reason: "ram_full"}
-	}
-
-	requiredRAM := resolveRequiredRAM(plan, requestedSize)
-
-	// The reserve is a fraction of the host's total RAM, which tt-backend
-	// reports. No total means no headroom to reason about.
-	totalRAM := metrics.TotalRAMGB()
-	if totalRAM <= 0 {
-		return CapacityResult{Status: CapacityStatusCritical, Reason: "ram_full"}
-	}
-	minReservedRAM := totalRAM * minRAMReserveFraction
-
-	ramAfterCreation := metrics.RAMAvailableGB - requiredRAM
-
-	if ramAfterCreation < minReservedRAM {
+	if sessionsThatFit(plan, requestedSize, metrics) == 0 {
+		if ramFull(metrics) {
+			return CapacityResult{Status: CapacityStatusCritical, Reason: "ram_full"}
+		}
 		return CapacityResult{Status: CapacityStatusCritical, Reason: "insufficient_ram_for_size"}
 	}
+
+	minReservedRAM := metrics.TotalRAMGB() * minRAMReserveFraction
+	ramAfterCreation := metrics.RAMAvailableGB - resolveRequiredRAM(plan, requestedSize)
 	// Borderline band: within 1.5x of the reserve buffer. Surfaces a
 	// "tight capacity" hint to the user without blocking the launch.
 	if ramAfterCreation < minReservedRAM*1.5 {
@@ -114,25 +95,35 @@ func EvaluateLaunchCapacity(plan *paymentModels.SubscriptionPlan, requestedSize 
 	return CapacityResult{Status: CapacityStatusOK, Reason: "ok"}
 }
 
+// sessionsThatFit counts the sessions of size a host can still take, one
+// launch after another, keeping the reserve free. It is the rule the launch
+// gate refuses on: none fits exactly when EvaluateLaunchCapacity is critical.
+func sessionsThatFit(plan *paymentModels.SubscriptionPlan, size string, metrics *dto.ServerMetricsResponse) int {
+	// Even an XS session is refused once the server is at >=99% RAM, and with
+	// no reported total there is no headroom to reason about.
+	if ramFull(metrics) {
+		return 0
+	}
+	spare := metrics.RAMAvailableGB - metrics.TotalRAMGB()*minRAMReserveFraction
+	if spare <= 0 {
+		return 0
+	}
+	return int(spare / resolveRequiredRAM(plan, size))
+}
+
+func ramFull(metrics *dto.ServerMetricsResponse) bool {
+	return metrics.RAMPercent >= 99.0 || metrics.TotalRAMGB() <= 0
+}
+
 // resolveRequiredRAM picks the RAM estimate for the requested size when
 // it is set; otherwise falls back to the catalog's largest entry as a
-// conservative worst-case (matches the spirit of the legacy middleware,
-// which used the plan's max-allowed size).
+// conservative worst-case.
 func resolveRequiredRAM(_ *paymentModels.SubscriptionPlan, requestedSize string) float64 {
 	if requestedSize != "" {
 		if ram, ok := sizeRAMGB(requestedSize); ok {
 			return ram
 		}
 	}
-	return float64(catalog.LargestSize().MemoryMB) / 1024.0
-}
-
-// EstimatePerTerminalRAMGB returns the per-terminal RAM estimate in GB
-// used by bulk pre-flight checks. Without a per-request size to anchor
-// on, we use the catalog's largest entry as a conservative worst-case.
-// Exported so it can be unit-tested directly and reused by other
-// pre-flight callers.
-func EstimatePerTerminalRAMGB() float64 {
 	return float64(catalog.LargestSize().MemoryMB) / 1024.0
 }
 
