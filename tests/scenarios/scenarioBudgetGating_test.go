@@ -9,7 +9,7 @@
 // The full controller path requires a live tt-backend HTTP stub (for
 // resolveScenarioBackendAndDistribution → GetDistributions /
 // GetCatalogSizes), which the existing test suite intentionally skips by
-// accepting a "no_distribution" BlockReason in test mode. We therefore
+// accepting the "offline" BlockReason a missing tt-backend gives. We therefore
 // lock the contract by exercising QuotaService directly.
 package scenarios_test
 

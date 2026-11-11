@@ -134,56 +134,16 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			return
 		}
 	} else {
-		// Scope scenario list to the current org context:
-		// - With org context: only show that org's assignments + that org's groups
-		// - Without org context (personal): only personal groups (no org) + public scenarios
-		var groupIDs []uuid.UUID
-		var conditions []string
-		var args []any
-
-		if orgID != nil {
-			// Get groups belonging to this org that the user is a member of
-			if err := sc.db.Model(&groupModels.GroupMember{}).
-				Joins("JOIN class_groups cg ON cg.id = group_members.group_id").
-				Where("group_members.user_id = ? AND group_members.is_active = true AND cg.organization_id = ?", userID, *orgID).
-				Scopes(entityManagementModels.NotArchived("cg")).
-				Pluck("group_members.group_id", &groupIDs).Error; err != nil {
-				slog.Error("failed to get user group memberships for org", "err", err)
-			}
-
-			if len(groupIDs) > 0 {
-				conditions = append(conditions, "(sa.scope = 'group' AND sa.group_id IN ?)")
-				args = append(args, groupIDs)
-			}
-			conditions = append(conditions, "(sa.scope = 'org' AND sa.organization_id = ?)")
-			args = append(args, *orgID)
-		} else {
-			// Personal context: only groups without an org
-			if err := sc.db.Model(&groupModels.GroupMember{}).
-				Joins("JOIN class_groups cg ON cg.id = group_members.group_id").
-				Where("group_members.user_id = ? AND group_members.is_active = true AND cg.organization_id IS NULL", userID).
-				Scopes(entityManagementModels.NotArchived("cg")).
-				Pluck("group_members.group_id", &groupIDs).Error; err != nil {
-				slog.Error("failed to get user personal group memberships", "err", err)
-			}
-
-			if len(groupIDs) > 0 {
-				conditions = append(conditions, "(sa.scope = 'group' AND sa.group_id IN ?)")
-				args = append(args, groupIDs)
-			}
+		// Scope the list to the current org context: contextAssignments.
+		assignments, err := sc.contextAssignments(userID, orgID)
+		if err != nil {
+			slog.Error("failed to get the user's assignments", "err", err)
 		}
-
-		if len(conditions) > 0 {
-			now := time.Now()
-			combined := strings.Join(conditions, " OR ")
-			query := sc.db.Distinct().
-				Scopes(models.NotArchived).
+		if assignments != nil {
+			if err := sc.db.Scopes(models.NotArchived).
 				Preload("CompatibleInstanceTypes").
-				Joins("JOIN scenario_assignments sa ON sa.scenario_id = scenarios.id").
-				Where("sa.is_active = true AND (sa.deadline IS NULL OR sa.deadline > ?) AND (sa.start_date IS NULL OR sa.start_date <= ?)", now, now).
-				Where(combined, args...)
-
-			if err := query.Find(&scenarios).Error; err != nil {
+				Where("scenarios.id IN (?)", assignments.Select("scenario_id")).
+				Find(&scenarios).Error; err != nil {
 				slog.Error("failed to fetch available scenarios", "err", err)
 				errors.Respond(ctx, http.StatusInternalServerError, "Failed to fetch scenarios")
 				return
@@ -238,6 +198,12 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		for _, id := range assignedIDs {
 			assignedScenarioIDs[id] = true
 		}
+	}
+
+	// The servers the assignments in this context name, for every card at once.
+	assignedServers, err := sc.assignedBackends(userID, orgID)
+	if err != nil {
+		slog.Warn("failed to read the assigned servers", "err", err)
 	}
 
 	// Get user's effective plan so the budget gate can check remaining
@@ -352,14 +318,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 
 		// Determine launchability by checking distribution compatibility, on
 		// the host the assignment names when it names one.
-		backend := ""
-		if assignedScenarioIDs[s.ID] {
-			var backendErr error
-			if backend, backendErr = sc.assignedBackend(userID, s.ID); backendErr != nil {
-				slog.Warn("failed to read the assigned backend", "scenario_id", s.ID, "err", backendErr)
-			}
-		}
-		provisioning, resolveErr := sc.provisioningService.Resolve(s, orgID, resolvedPlan, backend)
+		provisioning, resolveErr := sc.provisioningService.Resolve(s, orgID, resolvedPlan, assignedServers[s.ID])
 		item.Launchable = resolveErr == nil && provisioning.CreatesTerminal()
 		item.ResolvedDistribution = provisioning.Distribution
 		item.ResolvedSize = provisioning.Size
@@ -367,10 +326,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			// Separate reasons because they need different fixes: a missing
 			// declared image is "install it on this backend", while
 			// no_distribution is "nothing here fits this scenario at all".
-			item.BlockReason = blockReasonNoDistribution
-			if stderrors.Is(resolveErr, services.ErrDeclaredImageUnavailable) {
-				item.BlockReason = blockReasonDeclaredImageUnavail
-			}
+			item.BlockReason = blockReasonFor(resolveErr)
 		}
 
 		// Budget gate: the scenario's required size must fit in the user's
@@ -418,6 +374,8 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 // a launch for the same cause cannot drift apart in spelling.
 const (
 	blockReasonNoDistribution       = "no_distribution"
+	blockReasonOffline              = "offline"
+	blockReasonServerNotAllowed     = "server_not_allowed"
 	blockReasonDeclaredImageUnavail = "declared_image_unavailable"
 	blockReasonBudgetExhausted      = "budget_exhausted"
 	blockReasonSizeOverPlan         = "size_over_plan"
@@ -508,6 +466,21 @@ func respondExamLocked(ctx *gin.Context) {
 // (409). Named once so the three endpoints that provision a scenario cannot
 // disagree about which of the two just happened — before this, an unreachable
 // tt-backend was reported to a learner as "no compatible environment".
+// blockReasonFor names, on a catalogue card, why a scenario could not be
+// resolved: the cases respondProvisioningFailure answers a launch with.
+func blockReasonFor(err error) string {
+	switch {
+	case stderrors.Is(err, terminalServices.ErrBackendNotAllowed):
+		return blockReasonServerNotAllowed
+	case stderrors.Is(err, services.ErrBackendCatalogUnavailable):
+		return blockReasonOffline
+	case stderrors.Is(err, services.ErrDeclaredImageUnavailable):
+		return blockReasonDeclaredImageUnavail
+	default:
+		return blockReasonNoDistribution
+	}
+}
+
 func respondProvisioningFailure(ctx *gin.Context, scenarioName string, err error) {
 	if stderrors.Is(err, terminalServices.ErrBackendNotAllowed) {
 		errors.Respond(ctx, http.StatusForbidden, err.Error())
@@ -636,13 +609,13 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 
 	// Resolve backend + distribution using org-aware logic, on the host the
 	// assignment names when it names one.
-	backend, err := sc.assignedBackend(userID, scenarioID)
+	assignedServers, err := sc.assignedBackends(userID, orgID)
 	if err != nil {
 		slog.Error("failed to read the assigned backend", "err", err)
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify access")
 		return
 	}
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, plan, backend)
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, plan, assignedServers[scenarioID])
 	if distErr != nil {
 		respondProvisioningFailure(ctx, scenario.Name, distErr)
 		return
@@ -800,52 +773,73 @@ func (b *scenarioControllerBase) checkScenarioAccess(userID string, scenarioID u
 		return true, nil
 	}
 
-	assignments, err := b.openAssignmentsReaching(userID, scenarioID)
-	if err != nil || assignments == nil {
-		return false, err
-	}
-	var count int64
-	if err := assignments.Count(&count).Error; err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
-// assignedBackend is the backend the teacher chose on the assignment that
-// brings scenarioID to userID; "" lets the system place the run. A class
-// assignment wins over an organization one, a newer one over an older.
-func (b *scenarioControllerBase) assignedBackend(userID string, scenarioID uuid.UUID) (string, error) {
-	assignments, err := b.openAssignmentsReaching(userID, scenarioID)
-	if err != nil || assignments == nil {
-		return "", err
-	}
-	var backends []string
-	if err := assignments.
-		Order("CASE WHEN scope = 'group' THEN 0 ELSE 1 END").
-		Order("created_at DESC").
-		Limit(1).
-		Pluck("backend", &backends).Error; err != nil {
-		return "", err
-	}
-	if len(backends) == 0 {
-		return "", nil
-	}
-	return backends[0], nil
-}
-
-// openAssignmentsReaching scopes a query to the active, open assignments of
-// scenarioID that reach userID through one of their classes or
-// organizations. It is nil when the user belongs to neither.
-func (b *scenarioControllerBase) openAssignmentsReaching(userID string, scenarioID uuid.UUID) (*gorm.DB, error) {
 	groupIDs, err := b.openClassMembershipIDs(userID)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
+	// Get user's org IDs
 	var orgIDs []uuid.UUID
 	if err := b.db.Model(&orgModels.OrganizationMember{}).
 		Where("user_id = ? AND is_active = true", userID).
 		Pluck("organization_id", &orgIDs).Error; err != nil {
+		return false, err
+	}
+
+	// Build OR conditions for group and org scopes
+	var conditions []string
+	var args []any
+
+	args = append(args, scenarioID)
+
+	if len(groupIDs) > 0 {
+		conditions = append(conditions, "(scope = 'group' AND group_id IN ?)")
+		args = append(args, groupIDs)
+	}
+	if len(orgIDs) > 0 {
+		conditions = append(conditions, "(scope = 'org' AND organization_id IN ?)")
+		args = append(args, orgIDs)
+	}
+
+	if len(conditions) == 0 {
+		return false, nil
+	}
+
+	now := time.Now()
+	combined := strings.Join(conditions, " OR ")
+
+	var count int64
+	if err := b.db.Model(&models.ScenarioAssignment{}).
+		Where("scenario_id = ? AND is_active = true AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)", args[0], now, now).
+		Where(combined, args[1:]...).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+// contextAssignments scopes a query to the open assignments that reach userID
+// in the organization context orgID: that organization's classes the user
+// belongs to, and the organization itself; with no context, the user's classes
+// outside any organization. It is the one answer to "which assignments are in
+// play here": the catalogue lists their scenarios and a launch builds on the
+// server they name. nil when none can reach the user.
+//
+// Narrower than checkScenarioAccess on purpose: access asks whether the user
+// may run a scenario at all, wherever it was assigned to them.
+func (b *scenarioControllerBase) contextAssignments(userID string, orgID *uuid.UUID) (*gorm.DB, error) {
+	classes := b.db.Model(&groupModels.GroupMember{}).
+		Joins("JOIN class_groups cg ON cg.id = group_members.group_id").
+		Where("group_members.user_id = ? AND group_members.is_active = true", userID).
+		Scopes(entityManagementModels.NotArchived("cg"))
+	if orgID != nil {
+		classes = classes.Where("cg.organization_id = ?", *orgID)
+	} else {
+		classes = classes.Where("cg.organization_id IS NULL")
+	}
+	var groupIDs []uuid.UUID
+	if err := classes.Pluck("group_members.group_id", &groupIDs).Error; err != nil {
 		return nil, err
 	}
 
@@ -855,9 +849,9 @@ func (b *scenarioControllerBase) openAssignmentsReaching(userID string, scenario
 		conditions = append(conditions, "(scope = 'group' AND group_id IN ?)")
 		args = append(args, groupIDs)
 	}
-	if len(orgIDs) > 0 {
-		conditions = append(conditions, "(scope = 'org' AND organization_id IN ?)")
-		args = append(args, orgIDs)
+	if orgID != nil {
+		conditions = append(conditions, "(scope = 'org' AND organization_id = ?)")
+		args = append(args, *orgID)
 	}
 	if len(conditions) == 0 {
 		return nil, nil
@@ -865,8 +859,36 @@ func (b *scenarioControllerBase) openAssignmentsReaching(userID string, scenario
 
 	now := time.Now()
 	return b.db.Model(&models.ScenarioAssignment{}).
-		Where("scenario_id = ? AND is_active = true AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)", scenarioID, now, now).
+		Where("is_active = true AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)", now, now).
 		Where(strings.Join(conditions, " OR "), args...), nil
+}
+
+// assignedBackends maps each scenario assigned in this context to the server
+// its assignment names; "" (or no entry) lets the system place the run. A
+// class assignment wins over the organization's, a newer one over an older.
+func (b *scenarioControllerBase) assignedBackends(userID string, orgID *uuid.UUID) (map[uuid.UUID]string, error) {
+	assignments, err := b.contextAssignments(userID, orgID)
+	if err != nil || assignments == nil {
+		return nil, err
+	}
+	var rows []struct {
+		ScenarioID uuid.UUID
+		Backend    string
+	}
+	if err := assignments.
+		Select("scenario_id", "backend").
+		Order("CASE WHEN scope = 'group' THEN 0 ELSE 1 END").
+		Order("created_at DESC").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	backends := make(map[uuid.UUID]string, len(rows))
+	for _, r := range rows {
+		if _, seen := backends[r.ScenarioID]; !seen {
+			backends[r.ScenarioID] = r.Backend
+		}
+	}
+	return backends, nil
 }
 
 // PreviewScenario starts the caller's preview of a scenario on a new terminal,
@@ -1187,13 +1209,13 @@ func (sc *scenarioLaunchController) rebuildRun(ctx *gin.Context, run *models.Sce
 	if !ok {
 		return
 	}
-	backend, err := sc.assignedBackend(run.UserID, scenario.ID)
+	assignedServers, err := sc.assignedBackends(run.UserID, orgID)
 	if err != nil {
 		slog.Error("failed to read the assigned backend", "err", err)
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to rebuild the scenario run")
 		return
 	}
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, planResult.Plan, backend)
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, planResult.Plan, assignedServers[scenario.ID])
 	if distErr != nil {
 		respondProvisioningFailure(ctx, scenario.Name, distErr)
 		return
