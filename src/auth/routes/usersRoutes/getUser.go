@@ -54,10 +54,8 @@ func (u UserController) GetUser(ctx *gin.Context) {
 		return
 	}
 
-	// Anyone may put a name on a user ID (class pages show their owner), but
-	// the email and memberships belong to the user and to platform operators.
-	if userID != ctx.GetString("userId") && !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-		ctx.JSON(http.StatusOK, dto.UserOutput{Id: user.Id, UserName: user.UserName, DisplayName: user.DisplayName})
+	if !canSeeContactDetails(ctx, userID) {
+		ctx.JSON(http.StatusOK, nameOnly(*user))
 		return
 	}
 
@@ -131,6 +129,19 @@ func (u UserController) GetUser(ctx *gin.Context) {
 // class. The relation is GroupMember.Group: preloading a "ClassGroup" relation
 // that does not exist failed the whole query, and the include came back empty,
 // so the front believed nobody managed any class.
+// canSeeContactDetails is the one rule for who may read an account's email and
+// memberships: the account itself and platform administrators. Every lookup
+// by user ID goes through it, so none of them becomes the way around another.
+func canSeeContactDetails(ctx *gin.Context, userID string) bool {
+	return userID == ctx.GetString("userId") || access.IsAdmin(ctx.GetStringSlice("userRoles"))
+}
+
+// nameOnly is what anyone else gets: enough to put a name on a user ID (class
+// and batch pages show their owner and holders), nothing to contact them with.
+func nameOnly(user dto.UserOutput) dto.UserOutput {
+	return dto.UserOutput{Id: user.Id, UserName: user.UserName, DisplayName: user.DisplayName}
+}
+
 func ActiveGroupMemberships(db *gorm.DB, userID string) ([]groupModels.GroupMember, error) {
 	var memberships []groupModels.GroupMember
 	err := db.Where("user_id = ? AND is_active = ?", userID, true).

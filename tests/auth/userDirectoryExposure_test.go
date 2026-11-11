@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -40,6 +41,10 @@ type directoryUserService struct {
 func (s *directoryUserService) GetUserById(string) (*dto.UserOutput, error) {
 	u := directoryUser
 	return &u, nil
+}
+
+func (s *directoryUserService) GetUsersByIds([]string) (*[]dto.UserOutput, error) {
+	return &[]dto.UserOutput{directoryUser}, nil
 }
 
 func (s *directoryUserService) SearchUsers(string) (*[]dto.UserOutput, error) {
@@ -94,6 +99,25 @@ func TestGetUser_OtherUserSeenByAdministrator_KeepsEmail(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), directoryUser.Email)
+}
+
+// The batch lookup answers for IDs the caller supplies; it must follow the same
+// rule as GET /users/:id, or it becomes the way around it.
+func TestGetUsersBatch_OtherUsersSeenByMember_HideEmail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Set("userId", uuid.NewString())
+	ctx.Set("userRoles", []string{"member"})
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/users/batch",
+		strings.NewReader(`{"user_ids":["`+directoryUser.Id.String()+`"]}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	userController.NewUserControllerWithServices(&directoryUserService{}, nil, nil).GetUsersBatch(ctx)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Yanis Bouchard")
+	assert.NotContains(t, w.Body.String(), directoryUser.Email)
 }
 
 func TestSearchUsers_Member_PartialQueryFindsNobody(t *testing.T) {

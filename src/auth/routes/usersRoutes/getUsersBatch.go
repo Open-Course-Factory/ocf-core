@@ -48,5 +48,12 @@ func (u UserController) GetUsersBatch(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, users)
+	visible := make([]dto.UserOutput, 0, len(*users))
+	for _, user := range *users {
+		if !canSeeContactDetails(ctx, user.Id.String()) {
+			user = nameOnly(user)
+		}
+		visible = append(visible, user)
+	}
+	ctx.JSON(http.StatusOK, visible)
 }
