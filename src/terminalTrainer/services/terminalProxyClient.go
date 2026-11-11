@@ -38,6 +38,9 @@ type terminalProxyClient struct {
 	backendCacheTime time.Time
 	backendCacheMu   sync.RWMutex
 	backendCacheSF   singleflight.Group
+
+	rankingMetrics map[string]timedMetrics
+	rankingMu      sync.Mutex
 }
 
 // newTerminalProxyClient reads the same Terminal Trainer env vars as the

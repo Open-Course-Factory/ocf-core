@@ -341,8 +341,9 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 	}
 	input.PersistenceMode = effectiveMode
 
-	// The backend is settled first: the options below are read from its
-	// catalog, and a host outside the policy is never asked.
+	// The host is settled first: the options below are read from its catalog,
+	// a host outside the policy is never asked, and one without the RAM for
+	// this size is skipped for the next.
 	var orgID *uuid.UUID
 	if input.OrganizationID != "" {
 		parsed, err := uuid.Parse(input.OrganizationID)
@@ -355,7 +356,11 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 	if err != nil {
 		return nil, err
 	}
-	if input.Backend, err = policy.Pick(input.Backend); err != nil {
+	candidates, err := policy.Candidates(input.Backend)
+	if err != nil {
+		return nil, err
+	}
+	if input.Backend, err = c.proxy.pickHost(candidates, plan, input.Size); err != nil {
 		return nil, err
 	}
 

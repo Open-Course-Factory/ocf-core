@@ -149,15 +149,16 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	)...)
 	// Budget enforcement (CPU/RAM cap from MaxCPU/MaxMemoryMB) is performed
 	// inside StartComposedSession via QuotaService.CheckBudget; no
-	// middleware-level slot counter is needed. CheckHostRAM verifies host
-	// headroom for the chosen size before the handler runs.
+	// middleware-level slot counter is needed. Host RAM is checked there too,
+	// on the host the session is placed on — not by CheckHostRAM, which can
+	// only see the default host.
 	routes.POST("/start-composed-session", paymentMiddleware.WithPlanChain(
-		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true, CheckHostRAM: true}, terminalService,
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
 		[]gin.HandlerFunc{middleware.AuthManagement()},
 		terminalController.StartComposedSession,
 	)...)
-	// Capacity check: same plan-resolution chain as start-composed-session
-	// but no CheckHostRAM — this endpoint IS the check.
+	// Capacity check: same plan-resolution chain as start-composed-session;
+	// this endpoint IS the check.
 	routes.GET("/capacity-check", paymentMiddleware.WithPlanChain(
 		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
 		[]gin.HandlerFunc{middleware.AuthManagement()},

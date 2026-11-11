@@ -65,3 +65,28 @@ func TestResolve_ExplicitBackend_OutsidePolicy_IsRefused(t *testing.T) {
 	_, err := newPolicyResolver(t).Resolve(debianScenario(), nil, nil, "elsewhere")
 	assert.ErrorIs(t, err, ttServices.ErrBackendNotAllowed)
 }
+
+// rankedTTService ranks backends in reverse policy order, standing in for a
+// default host that is busier than the other.
+type rankedTTService struct{ *policyTTService }
+
+func (m *rankedTTService) RankBackends(candidates []string) []string {
+	ranked := make([]string, 0, len(candidates))
+	for i := len(candidates) - 1; i >= 0; i-- {
+		ranked = append(ranked, candidates[i])
+	}
+	return ranked
+}
+
+func TestResolve_Auto_FollowsHostRanking(t *testing.T) {
+	debian := []ttDto.TTDistribution{{Name: "debian", DefaultSizeKey: "S"}}
+	tt := &rankedTTService{&policyTTService{
+		capturingTTService: newCapturingTTService(),
+		policy:             ttServices.BackendPolicy{Allowed: []string{"a", "b"}, Default: "a"},
+		catalog:            map[string][]ttDto.TTDistribution{"a": debian, "b": debian},
+	}}
+
+	got, err := services.NewScenarioProvisioningService(freshTestDB(t), tt).Resolve(debianScenario(), nil, nil, "")
+	require.NoError(t, err)
+	assert.Equal(t, "b", got.Backend, "both hosts fit: the less busy one wins over the default")
+}

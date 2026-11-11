@@ -98,6 +98,7 @@ func (m *metricsAwareMockService) GetBackendsForContext(orgID uuid.UUID, userID 
 func (m *metricsAwareMockService) BackendPolicyFor(*uuid.UUID, *paymentModels.SubscriptionPlan) (services.BackendPolicy, error) {
 	return services.BackendPolicy{Allowed: []string{""}}, nil
 }
+func (m *metricsAwareMockService) RankBackends(candidates []string) []string { return candidates }
 func (m *metricsAwareMockService) IsBackendOnline(backendName string) (bool, error) {
 	panic("not implemented")
 }

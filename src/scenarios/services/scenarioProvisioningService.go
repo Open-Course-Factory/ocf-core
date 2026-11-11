@@ -56,9 +56,10 @@ func (s *ScenarioProvisioningService) ScenarioForProvisioning(scenarioID uuid.UU
 //
 // The backends tried are those the context's backend policy allows — the
 // organization's settings, else the plan's (plan may be nil). An empty
-// preferredBackend lets the system try each allowed backend in turn; a named
-// one is the only backend tried, and must be allowed: which host to build on
-// is the caller's call, while what to build on it is the scenario's.
+// preferredBackend lets the system try each allowed backend, online ones only
+// and the least loaded first; a named one is the only backend tried, and must
+// be allowed: which host to build on is the caller's call, while what to
+// build on it is the scenario's.
 func (s *ScenarioProvisioningService) Resolve(
 	scenario models.Scenario,
 	orgID *uuid.UUID,
@@ -72,6 +73,12 @@ func (s *ScenarioProvisioningService) Resolve(
 	candidateBackends, err := policy.Candidates(preferredBackend)
 	if err != nil {
 		return ScenarioProvisioning{}, err
+	}
+	// Online hosts only, the least loaded first, so the first that can build
+	// the scenario is also the one with the most room.
+	candidateBackends = s.terminalService.RankBackends(candidateBackends)
+	if len(candidateBackends) == 0 {
+		return ScenarioProvisioning{}, fmt.Errorf("%w: %w", ErrBackendCatalogUnavailable, ttServices.ErrBackendOffline)
 	}
 
 	// Fetch the size catalog once (cached 60s in the service) so resolveDistribution

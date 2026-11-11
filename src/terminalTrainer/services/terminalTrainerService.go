@@ -68,6 +68,7 @@ type TerminalTrainerService interface {
 	GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error)
 	GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error)
 	BackendPolicyFor(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan) (BackendPolicy, error)
+	RankBackends(candidates []string) []string
 	IsBackendOnline(backendName string) (bool, error)
 	SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error)
 

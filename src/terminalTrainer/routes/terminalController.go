@@ -542,7 +542,7 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 		return
 	}
 	plan := planResult.Plan
-	if services.EnforceLaunchCapacity(ctx, plan, terminal.MachineSize, tc.service) {
+	if services.EnforceLaunchCapacity(ctx, plan, terminal.MachineSize, terminal.Backend, tc.service) {
 		return
 	}
 
@@ -1987,6 +1987,9 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 		// httperrors.WriteBudgetRejection) so terminal create and scenario
 		// launch/preview answer the identical 403 shape.
 		if httperrors.WriteBudgetRejection(ctx, err, userID) {
+			return
+		}
+		if httperrors.WriteHostUnavailable(ctx, err) {
 			return
 		}
 

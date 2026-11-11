@@ -143,11 +143,11 @@ type MetricsFetcher interface {
 	GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error)
 }
 
-// EnforceLaunchCapacity is the SSOT for "would launching/resuming a session
-// of `sizeKey` exceed the host's safe RAM headroom?" used by the resume and
-// scenario-launch controllers. Writes a 503 + canonical "Server at capacity"
-// message to ctx and returns true when the launch must be rejected; returns
-// false to let the caller proceed.
+// EnforceLaunchCapacity answers "would resuming a session of `sizeKey` on
+// `backend` exceed that host's safe RAM headroom?" for the resume paths. A new
+// session's host is chosen, and checked, by StartComposedSession instead.
+// Writes a 503 + canonical "Server at capacity" message to ctx and returns true
+// when the resume must be rejected; returns false to let the caller proceed.
 //
 // Permissive on missing inputs (nil plan, metrics fetch error) — matches the
 // historical CheckRAMAvailability behavior: never block on infrastructure
@@ -155,16 +155,16 @@ type MetricsFetcher interface {
 //
 // Callers MUST short-circuit on `true`:
 //
-//	if services.EnforceLaunchCapacity(ctx, plan, sizeKey, svc) { return }
+//	if services.EnforceLaunchCapacity(ctx, plan, sizeKey, terminal.Backend, svc) { return }
 //
 // The read-only /terminals/capacity-check probe calls EvaluateLaunchCapacity
 // directly because it returns the structured result to the frontend, not a
 // 503 — do not route it through this helper.
-func EnforceLaunchCapacity(ctx *gin.Context, plan *paymentModels.SubscriptionPlan, sizeKey string, fetcher MetricsFetcher) bool {
+func EnforceLaunchCapacity(ctx *gin.Context, plan *paymentModels.SubscriptionPlan, sizeKey string, backend string, fetcher MetricsFetcher) bool {
 	if plan == nil {
 		return false
 	}
-	metrics, err := fetcher.GetServerMetrics(true, "")
+	metrics, err := fetcher.GetServerMetrics(true, backend)
 	if err != nil {
 		utils.Warn("capacity guard: metrics unavailable, allowing launch: %v", err)
 		return false

@@ -672,17 +672,6 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 // the three cannot drift apart on any of it. On failure it has answered the
 // request, and reports false.
 func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, userID string, scenario *models.Scenario, provisioning services.ScenarioProvisioning, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, namePrefix string) (*terminalDto.TerminalSessionResponse, bool) {
-	// Host RAM capacity check — see scenarioRoutes.go for why this is here
-	// instead of in middleware. CheckRAMAvailability drains the request
-	// body via ShouldBindBodyWith, which made the launch's ShouldBindJSON
-	// return EOF (user-reported 400 "Invalid input: EOF"). Beyond that fix,
-	// this check evaluates against the ACTUAL resolved scenario size — not
-	// the plan-max fallback the middleware used because scenarios don't carry
-	// a size in the request body. Mirrors commit 951b69c (resume path).
-	if terminalServices.EnforceLaunchCapacity(ctx, plan, provisioning.Size, sc.terminalService) {
-		return nil, false
-	}
-
 	// Auto-provision terminal key if missing
 	_, keyErr := sc.terminalService.GetUserKey(userID)
 	if keyErr != nil {
@@ -739,6 +728,9 @@ func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, 
 		// creation route emits — the launcher renders honest budget copy
 		// from it instead of a generic failure.
 		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
+			return nil, false
+		}
+		if httperrors.WriteHostUnavailable(ctx, termErr) {
 			return nil, false
 		}
 		// The upstream text names hosts and endpoints: the learner gets a
@@ -1110,7 +1102,7 @@ func (sc *scenarioLaunchController) resumePausedRun(ctx *gin.Context, run *model
 	if !ok {
 		return true
 	}
-	if terminalServices.EnforceLaunchCapacity(ctx, planResult.Plan, terminal.MachineSize, sc.terminalService) {
+	if terminalServices.EnforceLaunchCapacity(ctx, planResult.Plan, terminal.MachineSize, terminal.Backend, sc.terminalService) {
 		return true
 	}
 	if err := sc.terminalService.StartSession(terminalID, planResult.Plan); err != nil {

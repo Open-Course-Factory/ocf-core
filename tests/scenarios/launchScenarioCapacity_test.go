@@ -230,7 +230,8 @@ func TestLaunchScenario_BodyParsedWhenNoCapacityMiddleware(t *testing.T) {
 }
 
 // TestLaunchScenario_503sWhenHostCannotFitResolvedSize proves the
-// in-controller capacity check uses the resolved scenario size — not the
+// capacity check (made when StartComposedSession picks the host) uses the
+// resolved scenario size — not the
 // plan-max fallback the old middleware used. It also proves the
 // legitimate 503 guard survives.
 //
@@ -246,6 +247,9 @@ func TestLaunchScenario_503sWhenHostCannotFitResolvedSize(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "launch-503-user"
 	seedActivePlan(t, db, userID)
+	// The capacity check now runs where the host is chosen, after the
+	// learner's terminal key is provisioned: seed the key so it is skipped.
+	seedPersistenceUserKey(t, db, userID)
 
 	// Seed a scenario whose InstanceType is XL (the resolved size will be
 	// XL). os_type=deb matches the fake distribution; no compatible

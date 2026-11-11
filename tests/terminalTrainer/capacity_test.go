@@ -203,7 +203,7 @@ func TestEnforceLaunchCapacity_PermissiveWhenMetricsFail(t *testing.T) {
 	plan := planAllowing("XS")
 	fetcher := &stubMetricsFetcher{err: stderrors.New("tt-backend unreachable")}
 
-	rejected := services.EnforceLaunchCapacity(ctx, plan, "XS", fetcher)
+	rejected := services.EnforceLaunchCapacity(ctx, plan, "XS", "", fetcher)
 
 	assert.False(t, rejected, "helper must allow the launch when metrics are unavailable")
 	assert.Equal(t, http.StatusOK, rec.Code, "no 503 should be written to the response on metrics failure")

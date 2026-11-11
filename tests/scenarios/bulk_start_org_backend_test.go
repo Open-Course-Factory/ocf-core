@@ -108,6 +108,7 @@ func (m *capturingTTService) GetBackendsForContext(uuid.UUID, string) ([]ttDto.B
 func (m *capturingTTService) BackendPolicyFor(*uuid.UUID, *paymentModels.SubscriptionPlan) (ttServices.BackendPolicy, error) {
 	return ttServices.BackendPolicy{Allowed: []string{""}}, nil
 }
+func (m *capturingTTService) RankBackends(candidates []string) []string { return candidates }
 func (m *capturingTTService) IsBackendOnline(string) (bool, error) { return true, nil }
 func (m *capturingTTService) SetSystemDefaultBackend(string) (*ttDto.BackendInfo, error) {
 	return nil, nil

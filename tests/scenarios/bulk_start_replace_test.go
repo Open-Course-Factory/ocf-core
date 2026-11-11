@@ -123,6 +123,7 @@ func (m *mockTTService) GetBackendsForContext(uuid.UUID, string) ([]ttDto.Backen
 func (m *mockTTService) BackendPolicyFor(*uuid.UUID, *paymentModels.SubscriptionPlan) (ttServices.BackendPolicy, error) {
 	return ttServices.BackendPolicy{Allowed: []string{""}}, nil
 }
+func (m *mockTTService) RankBackends(candidates []string) []string { return candidates }
 func (m *mockTTService) IsBackendOnline(string) (bool, error) { return true, nil }
 func (m *mockTTService) SetSystemDefaultBackend(string) (*ttDto.BackendInfo, error) {
 	return nil, nil
