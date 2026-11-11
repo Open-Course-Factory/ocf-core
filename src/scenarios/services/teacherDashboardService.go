@@ -449,7 +449,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 	// An archived class has no future to start: the same rule the hooks apply
 	// to new members and assignments (groupHooks.GroupArchivedHook).
 	var group groupModels.ClassGroup
-	if err := s.db.Select("archived_at").First(&group, "id = ?", groupID).Error; err != nil {
+	if err := s.db.Select("archived_at", "organization_id").First(&group, "id = ?", groupID).Error; err != nil {
 		return nil, fmt.Errorf("group not found: %w", err)
 	}
 	if group.IsArchived() {
@@ -518,6 +518,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 	run := bulkStartRun{
 		scenarioID:        scenarioID,
 		scenario:          scenario,
+		orgID:             ClassRunOrganization(group.OrganizationID, &scenario),
 		provisioning:      provisioning,
 		terms:             terms,
 		sessionExpirySecs: sessionExpirySecs,
@@ -548,6 +549,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 type bulkStartRun struct {
 	scenarioID        uuid.UUID
 	scenario          models.Scenario
+	orgID             *uuid.UUID // ClassRunOrganization
 	provisioning      ScenarioProvisioning
 	terms             string
 	sessionExpirySecs int
@@ -629,6 +631,19 @@ func (s *TeacherDashboardService) startScenarioForMember(run bulkStartRun, userI
 	return out
 }
 
+// ClassRunOrganization is the organization a class's runs live in: the
+// class's own, which supervises them (supervision keys on the terminal's
+// organization) and whose servers and plans apply, exactly as for a learner
+// launching from that class; the scenario's own for a class outside any
+// organization. An organization's scenario never leaves it, so the two only
+// differ for a platform scenario.
+func ClassRunOrganization(classOrgID *uuid.UUID, scenario *models.Scenario) *uuid.UUID {
+	if classOrgID != nil {
+		return classOrgID
+	}
+	return scenario.OrganizationID
+}
+
 // memberBackend is the host one learner's container is built on: the class's,
 // unless nobody chose it and this learner's own policy does not allow it — then
 // "" lets their launch place them, rather than refuse a host they never asked
@@ -638,7 +653,7 @@ func (s *TeacherDashboardService) memberBackend(run bulkStartRun, plan *paymentM
 	if !run.provisioning.AutoPlaced {
 		return backend
 	}
-	policy, err := s.terminalService.BackendPolicyFor(run.scenario.OrganizationID, plan)
+	policy, err := s.terminalService.BackendPolicyFor(run.orgID, plan)
 	if err != nil {
 		return backend
 	}
@@ -710,11 +725,10 @@ func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID st
 	utils.Debug("BulkStartScenario - Creating terminal for member %s (distribution=%s size=%s)",
 		userID, run.provisioning.Distribution, run.provisioning.Size)
 
-	// Resolve the member's effective subscription plan, scoping it to the
-	// scenario's organization when present so the plan matches the org context
-	// the bulk-start is running in (#334 — gate/display SSOT).
-	// scenario.OrganizationID is nil for platform-wide scenarios, which
-	// correctly falls back to the member's globally highest-priority plan.
+	// Resolve the member's effective subscription plan in the organization
+	// the class's runs live in (ClassRunOrganization), so the plan matches the
+	// org context the bulk-start is running in (#334 — gate/display SSOT): the
+	// plan the same learner gets launching from that class's organization.
 	//
 	// Resolved before the composition because the persistence mode depends on
 	// it: an empty mode resolves to ephemeral, and this path used to leave it
@@ -722,15 +736,15 @@ func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID st
 	// got containers it could not pause while the same learner, launching
 	// alone, got persistent ones from the same plan.
 	planResult, planErr := paymentServices.NewEffectivePlanService(s.db).
-		GetUserEffectivePlan(userID, run.scenario.OrganizationID)
+		GetUserEffectivePlan(userID, run.orgID)
 	if planErr != nil {
 		utils.Warn("BulkStartScenario - Failed to resolve plan for user %s: %v", userID, planErr)
 		return "", "failed to resolve subscription plan"
 	}
 
 	orgID := ""
-	if run.scenario.OrganizationID != nil {
-		orgID = run.scenario.OrganizationID.String()
+	if run.orgID != nil {
+		orgID = run.orgID.String()
 	}
 	composedInput := ttDto.CreateComposedSessionInput{
 		Distribution:   run.provisioning.Distribution,

@@ -3,6 +3,7 @@ package scenarios_test
 import (
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -74,4 +75,28 @@ func TestClassAssignmentBackend(t *testing.T) {
 	got, err = provisioner.ClassAssignmentBackend(group.ID, scenario.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "", got, "an inactive assignment names nothing")
+}
+
+// A platform scenario started for a class lives in the class's organization:
+// that org's trainers supervise it and its servers and plans apply, as when the
+// learner launches it from there.
+func TestBulkStartScenario_PlatformScenario_LivesInTheClassOrganization(t *testing.T) {
+	dashSvc, ttMock, scenario, groupID := bulkStartFixture(t, "platformrun", map[string][]string{
+		"member": {"platformrun-learner"},
+	})
+	classOrg := scenario.OrganizationID // the fixture's class and scenario share it
+	require.NotNil(t, classOrg)
+	require.NoError(t, sharedTestDB.Model(&models.Scenario{}).Where("id = ?", scenario.ID).Update("organization_id", nil).Error)
+
+	_, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{Distribution: "Debian", Size: "xs"}, 0, "trainer")
+	require.NoError(t, err)
+	require.Len(t, ttMock.capturedInputs, 1)
+	assert.Equal(t, classOrg.String(), ttMock.capturedInputs[0].OrganizationID)
+}
+
+func TestClassRunOrganization(t *testing.T) {
+	classOrg, scenarioOrg := uuid.New(), uuid.New()
+	assert.Equal(t, &classOrg, services.ClassRunOrganization(&classOrg, &models.Scenario{OrganizationID: &scenarioOrg}))
+	assert.Equal(t, &scenarioOrg, services.ClassRunOrganization(nil, &models.Scenario{OrganizationID: &scenarioOrg}))
+	assert.Nil(t, services.ClassRunOrganization(nil, &models.Scenario{}))
 }

@@ -11,6 +11,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
+	scenarioServices "soli/formations/src/scenarios/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
 )
 
@@ -85,7 +86,8 @@ func assignmentAndBackend(ctx *hooks.HookContext) (*models.ScenarioAssignment, s
 }
 
 // organizationOf is the organization whose backends the assignment's runs
-// use: its own for an org assignment, its class's for a class one.
+// use: its own for an org assignment, the class's run organization for a
+// class one — the organization a bulk start of it files the runs under.
 func (h *ScenarioAssignmentBackendHook) organizationOf(a *models.ScenarioAssignment) (*uuid.UUID, error) {
 	if a.Scope != "group" || a.GroupID == nil {
 		return a.OrganizationID, nil
@@ -94,5 +96,9 @@ func (h *ScenarioAssignmentBackendHook) organizationOf(a *models.ScenarioAssignm
 	if err := h.db.Select("organization_id").First(&group, "id = ?", *a.GroupID).Error; err != nil {
 		return nil, fmt.Errorf("failed to load the assignment's class: %w", err)
 	}
-	return group.OrganizationID, nil
+	var scenario models.Scenario
+	if err := h.db.Select("organization_id").First(&scenario, "id = ?", a.ScenarioID).Error; err != nil {
+		return nil, fmt.Errorf("failed to load the assigned scenario: %w", err)
+	}
+	return scenarioServices.ClassRunOrganization(group.OrganizationID, &scenario), nil
 }

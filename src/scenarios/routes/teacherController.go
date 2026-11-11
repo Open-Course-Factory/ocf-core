@@ -593,24 +593,29 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 
 	trainerID := c.GetString("userId")
 
-	// Loaded once, and before the gate: the organization it belongs to decides
-	// which plan the gate reads.
+	// Loaded once, and before the gate: the organization the class's runs live
+	// in decides which plan the gate reads and which servers apply.
 	scenario, err := tc.provisioningService.ScenarioForProvisioning(scenarioID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return
 	}
+	// A class that cannot be read leaves the scenario's organization: the
+	// service reports a missing class itself, after the gate has had its say.
+	var class groupModels.ClassGroup
+	tc.db.Select("organization_id").First(&class, "id = ?", groupID)
+	runOrgID := services.ClassRunOrganization(class.OrganizationID, &scenario)
 
 	// Dunning gate (MANDATORY on every new session-creation route): bulk-start
 	// provisions terminals for the whole class on the TEACHER's initiative, so
 	// the TEACHER's past_due subscription blocks the launch — members are
 	// typically on assigned/org plans with no personal dunning stamp, and the
 	// payer-side actor here is the caller (decided 2026-08-07). The plan is
-	// resolved against the scenario's org, mirroring the per-member resolution
-	// inside BulkStartScenario; a failed resolution does not block (the
-	// service reports its own errors).
+	// resolved in the class's run organization, mirroring the per-member
+	// resolution inside BulkStartScenario; a failed resolution does not block
+	// (the service reports its own errors).
 	planResult, planErr := paymentServices.NewEffectivePlanService(tc.db).
-		GetUserEffectivePlan(trainerID, scenario.OrganizationID)
+		GetUserEffectivePlan(trainerID, runOrgID)
 	if planErr == nil && paymentMiddleware.GatePastDueBeyondGraceForResult(c, planResult) {
 		return
 	}
@@ -635,7 +640,7 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 			return
 		}
 	}
-	provisioning, resolveErr := tc.provisioningService.Resolve(scenario, scenario.OrganizationID, nil, backend)
+	provisioning, resolveErr := tc.provisioningService.Resolve(scenario, runOrgID, nil, backend)
 	if resolveErr != nil {
 		respondProvisioningFailure(c, scenario.Name, resolveErr)
 		return
