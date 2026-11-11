@@ -15,8 +15,8 @@ func RegisterUserPermissions(enforcer interfaces.EnforcerInterface) {
 	access.RegisterEnforced(enforcer, "User Management",
 		access.RoutePermission{
 			Path: "/api/v1/users", Method: "GET",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
-			Description: "List users",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "List every user with their email (admin only)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/users/batch", Method: "POST",

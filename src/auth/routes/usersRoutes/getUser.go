@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
 	sqldb "soli/formations/src/db"
@@ -50,6 +51,13 @@ func (u UserController) GetUser(ctx *gin.Context) {
 	user, userError := u.service.GetUserById(userID)
 	if userError != nil {
 		errors.Respond(ctx, http.StatusNotFound, userError.Error())
+		return
+	}
+
+	// Anyone may put a name on a user ID (class pages show their owner), but
+	// the email and memberships belong to the user and to platform operators.
+	if userID != ctx.GetString("userId") && !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		ctx.JSON(http.StatusOK, dto.UserOutput{Id: user.Id, UserName: user.UserName, DisplayName: user.DisplayName})
 		return
 	}
 

@@ -30,6 +30,7 @@ type UserService interface {
 	GetAllUsers() (*[]dto.UserOutput, error)
 	GetUsersByIds(ids []string) (*[]dto.UserOutput, error)
 	SearchUsers(query string) (*[]dto.UserOutput, error)
+	FindUserByEmail(email string) (*dto.UserOutput, error)
 	DeleteUser(id string) error
 }
 
@@ -227,6 +228,16 @@ func (us *userService) GetUserById(id string) (*dto.UserOutput, error) {
 		return nil, ErrUserNotFound
 	}
 
+	return dto.UserModelToUserOutput(user), nil
+}
+
+// FindUserByEmail returns the account with exactly this email, or nil when
+// there is none.
+func (us *userService) FindUserByEmail(email string) (*dto.UserOutput, error) {
+	user, err := us.casdoorClient.GetUserByEmail(email)
+	if err != nil || user == nil {
+		return nil, err
+	}
 	return dto.UserModelToUserOutput(user), nil
 }
 

@@ -530,7 +530,6 @@ func TestSetupUserManagementPermissions_MemberRoutes(t *testing.T) {
 		path   string
 		method string
 	}{
-		{"/api/v1/users", "GET"},
 		{"/api/v1/users/batch", "POST"},
 		{"/api/v1/users/search", "GET"},
 	}
@@ -540,6 +539,9 @@ func TestSetupUserManagementPermissions_MemberRoutes(t *testing.T) {
 			assertPolicy(t, ps, "member", r.path, r.method)
 		})
 	}
+
+	// The full user list carries every account's email: administrators only.
+	assert.False(t, ps.has("member", "/api/v1/users", "GET"), "member must not list every user")
 
 	// The web SSH proxy dialled any host the caller named; it is gone and
 	// must not come back as a member grant.
@@ -556,6 +558,7 @@ func TestSetupUserManagementPermissions_AdminRoutes(t *testing.T) {
 		method string
 	}{
 		{"/api/v1/users/:id", "DELETE"},
+		{"/api/v1/users", "GET"},
 		// CRITICAL: accesses routes must be admin-only (manipulate RBAC policies)
 		{"/api/v1/accesses", "POST"},
 		{"/api/v1/accesses", "DELETE"},

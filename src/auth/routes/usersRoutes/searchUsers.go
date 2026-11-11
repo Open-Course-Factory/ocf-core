@@ -2,7 +2,10 @@ package userController
 
 import (
 	"net/http"
+	"strings"
 
+	"soli/formations/src/auth/access"
+	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +14,7 @@ import (
 // Search Users godoc
 //
 //	@Summary		Rechercher des utilisateurs
-//	@Description	Recherche des utilisateurs par nom ou email
+//	@Description	Administrateurs : recherche par nom ou email. Membres : email exact uniquement.
 //	@Tags			users
 //	@Accept			json
 //	@Produce		json
@@ -33,6 +36,14 @@ func (u UserController) SearchUsers(ctx *gin.Context) {
 		return
 	}
 
+	// A substring search over every account is a user directory: members only
+	// find someone whose full email they already know (managers adding a member,
+	// terminal sharing). Administrators keep the substring search.
+	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		u.respondExactEmailMatch(ctx, strings.TrimSpace(query))
+		return
+	}
+
 	users, userError := u.service.SearchUsers(query)
 	if userError != nil {
 		errors.Respond(ctx, http.StatusInternalServerError, userError.Error())
@@ -40,4 +51,23 @@ func (u UserController) SearchUsers(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, users)
+}
+
+func (u UserController) respondExactEmailMatch(ctx *gin.Context, email string) {
+	// Casdoor's get-user falls back to other lookups on an empty email, and
+	// accounts without an email would match "": never ask it for one.
+	if !strings.Contains(email, "@") {
+		ctx.JSON(http.StatusOK, []dto.UserOutput{})
+		return
+	}
+	user, err := u.service.FindUserByEmail(email)
+	if err != nil {
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if user == nil {
+		ctx.JSON(http.StatusOK, []dto.UserOutput{})
+		return
+	}
+	ctx.JSON(http.StatusOK, []dto.UserOutput{*user})
 }
