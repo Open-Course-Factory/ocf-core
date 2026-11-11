@@ -19,6 +19,9 @@ type ScenarioAssignment struct {
 	StartDate      *time.Time `json:"start_date,omitempty" mapstructure:"start_date"`
 	Deadline       *time.Time `json:"deadline,omitempty" mapstructure:"deadline"`
 	IsActive       bool       `gorm:"default:true" json:"is_active" mapstructure:"is_active"`
+	// Backend is the host the teacher chose for this assignment's runs; ""
+	// lets the system place each run on the least loaded allowed host.
+	Backend string `gorm:"type:varchar(255);default:''" json:"backend" mapstructure:"backend"`
 	// ResultsPublishedAt is when the teacher released exam grades to this
 	// class; nil keeps them withheld (services.WithheldGradeSessions). Set
 	// only by the teacher publish route: the entity DTOs deliberately do not

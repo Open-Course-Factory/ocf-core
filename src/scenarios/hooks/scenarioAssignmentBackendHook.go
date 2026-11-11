@@ -1,0 +1,102 @@
+package scenarioHooks
+
+import (
+	"fmt"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	entityErrors "soli/formations/src/entityManagement/errors"
+	"soli/formations/src/entityManagement/hooks"
+	groupModels "soli/formations/src/groups/models"
+	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
+	"soli/formations/src/scenarios/models"
+	ttServices "soli/formations/src/terminalTrainer/services"
+)
+
+// BackendPolicyFor is the terminal service's answer to "which backends may
+// this context use".
+type BackendPolicyFor func(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan) (ttServices.BackendPolicy, error)
+
+// ScenarioAssignmentBackendHook refuses a backend the teacher may not use in
+// the assignment's organization, when the assignment is saved rather than
+// when every learner's launch would be refused. Each launch is still checked
+// against the learner's own policy.
+type ScenarioAssignmentBackendHook struct {
+	db        *gorm.DB
+	policyFor BackendPolicyFor
+	hooks.BaseHook
+}
+
+func NewScenarioAssignmentBackendHook(db *gorm.DB, policyFor BackendPolicyFor) hooks.Hook {
+	return &ScenarioAssignmentBackendHook{
+		db:        db,
+		policyFor: policyFor,
+		BaseHook: hooks.BaseHook{
+			Name:       "scenario_assignment_backend",
+			EntityName: "ScenarioAssignment",
+			HookTypes:  []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate},
+			Enabled:    true,
+			Priority:   20,
+		},
+	}
+}
+
+func (h *ScenarioAssignmentBackendHook) Execute(ctx *hooks.HookContext) error {
+	assignment, backend, err := assignmentAndBackend(ctx)
+	if err != nil || backend == "" {
+		return err
+	}
+
+	orgID, err := h.organizationOf(assignment)
+	if err != nil {
+		return err
+	}
+	var plan *paymentModels.SubscriptionPlan
+	if result, planErr := paymentServices.NewEffectivePlanService(h.db).GetUserEffectivePlan(ctx.UserID, orgID); planErr == nil && result != nil {
+		plan = result.Plan
+	}
+	policy, err := h.policyFor(orgID, plan)
+	if err != nil {
+		return err
+	}
+	if _, err := policy.Pick(backend); err != nil {
+		refusal := entityErrors.NewValidationError("backend", err.Error())
+		refusal.Err = err
+		return refusal
+	}
+	return nil
+}
+
+// assignmentAndBackend returns the assignment being saved and the backend it
+// asks for; "" when none is set or an update leaves it alone.
+func assignmentAndBackend(ctx *hooks.HookContext) (*models.ScenarioAssignment, string, error) {
+	if ctx.HookType == hooks.BeforeCreate {
+		a, ok := ctx.NewEntity.(*models.ScenarioAssignment)
+		if !ok {
+			return nil, "", fmt.Errorf("expected *models.ScenarioAssignment, got %T", ctx.NewEntity)
+		}
+		return a, a.Backend, nil
+	}
+	a, ok := ctx.OldEntity.(*models.ScenarioAssignment)
+	if !ok {
+		return nil, "", fmt.Errorf("expected *models.ScenarioAssignment in OldEntity, got %T", ctx.OldEntity)
+	}
+	updates, _ := ctx.NewEntity.(map[string]any)
+	backend, _ := updates["backend"].(string)
+	return a, backend, nil
+}
+
+// organizationOf is the organization whose backends the assignment's runs
+// use: its own for an org assignment, its class's for a class one.
+func (h *ScenarioAssignmentBackendHook) organizationOf(a *models.ScenarioAssignment) (*uuid.UUID, error) {
+	if a.Scope != "group" || a.GroupID == nil {
+		return a.OrganizationID, nil
+	}
+	var group groupModels.ClassGroup
+	if err := h.db.Select("organization_id").First(&group, "id = ?", *a.GroupID).Error; err != nil {
+		return nil, fmt.Errorf("failed to load the assignment's class: %w", err)
+	}
+	return group.OrganizationID, nil
+}

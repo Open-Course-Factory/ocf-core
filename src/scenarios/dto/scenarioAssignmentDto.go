@@ -15,6 +15,7 @@ type CreateScenarioAssignmentInput struct {
 	StartDate      *time.Time `json:"start_date,omitempty" mapstructure:"start_date"`
 	Deadline       *time.Time `json:"deadline,omitempty" mapstructure:"deadline"`
 	IsActive       bool       `json:"is_active,omitempty" mapstructure:"is_active"`
+	Backend        string     `json:"backend,omitempty" mapstructure:"backend"`
 }
 
 // EditScenarioAssignmentInput - DTO for editing a scenario assignment (partial updates)
@@ -22,6 +23,8 @@ type EditScenarioAssignmentInput struct {
 	StartDate *time.Time `json:"start_date,omitempty" mapstructure:"start_date"`
 	Deadline  *time.Time `json:"deadline,omitempty" mapstructure:"deadline"`
 	IsActive  *bool      `json:"is_active,omitempty" mapstructure:"is_active"`
+	// Backend set to "" returns the assignment to automatic placement.
+	Backend *string `json:"backend,omitempty" mapstructure:"backend"`
 }
 
 // ScenarioAssignmentOutput - DTO for scenario assignment responses
@@ -35,6 +38,7 @@ type ScenarioAssignmentOutput struct {
 	StartDate      *time.Time      `json:"start_date,omitempty"`
 	Deadline       *time.Time      `json:"deadline,omitempty"`
 	IsActive       bool            `json:"is_active"`
+	Backend        string          `json:"backend"`
 	// ResultsPublishedAt is read-only here: only the teacher publish route
 	// writes it.
 	ResultsPublishedAt *time.Time  `json:"results_published_at"`

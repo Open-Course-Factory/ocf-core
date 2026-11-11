@@ -27,6 +27,7 @@ func RegisterScenarioAssignment(service *ems.EntityRegistrationService) {
 						StartDate:      model.StartDate,
 						Deadline:       model.Deadline,
 						IsActive:       model.IsActive,
+						Backend:        model.Backend,
 						ResultsPublishedAt: model.ResultsPublishedAt,
 						CreatedAt:      model.CreatedAt,
 						UpdatedAt:      model.UpdatedAt,
@@ -62,6 +63,7 @@ func RegisterScenarioAssignment(service *ems.EntityRegistrationService) {
 						StartDate:      input.StartDate,
 						Deadline:       input.Deadline,
 						IsActive:       input.IsActive,
+						Backend:        input.Backend,
 					}
 				},
 				DtoToMap: func(input dto.EditScenarioAssignmentInput) map[string]any {
@@ -74,6 +76,9 @@ func RegisterScenarioAssignment(service *ems.EntityRegistrationService) {
 					}
 					if input.IsActive != nil {
 						updates["is_active"] = *input.IsActive
+					}
+					if input.Backend != nil {
+						updates["backend"] = *input.Backend
 					}
 					return updates
 				},

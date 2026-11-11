@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"soli/formations/src/entityManagement/hooks"
+	ttServices "soli/formations/src/terminalTrainer/services"
 
 	"gorm.io/gorm"
 )
@@ -26,6 +27,13 @@ func InitScenarioHooks(db *gorm.DB) {
 		log.Printf("Failed to register scenario assignment archived hook: %v", err)
 	} else {
 		log.Println("Scenario assignment archived hook registered")
+	}
+
+	backendHook := NewScenarioAssignmentBackendHook(db, ttServices.NewTerminalTrainerService(db).BackendPolicyFor)
+	if err := hooks.GlobalHookRegistry.RegisterHook(backendHook); err != nil {
+		log.Printf("Failed to register scenario assignment backend hook: %v", err)
+	} else {
+		log.Println("Scenario assignment backend hook registered")
 	}
 
 	scenarioAuthHook := NewScenarioAuthorizationHook(db)
