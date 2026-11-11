@@ -231,10 +231,15 @@ func (us *userService) GetUserById(id string) (*dto.UserOutput, error) {
 	return dto.UserModelToUserOutput(user), nil
 }
 
-// FindUserByEmail returns the account with exactly this email, or nil when
-// there is none.
+// FindUserByEmail returns the account with this email, or nil when there is
+// none. Casdoor's lookup is case-sensitive on PostgreSQL and accounts are
+// stored as typed at sign-up, so the email is tried as given, then lowercased
+// (phones capitalise the first letter of a text field).
 func (us *userService) FindUserByEmail(email string) (*dto.UserOutput, error) {
 	user, err := us.casdoorClient.GetUserByEmail(email)
+	if err == nil && user == nil && strings.ToLower(email) != email {
+		user, err = us.casdoorClient.GetUserByEmail(strings.ToLower(email))
+	}
 	if err != nil || user == nil {
 		return nil, err
 	}

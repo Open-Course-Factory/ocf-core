@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -119,6 +120,31 @@ func TestSearchUsers_Member_ExactEmailFindsTheUser(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), directoryUser.Id.String())
+}
+
+// Casdoor runs on PostgreSQL in production, where its email lookup is
+// case-sensitive, and phones capitalise the first letter of a text field.
+func TestFindUserByEmail_CapitalisedQueryFindsTheLowercaseAccount(t *testing.T) {
+	client := &mockCasdoorUserClient{}
+	client.On("GetUserByEmail", "Yanis@Example.test").Return(nil, nil)
+	client.On("GetUserByEmail", "yanis@example.test").Return(&casdoorsdk.User{Id: directoryUser.Id.String(), Email: "yanis@example.test"}, nil)
+
+	found, err := authServices.NewUserService(client, nil).FindUserByEmail("Yanis@Example.test")
+
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, directoryUser.Id, found.Id)
+}
+
+func TestFindUserByEmail_ExactMixedCaseAccountIsFoundAsTyped(t *testing.T) {
+	client := &mockCasdoorUserClient{}
+	client.On("GetUserByEmail", "Yanis@Example.test").Return(&casdoorsdk.User{Id: directoryUser.Id.String(), Email: "Yanis@Example.test"}, nil)
+
+	found, err := authServices.NewUserService(client, nil).FindUserByEmail("Yanis@Example.test")
+
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	client.AssertNumberOfCalls(t, "GetUserByEmail", 1)
 }
 
 func TestSearchUsers_Administrator_KeepsSubstringSearch(t *testing.T) {
