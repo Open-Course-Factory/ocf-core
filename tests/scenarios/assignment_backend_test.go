@@ -67,15 +67,18 @@ func TestLaunchScenario_ClassAssignmentBackendWinsOverOrgOne(t *testing.T) {
 
 // --- The backend is checked when the assignment is saved ---
 
-func policyOf(allowed ...string) func(*uuid.UUID, *paymentModels.SubscriptionPlan) (ttServices.BackendPolicy, error) {
-	return func(*uuid.UUID, *paymentModels.SubscriptionPlan) (ttServices.BackendPolicy, error) {
+// policyOf serves a fixed policy and refuses to be asked with a plan: a class's
+// server is checked against its organization's servers, not the teacher's plan.
+func policyOf(t *testing.T, allowed ...string) func(*uuid.UUID, *paymentModels.SubscriptionPlan) (ttServices.BackendPolicy, error) {
+	return func(_ *uuid.UUID, plan *paymentModels.SubscriptionPlan) (ttServices.BackendPolicy, error) {
+		assert.Nil(t, plan, "a class-wide choice must not read the teacher's own plan")
 		return ttServices.BackendPolicy{Allowed: allowed, Default: allowed[0]}, nil
 	}
 }
 
 func runBackendHook(t *testing.T, db *gorm.DB, hookType hooks.HookType, oldEntity, newEntity any) error {
 	t.Helper()
-	hook := scenarioHooks.NewScenarioAssignmentBackendHook(db, policyOf("a", "b"))
+	hook := scenarioHooks.NewScenarioAssignmentBackendHook(db, policyOf(t, "a", "b"))
 	return hook.Execute(&hooks.HookContext{
 		EntityName: "ScenarioAssignment",
 		HookType:   hookType,

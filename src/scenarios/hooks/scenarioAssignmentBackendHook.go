@@ -10,7 +10,6 @@ import (
 	"soli/formations/src/entityManagement/hooks"
 	groupModels "soli/formations/src/groups/models"
 	paymentModels "soli/formations/src/payment/models"
-	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/models"
 	ttServices "soli/formations/src/terminalTrainer/services"
 )
@@ -19,10 +18,11 @@ import (
 // this context use".
 type BackendPolicyFor func(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan) (ttServices.BackendPolicy, error)
 
-// ScenarioAssignmentBackendHook refuses a backend the teacher may not use in
-// the assignment's organization, when the assignment is saved rather than
-// when every learner's launch would be refused. Each launch is still checked
-// against the learner's own policy.
+// ScenarioAssignmentBackendHook refuses a backend the assignment's
+// organization does not allow, when the assignment is saved rather than when
+// every learner's launch would be refused. A class's server is a class-wide
+// choice, so it is checked against the organization's servers, not the
+// teacher's own plan; each launch is still checked against the learner's.
 type ScenarioAssignmentBackendHook struct {
 	db        *gorm.DB
 	policyFor BackendPolicyFor
@@ -53,11 +53,7 @@ func (h *ScenarioAssignmentBackendHook) Execute(ctx *hooks.HookContext) error {
 	if err != nil {
 		return err
 	}
-	var plan *paymentModels.SubscriptionPlan
-	if result, planErr := paymentServices.NewEffectivePlanService(h.db).GetUserEffectivePlan(ctx.UserID, orgID); planErr == nil && result != nil {
-		plan = result.Plan
-	}
-	policy, err := h.policyFor(orgID, plan)
+	policy, err := h.policyFor(orgID, nil)
 	if err != nil {
 		return err
 	}

@@ -112,6 +112,7 @@ func (s *ScenarioProvisioningService) Resolve(
 		}
 		return ScenarioProvisioning{
 			Backend:       b,
+			AutoPlaced:    preferredBackend == "",
 			Distribution:  resolvedDist,
 			Size:          resolvedSize,
 			Features:      resolvedFeatures,
@@ -123,6 +124,21 @@ func (s *ScenarioProvisioningService) Resolve(
 		return ScenarioProvisioning{}, fmt.Errorf("%w: %v", ErrBackendCatalogUnavailable, lastErr)
 	}
 	return ScenarioProvisioning{}, fmt.Errorf("no compatible distribution on any backend: %w", lastErr)
+}
+
+// ClassAssignmentBackend is the backend the class's assignment of the scenario
+// names; "" when it names none, or the class has no active assignment of it.
+func (s *ScenarioProvisioningService) ClassAssignmentBackend(groupID, scenarioID uuid.UUID) (string, error) {
+	var backends []string
+	err := s.db.Model(&models.ScenarioAssignment{}).
+		Where("scenario_id = ? AND group_id = ? AND scope = ? AND is_active = ?", scenarioID, groupID, "group", true).
+		Order("created_at DESC").
+		Limit(1).
+		Pluck("backend", &backends).Error
+	if err != nil || len(backends) == 0 {
+		return "", err
+	}
+	return backends[0], nil
 }
 
 // ErrBackendCatalogUnavailable marks a resolution that failed because no

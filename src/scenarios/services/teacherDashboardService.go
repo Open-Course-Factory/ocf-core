@@ -16,6 +16,7 @@ import (
 
 	authModels "soli/formations/src/auth/models"
 	groupModels "soli/formations/src/groups/models"
+	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
@@ -628,6 +629,25 @@ func (s *TeacherDashboardService) startScenarioForMember(run bulkStartRun, userI
 	return out
 }
 
+// memberBackend is the host one learner's container is built on: the class's,
+// unless nobody chose it and this learner's own policy does not allow it — then
+// "" lets their launch place them, rather than refuse a host they never asked
+// for.
+func (s *TeacherDashboardService) memberBackend(run bulkStartRun, plan *paymentModels.SubscriptionPlan) string {
+	backend := run.provisioning.Backend
+	if !run.provisioning.AutoPlaced {
+		return backend
+	}
+	policy, err := s.terminalService.BackendPolicyFor(run.scenario.OrganizationID, plan)
+	if err != nil {
+		return backend
+	}
+	if _, err := policy.Pick(backend); err != nil {
+		return ""
+	}
+	return backend
+}
+
 // abandonExistingRun clears whatever run the learner still holds on this
 // scenario, so the class can be restarted without each learner cleaning up
 // first. Reports whether one was actually replaced.
@@ -718,7 +738,7 @@ func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID st
 		Features:       run.provisioning.Features,
 		BuildFeatures:  run.provisioning.BuildFeatures,
 		Terms:          run.terms,
-		Backend:        run.provisioning.Backend,
+		Backend:        s.memberBackend(run, planResult.Plan),
 		Name:           fmt.Sprintf("scenario-%s", run.scenario.Title),
 		Expiry:         run.sessionExpirySecs,
 		Hostname:       run.scenario.Hostname,

@@ -18,6 +18,11 @@ type ScenarioProvisioning struct {
 	// system default.
 	Backend string
 
+	// AutoPlaced is true when nobody chose Backend: the resolution placed it.
+	// A learner whose own policy does not allow it may then be placed
+	// elsewhere; a host someone chose is kept, or refused.
+	AutoPlaced bool
+
 	// Distribution is the image name. Empty means "no terminal at all" — a
 	// bulk start that only records scenario sessions.
 	Distribution string

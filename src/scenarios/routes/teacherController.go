@@ -15,7 +15,6 @@ import (
 	"gorm.io/gorm"
 
 	paymentMiddleware "soli/formations/src/payment/middleware"
-	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
 	scenarioModels "soli/formations/src/scenarios/models"
@@ -622,16 +621,21 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 	//
 	// req.InstanceType is not read: a scenario naming its images has stated a
 	// requirement, and substituting one its author never approved is what the
-	// resolution refuses. req.Backend is honoured, since which host to build on
-	// is the teacher's call.
+	// resolution refuses. Which host to build on is the teacher's call:
+	// req.Backend, else the one the class's assignment names, else automatic.
 	//
-	// The trainer's plan stands in for the class: each member's own start is
-	// checked again against theirs.
-	var trainerPlan *paymentModels.SubscriptionPlan
-	if planErr == nil && planResult != nil {
-		trainerPlan = planResult.Plan
+	// A class's host is checked against the organization's servers, not the
+	// trainer's own plan (nil): each learner's start is then checked against
+	// theirs.
+	backend := req.Backend
+	if backend == "" {
+		if backend, err = tc.provisioningService.ClassAssignmentBackend(groupID, scenarioID); err != nil {
+			slog.Error("failed to read the class assignment's backend", "err", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read the class assignment"})
+			return
+		}
 	}
-	provisioning, resolveErr := tc.provisioningService.Resolve(scenario, scenario.OrganizationID, trainerPlan, req.Backend)
+	provisioning, resolveErr := tc.provisioningService.Resolve(scenario, scenario.OrganizationID, nil, backend)
 	if resolveErr != nil {
 		respondProvisioningFailure(c, scenario.Name, resolveErr)
 		return
