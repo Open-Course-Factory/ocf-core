@@ -367,7 +367,7 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 	if err != nil {
 		return nil, err
 	}
-	if input.Backend, err = c.proxy.pickHost(candidates, plan, input.Size); err != nil {
+	if input.Backend, err = c.proxy.pickHost(c.proxy.offering(candidates, input.Distribution), plan, input.Size); err != nil {
 		return nil, err
 	}
 

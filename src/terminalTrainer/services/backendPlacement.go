@@ -112,9 +112,35 @@ func (p *terminalProxyClient) pickHost(candidates []string, plan *paymentModels.
 }
 
 // LaunchCapacity answers, without starting anything, whether a session of
-// size would find room among candidates: the same reading pickHost decides on.
-func (p *terminalProxyClient) LaunchCapacity(candidates []string, plan *paymentModels.SubscriptionPlan, size string) CapacityResult {
-	return PlacementCapacity(p.currentHostLoads(candidates), plan, size)
+// distribution and size would find room among candidates: the same hosts and
+// the same reading the launch decides on.
+func (p *terminalProxyClient) LaunchCapacity(candidates []string, distribution string, plan *paymentModels.SubscriptionPlan, size string) CapacityResult {
+	return PlacementCapacity(p.currentHostLoads(p.offering(candidates, distribution)), plan, size)
+}
+
+// offering keeps the candidates whose catalog lists distribution, as
+// tt-backend configures it per server: a host that does not offer it would
+// refuse the session. One candidate, or no distribution named, is left as is,
+// and so is a host whose catalog cannot be read: the launch then reports that
+// host's own answer. Whether the host could actually build it (template
+// prepared, image present) is not something the catalog says.
+func (p *terminalProxyClient) offering(candidates []string, distribution string) []string {
+	if len(candidates) < 2 || distribution == "" {
+		return candidates
+	}
+	kept := make([]string, 0, len(candidates))
+	for _, b := range candidates {
+		distributions, err := p.GetDistributions(b)
+		if err != nil || findDistribution(distributions, distribution) != nil {
+			kept = append(kept, b)
+		}
+	}
+	// Offered nowhere: leave the hosts be, so the launch says the
+	// distribution was not found rather than that no server is available.
+	if len(kept) == 0 {
+		return candidates
+	}
+	return kept
 }
 
 // currentHostLoads reads each host through tt-backend's own short metrics

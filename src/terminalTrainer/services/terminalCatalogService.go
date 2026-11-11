@@ -354,6 +354,17 @@ func ComputeSessionOptions(
 	}
 }
 
+// findDistribution returns the distribution a launch names, by name or by
+// prefix, or nil when the catalog has none.
+func findDistribution(distributions []dto.TTDistribution, distribution string) *dto.TTDistribution {
+	for i := range distributions {
+		if distributions[i].Name == distribution || distributions[i].Prefix == distribution {
+			return &distributions[i]
+		}
+	}
+	return nil
+}
+
 // GetSessionOptions validates a distribution and computes plan-intersected options
 func (c *terminalCatalogService) GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error) {
 	distributions, err := c.proxy.GetDistributions(backend)
@@ -361,13 +372,7 @@ func (c *terminalCatalogService) GetSessionOptions(plan *paymentModels.Subscript
 		return nil, fmt.Errorf("failed to get distributions: %w", err)
 	}
 
-	var distro *dto.TTDistribution
-	for i := range distributions {
-		if distributions[i].Name == distribution || distributions[i].Prefix == distribution {
-			distro = &distributions[i]
-			break
-		}
-	}
+	distro := findDistribution(distributions, distribution)
 	if distro == nil {
 		return nil, fmt.Errorf("distribution '%s' not found", distribution)
 	}

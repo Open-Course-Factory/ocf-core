@@ -100,7 +100,7 @@ func (m *metricsAwareMockService) BackendPolicyFor(*uuid.UUID, *paymentModels.Su
 }
 
 // LaunchCapacity treats every candidate as one host carrying m's metrics.
-func (m *metricsAwareMockService) LaunchCapacity(candidates []string, plan *paymentModels.SubscriptionPlan, size string) services.CapacityResult {
+func (m *metricsAwareMockService) LaunchCapacity(candidates []string, _ string, plan *paymentModels.SubscriptionPlan, size string) services.CapacityResult {
 	m.gotCandidates = candidates
 	metrics, _ := m.GetServerMetrics(true, "")
 	return services.PlacementCapacity([]services.HostLoad{{Backend: candidates[0], Metrics: metrics}}, plan, size)

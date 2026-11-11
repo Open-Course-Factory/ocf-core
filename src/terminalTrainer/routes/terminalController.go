@@ -2032,7 +2032,7 @@ func (tc *terminalController) CapacityCheck(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, tc.service.LaunchCapacity(candidates, plan, ctx.Query("size")))
+	ctx.JSON(http.StatusOK, tc.service.LaunchCapacity(candidates, ctx.Query("distribution"), plan, ctx.Query("size")))
 }
 
 // orgContextID returns the organization InjectOrgContext put in the context,

@@ -68,7 +68,7 @@ type TerminalTrainerService interface {
 	GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error)
 	BackendPolicyFor(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan) (BackendPolicy, error)
 	RankBackends(candidates []string) []string
-	LaunchCapacity(candidates []string, plan *paymentModels.SubscriptionPlan, size string) CapacityResult
+	LaunchCapacity(candidates []string, distribution string, plan *paymentModels.SubscriptionPlan, size string) CapacityResult
 	IsBackendOnline(backendName string) (bool, error)
 	SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error)
 

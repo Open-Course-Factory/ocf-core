@@ -44,10 +44,22 @@ func TestChooseHost(t *testing.T) {
 
 // fakeTTWithMetrics serves a backend list and per-backend metrics.
 func fakeTTWithMetrics(t *testing.T, backends []dto.BackendInfo, metrics map[string]*dto.ServerMetricsResponse) services.TerminalTrainerService {
+	return fakeTTWithCatalogs(t, backends, metrics, nil, nil)
+}
+
+// fakeTTWithCatalogs also serves each backend's distributions, when catalogs
+// names it, and records which backend's catalog was asked for last.
+func fakeTTWithCatalogs(t *testing.T, backends []dto.BackendInfo, metrics map[string]*dto.ServerMetricsResponse, catalogs map[string][]dto.TTDistribution, lastCatalog *string) services.TerminalTrainerService {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/distributions") && catalogs != nil:
+			backend := r.URL.Query().Get("backend")
+			if lastCatalog != nil {
+				*lastCatalog = backend
+			}
+			_ = json.NewEncoder(w).Encode(catalogs[backend])
 		case strings.HasSuffix(r.URL.Path, "/backends"):
 			_ = json.NewEncoder(w).Encode(backends)
 		case strings.HasSuffix(r.URL.Path, "/metrics"):
@@ -108,9 +120,9 @@ func TestLaunchCapacity_AnswersForTheHostALaunchWouldUse(t *testing.T) {
 	)
 	plan := &paymentModels.SubscriptionPlan{}
 
-	assert.Equal(t, services.CapacityStatusOK, svc.LaunchCapacity([]string{"full", "free"}, plan, "S").Status,
+	assert.Equal(t, services.CapacityStatusOK, svc.LaunchCapacity([]string{"full", "free"}, "", plan, "S").Status,
 		"a full default host must not hide the free one a launch would land on")
-	assert.Equal(t, services.CapacityStatusCritical, svc.LaunchCapacity([]string{"full"}, plan, "S").Status)
+	assert.Equal(t, services.CapacityStatusCritical, svc.LaunchCapacity([]string{"full"}, "", plan, "S").Status)
 }
 
 func TestHostsFit_CountsWholeSessionsAcrossHosts(t *testing.T) {
@@ -152,4 +164,43 @@ func TestStartComposedSession_Auto_SkipsAHostWithoutRoom(t *testing.T) {
 	full := &dto.ServerMetricsResponse{RAMAvailableGB: 50, RAMTotalGB: 64, RAMPercent: 99.5}
 	err := startOnTwoHosts(t, full, roomy(10))
 	assert.Contains(t, err.Error(), "backend=second")
+}
+
+// An automatic launch only considers the hosts that offer the distribution:
+// the roomier host lacks it, so the session goes to the other one.
+func TestStartComposedSession_Auto_OnlyHostsOfferingTheDistribution(t *testing.T) {
+	var lastCatalog string
+	svc := fakeTTWithCatalogs(t,
+		[]dto.BackendInfo{{ID: "first", Connected: true, IsDefault: true}, {ID: "second", Connected: true}},
+		map[string]*dto.ServerMetricsResponse{"first": roomy(4), "second": roomy(40)},
+		map[string][]dto.TTDistribution{
+			"first":  {{Name: "debian", Prefix: "deb"}},
+			"second": {{Name: "ubuntu", Prefix: "ubu"}},
+		},
+		&lastCatalog,
+	)
+	plan := &paymentModels.SubscriptionPlan{AllowedBackends: []string{"first", "second"}, MaxSessionDurationMinutes: 60}
+
+	_, err := svc.StartComposedSession("placement-user", dto.CreateComposedSessionInput{Distribution: "debian", Size: "S", Terms: "accepted"}, plan)
+
+	require.Error(t, err, "the fake serves no sizes, so the launch stops after reading the chosen host's catalog")
+	assert.NotContains(t, err.Error(), "distribution 'debian' not found")
+	assert.Equal(t, "first", lastCatalog, "the launch reads the catalog of the host it chose")
+}
+
+// The capacity indicator answers for the same hosts: with no host offering the
+// distribution, it cannot vouch for any.
+func TestLaunchCapacity_OnlyHostsOfferingTheDistribution(t *testing.T) {
+	svc := fakeTTWithCatalogs(t,
+		[]dto.BackendInfo{{ID: "first", Connected: true, IsDefault: true}, {ID: "second", Connected: true}},
+		map[string]*dto.ServerMetricsResponse{"first": saturated(), "second": roomy(40)},
+		map[string][]dto.TTDistribution{"first": {{Name: "debian"}}, "second": {{Name: "ubuntu"}}},
+		nil,
+	)
+	plan := &paymentModels.SubscriptionPlan{}
+
+	assert.Equal(t, services.CapacityStatusCritical, svc.LaunchCapacity([]string{"first", "second"}, "debian", plan, "S").Status,
+		"only the full host offers debian")
+	assert.Equal(t, services.CapacityStatusOK, svc.LaunchCapacity([]string{"first", "second"}, "", plan, "S").Status,
+		"no distribution named: every allowed host counts")
 }
