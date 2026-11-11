@@ -9,29 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// keymatchModelConf is the exact Casbin model used by ocf-core
-// (from src/configuration/keymatch_model.conf).
-const keymatchModelConf = `
-[request_definition]
-r = sub, obj, act
-
-[policy_definition]
-p = sub, obj, act
-
-[role_definition]
-g = _, _
-
-[policy_effect]
-e = some(where (p.eft == allow))
-
-[matchers]
-m = (g(r.sub, p.sub) || r.sub == p.sub) && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act)
-`
-
-// newTestEnforcer creates a Casbin enforcer with the keymatch model and in-memory policies.
+// newTestEnforcer creates a Casbin enforcer with ocf-core's own model file (not a
+// copy, which would keep testing the old matcher after the real one changes) and
+// in-memory policies.
 func newTestEnforcer(t *testing.T) *casbin.Enforcer {
 	t.Helper()
-	m, err := model.NewModelFromString(keymatchModelConf)
+	m, err := model.NewModelFromFile("../../src/configuration/keymatch_model.conf")
 	require.NoError(t, err, "failed to parse Casbin model")
 	e, err := casbin.NewEnforcer(m)
 	require.NoError(t, err, "failed to create Casbin enforcer")
