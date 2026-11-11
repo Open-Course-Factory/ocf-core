@@ -35,9 +35,6 @@ type PlanRequirement struct {
 	// RequirePlan resolves the caller's effective plan and rejects the request
 	// (403) when no active plan resolves.
 	RequirePlan bool
-	// CheckHostRAM verifies the terminal backend has RAM headroom for the
-	// requested session size before the handler runs.
-	CheckHostRAM bool
 }
 
 // ActionConfig declares a custom REST action on an entity registration, in

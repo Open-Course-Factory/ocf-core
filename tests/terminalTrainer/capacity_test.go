@@ -1,5 +1,5 @@
 // Tests for terminalServices.EvaluateLaunchCapacity — the pure-function
-// kernel of both the CheckRAMAvailability middleware and the new
+// kernel of the launch-time host RAM checks and the
 // /terminals/capacity-check endpoint.
 //
 // The "uses chosen size not plan max" rows are load-bearing: they cover

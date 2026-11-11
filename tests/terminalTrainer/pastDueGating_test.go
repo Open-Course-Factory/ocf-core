@@ -61,7 +61,7 @@ func seedGateSub(t *testing.T, db *gorm.DB, userID, status string, pastDueSince 
 // terminal-access middleware omitted as orthogonal) and registers a single POST
 // route so the handler's gatePastDueBeyondGrace call is exercised. handler picks
 // the controller method under test.
-func registerGateRoute(t *testing.T, db *gorm.DB, userID, path string, withRAM bool,
+func registerGateRoute(t *testing.T, db *gorm.DB, userID, path string,
 	handler func(terminalController.TerminalController) gin.HandlerFunc) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -78,9 +78,6 @@ func registerGateRoute(t *testing.T, db *gorm.DB, userID, path string, withRAM b
 		paymentMiddleware.InjectOrgContext(),
 		paymentMiddleware.InjectEffectivePlan(eps),
 		paymentMiddleware.RequirePlan(),
-	}
-	if withRAM {
-		chain = append(chain, paymentMiddleware.CheckRAMAvailability(termSvc))
 	}
 	chain = append(chain, handler(ctrl))
 	r.POST(path, chain...)
@@ -105,7 +102,7 @@ func TestResume_PastDueBeyondGrace_Rejected402(t *testing.T) {
 	since := time.Now().Add(-10 * 24 * time.Hour) // beyond default 7d grace
 	seedGateSub(t, db, userID, "past_due", &since)
 
-	r := registerGateRoute(t, db, userID, "/api/v1/terminals/:id/start", false,
+	r := registerGateRoute(t, db, userID, "/api/v1/terminals/:id/start",
 		func(c terminalController.TerminalController) gin.HandlerFunc { return c.StartSession })
 	w := postGate(r, "/api/v1/terminals/any-session/start", "{}")
 
@@ -121,7 +118,7 @@ func TestBulkCreate_PastDueBeyondGrace_Rejected402(t *testing.T) {
 	since := time.Now().Add(-10 * 24 * time.Hour)
 	seedGateSub(t, db, userID, "past_due", &since)
 
-	r := registerGateRoute(t, db, userID, "/api/v1/class-groups/:id/bulk-create-terminals", false,
+	r := registerGateRoute(t, db, userID, "/api/v1/class-groups/:id/bulk-create-terminals",
 		func(c terminalController.TerminalController) gin.HandlerFunc { return c.BulkCreateTerminalsForGroup })
 	w := postGate(r, "/api/v1/class-groups/any-group/bulk-create-terminals", "{}")
 
@@ -137,7 +134,7 @@ func TestComposedStart_PastDueWithinGrace_NotGated(t *testing.T) {
 	since := time.Now().Add(-1 * 24 * time.Hour) // 1 day < 7d grace
 	seedGateSub(t, db, userID, "past_due", &since)
 
-	r := registerGateRoute(t, db, userID, "/api/v1/terminals/start-composed-session", true,
+	r := registerGateRoute(t, db, userID, "/api/v1/terminals/start-composed-session",
 		func(c terminalController.TerminalController) gin.HandlerFunc { return c.StartComposedSession })
 	w := postGate(r, "/api/v1/terminals/start-composed-session", composedBody)
 
@@ -152,7 +149,7 @@ func TestComposedStart_ActiveSubscription_NotGated(t *testing.T) {
 	userID := "active-user"
 	seedGateSub(t, db, userID, "active", nil)
 
-	r := registerGateRoute(t, db, userID, "/api/v1/terminals/start-composed-session", true,
+	r := registerGateRoute(t, db, userID, "/api/v1/terminals/start-composed-session",
 		func(c terminalController.TerminalController) gin.HandlerFunc { return c.StartComposedSession })
 	w := postGate(r, "/api/v1/terminals/start-composed-session", composedBody)
 
@@ -167,7 +164,7 @@ func TestComposedStart_PastDueNullSince_NotGated(t *testing.T) {
 	userID := "legacy-pastdue-user"
 	seedGateSub(t, db, userID, "past_due", nil) // entered past_due before the feature shipped
 
-	r := registerGateRoute(t, db, userID, "/api/v1/terminals/start-composed-session", true,
+	r := registerGateRoute(t, db, userID, "/api/v1/terminals/start-composed-session",
 		func(c terminalController.TerminalController) gin.HandlerFunc { return c.StartComposedSession })
 	w := postGate(r, "/api/v1/terminals/start-composed-session", composedBody)
 
@@ -223,7 +220,6 @@ func TestComposedStart_PastDueBeyondGrace_Rejected402(t *testing.T) {
 		paymentMiddleware.InjectOrgContext(),
 		paymentMiddleware.InjectEffectivePlan(eps),
 		paymentMiddleware.RequirePlan(),
-		paymentMiddleware.CheckRAMAvailability(termSvc),
 		ctrl.StartComposedSession,
 	)
 

@@ -313,9 +313,8 @@ userController.UsersRoutes(apiGroup, sqldb.DB)
 	// action declaring a PlanRequirement resolves into the canonical payment
 	// middlewares. Injected (not imported) to keep the swagger package free of a
 	// payment import — see swaggerGenerator.SetPlanChainBuilder.
-	planChainTerminalService := terminalServices.NewTerminalTrainerService(sqldb.DB)
 	swaggerGenerator.SetPlanChainBuilder(func(req entityManagementInterfaces.PlanRequirement) []gin.HandlerFunc {
-		return paymentMiddleware.PlanChain(sqldb.DB, req, planChainTerminalService)
+		return paymentMiddleware.PlanChain(sqldb.DB, req)
 	})
 
 	// Initialize Swagger documentation

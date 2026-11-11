@@ -43,11 +43,8 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
 	sessionRoutes := router.Group("/scenario-sessions")
-	// Scenarios never need CheckHostRAM at the middleware layer (host RAM is
-	// checked inside LaunchScenario against the resolved size), so the plan
-	// chain is built with a nil TerminalTrainerService here.
 	sessionRoutes.GET("/available", paymentMiddleware.WithPlanChain(
-		db, entityManagementInterfaces.PlanRequirement{OrgContext: true}, nil,
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true},
 		[]gin.HandlerFunc{middleware.AuthManagement()},
 		launchController.GetAvailableScenarios,
 	)...)
@@ -71,22 +68,11 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	// Budget enforcement is performed inside LaunchScenario via
 	// QuotaService.CheckBudget; no middleware-level slot counter is needed.
 	//
-	// Host RAM capacity is checked INSIDE LaunchScenario (not as middleware)
-	// because CheckRAMAvailability calls ctx.ShouldBindBodyWith() which
-	// drains c.Request.Body and only re-reads through the cached BodyBytes
-	// path. The controller's ctx.ShouldBindJSON(&input) would then see EOF
-	// and return 400 "Invalid input: EOF" — the user-reported regression.
-	// Beyond fixing the body-read issue, the in-controller check has a
-	// real-correctness advantage: scenarios resolve their effective size
-	// (via scenario.InstanceType + distribution MinSizeKey + launch-time
-	// fallback) AFTER the request enters the handler. The middleware never
-	// saw the resolved size, so it estimated against the plan's max size
-	// (XL=4GiB) and 503'd whenever host headroom was below 4 GiB — even
-	// for an M scenario needing only 1 GiB. EvaluateLaunchCapacity is now
-	// called against the resolved size, mirroring commit 951b69c on the
-	// resume route.
+	// Host RAM capacity is checked INSIDE LaunchScenario, because only the
+	// handler knows the scenario's resolved size (scenario.InstanceType +
+	// distribution MinSizeKey + launch-time fallback) and the host it lands on.
 	sessionRoutes.POST("/launch", paymentMiddleware.WithPlanChain(
-		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, nil,
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true},
 		[]gin.HandlerFunc{middleware.AuthManagement()},
 		launchController.LaunchScenario,
 	)...)

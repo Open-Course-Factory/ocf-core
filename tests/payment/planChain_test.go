@@ -5,12 +5,12 @@
 // Every production symbol referenced here does NOT exist yet — these tests
 // DEFINE it:
 //   - entityManagementInterfaces.PlanRequirement (dependency-free flag struct)
-//   - paymentMiddleware.PlanChain(db, req, ts) []gin.HandlerFunc
+//   - paymentMiddleware.PlanChain(db, req) []gin.HandlerFunc
 //
 // PlanChain assembles the effective-plan middlewares in a FIXED order from a
 // declarative PlanRequirement, so the 8 hand-wired call sites can be replaced
 // by a single builder. The order pinned here is exactly the legacy chain:
-//   InjectOrgContext → InjectEffectivePlan → RequirePlan → CheckRAMAvailability
+//   InjectOrgContext → InjectEffectivePlan → RequirePlan
 //
 // The tests drive the REAL middlewares returned by PlanChain through
 // httptest + gin + a probe handler that records the context keys each
@@ -21,7 +21,6 @@
 //   - InjectOrgContext      → ctx "org_context_id"   (string, from ?organization_id or JSON body)
 //   - InjectEffectivePlan   → ctx "subscription_plan" (*models.SubscriptionPlan), "effective_plan_result", "planSource"
 //   - RequirePlan           → 403 when "effective_plan_result" is absent/typed-nil
-//   - CheckRAMAvailability  → reads "subscription_plan"; needs a TerminalTrainerService
 package payment_tests
 
 import (
@@ -31,20 +30,11 @@ import (
 
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	paymentMiddleware "soli/formations/src/payment/middleware"
-	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// stubPlanChainTerminalService is a non-nil TerminalTrainerService whose methods
-// are never invoked by these tests: it embeds the interface (a nil value) purely
-// to satisfy the type so PlanChain accepts a non-nil ts when CheckHostRAM is set.
-// Uniquely named to avoid colliding with any shared mock in this package.
-type stubPlanChainTerminalService struct {
-	terminalServices.TerminalTrainerService
-}
 
 // planChainProbe records what the plan-chain middlewares left in the gin
 // context before the handler ran, plus whether the handler was reached at all.
@@ -106,7 +96,7 @@ func runPlanChain(userID string, chain []gin.HandlerFunc, req *http.Request) (*h
 func TestPlanChain_EmptyRequirement_NoMiddlewaresProbeReached(t *testing.T) {
 	db := freshTestDB(t)
 
-	chain := paymentMiddleware.PlanChain(db, entityManagementInterfaces.PlanRequirement{}, nil)
+	chain := paymentMiddleware.PlanChain(db, entityManagementInterfaces.PlanRequirement{})
 	assert.Len(t, chain, 0, "empty PlanRequirement must produce zero middlewares")
 
 	rec, probe := runPlanChain("", chain, httptest.NewRequest(http.MethodGet, "/gate", nil))
@@ -125,7 +115,7 @@ func TestPlanChain_EmptyRequirement_NoMiddlewaresProbeReached(t *testing.T) {
 func TestPlanChain_OrgContext_InjectsOrgContextID(t *testing.T) {
 	db := freshTestDB(t)
 
-	chain := paymentMiddleware.PlanChain(db, entityManagementInterfaces.PlanRequirement{OrgContext: true}, nil)
+	chain := paymentMiddleware.PlanChain(db, entityManagementInterfaces.PlanRequirement{OrgContext: true})
 	assert.Len(t, chain, 1, "OrgContext-only requirement must produce exactly one middleware")
 
 	req := httptest.NewRequest(http.MethodGet, "/gate?organization_id=org-xyz", nil)
@@ -145,7 +135,7 @@ func TestPlanChain_OrgContext_InjectsOrgContextID(t *testing.T) {
 func TestPlanChain_RequirePlan_NoPlan_Returns403(t *testing.T) {
 	db := freshTestDB(t)
 
-	chain := paymentMiddleware.PlanChain(db, entityManagementInterfaces.PlanRequirement{RequirePlan: true}, nil)
+	chain := paymentMiddleware.PlanChain(db, entityManagementInterfaces.PlanRequirement{RequirePlan: true})
 	assert.Len(t, chain, 2, "RequirePlan must produce InjectEffectivePlan + RequirePlan")
 
 	req := httptest.NewRequest(http.MethodGet, "/gate", nil)
@@ -167,7 +157,7 @@ func TestPlanChain_RequirePlan_WithPlan_ProbeReachedPlanInContext(t *testing.T) 
 	plan := createPlan(t, db, "Solo", 10, 0)
 	createUserSubscription(t, db, userID, plan)
 
-	chain := paymentMiddleware.PlanChain(db, entityManagementInterfaces.PlanRequirement{RequirePlan: true}, nil)
+	chain := paymentMiddleware.PlanChain(db, entityManagementInterfaces.PlanRequirement{RequirePlan: true})
 
 	req := httptest.NewRequest(http.MethodGet, "/gate", nil)
 	rec, probe := runPlanChain(userID, chain, req)
@@ -178,40 +168,7 @@ func TestPlanChain_RequirePlan_WithPlan_ProbeReachedPlanInContext(t *testing.T) 
 }
 
 // ---------------------------------------------------------------------------
-// 5. CheckHostRAM with a nil TerminalTrainerService must fail-fast (panic) at
-//    build time — a startup misconfiguration must never boot silently.
-// ---------------------------------------------------------------------------
-
-func TestPlanChain_CheckHostRAM_NilTerminalService_PanicsAtBuild(t *testing.T) {
-	db := freshTestDB(t)
-
-	assert.Panics(t, func() {
-		paymentMiddleware.PlanChain(db, entityManagementInterfaces.PlanRequirement{CheckHostRAM: true}, nil)
-	}, "CheckHostRAM with a nil TerminalTrainerService must panic at PlanChain build")
-}
-
-// ---------------------------------------------------------------------------
-// 6. Full requirement → the canonical four-middleware chain in fixed order.
-//    Order is pinned by the length here plus the behavioural combo in test 7.
-// ---------------------------------------------------------------------------
-
-func TestPlanChain_FullRequirement_ReturnsCanonicalChainLengthFour(t *testing.T) {
-	db := freshTestDB(t)
-	ts := &stubPlanChainTerminalService{}
-
-	req := entityManagementInterfaces.PlanRequirement{
-		OrgContext:   true,
-		RequirePlan:  true,
-		CheckHostRAM: true,
-	}
-	chain := paymentMiddleware.PlanChain(db, req, ts)
-
-	// InjectOrgContext(1) + InjectEffectivePlan(1) + RequirePlan(1) + CheckRAMAvailability(1).
-	assert.Len(t, chain, 4, "full requirement must produce the canonical four-middleware chain")
-}
-
-// ---------------------------------------------------------------------------
-// 7. Order pin (behavioural): OrgContext + RequirePlan together must run
+// 5. Order pin (behavioural): OrgContext + RequirePlan together must run
 //    InjectOrgContext BEFORE InjectEffectivePlan — the org context must reach
 //    plan resolution so an org-sourced plan satisfies RequirePlan. Proves the
 //    two are emitted in the canonical order, not reversed.
@@ -225,7 +182,7 @@ func TestPlanChain_OrgContextThenRequirePlan_OrgPlanSatisfiesRequirement(t *test
 	org, _ := createOrgWithSubscription(t, db, "acme", userID, orgPlan)
 
 	req := entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}
-	chain := paymentMiddleware.PlanChain(db, req, nil)
+	chain := paymentMiddleware.PlanChain(db, req)
 	assert.Len(t, chain, 3, "OrgContext + RequirePlan must produce three middlewares")
 
 	httpReq := httptest.NewRequest(http.MethodGet, "/gate?organization_id="+org.ID.String(), nil)

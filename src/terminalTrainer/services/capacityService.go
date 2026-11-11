@@ -140,9 +140,8 @@ type MetricsFetcher interface {
 // Writes a 503 + canonical "Server at capacity" message to ctx and returns true
 // when the resume must be rejected; returns false to let the caller proceed.
 //
-// Permissive on missing inputs (nil plan, metrics fetch error) — matches the
-// historical CheckRAMAvailability behavior: never block on infrastructure
-// flakiness, only on confirmed insufficient host RAM.
+// Permissive on missing inputs (nil plan, metrics fetch error): never block
+// on infrastructure flakiness, only on confirmed insufficient host RAM.
 //
 // Callers MUST short-circuit on `true`:
 //

@@ -71,7 +71,7 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	groupRoutes := router.Group("/class-groups")
 	// Use effective plan middlewares for bulk creation validation.
 	groupRoutes.POST("/:id/bulk-create-terminals", paymentMiddleware.WithPlanChain(
-		db, entityManagementInterfaces.PlanRequirement{RequirePlan: true}, terminalService,
+		db, entityManagementInterfaces.PlanRequirement{RequirePlan: true},
 		[]gin.HandlerFunc{middleware.AuthManagement()},
 		terminalController.BulkCreateTerminalsForGroup,
 	)...)
@@ -95,14 +95,10 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	//   - InjectOrgContext / InjectEffectivePlan / RequirePlan: the plan the
 	//     resume is charged against; the plan-validity gate still applies.
 	//
-	// What was removed (regression: spurious 503 on every Resume):
-	//   - CheckRAMAvailability — Resume sends no body, so the middleware
-	//     fell back to a plan-max (LargestSize) estimate. On any host whose
-	//     headroom was below that estimate (i.e. realistic production
-	//     state) every Resume 503'd, even though the session's actual
-	//     footprint had not changed since it was admitted at creation.
+	// Host RAM is checked by the handler, on the session's own host and at
+	// its own size.
 	routes.POST("/:id/start", paymentMiddleware.WithPlanChain(
-		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true},
 		[]gin.HandlerFunc{middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccessAllowStopped()},
 		terminalController.StartSession,
 	)...)
@@ -143,24 +139,23 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	routes.GET("/catalog-sizes", middleware.AuthManagement(), terminalController.GetCatalogSizes)
 	routes.GET("/catalog-features", middleware.AuthManagement(), terminalController.GetCatalogFeatures)
 	routes.GET("/session-options", paymentMiddleware.WithPlanChain(
-		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true},
 		[]gin.HandlerFunc{middleware.AuthManagement()},
 		terminalController.GetSessionOptions,
 	)...)
 	// Budget enforcement (CPU/RAM cap from MaxCPU/MaxMemoryMB) is performed
 	// inside StartComposedSession via QuotaService.CheckBudget; no
 	// middleware-level slot counter is needed. Host RAM is checked there too,
-	// on the host the session is placed on — not by CheckHostRAM, which can
-	// only see the default host.
+	// on the host the session is placed on.
 	routes.POST("/start-composed-session", paymentMiddleware.WithPlanChain(
-		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true},
 		[]gin.HandlerFunc{middleware.AuthManagement()},
 		terminalController.StartComposedSession,
 	)...)
 	// Capacity check: same plan-resolution chain as start-composed-session;
 	// this endpoint IS the check.
 	routes.GET("/capacity-check", paymentMiddleware.WithPlanChain(
-		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true},
 		[]gin.HandlerFunc{middleware.AuthManagement()},
 		terminalController.CapacityCheck,
 	)...)
@@ -170,7 +165,7 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	// InjectEffectivePlan + RequirePlan ensure an active plan resolves before
 	// the handler runs.
 	routes.GET("/my-usage", paymentMiddleware.WithPlanChain(
-		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true},
 		[]gin.HandlerFunc{middleware.AuthManagement()},
 		terminalController.MyTerminalUsage,
 	)...)
