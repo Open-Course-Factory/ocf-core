@@ -250,3 +250,57 @@ func TestGetScenarioResults_PartialGrade_UsesWeightedFormula(t *testing.T) {
 	assert.InDelta(t, 75.0, *paginated.Items[0].Grade, 0.01,
 		"partial grade in scenario results must use the weighted formula (terminal=1.0, quiz=score)")
 }
+
+// --- Survey steps (#568): never graded ---
+
+// A survey is opinion, not achievement: it adds nothing to the grade and is
+// not counted among the steps the grade divides by, answered or not.
+func TestComputeWeightedGrade_SurveyStep_ExcludedFromGrade(t *testing.T) {
+	steps := []models.ScenarioStep{
+		{Order: 0, StepType: "terminal"},
+		{Order: 1, StepType: "survey"},
+	}
+	now := time.Now()
+
+	answered := []models.ScenarioStepProgress{
+		{StepOrder: 0, Status: "completed", CompletedAt: &now},
+		{StepOrder: 1, Status: "completed", CompletedAt: &now, StepType: "survey"},
+	}
+	assert.InDelta(t, 100.0, services.ComputeWeightedGradeFromLoaded(steps, answered, nil), 0.01,
+		"a completed survey does not change the grade")
+
+	unanswered := []models.ScenarioStepProgress{
+		{StepOrder: 0, Status: "completed", CompletedAt: &now},
+		{StepOrder: 1, Status: "active", StepType: "survey"},
+	}
+	assert.InDelta(t, 100.0, services.ComputeWeightedGradeFromLoaded(steps, unanswered, nil), 0.01,
+		"an unanswered survey does not lower the grade")
+
+	onlySurveyDone := []models.ScenarioStepProgress{
+		{StepOrder: 0, Status: "active"},
+		{StepOrder: 1, Status: "completed", CompletedAt: &now, StepType: "survey"},
+	}
+	assert.InDelta(t, 0.0, services.ComputeWeightedGradeFromLoaded(steps, onlySurveyDone, nil), 0.01,
+		"answering the survey earns no credit")
+}
+
+// Regression: the correct-answer counts already ignore every step but quiz
+// and flag, so survey questions never enter the denominator.
+func TestComputeCorrectCounts_SurveyStep_Ignored(t *testing.T) {
+	surveyStepID := uuid.New()
+	quizStepID := uuid.New()
+	steps := []models.ScenarioStep{
+		{BaseModel: entityModelWithID(surveyStepID), Order: 0, StepType: "survey"},
+		{BaseModel: entityModelWithID(quizStepID), Order: 1, StepType: "quiz"},
+	}
+	two := 2
+	progress := []models.ScenarioStepProgress{
+		{StepOrder: 0, StepType: "survey", Status: "completed", QuizAnswers: `{}`},
+		{StepOrder: 1, StepType: "quiz", Status: "completed", QuizScore: new(1.0), QuizCorrectCount: &two},
+	}
+	questionCounts := map[uuid.UUID]int{surveyStepID: 4, quizStepID: 2}
+
+	correct, total := services.ComputeCorrectCountsFromLoaded(steps, progress, nil, questionCounts)
+	assert.Equal(t, int64(2), correct)
+	assert.Equal(t, int64(2), total, "survey questions are not counted")
+}

@@ -582,3 +582,47 @@ func TestImportFromDirectory_LegacyArchiveStillWorks(t *testing.T) {
 	assert.Len(t, step.Questions, 0, "legacy step must have no quiz questions")
 	assert.Equal(t, "plain content", step.TextContent, "legacy step text content must still load")
 }
+
+// --- Survey steps (#568) ---
+
+func TestExportImport_SurveyStep_RoundTrips(t *testing.T) {
+	db := freshTestDB(t)
+	seedService := services.NewScenarioSeedService(db)
+
+	original, _, err := seedService.SeedScenario(dto.SeedScenarioInput{
+		Title:        "Survey Roundtrip",
+		InstanceType: "ubuntu:22.04",
+		Steps: []dto.SeedStepInput{{
+			Title: "Feedback", StepType: "survey",
+			Questions: []dto.SeedQuestionInput{
+				{Order: 0, QuestionText: "Pace?", QuestionType: "multiple_choice", Options: `["Slow","Fast"]`},
+				{Order: 1, QuestionText: "Anything else?", QuestionType: "free_text"},
+			},
+		}},
+	}, "user-1", nil)
+	require.NoError(t, err)
+
+	export, err := services.NewScenarioExportService(db).ExportAsJSON(original.ID)
+	require.NoError(t, err)
+	raw, err := json.Marshal(export)
+	require.NoError(t, err)
+	var reimport dto.SeedScenarioInput
+	require.NoError(t, json.Unmarshal(raw, &reimport))
+	reimport.Title = "Survey Roundtrip Reimported"
+
+	reimported, _, err := seedService.SeedScenario(reimport, "user-2", nil)
+	require.NoError(t, err)
+
+	var loaded models.Scenario
+	require.NoError(t, db.Preload("Steps").Preload("Steps.Questions", func(d *gorm.DB) *gorm.DB {
+		return d.Order("\"order\" ASC")
+	}).First(&loaded, "id = ?", reimported.ID).Error)
+	require.Len(t, loaded.Steps, 1)
+	step := loaded.Steps[0]
+	assert.Equal(t, "survey", step.StepType)
+	require.Len(t, step.Questions, 2)
+	assert.Equal(t, "Pace?", step.Questions[0].QuestionText)
+	assert.Equal(t, `["Slow","Fast"]`, step.Questions[0].Options)
+	assert.Equal(t, "", step.Questions[0].CorrectAnswer)
+	assert.Equal(t, "free_text", step.Questions[1].QuestionType)
+}

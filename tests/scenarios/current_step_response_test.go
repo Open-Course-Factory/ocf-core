@@ -291,3 +291,43 @@ func TestGetCurrentStep_TerminalStep_OmitsQuestions(t *testing.T) {
 	assert.Empty(t, response.Questions,
 		"terminal step must not populate Questions in CurrentStepResponse")
 }
+
+// A survey is answered in the player like a quiz, so its questions travel
+// with the step — sanitized exactly as a quiz's are (#568).
+func TestGetCurrentStep_SurveyStep_ReturnsSanitizedQuestions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, step := setupSessionWithStepType(t, "survey", nil)
+	q1 := models.ScenarioStepQuestion{
+		StepID: step.ID, Order: 1, QuestionText: "Pace?", QuestionType: "multiple_choice",
+		Options: `["Slow","Fast"]`, CorrectAnswer: "0", Explanation: "leftover",
+	}
+	q2 := models.ScenarioStepQuestion{
+		StepID: step.ID, Order: 2, QuestionText: "Anything else?", QuestionType: "free_text",
+	}
+	require.NoError(t, sharedTestDB.Create(&q1).Error)
+	require.NoError(t, sharedTestDB.Create(&q2).Error)
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	response, err := svc.GetCurrentStep(sessionID)
+
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	assert.Equal(t, "survey", response.StepType)
+	require.Len(t, response.Questions, 2, "a survey step must expose its questions")
+	byOrder := map[int]int{}
+	for i := range response.Questions {
+		byOrder[response.Questions[i].Order] = i
+	}
+	require.Contains(t, byOrder, 1)
+	assert.Equal(t, q1.ID, response.Questions[byOrder[1]].ID)
+	assert.Equal(t, `["Slow","Fast"]`, response.Questions[byOrder[1]].Options)
+	require.Contains(t, byOrder, 2)
+	assert.Equal(t, "free_text", response.Questions[byOrder[2]].QuestionType)
+
+	for field := range reflect.TypeOf(response.Questions[0]).Fields() {
+		assert.NotEqual(t, "CorrectAnswer", field.Name)
+		assert.NotEqual(t, "Explanation", field.Name)
+	}
+}

@@ -478,3 +478,161 @@ func TestSubmitQuiz_LearningMode_ExposesCorrectAnswers(t *testing.T) {
 	assert.Equal(t, "ls", byID[qIDs[0]].CorrectAnswer,
 		"learning mode reveals the correct answer after submission")
 }
+
+// --- Survey steps (#568) ---
+//
+// A survey reuses /submit-quiz but is never graded: every question is
+// optional, nothing is scored, and no correction is ever returned — not even
+// to the author in a preview, since a survey has no right answers to show.
+
+// surveyFixture creates a survey step (two questions, followed by a terminal
+// step) and a session sitting on it. Returns the session ID and the question
+// IDs in order.
+func surveyFixture(t *testing.T) (uuid.UUID, []uuid.UUID) {
+	t.Helper()
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "survey-submit", Title: "Survey Submit", InstanceType: "ubuntu:22.04", CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step0 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Feedback", StepType: "survey"}
+	require.NoError(t, db.Create(&step0).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 1, Title: "Next", StepType: "terminal",
+	}).Error)
+
+	q1 := models.ScenarioStepQuestion{
+		StepID: step0.ID, Order: 1, QuestionText: "How clear was the lab?",
+		QuestionType: "multiple_choice", Options: `["Clear","Unclear"]`,
+	}
+	q2 := models.ScenarioStepQuestion{
+		StepID: step0.ID, Order: 2, QuestionText: "What would you change?",
+		QuestionType: "free_text",
+	}
+	require.NoError(t, db.Create(&q1).Error)
+	require.NoError(t, db.Create(&q2).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-1", CurrentStep: 0,
+		Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 0, Status: "active",
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 1, Status: "locked",
+	}).Error)
+
+	return session.ID, []uuid.UUID{q1.ID, q2.ID}
+}
+
+// assertNoCorrection checks a survey response carries the question count and
+// the next step, and nothing that reads as a grade.
+func assertNoCorrection(t *testing.T, result *dto.SubmitQuizResponse) {
+	t.Helper()
+	require.NotNil(t, result)
+	assert.Nil(t, result.Score, "a survey is never scored")
+	assert.Nil(t, result.CorrectCount, "a survey has no correct answers")
+	assert.Empty(t, result.PerQuestionResults, "a survey returns no correction")
+	assert.Equal(t, 2, result.Total)
+	require.NotNil(t, result.NextStep, "a survey advances the session")
+	assert.Equal(t, 1, *result.NextStep)
+
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &payload))
+	for _, key := range []string{"score", "correct_count", "per_question_results"} {
+		assert.NotContains(t, payload, key, "a survey payload must not carry %s", key)
+	}
+}
+
+// Every survey question is optional: sending nothing at all still moves on.
+func TestSubmitQuiz_SurveyEmptyAnswers_AdvancesWithoutScore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, _ := surveyFixture(t)
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.SubmitQuiz(sessionID, dto.SubmitQuizInput{Answers: map[uuid.UUID]string{}})
+
+	require.NoError(t, err, "an empty survey submission must be accepted")
+	assertNoCorrection(t, result)
+}
+
+func TestSubmitQuiz_SurveyStoresAnswersWithoutScore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := surveyFixture(t)
+	answers := map[uuid.UUID]string{qIDs[0]: "1", qIDs[1]: "More time on pipes"}
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.SubmitQuiz(sessionID, dto.SubmitQuizInput{Answers: answers})
+	require.NoError(t, err)
+	assertNoCorrection(t, result)
+
+	var progress models.ScenarioStepProgress
+	require.NoError(t, sharedTestDB.Where("session_id = ? AND step_order = 0", sessionID).First(&progress).Error)
+	assert.Equal(t, "survey", progress.StepType)
+	assert.Nil(t, progress.QuizScore, "a survey stores no score")
+	assert.Nil(t, progress.QuizCorrectCount, "a survey stores no correct count")
+
+	var stored map[uuid.UUID]string
+	require.NoError(t, json.Unmarshal([]byte(progress.QuizAnswers), &stored),
+		"the learner's answers are stored as JSON for the trainer")
+	assert.Equal(t, answers, stored)
+}
+
+// A preview reveals a quiz's correction to its author; a survey has none.
+func TestSubmitQuiz_SurveyPreview_ReturnsNoCorrection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := surveyFixture(t)
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioSession{}).
+		Where("id = ?", sessionID).Update("is_preview", true).Error)
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.SubmitQuiz(sessionID, dto.SubmitQuizInput{
+		Answers: map[uuid.UUID]string{qIDs[0]: "0"},
+	})
+
+	require.NoError(t, err)
+	assertNoCorrection(t, result)
+}
+
+func TestSubmitQuiz_SurveyUnknownQuestion_IsRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := surveyFixture(t)
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.SubmitQuiz(sessionID, dto.SubmitQuizInput{
+		Answers: map[uuid.UUID]string{qIDs[0]: "0", uuid.New(): "anything"},
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "unknown question",
+		"the survey must be accepted as a step and refused for the stray answer")
+}
+
+// Regression: only surveys may be submitted empty — a quiz still needs answers.
+func TestSubmitQuiz_QuizEmptyAnswers_StillRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, _ := quizFixture(t, true)
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.SubmitQuiz(sessionID, dto.SubmitQuizInput{Answers: map[uuid.UUID]string{}})
+
+	assert.Error(t, err, "an empty quiz submission must still be refused")
+	assert.Nil(t, result)
+}

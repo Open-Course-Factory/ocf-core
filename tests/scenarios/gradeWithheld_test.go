@@ -254,3 +254,18 @@ func TestGradeWithheld_ClassMembershipInactive_ShowsGrade(t *testing.T) {
 
 	assertGradeVisible(t, mySession(t, run.session.ID))
 }
+
+// Regression (#568): a survey never shows a correction either, but it holds no
+// grade to withhold, so it must not make a scenario an exam.
+func TestExamScenarios_SurveyOnly_IsNotExam(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := models.Scenario{Name: "survey-only-" + uuid.NewString(), Title: "Survey only", InstanceType: "ubuntu:22.04", CreatedByID: "teacher-1"}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Feedback", StepType: "survey", ShowImmediateFeedback: false,
+	}).Error)
+
+	exam, err := services.ExamScenarios(db, []uuid.UUID{scenario.ID})
+	require.NoError(t, err)
+	assert.False(t, exam[scenario.ID])
+}

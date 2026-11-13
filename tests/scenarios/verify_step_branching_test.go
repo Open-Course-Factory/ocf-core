@@ -225,3 +225,38 @@ func TestVerifyStep_QuizStep_RejectsVerifyAndPointsToSubmitQuiz(t *testing.T) {
 		strings.Contains(msg, "submit-quiz") || strings.Contains(msg, "submit_quiz") || strings.Contains(msg, "quiz submission"),
 		"verify-on-quiz error should direct caller to submit-quiz, got: %q", err.Error())
 }
+
+// A survey is submitted through /submit-quiz like a quiz (#568); /verify on it
+// must point there instead of auto-passing it as a script-less terminal step.
+func TestVerifyCurrentStep_SurveyStep_ReturnsErrVerifyQuizStep(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "verify-survey", Title: "Verify Survey Step", InstanceType: "ubuntu:22.04", CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	step0 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Survey step", StepType: "survey"}
+	require.NoError(t, db.Create(&step0).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepQuestion{
+		StepID: step0.ID, Order: 1, QuestionText: "Anything else?", QuestionType: "free_text",
+	}).Error)
+
+	terminalID := "terminal-verify-survey"
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-1", CurrentStep: 0,
+		Status: "active", StartedAt: time.Now(), TerminalSessionID: &terminalID,
+	}
+	require.NoError(t, db.Create(&session).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 0, Status: "active",
+	}).Error)
+
+	svc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.VerifyCurrentStep(session.ID)
+
+	assert.ErrorIs(t, err, services.ErrVerifyQuizStep)
+	assert.Nil(t, result)
+}

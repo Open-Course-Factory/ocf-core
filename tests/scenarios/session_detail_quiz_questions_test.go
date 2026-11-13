@@ -311,3 +311,89 @@ func TestGetSessionDetail_QuizStep_AnswersJSONMalformed_DegradesGracefully(t *te
 	assert.Equal(t, "", got[0]["student_answer"],
 		"with malformed answers JSON, every student_answer must be empty (graceful degradation)")
 }
+
+// A survey's answers reach the trainer as the learner gave them, with nothing
+// that reads as a correction: no right answer, no verdict, no score (#568).
+// Unanswered questions arrive as "" (free text) or "[]" (multi answer).
+func TestGetSessionDetail_SurveyStep_ShowsAnswersWithoutCorrection(t *testing.T) {
+	db := freshTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "sd-survey-s1", Role: "member",
+		JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	scenario := models.Scenario{
+		Name: "sd-survey", Title: "Survey Detail", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group",
+		CreatedByID: "c1", IsActive: true,
+	}).Error)
+
+	step := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Feedback", StepType: "survey"}
+	require.NoError(t, db.Create(&step).Error)
+	// A leftover correct_answer and explanation (e.g. a quiz turned survey)
+	// must never surface either.
+	q1 := models.ScenarioStepQuestion{
+		StepID: step.ID, Order: 1, QuestionText: "Pace?", QuestionType: "multiple_choice",
+		Options: `["Slow","Fast"]`, CorrectAnswer: "0", Explanation: "leftover",
+	}
+	q2 := models.ScenarioStepQuestion{
+		StepID: step.ID, Order: 2, QuestionText: "Anything else?", QuestionType: "free_text",
+	}
+	q3 := models.ScenarioStepQuestion{
+		StepID: step.ID, Order: 3, QuestionText: "Topics?", QuestionType: "multi_answer",
+		Options: `["grep","sed"]`,
+	}
+	require.NoError(t, db.Create(&q1).Error)
+	require.NoError(t, db.Create(&q2).Error)
+	require.NoError(t, db.Create(&q3).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "sd-survey-s1", Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+	answersJSON, err := json.Marshal(map[string]string{
+		q1.ID.String(): "0",
+		q2.ID.String(): "More pipes please",
+		q3.ID.String(): "[]",
+	})
+	require.NoError(t, err)
+	now := time.Now()
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 0, Status: "completed", StepType: "survey",
+		QuizAnswers: string(answersJSON), CompletedAt: &now,
+	}).Error)
+
+	detail, err := services.NewTeacherDashboardService(db, nil, nil).GetSessionDetail(groupID, session.ID)
+	require.NoError(t, err)
+	require.Len(t, detail.Steps, 1)
+	stepDetail := detail.Steps[0]
+	assert.Equal(t, "survey", stepDetail.StepType)
+	assert.Nil(t, stepDetail.QuizScore, "a survey has no score")
+	require.Len(t, stepDetail.Questions, 3, "the trainer sees every survey question")
+
+	jsonBytes, err := json.Marshal(stepDetail.Questions)
+	require.NoError(t, err)
+	var got []map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &got))
+	byOrder := map[int]map[string]any{}
+	for _, q := range got {
+		byOrder[int(q["order"].(float64))] = q
+	}
+
+	assert.Equal(t, "0", byOrder[1]["student_answer"])
+	assert.Equal(t, "More pipes please", byOrder[2]["student_answer"])
+	assert.Equal(t, "[]", byOrder[3]["student_answer"])
+	for order, q := range byOrder {
+		assert.Empty(t, q["correct_answer"], "question %d: a survey reveals no right answer", order)
+		assert.Empty(t, q["explanation"], "question %d: a survey carries no explanation", order)
+		if ic, ok := q["is_correct"]; ok {
+			assert.Equal(t, false, ic, "question %d: a survey answer is never marked correct", order)
+		}
+		assert.NotEmpty(t, q["question_text"])
+	}
+}

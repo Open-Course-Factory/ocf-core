@@ -205,3 +205,23 @@ func TestScenarioHealth_InfoStepIsNotADeadEnd(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, findingCodes(health), services.HealthNoVerification)
 }
+
+// A survey is passed by answering it, like a quiz — and, like a quiz, one
+// with no questions leaves the learner nothing to answer (#568).
+func TestScenarioHealth_SurveyWithoutQuestions_ReportsDeadEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario, steps := coverageScenario(t, `["en"]`)
+	for i, step := range steps {
+		if i == 0 {
+			require.NoError(t, db.Model(&step).Update("step_type", "survey").Error)
+			continue
+		}
+		require.NoError(t, db.Model(&step).Update("verify_script", "exit 0").Error)
+	}
+
+	health, err := services.CheckScenarioHealth(db, scenario)
+	require.NoError(t, err)
+	assert.Equal(t, []string{services.HealthBlocking}, severitiesOf(health, services.HealthNoVerification))
+}

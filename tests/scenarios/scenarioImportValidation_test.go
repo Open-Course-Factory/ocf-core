@@ -176,3 +176,107 @@ func TestChallengesContent_PassesImportValidation(t *testing.T) {
 		})
 	}
 }
+
+// --- Survey steps (#568) ---
+//
+// A survey is a quiz without right answers: its questions need text, a known
+// type and options for choice types, and nothing about correct_answer is ever
+// judged. True/false is a quiz device and has no place in a survey.
+
+func surveySeedInput(questions ...dto.SeedQuestionInput) dto.SeedScenarioInput {
+	return dto.SeedScenarioInput{
+		Title:        "Survey import",
+		InstanceType: "ubuntu:22.04",
+		Steps: []dto.SeedStepInput{
+			{Title: "Lab", StepType: "info"},
+			{Title: "Feedback", StepType: "survey", Questions: questions},
+		},
+	}
+}
+
+func seedSurveyStep(t *testing.T, input dto.SeedScenarioInput) models.ScenarioStep {
+	t.Helper()
+	db := freshTestDB(t)
+	scenario, _, err := services.NewScenarioSeedService(db).SeedScenario(input, "author", nil)
+	require.NoError(t, err, "a valid survey must import")
+
+	var step models.ScenarioStep
+	require.NoError(t, db.Preload("Questions").Where("scenario_id = ? AND step_type = ?", scenario.ID, "survey").First(&step).Error)
+	return step
+}
+
+func TestSeedScenario_SurveyStep_IsAccepted(t *testing.T) {
+	step := seedSurveyStep(t, surveySeedInput(
+		dto.SeedQuestionInput{QuestionText: "Pace?", QuestionType: "multiple_choice", Options: `["Too slow","Right","Too fast"]`},
+		dto.SeedQuestionInput{QuestionText: "Topics you liked?", QuestionType: "multi_answer", Options: `["grep","sed","awk"]`},
+		dto.SeedQuestionInput{QuestionText: "Anything else?", QuestionType: "free_text"},
+	))
+	assert.Equal(t, "survey", step.StepType)
+	assert.Len(t, step.Questions, 3)
+}
+
+// An author converting a quiz into a survey may leave answers behind; they
+// are harmless, so they are not a reason to refuse the file.
+func TestSeedScenario_SurveyWithCorrectAnswer_IsAccepted(t *testing.T) {
+	step := seedSurveyStep(t, surveySeedInput(
+		dto.SeedQuestionInput{QuestionText: "Pace?", QuestionType: "multiple_choice", Options: `["Slow","Fast"]`, CorrectAnswer: "7"},
+		dto.SeedQuestionInput{QuestionText: "Anything else?", QuestionType: "free_text", CorrectAnswer: "nothing"},
+	))
+	assert.Equal(t, "survey", step.StepType)
+	assert.Len(t, step.Questions, 2)
+}
+
+// surveyProblem expects exactly one problem, about step 2, that is not the
+// unknown-step-type refusal.
+func surveyProblem(t *testing.T, input dto.SeedScenarioInput) string {
+	t.Helper()
+	problems := seedProblems(t, input)
+	require.Len(t, problems, 1, "%v", problems)
+	assert.NotContains(t, problems[0], "is not one of terminal", "survey must be a known step type")
+	assert.Contains(t, problems[0], "step 2 (Feedback)")
+	return problems[0]
+}
+
+func TestSeedScenario_SurveyWithoutQuestions_IsRefused(t *testing.T) {
+	problem := surveyProblem(t, surveySeedInput())
+	assert.Contains(t, problem, "at least one question")
+}
+
+func TestSeedScenario_SurveyTrueFalse_IsRefused(t *testing.T) {
+	problem := surveyProblem(t, surveySeedInput(
+		dto.SeedQuestionInput{QuestionText: "Liked it?", QuestionType: "true_false"},
+	))
+	assert.Contains(t, problem, "question 1")
+	assert.Contains(t, problem, `"true_false"`)
+}
+
+func TestSeedScenario_SurveyChoiceWithOneOption_IsRefused(t *testing.T) {
+	problem := surveyProblem(t, surveySeedInput(
+		dto.SeedQuestionInput{QuestionText: "Pace?", QuestionType: "multiple_choice", Options: `["Fine"]`},
+	))
+	assert.Equal(t, "step 2 (Feedback), question 1: options needs at least 2 choices (got 1)", problem)
+}
+
+func TestImportFromDirectory_SurveySidecar_IsAccepted(t *testing.T) {
+	db := freshTestDB(t)
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "step1"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "step1", "text.md"), []byte("Tell us"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "step1", "extensions.json"),
+		[]byte(`{"step_type":"survey","questions":[
+			{"question_text":"Pace?","question_type":"multiple_choice","options":"[\"Slow\",\"Fast\"]"},
+			{"question_text":"Anything else?","question_type":"free_text"}]}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"), []byte(`{
+		"title": "Archive with a survey",
+		"details": {"steps": [{"title": "Feedback", "text": "step1/text.md"}]},
+		"backend": {"imageid": "s"}
+	}`), 0o644))
+
+	scenario, err := services.NewScenarioImporterService(db).ImportFromDirectory(dir, "author", nil, "upload")
+	require.NoError(t, err)
+
+	var step models.ScenarioStep
+	require.NoError(t, db.Preload("Questions").Where("scenario_id = ?", scenario.ID).First(&step).Error)
+	assert.Equal(t, "survey", step.StepType)
+	assert.Len(t, step.Questions, 2)
+}
