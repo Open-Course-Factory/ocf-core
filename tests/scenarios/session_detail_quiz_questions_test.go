@@ -397,3 +397,66 @@ func TestGetSessionDetail_SurveyStep_ShowsAnswersWithoutCorrection(t *testing.T)
 		assert.NotEmpty(t, q["question_text"])
 	}
 }
+
+// A survey's progress row keeps quiz_score and quiz_correct_count NULL. Every
+// trainer view that reads those columns must take the NULLs in its stride:
+// the session detail, the results table and the analytics (#568).
+func TestTeacherViews_SurveyNullScores_DoNotBreakResults(t *testing.T) {
+	db := freshTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "sv-null-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+	scenario := models.Scenario{Name: "sv-null", Title: "Survey Nulls", InstanceType: "ubuntu:22.04", CreatedByID: "c1"}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group", CreatedByID: "c1", IsActive: true,
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Lab", StepType: "terminal",
+	}).Error)
+	survey := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Feedback", StepType: "survey"}
+	require.NoError(t, db.Create(&survey).Error)
+	q := models.ScenarioStepQuestion{StepID: survey.ID, Order: 1, QuestionText: "Anything else?", QuestionType: "free_text"}
+	require.NoError(t, db.Create(&q).Error)
+
+	// Active, so the results table computes the partial grade itself.
+	session := models.ScenarioSession{ScenarioID: scenario.ID, UserID: "sv-null-s1", Status: "active", StartedAt: time.Now()}
+	require.NoError(t, db.Create(&session).Error)
+	now := time.Now()
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 0, Status: "completed", CompletedAt: &now,
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 1, Status: "completed", CompletedAt: &now, StepType: "survey",
+		QuizAnswers: `{"` + q.ID.String() + `":""}`,
+	}).Error)
+
+	var stored models.ScenarioStepProgress
+	require.NoError(t, db.Where("session_id = ? AND step_order = 1", session.ID).First(&stored).Error)
+	require.Nil(t, stored.QuizScore, "fixture: the survey row's score is NULL")
+	require.Nil(t, stored.QuizCorrectCount, "fixture: the survey row's correct count is NULL")
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+
+	detail, err := svc.GetSessionDetail(groupID, session.ID)
+	require.NoError(t, err)
+	require.Len(t, detail.Steps, 2)
+	assert.Nil(t, detail.Steps[1].QuizScore)
+	assert.Equal(t, int64(0), detail.TotalCorrectPossible, "survey questions are not correct-answer slots")
+	require.Len(t, detail.Steps[1].Questions, 1)
+	assert.Equal(t, "", detail.Steps[1].Questions[0].StudentAnswer)
+
+	results, err := svc.GetScenarioResults(groupID, scenario.ID, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, results.Items, 1)
+	require.NotNil(t, results.Items[0].Grade)
+	assert.InDelta(t, 100.0, *results.Items[0].Grade, 0.01, "the survey is left out of the grade")
+	assert.Equal(t, int64(0), results.Items[0].CorrectCount)
+	assert.Equal(t, int64(0), results.Items[0].TotalCorrectPossible)
+
+	analytics, err := svc.GetScenarioAnalytics(groupID, scenario.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), analytics.TotalSessions)
+}

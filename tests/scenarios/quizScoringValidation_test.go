@@ -58,3 +58,18 @@ func TestScenarioContentProblems_InvalidQuizScoring_IsReported(t *testing.T) {
 	assert.Len(t, problems, 1)
 	assert.Contains(t, problems[0], "quiz_scoring_mode")
 }
+
+// A survey is never scored, so the scoring hook must let one through with its
+// default (empty) scoring settings, on create and on an update that only
+// touches the survey's own fields (#568).
+func TestQuizScoringHook_SurveyWithDefaults_IsAccepted(t *testing.T) {
+	hook := scenarioHooks.NewScenarioStepQuizScoringHook()
+
+	create := hooks.HookContext{HookType: hooks.BeforeCreate,
+		NewEntity: &models.ScenarioStep{Title: "Feedback", StepType: "survey"}}
+	assert.NoError(t, hook.Execute(&create))
+
+	update := hooks.HookContext{HookType: hooks.BeforeUpdate,
+		NewEntity: map[string]any{"step_type": "survey", "show_immediate_feedback": false}}
+	assert.NoError(t, hook.Execute(&update))
+}
