@@ -22,6 +22,11 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
+      # MySQL initialises its data directory on first start: 7-9 s alone, about
+      # 40 s when two E2E stacks share the CI runner, and once over the 60 s
+      # that retries allow. Failures during start_period do not count, and the
+      # first successful ping still ends the wait.
+      start_period: 120s
 
   casdoor-test:
     build:
