@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 )
@@ -303,4 +304,98 @@ func TestComputeCorrectCounts_SurveyStep_Ignored(t *testing.T) {
 	correct, total := services.ComputeCorrectCountsFromLoaded(steps, progress, nil, questionCounts)
 	assert.Equal(t, int64(2), correct)
 	assert.Equal(t, int64(2), total, "survey questions are not counted")
+}
+
+// --- Survey-only scenarios have no grade (review of !685) ---
+
+// gradeFixture creates a scenario with the given step types, each quiz and
+// survey carrying one multiple_choice question (answer "0"), assigned to a
+// fresh class, and an active session for learner on step 0.
+func gradeFixture(t *testing.T, learner string, stepTypes ...string) (uuid.UUID, uuid.UUID, models.ScenarioSession, []uuid.UUID) {
+	t.Helper()
+	db := freshTestDB(t)
+	scenario := models.Scenario{Name: "grade-" + uuid.NewString(), Title: "Grade", InstanceType: "ubuntu:22.04", CreatedByID: "c1"}
+	require.NoError(t, db.Create(&scenario).Error)
+	group := newGroupWithMember(t, db, "class-"+uuid.NewString(), learner)
+	createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
+
+	session := models.ScenarioSession{ScenarioID: scenario.ID, UserID: learner, Status: "active", StartedAt: time.Now()}
+	require.NoError(t, db.Create(&session).Error)
+
+	var questionIDs []uuid.UUID
+	for i, stepType := range stepTypes {
+		step := models.ScenarioStep{ScenarioID: scenario.ID, Order: i, Title: stepType, StepType: stepType}
+		require.NoError(t, db.Create(&step).Error)
+		q := models.ScenarioStepQuestion{StepID: step.ID, Order: 1, QuestionText: "Pick", QuestionType: "multiple_choice", Options: `["a","b"]`}
+		if stepType == "quiz" {
+			q.CorrectAnswer = "0"
+			q.Points = 1
+		}
+		require.NoError(t, db.Create(&q).Error)
+		questionIDs = append(questionIDs, q.ID)
+		status := "locked"
+		if i == 0 {
+			status = "active"
+		}
+		require.NoError(t, db.Create(&models.ScenarioStepProgress{SessionID: session.ID, StepOrder: i, Status: status}).Error)
+	}
+	return scenario.ID, group.ID, session, questionIDs
+}
+
+func reloadSession(t *testing.T, id uuid.UUID) models.ScenarioSession {
+	t.Helper()
+	var s models.ScenarioSession
+	require.NoError(t, sharedTestDB.First(&s, "id = ?", id).Error)
+	return s
+}
+
+// Nothing in a survey-only scenario counts toward a grade, so the run ends
+// with no grade at all — not 0%, which reads as a failed learner.
+func TestComputeWeightedGrade_SurveyOnly_HasNoGrade(t *testing.T) {
+	_, _, session, _ := gradeFixture(t, "grade-survey-only", "survey")
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+
+	_, err := svc.SubmitQuiz(session.ID, dto.SubmitQuizInput{Answers: map[uuid.UUID]string{}})
+	require.NoError(t, err)
+
+	done := reloadSession(t, session.ID)
+	assert.Equal(t, "completed", done.Status)
+	assert.Nil(t, done.Grade, "a survey-only run is not gradable: Grade must stay NULL")
+}
+
+// The trainer's results table computes a partial grade for any session with
+// no stored grade; for a survey-only scenario there is none to compute.
+func TestGetScenarioResults_SurveyOnly_GradeIsNil(t *testing.T) {
+	scenarioID, groupID, session, _ := gradeFixture(t, "grade-survey-results", "survey")
+
+	results, err := services.NewTeacherDashboardService(sharedTestDB, nil, nil).GetScenarioResults(groupID, scenarioID, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, results.Items, 1)
+	assert.Equal(t, session.ID, results.Items[0].SessionID)
+	assert.Nil(t, results.Items[0].Grade, "active survey-only session: no partial grade")
+
+	// Same once the run is over and stored with a NULL grade.
+	now := time.Now()
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioSession{}).Where("id = ?", session.ID).
+		Updates(map[string]any{"status": "completed", "completed_at": now, "grade": nil}).Error)
+	results, err = services.NewTeacherDashboardService(sharedTestDB, nil, nil).GetScenarioResults(groupID, scenarioID, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, results.Items, 1)
+	assert.Nil(t, results.Items[0].Grade, "completed survey-only session: no grade")
+}
+
+// A survey next to a quiz leaves the grade to the quiz alone.
+func TestSubmitQuiz_QuizThenSurvey_GradeIsTheQuizAlone(t *testing.T) {
+	_, _, session, qIDs := gradeFixture(t, "grade-quiz-survey", "quiz", "survey")
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+
+	_, err := svc.SubmitQuiz(session.ID, dto.SubmitQuizInput{Answers: map[uuid.UUID]string{qIDs[0]: "1"}}) // wrong
+	require.NoError(t, err)
+	_, err = svc.SubmitQuiz(session.ID, dto.SubmitQuizInput{Answers: map[uuid.UUID]string{qIDs[1]: "0"}})
+	require.NoError(t, err)
+
+	done := reloadSession(t, session.ID)
+	assert.Equal(t, "completed", done.Status)
+	require.NotNil(t, done.Grade)
+	assert.InDelta(t, 0.0, *done.Grade, 0.01, "the quiz scored 0, so the run scores 0 — the survey adds nothing")
 }

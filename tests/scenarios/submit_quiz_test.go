@@ -10,16 +10,23 @@ package scenarios_test
 // just the UI rendering (scenarios-e2e-test-plan.md §7.5, decided 2026-08-06).
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
+	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
 )
 
@@ -635,4 +642,126 @@ func TestSubmitQuiz_QuizEmptyAnswers_StillRejected(t *testing.T) {
 
 	assert.Error(t, err, "an empty quiz submission must still be refused")
 	assert.Nil(t, result)
+}
+
+// --- Survey answer limits and choice validation (review of !685) ---
+
+// addSurveyQuestion adds a question to the survey step the session sits on.
+func addSurveyQuestion(t *testing.T, sessionID uuid.UUID, q models.ScenarioStepQuestion) uuid.UUID {
+	t.Helper()
+	var session models.ScenarioSession
+	require.NoError(t, sharedTestDB.First(&session, "id = ?", sessionID).Error)
+	var step models.ScenarioStep
+	require.NoError(t, sharedTestDB.Where("scenario_id = ? AND step_type = ?", session.ScenarioID, "survey").First(&step).Error)
+	q.StepID = step.ID
+	require.NoError(t, sharedTestDB.Create(&q).Error)
+	return q.ID
+}
+
+func submitSurvey(t *testing.T, sessionID uuid.UUID, answers map[uuid.UUID]string) error {
+	t.Helper()
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	_, err := svc.SubmitQuiz(sessionID, dto.SubmitQuizInput{Answers: answers})
+	return err
+}
+
+// A free-text survey answer is capped at 4000 characters — characters, not
+// bytes, so a French answer gets the same room as an English one.
+func TestSubmitQuiz_SurveyFreeTextOverLimit_IsRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := surveyFixture(t)
+
+	err := submitSurvey(t, sessionID, map[uuid.UUID]string{qIDs[1]: strings.Repeat("é", 4001)})
+
+	require.Error(t, err, "4001 characters is over the cap")
+	assert.Contains(t, err.Error(), "4000", "the error must say what the limit is")
+}
+
+func TestSubmitQuiz_SurveyFreeTextAtLimit_IsAccepted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := surveyFixture(t)
+
+	// 4000 runes, 8000 bytes: a byte count would refuse it.
+	assert.NoError(t, submitSurvey(t, sessionID, map[uuid.UUID]string{qIDs[1]: strings.Repeat("é", 4000)}))
+}
+
+// Every survey question is optional, but an answer that is given must be one
+// the question could have produced.
+func TestSubmitQuiz_SurveyChoiceAnswers_AreValidated(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	cases := []struct {
+		name     string
+		multi    bool
+		answer   string
+		accepted bool
+	}{
+		{"multiple_choice in range", false, "1", true},
+		{"multiple_choice empty", false, "", true},
+		{"multiple_choice out of range", false, "99", false},
+		{"multiple_choice negative", false, "-1", false},
+		{"multiple_choice not a number", false, "Clear", false},
+		{"multi_answer in range", true, "[0,2]", true},
+		{"multi_answer empty array", true, "[]", true},
+		{"multi_answer empty string", true, "", true},
+		{"multi_answer out of range", true, "[0,5]", false},
+		{"multi_answer not an array", true, "0", false},
+		{"multi_answer array of strings", true, `["grep"]`, false},
+		{"multi_answer not JSON", true, "grep, sed", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sessionID, qIDs := surveyFixture(t) // q1: multiple_choice with 2 options
+			target := qIDs[0]
+			if tc.multi {
+				target = addSurveyQuestion(t, sessionID, models.ScenarioStepQuestion{
+					Order: 3, QuestionText: "Topics?", QuestionType: "multi_answer", Options: `["grep","sed","awk"]`,
+				})
+			}
+
+			err := submitSurvey(t, sessionID, map[uuid.UUID]string{target: tc.answer})
+
+			if tc.accepted {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err, "answer %q must be refused", tc.answer)
+			}
+		})
+	}
+}
+
+// The body is capped before it is parsed, like test-verify's script: an
+// oversized submission never reaches the service.
+func TestSubmitQuizRoute_BodyOver64KiB_IsRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := surveyFixture(t)
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioSession{}).
+		Where("id = ?", sessionID).Update("user_id", "survey-owner").Error)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	api := router.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", "survey-owner")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	api.POST("/scenario-sessions/:id/submit-quiz", scenarioController.NewScenarioProgressController(sharedTestDB).SubmitQuiz)
+
+	// Valid JSON for a real question: only the size is wrong with it.
+	body := fmt.Sprintf(`{"answers":{%q:%q}}`, qIDs[1].String(), strings.Repeat("x", 64*1024+1))
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/scenario-sessions/"+sessionID.String()+"/submit-quiz", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Contains(t, []int{http.StatusRequestEntityTooLarge, http.StatusBadRequest}, w.Code,
+		"a body over 64 KiB must be refused at the door, got %d: %s", w.Code, w.Body.String())
 }
