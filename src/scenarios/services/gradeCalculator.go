@@ -56,6 +56,8 @@ func ComputeWeightedGrade(db *gorm.DB, sessionID uuid.UUID) (float64, error) {
 //	terminal/flag/info → 1.0 if the step's progress status == "completed",
 //	                     else 0.0
 //	quiz               → progress.QuizScore (0 if nil)
+//	survey             → left out: it neither adds to the sum nor counts
+//	                     among the steps it is divided by
 //
 // Legacy rows with an empty step_type are treated as "terminal" so older
 // sessions keep their grades.
@@ -64,9 +66,14 @@ func ComputeWeightedGrade(db *gorm.DB, sessionID uuid.UUID) (float64, error) {
 // score. This is used by SubmitQuiz to score the just-submitted final step
 // before its DB row is reloaded into the in-memory progress slice.
 //
-// Returns 0 when len(steps) == 0.
+// Returns 0 when no step counts towards the grade.
 func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []models.ScenarioStepProgress, currentStepOverride *QuizScoreOverride) float64 {
-	totalSteps := len(steps)
+	totalSteps := 0
+	for _, step := range steps {
+		if step.StepType != models.StepTypeSurvey {
+			totalSteps++
+		}
+	}
 	if totalSteps == 0 {
 		return 0
 	}
@@ -83,7 +90,9 @@ func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []mode
 		p, hasProgress := progressByOrder[step.Order]
 
 		switch stepType {
-		case "quiz":
+		case models.StepTypeSurvey:
+			// Opinion, not achievement: never graded.
+		case models.StepTypeQuiz:
 			// Apply override if it targets this step.
 			if currentStepOverride != nil && currentStepOverride.StepOrder == step.Order {
 				sum += currentStepOverride.QuizScore
@@ -115,12 +124,12 @@ func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []mode
 //   - quiz step: the progress row's correct count (see quizCorrectCount).
 //   - flag-bearing step: 1 if a ScenarioFlag row for that step exists with
 //     IsCorrect=true; 0 otherwise (including missing row).
-//   - terminal/info steps: ignored entirely.
+//   - terminal/info/survey steps: ignored entirely.
 //
 // Denominator semantics:
 //   - quiz step: + questionCountByStepID[step.ID]
 //   - flag step: + 1
-//   - terminal/info steps: ignored entirely.
+//   - terminal/info/survey steps: ignored entirely.
 //
 // Callers must pre-filter `steps` to exclude soft-deleted rows and
 // `questionCountByStepID` to exclude soft-deleted questions.

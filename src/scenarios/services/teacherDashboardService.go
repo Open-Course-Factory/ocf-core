@@ -299,7 +299,8 @@ func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UU
 	}
 
 	// Calculate partial grade for active sessions using the weighted formula
-	// (terminal/flag/info → 1.0 if completed else 0; quiz → QuizScore).
+	// (terminal/flag/info → 1.0 if completed else 0; quiz → QuizScore;
+	// survey → not graded).
 	// NOTE: this is N+1 over the page (one extra query per row to load steps
 	// and progress). Pages are bounded (limit ≤ 50 in practice), so this is
 	// acceptable. If profiling ever shows it as a hotspot, batch-load steps
@@ -425,8 +426,8 @@ type BulkStartError struct {
 
 // CalculateGrade computes the weighted grade for a session as a percentage in
 // [0, 100]. terminal/flag/info steps contribute 1.0 if completed; quiz steps
-// contribute their persisted QuizScore (0 if nil). Returns 0 on any DB error
-// (matches the previous missing-session behaviour).
+// contribute their persisted QuizScore (0 if nil); survey steps are left out.
+// Returns 0 on any DB error (matches the previous missing-session behaviour).
 func (s *TeacherDashboardService) CalculateGrade(sessionID uuid.UUID) float64 {
 	grade, err := ComputeWeightedGrade(s.db, sessionID)
 	if err != nil {
@@ -855,11 +856,11 @@ type SessionStepDetail struct {
 	// field (privacy invariant). Per-question detail for quiz steps is
 	// surfaced via the Questions field below.
 	QuizScore *float64 `json:"quiz_score,omitempty"`
-	// Questions is populated for quiz steps only — exposes per-question detail
-	// (student's answer + correct answer + correctness flag) so trainers can
-	// see HOW the student answered. This route is gated by Layer 2
-	// GroupRole(manager), so only group managers / platform admins ever reach
-	// this code path. Learners never see this field.
+	// Questions is populated for quiz and survey steps only — exposes
+	// per-question detail (student's answer, plus the correct answer and
+	// correctness flag for a quiz) so trainers can see HOW the student
+	// answered. This route is gated by Layer 2 GroupRole(manager), so only
+	// group managers / platform admins ever reach this code path. Learners never see this field.
 	// gorm:"-" — never scanned from a SQL row; populated post-query by
 	// populateQuizQuestionsFromLoaded().
 	Questions []dto.SessionStepQuestionDetail `gorm:"-" json:"questions,omitempty"`
@@ -1152,13 +1153,13 @@ func (s *TeacherDashboardService) loadScenarioGraph(scenarioIDs []uuid.UUID) (*s
 		if _, exists := stepByOrder[st.ScenarioID][st.Order]; !exists {
 			stepByOrder[st.ScenarioID][st.Order] = st
 		}
-		if st.StepType == "quiz" {
+		if st.AsksQuestions() {
 			allQuizStepIDs = append(allQuizStepIDs, st.ID)
 		}
 	}
 
-	// Load all quiz questions for every quiz step across all scenarios in
-	// one query — and a single COUNT(*) GROUP BY for the per-step question
+	// Load all questions for every quiz and survey step across all scenarios
+	// in one query — and a single COUNT(*) GROUP BY for the per-step question
 	// counts ComputeCorrectCountsFromLoaded requires.
 	questionsByStepID := make(map[uuid.UUID][]models.ScenarioStepQuestion, len(allQuizStepIDs))
 	questionCountByStepID := make(map[uuid.UUID]int, len(allQuizStepIDs))
@@ -1269,9 +1270,9 @@ func assembleBulkSessionDetails(
 	return details
 }
 
-// populateQuizQuestionsFromLoaded fills the Questions slice on each quiz step
-// using already-loaded scenario steps, questions, and progress rows — no DB
-// calls. Malformed QuizAnswers JSON is logged at warn level but never
+// populateQuizQuestionsFromLoaded fills the Questions slice on each quiz and
+// survey step using already-loaded scenario steps, questions, and progress
+// rows — no DB calls. Malformed QuizAnswers JSON is logged at warn level but never
 // propagated — the questions metadata is still surfaced so the trainer view
 // doesn't break.
 func populateQuizQuestionsFromLoaded(
@@ -1289,7 +1290,8 @@ func populateQuizQuestionsFromLoaded(
 	}
 
 	for i := range steps {
-		if steps[i].StepType != "quiz" {
+		isSurvey := steps[i].StepType == models.StepTypeSurvey
+		if steps[i].StepType != models.StepTypeQuiz && !isSurvey {
 			continue
 		}
 		st, ok := stepByOrder[steps[i].StepOrder]
@@ -1314,6 +1316,10 @@ func populateQuizQuestionsFromLoaded(
 		for _, q := range questions {
 			answers[q.ID] = studentAnswers[q.ID.String()]
 		}
+		if isSurvey {
+			steps[i].Questions = surveyQuestionDetails(questions, answers)
+			continue
+		}
 		graded := ScoreQuiz(st, questions, answers)
 
 		details := make([]dto.SessionStepQuestionDetail, 0, len(questions))
@@ -1333,6 +1339,24 @@ func populateQuizQuestionsFromLoaded(
 		}
 		steps[i].Questions = details
 	}
+}
+
+// surveyQuestionDetails shows a survey's questions with the learner's answers
+// as given, and nothing that reads as a correction: a survey has no right
+// answer, so any correct_answer or explanation left in the row stays hidden.
+func surveyQuestionDetails(questions []models.ScenarioStepQuestion, answers map[uuid.UUID]string) []dto.SessionStepQuestionDetail {
+	details := make([]dto.SessionStepQuestionDetail, 0, len(questions))
+	for _, q := range questions {
+		details = append(details, dto.SessionStepQuestionDetail{
+			ID:            q.ID,
+			Order:         q.Order,
+			QuestionText:  q.QuestionText,
+			QuestionType:  q.QuestionType,
+			Options:       q.Options,
+			StudentAnswer: answers[q.ID],
+		})
+	}
+	return details
 }
 
 // GetSessionCommands proxies the terminal command history for a scenario session

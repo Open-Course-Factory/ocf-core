@@ -58,7 +58,7 @@ func TestSeedScenario_InvalidContent_ListsEveryProblem(t *testing.T) {
 	assert.Equal(t, []string{
 		"title is empty",
 		`hostname "Bad_Host" is invalid: use 1 to 63 lowercase letters, digits or hyphens, not starting or ending with a hyphen`,
-		`step 1 (Typo): step_type "quizz" is not one of terminal, flag, quiz, info`,
+		`step 1 (Typo): step_type "quizz" is not one of terminal, flag, quiz, info, survey`,
 		"step 2 (Empty quiz): a quiz step needs at least one question",
 		`step 4 (Bad answers), question 1: correct_answer "4" is not an option index (0 to 1 for 2 options)`,
 		`step 4 (Bad answers), question 2: correct_answer "a" is not an option index (0 to 1 for 2 options)`,
@@ -121,7 +121,7 @@ func TestOrgImportJSON_InvalidContent_Answers400WithDetails(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	assert.Contains(t, response.ErrorMessage, "2 problem")
 	assert.Equal(t, []string{
-		`step 1 (Typo): step_type "quizz" is not one of terminal, flag, quiz, info`,
+		`step 1 (Typo): step_type "quizz" is not one of terminal, flag, quiz, info, survey`,
 		"step 2 (Empty quiz): a quiz step needs at least one question",
 	}, response.Details)
 }

@@ -1583,8 +1583,9 @@ func (s *ScenarioSessionService) buildStepResponse(session *models.ScenarioSessi
 		QuizWrongPenalty:      step.WrongPenalty(),
 	}
 
-	// Quiz steps: populate the sanitized question list (no correct_answer/explanation)
-	if response.StepType == "quiz" {
+	// Quiz and survey steps: populate the sanitized question list (no
+	// correct_answer/explanation)
+	if step.AsksQuestions() {
 		response.Questions = loadSanitizedQuestions(s.db, step.ID)
 	}
 
@@ -1635,12 +1636,12 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 
 	stepType := currentStep.StepType
 
-	// Branch on step_type. Flag and quiz steps have dedicated submission
-	// endpoints; calling /verify on them is a client error.
+	// Branch on step_type. Flag, quiz and survey steps have dedicated
+	// submission endpoints; calling /verify on them is a client error.
 	switch stepType {
 	case "flag":
 		return nil, ErrVerifyFlagStep
-	case "quiz":
+	case models.StepTypeQuiz, models.StepTypeSurvey:
 		return nil, ErrVerifyQuizStep
 	case "info":
 		// Info steps have no script — clicking "next" advances the session.
@@ -1845,12 +1846,11 @@ func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSessio
 // answer persisted as it's submitted (so a tab close / network drop doesn't
 // lose answered questions); a separate POST .../quiz-answer endpoint will
 // cover that without changing this final-submission contract.
+//
+// A survey step goes through here too, but it is never scored: every question
+// is optional (an empty submission is fine), the progress row stores the
+// answers with no score, and the response never carries a correction.
 func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.SubmitQuizInput) (*dto.SubmitQuizResponse, error) {
-	// Reject empty/nil submissions early (controller would map this to 400).
-	if len(input.Answers) == 0 {
-		return nil, fmt.Errorf("answers are required")
-	}
-
 	var session models.ScenarioSession
 	if err := s.db.Preload("Scenario.Steps", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
@@ -1868,8 +1868,14 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
 	}
 
-	if currentStep.StepType != "quiz" {
+	if !currentStep.AsksQuestions() {
 		return nil, fmt.Errorf("current step is not a quiz step")
+	}
+	isSurvey := currentStep.StepType == models.StepTypeSurvey
+	// Reject empty quiz submissions (controller maps this to 400); a survey's
+	// questions are all optional.
+	if len(input.Answers) == 0 && !isSurvey {
+		return nil, fmt.Errorf("answers are required")
 	}
 
 	// Load every question for this step so we can validate IDs and score
@@ -1894,9 +1900,17 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		}
 	}
 
+	response := &dto.SubmitQuizResponse{Total: len(questions)}
+	answersJSON, err := json.Marshal(input.Answers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode answers: %w", err)
+	}
+	if isSurvey {
+		return s.recordQuizProgress(&session, response, models.StepTypeSurvey, string(answersJSON), nil, nil)
+	}
+
 	graded := ScoreQuiz(*currentStep, questions, input.Answers)
 	score := graded.Score
-	response := &dto.SubmitQuizResponse{Total: len(questions)}
 	// The grade and the per-question breakdown (correct_answer + explanation)
 	// are readable from the browser's devtools once in the response. In exam
 	// mode (show_immediate_feedback=false) the teacher chose to withhold both,
@@ -1909,11 +1923,13 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		response.PerQuestionResults = quizQuestionResults(questions, graded)
 	}
 
-	answersJSON, err := json.Marshal(input.Answers)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode answers: %w", err)
-	}
+	return s.recordQuizProgress(&session, response, models.StepTypeQuiz, string(answersJSON), &score, &graded.CorrectCount)
+}
 
+// recordQuizProgress writes a quiz or survey submission onto the current
+// step's progress row, advances the session and fills in the response's next
+// step. score and correctCount are nil for a survey, which is never scored.
+func (s *ScenarioSessionService) recordQuizProgress(session *models.ScenarioSession, response *dto.SubmitQuizResponse, stepType, answersJSON string, score *float64, correctCount *int) (*dto.SubmitQuizResponse, error) {
 	now := time.Now()
 	// Captured before the transaction: advanceToNextStep updates current_step
 	// through GORM, which writes the new value back onto this struct, so after
@@ -1926,10 +1942,10 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		if err := tx.Model(&models.ScenarioStepProgress{}).
 			Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
 			Updates(map[string]any{
-				"step_type":    "quiz",
-				"quiz_score":         &score,
-				"quiz_correct_count": graded.CorrectCount,
-				"quiz_answers":       string(answersJSON),
+				"step_type":          stepType,
+				"quiz_score":         score,
+				"quiz_correct_count": correctCount,
+				"quiz_answers":       answersJSON,
 			}).Error; err != nil {
 			return fmt.Errorf("failed to persist quiz progress: %w", err)
 		}
@@ -1939,14 +1955,14 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		// The preloaded StepProgress slice was loaded before this update.
 		for i := range session.StepProgress {
 			if session.StepProgress[i].StepOrder == session.CurrentStep {
-				session.StepProgress[i].StepType = "quiz"
-				session.StepProgress[i].QuizScore = &score
-				session.StepProgress[i].QuizCorrectCount = &graded.CorrectCount
+				session.StepProgress[i].StepType = stepType
+				session.StepProgress[i].QuizScore = score
+				session.StepProgress[i].QuizCorrectCount = correctCount
 				break
 			}
 		}
 
-		nextStep, err := s.advanceToNextStep(tx, &session, now)
+		nextStep, err := s.advanceToNextStep(tx, session, now)
 		if err != nil {
 			return err
 		}
@@ -1958,7 +1974,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 	}
 
 	if response.NextStep != nil {
-		response.StepProvisioningStatus = s.runStepTransition(&session, leftStep, *response.NextStep)
+		response.StepProvisioningStatus = s.runStepTransition(session, leftStep, *response.NextStep)
 	}
 
 	return response, nil
@@ -2392,6 +2408,7 @@ func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.
 		// Calculate weighted grade: each step contributes its own weight.
 		//   terminal/flag/info → 1.0 if completed else 0.0
 		//   quiz               → progress.QuizScore (0 if nil)
+		//   survey             → not graded
 		// Mirror the just-applied "completed" status onto the in-memory
 		// session.StepProgress slice for the current step so the helper
 		// counts it as completed. Quiz scores must be set on the in-memory

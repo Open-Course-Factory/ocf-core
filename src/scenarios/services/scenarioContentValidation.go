@@ -33,8 +33,9 @@ func contentErrorOrNil(problems []string) error {
 }
 
 var (
-	knownStepTypes     = []string{models.StepTypeTerminal, models.StepTypeFlag, "quiz", "info"}
-	knownQuestionTypes = []string{"multiple_choice", "multi_answer", "free_text", "true_false"}
+	knownStepTypes      = []string{models.StepTypeTerminal, models.StepTypeFlag, models.StepTypeQuiz, "info", models.StepTypeSurvey}
+	knownQuestionTypes  = []string{"multiple_choice", "multi_answer", "free_text", "true_false"}
+	surveyQuestionTypes = []string{"multiple_choice", "multi_answer", "free_text"}
 )
 
 // ScenarioContentProblems checks a scenario built from imported content,
@@ -81,10 +82,14 @@ func stepContentProblems(number int, step models.ScenarioStep) []string {
 		problems = append(problems, label+": "+problem)
 	}
 	if !stepHasAWayThrough(step) {
-		problems = append(problems, label+": a quiz step needs at least one question")
+		problems = append(problems, fmt.Sprintf("%s: a %s step needs at least one question", label, step.StepType))
+	}
+	checkQuestion := questionProblem
+	if step.StepType == models.StepTypeSurvey {
+		checkQuestion = surveyQuestionProblem
 	}
 	for i, q := range step.Questions {
-		if problem := questionProblem(q); problem != "" {
+		if problem := checkQuestion(q); problem != "" {
 			problems = append(problems, fmt.Sprintf("%s, question %d: %s", label, i+1, problem))
 		}
 	}
@@ -115,17 +120,45 @@ func questionProblem(q models.ScenarioStepQuestion) string {
 	return ""
 }
 
+// surveyQuestionProblem says what is wrong with one survey question, or "".
+// A survey has no right answers, so correct_answer is never judged (one left
+// over from a quiz is harmless), and true/false — a quiz device — is refused.
+func surveyQuestionProblem(q models.ScenarioStepQuestion) string {
+	if strings.TrimSpace(q.QuestionText) == "" {
+		return "question_text is empty"
+	}
+	switch q.QuestionType {
+	case "multiple_choice", "multi_answer":
+		_, problem := optionCount(q.Options)
+		return problem
+	case "free_text":
+		return ""
+	default:
+		return fmt.Sprintf("question_type %q is not one of %s in a survey", q.QuestionType, strings.Join(surveyQuestionTypes, ", "))
+	}
+}
+
 // optionAnswerProblem checks a choice question's options, then its answer
 // with answerProblem.
 func optionAnswerProblem(rawOptions, correctAnswer string, answerProblem func(answer string, options int) string) string {
+	count, problem := optionCount(rawOptions)
+	if problem != "" {
+		return problem
+	}
+	return answerProblem(correctAnswer, count)
+}
+
+// optionCount parses a choice question's options and returns how many there
+// are, or what is wrong with them.
+func optionCount(rawOptions string) (int, string) {
 	var options []string
 	if err := json.Unmarshal([]byte(rawOptions), &options); err != nil {
-		return fmt.Sprintf("options must be a JSON array of strings encoded as a string, like \"[\\\"yes\\\", \\\"no\\\"]\" (got %q)", rawOptions)
+		return 0, fmt.Sprintf("options must be a JSON array of strings encoded as a string, like \"[\\\"yes\\\", \\\"no\\\"]\" (got %q)", rawOptions)
 	}
 	if len(options) < 2 {
-		return fmt.Sprintf("options needs at least 2 choices (got %d)", len(options))
+		return 0, fmt.Sprintf("options needs at least 2 choices (got %d)", len(options))
 	}
-	return answerProblem(correctAnswer, len(options))
+	return len(options), ""
 }
 
 // The grader compares the learner's submission to correct_answer as a string,

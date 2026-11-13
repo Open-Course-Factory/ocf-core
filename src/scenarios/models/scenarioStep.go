@@ -94,7 +94,17 @@ func (ScenarioStep) TableName() string {
 const (
 	StepTypeTerminal = "terminal"
 	StepTypeFlag     = "flag"
+	StepTypeQuiz     = "quiz"
+	// StepTypeSurvey asks questions like a quiz but has no right answers: it
+	// is never scored, never graded and never shows a correction.
+	StepTypeSurvey = "survey"
 )
+
+// AsksQuestions reports whether the learner passes the step by answering its
+// questions (quiz or survey) through submit-quiz.
+func (s ScenarioStep) AsksQuestions() bool {
+	return s.StepType == StepTypeQuiz || s.StepType == StepTypeSurvey
+}
 
 // Quiz scoring modes. All-or-nothing counts a question only when answered
 // exactly right; partial gives credit per correct tick and takes some back

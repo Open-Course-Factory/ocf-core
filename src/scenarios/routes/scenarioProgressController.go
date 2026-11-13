@@ -303,8 +303,8 @@ func (pc *scenarioProgressController) SubmitFlag(ctx *gin.Context) {
 }
 
 // SubmitQuiz godoc
-// @Summary Submit quiz answers
-// @Description Submit quiz answers for the current step. Each answer is scored against the canonical correct_answer; the response includes per-question correctness and an aggregate score.
+// @Summary Submit quiz or survey answers
+// @Description Submit the answers for the current quiz or survey step. A quiz answer is scored against the canonical correct_answer; in learning mode or a preview the response includes per-question correctness and an aggregate score. A survey is never scored: every question is optional (answers may be empty) and the response carries only the question count and the next step.
 // @Tags scenario-sessions
 // @Accept json
 // @Produce json
