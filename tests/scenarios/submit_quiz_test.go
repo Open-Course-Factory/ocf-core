@@ -762,6 +762,6 @@ func TestSubmitQuizRoute_BodyOver64KiB_IsRejected(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
-	assert.Contains(t, []int{http.StatusRequestEntityTooLarge, http.StatusBadRequest}, w.Code,
-		"a body over 64 KiB must be refused at the door, got %d: %s", w.Code, w.Body.String())
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code,
+		"a body over 64 KiB must be refused at the door with 413: %s", w.Body.String())
 }
