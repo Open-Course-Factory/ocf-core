@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -1869,7 +1870,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 	}
 
 	if !currentStep.AsksQuestions() {
-		return nil, fmt.Errorf("current step is not a quiz step")
+		return nil, fmt.Errorf("current step is not a quiz or survey step")
 	}
 	isSurvey := currentStep.StepType == models.StepTypeSurvey
 	// Reject empty quiz submissions (controller maps this to 400); a survey's
@@ -1885,7 +1886,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		return nil, fmt.Errorf("failed to load questions: %w", err)
 	}
 	if len(questions) == 0 {
-		return nil, fmt.Errorf("quiz step has no questions")
+		return nil, fmt.Errorf("step has no questions")
 	}
 
 	// Build a lookup so we can reject answers with unknown question IDs and
@@ -1906,6 +1907,11 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		return nil, fmt.Errorf("failed to encode answers: %w", err)
 	}
 	if isSurvey {
+		for qID, answer := range input.Answers {
+			if problem := surveyAnswerProblem(byID[qID], answer); problem != "" {
+				return nil, fmt.Errorf("answer to question %s: %s", qID, problem)
+			}
+		}
 		return s.recordQuizProgress(&session, response, models.StepTypeSurvey, string(answersJSON), nil, nil)
 	}
 
@@ -1978,6 +1984,50 @@ func (s *ScenarioSessionService) recordQuizProgress(session *models.ScenarioSess
 	}
 
 	return response, nil
+}
+
+// maxSurveyFreeTextRunes caps a free-text survey answer, counted in
+// characters so an accented answer gets the same room as a plain one.
+const maxSurveyFreeTextRunes = 4000
+
+// surveyAnswerProblem says why a survey answer is not one its question could
+// have produced, or "". Every survey question is optional, so "" (and "[]"
+// for multi_answer) is always fine.
+func surveyAnswerProblem(q models.ScenarioStepQuestion, answer string) string {
+	switch q.QuestionType {
+	case "free_text":
+		if n := utf8.RuneCountInString(answer); n > maxSurveyFreeTextRunes {
+			return fmt.Sprintf("free text is limited to %d characters (got %d)", maxSurveyFreeTextRunes, n)
+		}
+		return ""
+	case "multiple_choice", "multi_answer":
+		if answer == "" {
+			return ""
+		}
+		options, problem := optionCount(q.Options)
+		if problem != "" {
+			return problem
+		}
+		if q.QuestionType == "multiple_choice" {
+			index, err := strconv.Atoi(answer)
+			if err != nil || strconv.Itoa(index) != answer || index < 0 || index >= options {
+				return fmt.Sprintf("%q is not an option index (0 to %d)", answer, options-1)
+			}
+			return ""
+		}
+		var indexes []int
+		if err := json.Unmarshal([]byte(answer), &indexes); err != nil {
+			return fmt.Sprintf("%q is not a JSON array of option indexes", answer)
+		}
+		for _, index := range indexes {
+			if index < 0 || index >= options {
+				return fmt.Sprintf("%d is not an option index (0 to %d)", index, options-1)
+			}
+		}
+		return ""
+	default:
+		return fmt.Sprintf("question_type %q cannot be answered in a survey", q.QuestionType)
+	}
 }
 
 // quizQuestionResults is the post-submission correction, one entry per
@@ -2423,7 +2473,12 @@ func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.
 				break
 			}
 		}
-		grade := ComputeWeightedGradeFromLoaded(session.Scenario.Steps, session.StepProgress, nil)
+		// A run with nothing gradable (only surveys) stores no grade.
+		var grade *float64
+		if HasGradableStep(session.Scenario.Steps) {
+			weighted := ComputeWeightedGradeFromLoaded(session.Scenario.Steps, session.StepProgress, nil)
+			grade = &weighted
+		}
 
 		// Mark session as completed with grade
 		if err := tx.Model(session).Updates(map[string]any{

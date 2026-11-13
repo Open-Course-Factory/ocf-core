@@ -66,7 +66,8 @@ func ComputeWeightedGrade(db *gorm.DB, sessionID uuid.UUID) (float64, error) {
 // score. This is used by SubmitQuiz to score the just-submitted final step
 // before its DB row is reloaded into the in-memory progress slice.
 //
-// Returns 0 when no step counts towards the grade.
+// Returns 0 when no step counts towards the grade; callers that must tell
+// "nothing to grade" apart from 0% ask HasGradableStep first.
 func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []models.ScenarioStepProgress, currentStepOverride *QuizScoreOverride) float64 {
 	totalSteps := 0
 	for _, step := range steps {
@@ -111,6 +112,18 @@ func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []mode
 	}
 
 	return (sum / float64(totalSteps)) * 100.0
+}
+
+// HasGradableStep reports whether any step counts towards the weighted grade.
+// A scenario made only of surveys has none: its runs get no grade at all
+// rather than a 0% that reads as a failed learner.
+func HasGradableStep(steps []models.ScenarioStep) bool {
+	for _, step := range steps {
+		if step.StepType != models.StepTypeSurvey {
+			return true
+		}
+	}
+	return false
 }
 
 // ComputeCorrectCountsFromLoaded is a pure function that returns the absolute
@@ -158,7 +171,7 @@ func ComputeCorrectCountsFromLoaded(
 	for _, step := range steps {
 		stepType := step.StepType
 		switch {
-		case stepType == "quiz":
+		case stepType == models.StepTypeQuiz:
 			n := questionCountByStepID[step.ID]
 			if n == 0 {
 				continue

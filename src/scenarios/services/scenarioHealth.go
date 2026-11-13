@@ -206,10 +206,9 @@ func appendStepFinding(findings []ScenarioHealthFinding, severity string, orders
 func stepHasAWayThrough(step models.ScenarioStep) bool {
 	// Answering is a quiz's or a survey's way through, so it needs questions:
 	// one with none is a dead end wearing a different hat. Every other kind
-	// passes — info by
-	// reading, flag by the flag it always gets, terminal on Verify with or
-	// without a verify script (ScenarioSessionService.VerifyCurrentStep), as
-	// KillerCoda's do.
+	// passes — info by reading, flag by the flag it always gets, terminal on
+	// Verify with or without a verify script
+	// (ScenarioSessionService.VerifyCurrentStep), as KillerCoda's do.
 	return !step.AsksQuestions() || len(step.Questions) > 0
 }
 

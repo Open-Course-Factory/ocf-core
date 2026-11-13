@@ -302,6 +302,9 @@ func (pc *scenarioProgressController) SubmitFlag(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, result)
 }
 
+// submitQuizBodyLimit caps a submit-quiz request body.
+const submitQuizBodyLimit = 64 << 10
+
 // SubmitQuiz godoc
 // @Summary Submit quiz or survey answers
 // @Description Submit the answers for the current quiz or survey step. A quiz answer is scored against the canonical correct_answer; in learning mode or a preview the response includes per-question correctness and an aggregate score. A survey is never scored: every question is optional (answers may be empty) and the response carries only the question count and the next step.
@@ -313,6 +316,7 @@ func (pc *scenarioProgressController) SubmitFlag(ctx *gin.Context) {
 // @Success 200 {object} dto.SubmitQuizResponse
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
+// @Failure 413 {object} errors.APIError
 // @Failure 422 {object} errors.APIError
 // @Failure 500 {object} errors.APIError
 // @Router /scenario-sessions/{id}/submit-quiz [post]
@@ -323,8 +327,15 @@ func (pc *scenarioProgressController) SubmitQuiz(ctx *gin.Context) {
 		return
 	}
 
+	// Capped before parsing: a quiz or survey answer set is a few KiB at most
+	// (a free-text survey answer is limited to 4000 characters).
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, submitQuizBodyLimit)
 	var input dto.SubmitQuizInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
+		if _, ok := stderrors.AsType[*http.MaxBytesError](err); ok {
+			errors.Respond(ctx, http.StatusRequestEntityTooLarge, "Answers are too large")
+			return
+		}
 		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
 	}

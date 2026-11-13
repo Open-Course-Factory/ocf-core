@@ -100,10 +100,15 @@ const (
 	StepTypeSurvey = "survey"
 )
 
-// AsksQuestions reports whether the learner passes the step by answering its
-// questions (quiz or survey) through submit-quiz.
+// StepAsksQuestions reports whether a step of this type is passed by
+// answering its questions (quiz or survey) through submit-quiz.
+func StepAsksQuestions(stepType string) bool {
+	return stepType == StepTypeQuiz || stepType == StepTypeSurvey
+}
+
+// AsksQuestions is StepAsksQuestions for this step's type.
 func (s ScenarioStep) AsksQuestions() bool {
-	return s.StepType == StepTypeQuiz || s.StepType == StepTypeSurvey
+	return StepAsksQuestions(s.StepType)
 }
 
 // Quiz scoring modes. All-or-nothing counts a question only when answered

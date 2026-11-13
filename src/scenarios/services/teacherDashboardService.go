@@ -305,8 +305,15 @@ func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UU
 	// and progress). Pages are bounded (limit ≤ 50 in practice), so this is
 	// acceptable. If profiling ever shows it as a hotspot, batch-load steps
 	// and progress for the whole page and inline ComputeWeightedGradeFromLoaded.
+	// A scenario made only of surveys has nothing to grade: its runs keep a
+	// NULL grade instead of a computed 0%.
+	var steps []models.ScenarioStep
+	if err := s.db.Select("step_type").Where("scenario_id = ?", scenarioID).Find(&steps).Error; err != nil {
+		return nil, fmt.Errorf("failed to load scenario steps: %w", err)
+	}
+	gradable := HasGradableStep(steps)
 	for i := range results {
-		if results[i].Grade == nil && results[i].TotalSteps > 0 {
+		if results[i].Grade == nil && results[i].TotalSteps > 0 && gradable {
 			partialGrade, gerr := ComputeWeightedGrade(s.db, results[i].SessionID)
 			if gerr == nil {
 				results[i].Grade = &partialGrade
@@ -911,6 +918,10 @@ func buildSessionStepDetails(session models.ScenarioSession, progress []models.S
 		if !ok {
 			continue
 		}
+		// The progress row's type is the step's type when the learner
+		// submitted it (quiz and survey submissions record it), so answers
+		// keep the reading they were given even if the author later changes
+		// the step's type. Other rows fall back to the step's current type.
 		stepType := p.StepType
 		if stepType == "" {
 			stepType = st.StepType
@@ -1290,10 +1301,10 @@ func populateQuizQuestionsFromLoaded(
 	}
 
 	for i := range steps {
-		isSurvey := steps[i].StepType == models.StepTypeSurvey
-		if steps[i].StepType != models.StepTypeQuiz && !isSurvey {
+		if !models.StepAsksQuestions(steps[i].StepType) {
 			continue
 		}
+		isSurvey := steps[i].StepType == models.StepTypeSurvey
 		st, ok := stepByOrder[steps[i].StepOrder]
 		if !ok {
 			continue
@@ -1430,7 +1441,7 @@ func computeSessionCorrectCounts(db *gorm.DB, scenarioID, sessionID uuid.UUID) (
 	// soft-deleted questions).
 	quizStepIDs := make([]uuid.UUID, 0, len(steps))
 	for _, st := range steps {
-		if st.StepType == "quiz" {
+		if st.StepType == models.StepTypeQuiz {
 			quizStepIDs = append(quizStepIDs, st.ID)
 		}
 	}
