@@ -406,23 +406,17 @@ func TestSyncUserSessions_StoppedSession_StillInAPI_KeptStopped(t *testing.T) {
 // (g) StopSession never decides the fate of the scenario run on the terminal.
 // ---------------------------------------------------------------------------
 
-// linkedScenarioRun gives the terminal a scenario run to be judged by. This
-// package does not migrate the scenarios models, so the table is created with
-// just the columns StopSession has ever touched; that is enough to observe
-// whether it writes to it.
+// linkedScenarioRun gives the terminal an open scenario run to be judged by,
+// with only the columns a run cannot lack: enough to observe whether the
+// terminal's lifecycle writes to it.
 func linkedScenarioRun(t *testing.T, db *gorm.DB, terminalSessionID string) string {
 	t.Helper()
-	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS scenario_sessions (
-		id TEXT PRIMARY KEY,
-		terminal_session_id TEXT,
-		status TEXT
-	)`).Error)
 	require.NoError(t, db.Exec(`DELETE FROM scenario_sessions`).Error)
 
 	runID := uuid.New().String()
 	require.NoError(t, db.Exec(
-		`INSERT INTO scenario_sessions (id, terminal_session_id, status) VALUES (?, ?, ?)`,
-		runID, terminalSessionID, "active").Error)
+		`INSERT INTO scenario_sessions (id, scenario_id, user_id, terminal_session_id, status, started_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		runID, uuid.New().String(), "linked-run-user", terminalSessionID, "active", time.Now()).Error)
 	return runID
 }
 

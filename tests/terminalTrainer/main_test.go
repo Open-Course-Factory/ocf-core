@@ -9,6 +9,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
+	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/models"
 	testTools "soli/formations/tests/testTools"
 
@@ -39,6 +40,10 @@ var terminalTestModels = []any{
 	&paymentModels.UsageMetrics{},
 	&configModels.Feature{},
 	&authModels.BlockedAccount{},
+	// A terminal start looks for the open scenario run the terminal backs.
+	&scenarioModels.Scenario{},
+	&scenarioModels.ScenarioAssignment{},
+	&scenarioModels.ScenarioSession{},
 }
 
 func TestMain(m *testing.M) {
@@ -114,7 +119,10 @@ func truncateAllPGTables(t *testing.T, db *gorm.DB) {
 		organization_role_plans,
 		user_subscriptions,
 		usage_metrics,
-		features
+		features,
+		scenario_sessions,
+		scenario_assignments,
+		scenarios
 		RESTART IDENTITY CASCADE`).Error; err != nil {
 		t.Fatalf("failed to truncate PostgreSQL test tables: %v", err)
 	}
@@ -140,6 +148,9 @@ func freshTestDB(t *testing.T) *gorm.DB {
 		"features",
 		"blocked_accounts",
 		"session_blocks",
+		"scenario_sessions",
+		"scenario_assignments",
+		"scenarios",
 	)
 	return sharedTestDB
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
 	"soli/formations/src/utils"
@@ -14,6 +15,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -215,6 +217,9 @@ func (l *terminalLifecycleService) StartSession(sessionID string, plan *paymentM
 	// Resuming is starting: a block on the terminal's context refuses it
 	// before any budget is reserved or tt-backend is asked.
 	if err := models.SessionStartRefusal(l.db, terminal.UserID, terminal.OrganizationID); err != nil {
+		return err
+	}
+	if err := l.scenarioRunRefusal(terminal); err != nil {
 		return err
 	}
 
@@ -567,5 +572,28 @@ func (l *terminalLifecycleService) BuildComplete(sessionID string) error {
 	}
 
 	utils.Debug("BuildComplete for session %s removed profiles %v", sessionID, dropped)
+	return nil
+}
+
+// scenarioRunRefusal refuses starting a terminal that backs an open scenario
+// run when the learner is blocked in the class or organization the run exists
+// through, whatever organization the terminal names: starting it is resuming
+// that run. A terminal with no open run has nothing to refuse here.
+func (l *terminalLifecycleService) scenarioRunRefusal(terminal *models.Terminal) error {
+	var scenarioIDs []uuid.UUID
+	if err := l.db.Model(&scenarioModels.ScenarioSession{}).
+		Where("terminal_session_id = ? AND status IN ?", terminal.SessionID, scenarioModels.OpenSessionStatuses).
+		Pluck("scenario_id", &scenarioIDs).Error; err != nil {
+		return fmt.Errorf("failed to find the scenario run on the terminal: %w", err)
+	}
+	for _, scenarioID := range scenarioIDs {
+		refusal, err := models.ScenarioBlockRefusal(l.db, terminal.UserID, scenarioID, false)
+		if err != nil {
+			return fmt.Errorf("failed to read the blocks on the scenario run: %w", err)
+		}
+		if refusal != nil {
+			return refusal
+		}
+	}
 	return nil
 }

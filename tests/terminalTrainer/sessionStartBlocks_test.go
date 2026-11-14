@@ -657,23 +657,6 @@ func TestRegenerateKey_GlobalBlock_403AndOldKeyKept(t *testing.T) {
 // class or organization stays paused
 // ---------------------------------------------------------------------------
 
-// withScenarioTables gives the test the scenario tables the terminal start
-// reads to find the open run on a terminal. This package does not migrate the
-// scenarios models; linkedScenarioRun creates a narrower scenario_sessions of
-// its own, so the full tables are dropped again when the test ends.
-func withScenarioTables(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	tables := []string{"scenario_sessions", "scenario_assignments", "scenarios"}
-	drop := func() {
-		for _, table := range tables {
-			require.NoError(t, db.Migrator().DropTable(table))
-		}
-	}
-	drop()
-	require.NoError(t, db.AutoMigrate(&scenarioModels.Scenario{}, &scenarioModels.ScenarioAssignment{}, &scenarioModels.ScenarioSession{}))
-	t.Cleanup(drop)
-}
-
 // pausedScenarioRunOn seeds a private scenario, assigned by assign, and the
 // learner's open run on terminalID, whose terminal is stopped: a paused run.
 func pausedScenarioRunOn(t *testing.T, db *gorm.DB, userID, terminalID string, scenarioOrg *uuid.UUID, assign scenarioModels.ScenarioAssignment) {
@@ -737,7 +720,6 @@ func requireTerminalState(t *testing.T, db *gorm.DB, sessionID string, want mode
 // where they are blocked: starting its terminal directly is resuming that run.
 func TestStartSessionRoute_PausedRunOfBlockedClass_403SessionStartBlocked(t *testing.T) {
 	db := freshTestDB(t)
-	withScenarioTables(t, db)
 	userID := "blk-start-class-run-" + uuid.NewString()
 	seedPersonalPlanFor(t, userID, 64000, 65536, 60, "Roomy")
 	sessionID := seedStoppedTerminal(t, db, userID, nil)
@@ -763,7 +745,6 @@ func TestStartSessionRoute_PausedRunOfBlockedClass_403SessionStartBlocked(t *tes
 // assignment, and is blocked in X.
 func TestStartSessionRoute_PausedRunOfBlockedOrg_TerminalWithoutOrg_403SessionStartBlocked(t *testing.T) {
 	db := freshTestDB(t)
-	withScenarioTables(t, db)
 	userID := "blk-start-org-run-" + uuid.NewString()
 	seedPersonalPlanFor(t, userID, 64000, 65536, 60, "Roomy")
 	sessionID := seedStoppedTerminal(t, db, userID, nil)
@@ -788,7 +769,6 @@ func TestStartSessionRoute_PausedRunOfBlockedOrg_TerminalWithoutOrg_403SessionSt
 // learner's plain terminal resumes.
 func TestStartSessionRoute_ClassBlock_PlainTerminalResumes(t *testing.T) {
 	db := freshTestDB(t)
-	withScenarioTables(t, db)
 	userID := "blk-start-plain-" + uuid.NewString()
 	seedPersonalPlanFor(t, userID, 64000, 65536, 60, "Roomy")
 	sessionID := seedStoppedTerminal(t, db, userID, nil)
@@ -806,7 +786,6 @@ func TestStartSessionRoute_ClassBlock_PlainTerminalResumes(t *testing.T) {
 // Guard: a block in another class says nothing about this run.
 func TestStartSessionRoute_PausedRunOfAnotherClass_Resumes(t *testing.T) {
 	db := freshTestDB(t)
-	withScenarioTables(t, db)
 	userID := "blk-start-other-class-" + uuid.NewString()
 	seedPersonalPlanFor(t, userID, 64000, 65536, 60, "Roomy")
 	sessionID := seedStoppedTerminal(t, db, userID, nil)
