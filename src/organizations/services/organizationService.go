@@ -12,6 +12,7 @@ import (
 	"soli/formations/src/organizations/repositories"
 	orgUtils "soli/formations/src/organizations/utils"
 	paymentServices "soli/formations/src/payment/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -404,6 +405,10 @@ func (os *organizationService) RemoveMemberFromOrganization(orgID uuid.UUID, req
 	err = os.repository.RemoveOrganizationMember(orgID, userID)
 	if err != nil {
 		return fmt.Errorf("failed to remove member: %w", err)
+	}
+	// The member's block in the organization leaves with the membership.
+	if err := terminalModels.DeleteOrgBlock(os.db, userID, orgID); err != nil {
+		return fmt.Errorf("failed to remove the member's organization session block: %w", err)
 	}
 
 	// Revoke permissions

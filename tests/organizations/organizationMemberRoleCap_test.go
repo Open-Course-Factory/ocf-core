@@ -23,6 +23,7 @@ import (
 	"soli/formations/src/entityManagement/hooks"
 	organizationHooks "soli/formations/src/organizations/hooks"
 	"soli/formations/src/organizations/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -44,6 +45,7 @@ func newOrgRoleCapDB(t *testing.T) *gorm.DB {
 	err = db.AutoMigrate(
 		&models.Organization{},
 		&models.OrganizationMember{},
+		&terminalModels.SessionBlock{},
 	)
 	require.NoError(t, err, "failed to auto-migrate Organization / OrganizationMember")
 

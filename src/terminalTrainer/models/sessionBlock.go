@@ -158,6 +158,13 @@ func DeleteClassBlock(db *gorm.DB, userID string, groupID uuid.UUID) error {
 		Delete(&SessionBlock{}).Error
 }
 
+// DeleteOrgBlock removes userID's block in the organization orgID: an
+// organization block belongs to the membership and leaves with it.
+func DeleteOrgBlock(db *gorm.DB, userID string, orgID uuid.UUID) error {
+	return db.Where("user_id = ? AND scope_type = ? AND scope_id = ?", userID, SessionBlockScopeOrg, orgID).
+		Delete(&SessionBlock{}).Error
+}
+
 // ScenarioBlockRefusal finds a block that cuts userID off an assignment of
 // scenarioID: a block in the assigned class, or in the organization that
 // assigned it org-wide or owns the assigned class, among those the user is an

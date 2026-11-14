@@ -292,9 +292,9 @@ func (s *userDeletionService) deleteUserTerminalKeys(tx *gorm.DB, userID string)
 	return nil
 }
 
-// eraseSessionBlocks deletes every session block on the user, and blanks the
-// author on blocks the user placed on others: those blocks stay, the link to
-// the erased identity does not.
+// eraseSessionBlocks deletes every session block and sticky internet cut on
+// the user, and blanks the author on those the user placed on others: those
+// stay, the link to the erased identity does not.
 func (s *userDeletionService) eraseSessionBlocks(tx *gorm.DB, userID string) error {
 	if err := tx.Where("user_id = ?", userID).Delete(&terminalModels.SessionBlock{}).Error; err != nil {
 		return fmt.Errorf("failed to delete session blocks: %w", err)
@@ -303,6 +303,16 @@ func (s *userDeletionService) eraseSessionBlocks(tx *gorm.DB, userID string) err
 		Where("blocked_by = ?", userID).
 		Update("blocked_by", "").Error; err != nil {
 		return fmt.Errorf("failed to anonymize session block authors: %w", err)
+	}
+	// Sticky internet cuts, the same way: those on the user go, those the
+	// user placed on others stay without their author.
+	if err := tx.Where("user_id = ?", userID).Delete(&terminalModels.ParticipantNetworkCut{}).Error; err != nil {
+		return fmt.Errorf("failed to delete network cuts: %w", err)
+	}
+	if err := tx.Model(&terminalModels.ParticipantNetworkCut{}).
+		Where("cut_by = ?", userID).
+		Update("cut_by", "").Error; err != nil {
+		return fmt.Errorf("failed to anonymize network cut authors: %w", err)
 	}
 	return nil
 }
@@ -401,6 +411,13 @@ func (s *userDeletionService) anonymizeAuditLogs(tx *gorm.DB, userID string) err
 		Where("actor_id = ?", parsedUUID).
 		Updates(map[string]any{"actor_id": nil, "actor_email": "", "actor_ip": ""}).Error; err != nil {
 		return fmt.Errorf("failed to anonymize audit logs: %w", err)
+	}
+	// Rows about the user (a block, a cut, a stop) keep the event, not who it
+	// was about.
+	if err := tx.Model(&auditModels.AuditLog{}).
+		Where("target_id = ?", parsedUUID).
+		Updates(map[string]any{"target_id": nil, "target_name": ""}).Error; err != nil {
+		return fmt.Errorf("failed to anonymize audit log targets: %w", err)
 	}
 	return nil
 }
