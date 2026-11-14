@@ -191,6 +191,7 @@ func (r *terminalRepository) FinalizeReservation(terminal *models.Terminal) erro
 		"persistence_mode":      terminal.PersistenceMode,
 		"size_cpu":              terminal.SizeCPU,
 		"size_memory_mb":        terminal.SizeMemoryMB,
+		"network_disabled":      terminal.NetworkDisabled,
 	}
 
 	return r.db.Transaction(func(tx *gorm.DB) error {
