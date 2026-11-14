@@ -9,6 +9,7 @@ import (
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/groups/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/groups/services"
 	"soli/formations/src/utils"
 
@@ -369,6 +370,11 @@ func (h *GroupMemberCleanupHook) Execute(ctx *hooks.HookContext) error {
 		if !canManage {
 			return utils.PermissionDeniedError("remove members from", "group")
 		}
+	}
+
+	// The class block goes with the membership.
+	if err := terminalModels.DeleteClassBlock(h.db, member.UserID, member.GroupID); err != nil {
+		return fmt.Errorf("failed to remove the member's class session block: %w", err)
 	}
 
 	// Revoke permissions from the member

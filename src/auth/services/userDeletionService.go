@@ -219,6 +219,9 @@ func (s *userDeletionService) cascadeOCFData(tx *gorm.DB, userID string) error {
 	if err := s.deleteUserTerminalKeys(tx, userID); err != nil {
 		return err
 	}
+	if err := s.eraseSessionBlocks(tx, userID); err != nil {
+		return err
+	}
 	if err := s.deleteScenarioSessions(tx, userID); err != nil {
 		return err
 	}
@@ -285,6 +288,21 @@ func (s *userDeletionService) terminateTerminals(tx *gorm.DB, userID string) err
 func (s *userDeletionService) deleteUserTerminalKeys(tx *gorm.DB, userID string) error {
 	if err := tx.Where("user_id = ?", userID).Delete(&terminalModels.UserTerminalKey{}).Error; err != nil {
 		return fmt.Errorf("failed to delete user terminal keys: %w", err)
+	}
+	return nil
+}
+
+// eraseSessionBlocks deletes every session block on the user, and blanks the
+// author on blocks the user placed on others: those blocks stay, the link to
+// the erased identity does not.
+func (s *userDeletionService) eraseSessionBlocks(tx *gorm.DB, userID string) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&terminalModels.SessionBlock{}).Error; err != nil {
+		return fmt.Errorf("failed to delete session blocks: %w", err)
+	}
+	if err := tx.Model(&terminalModels.SessionBlock{}).
+		Where("blocked_by = ?", userID).
+		Update("blocked_by", "").Error; err != nil {
+		return fmt.Errorf("failed to anonymize session block authors: %w", err)
 	}
 	return nil
 }

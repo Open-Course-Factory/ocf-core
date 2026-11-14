@@ -7,6 +7,7 @@ import (
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/groups/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/groups/repositories"
 	"soli/formations/src/utils"
 
@@ -230,6 +231,12 @@ func (gs *groupService) RemoveMemberFromGroup(groupID uuid.UUID, requestingUserI
 	// Cannot remove the owner
 	if err := utils.ValidateNotOwner(userID, group.OwnerUserID, "Group"); err != nil {
 		return err
+	}
+
+	// The class block goes with the membership: first, so a failure leaves
+	// the member in place rather than a block nobody can see.
+	if err := terminalModels.DeleteClassBlock(gs.db, userID, groupID); err != nil {
+		return fmt.Errorf("failed to remove the member's class session block: %w", err)
 	}
 
 	// Remove member

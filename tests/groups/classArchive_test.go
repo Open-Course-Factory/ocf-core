@@ -94,6 +94,7 @@ func classArchiveDB(t *testing.T) *gorm.DB {
 		&scenarioModels.ScenarioStepProgress{},
 		&terminalModels.Terminal{},
 		&terminalModels.UserTerminalKey{},
+		&terminalModels.SessionBlock{},
 	))
 	return db
 }
