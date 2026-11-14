@@ -116,7 +116,16 @@ func (scow *SlidevCourseWriter) SetTitle() string {
 	return ""
 }
 
+// isSingleChapter reports whether the course has exactly one chapter: the course TOC and the chapter
+// cover + TOC would then repeat the course title page and the section slides, so they are omitted.
+func (scow *SlidevCourseWriter) isSingleChapter() bool {
+	return len(scow.Course.Chapters) == 1
+}
+
 func (scow *SlidevCourseWriter) SetToc() string {
+	if scow.isSingleChapter() {
+		return ""
+	}
 	var tocBuilder strings.Builder
 
 	frontMatter := "\n---\nlayout: maintoc\nchapter: " + scow.Course.Title + "\n---\n\n"
@@ -161,6 +170,11 @@ func (scow *SlidevCourseWriter) SetToc() string {
 }
 
 func (scow *SlidevCourseWriter) SetContent() string {
+	if scow.isSingleChapter() {
+		chapterWriter := SlidevChapterWriter{Chapter: *scow.Course.Chapters[0]}
+		return chapterWriter.GetChapterBody() + "\n\n"
+	}
+
 	var chapters strings.Builder
 
 	for _, chapter := range scow.Course.Chapters {
@@ -172,7 +186,19 @@ func (scow *SlidevCourseWriter) SetContent() string {
 func (scow *SlidevCourseWriter) SetAuthorPage() string {
 	// Include the author page content from the authors directory
 	// This will be substituted with actual author content during template processing
-	return "\n---\nlayout: default\n---\n\n@@author_page_content@@\n\n"
+	return "\n---\nlayout: default\n---\n\n" + authorPagePlaceholder + "\n\n"
+}
+
+const authorPagePlaceholder = "@@author_page_content@@"
+
+// SubstituteAuthorPage fills the author slide emitted by SetAuthorPage with authorPageContent, or
+// removes the whole slide when authorPageContent is blank, so no empty slide is left behind.
+func SubstituteAuthorPage(courseContent string, authorPageContent string) string {
+	if strings.TrimSpace(authorPageContent) == "" {
+		authorSlide := (&SlidevCourseWriter{}).SetAuthorPage()
+		return strings.ReplaceAll(courseContent, authorSlide, "")
+	}
+	return strings.ReplaceAll(courseContent, authorPagePlaceholder, authorPageContent)
 }
 
 func (scow *SlidevCourseWriter) SetConclusionPage() string {

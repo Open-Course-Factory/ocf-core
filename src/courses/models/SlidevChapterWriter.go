@@ -68,5 +68,10 @@ func (scw *SlidevChapterWriter) SetConclusionPage() string {
 }
 
 func (scw *SlidevChapterWriter) GetChapter() string {
-	return scw.SetFrontMatter() + scw.SetTitlePage() + scw.SetTitle() + scw.SetToc() + scw.SetContent() + scw.SetConclusionPage()
+	return scw.SetFrontMatter() + scw.SetTitlePage() + scw.SetTitle() + scw.SetToc() + scw.GetChapterBody()
+}
+
+// GetChapterBody returns the chapter without its cover and TOC slides: the sections and the conclusion.
+func (scw *SlidevChapterWriter) GetChapterBody() string {
+	return scw.SetContent() + scw.SetConclusionPage()
 }

@@ -193,7 +193,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	courseContent = strings.ReplaceAll(courseContent, "@@author@@", *author)
 	courseContent = strings.ReplaceAll(courseContent, "@@author_fullname@@", authorInfo.FullName)
 	courseContent = strings.ReplaceAll(courseContent, "@@author_email@@", authorInfo.Email)
-	courseContent = strings.ReplaceAll(courseContent, "@@author_page_content@@", authorInfo.PageContent)
+	courseContent = courseModels.SubstituteAuthorPage(courseContent, authorInfo.PageContent)
 	courseContent = strings.ReplaceAll(courseContent, "@@version@@", course.Version)
 
 	// Write the course content to the expected file
