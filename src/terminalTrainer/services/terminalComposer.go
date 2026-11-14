@@ -212,6 +212,21 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 
 	blocked := c.provisionMissingKeys(activeMembers, userEmails)
 
+	// Members blocked in this class or in the organization it runs in are
+	// skipped and reported, never started.
+	bulkOrgID, err := parseOrgID(request.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	memberIDs := make([]string, 0, len(activeMembers))
+	for _, member := range activeMembers {
+		memberIDs = append(memberIDs, member.UserID)
+	}
+	sessionBlocked, err := models.BlockedInClass(c.db, memberIDs, group.ID, bulkOrgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check session blocks: %w", err)
+	}
+
 	// Create terminals for each member
 	for _, member := range activeMembers {
 		userEmail := userEmails[member.UserID]
@@ -221,6 +236,14 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 			response.Errors = append(response.Errors, fmt.Sprintf("Failed for user %s (%s): %v", userEmail, member.UserID, authModels.ErrAccountBlocked))
 			response.Terminals = append(response.Terminals, dto.BulkTerminalCreationResult{
 				UserID: member.UserID, UserEmail: userEmail, Error: authModels.ErrAccountBlocked.Error(),
+			})
+			continue
+		}
+		if sessionBlocked[member.UserID] {
+			response.FailedCount++
+			response.Errors = append(response.Errors, fmt.Sprintf("Failed for user %s (%s): %v", userEmail, member.UserID, models.ErrSessionStartBlocked))
+			response.Terminals = append(response.Terminals, dto.BulkTerminalCreationResult{
+				UserID: member.UserID, UserEmail: userEmail, Error: models.ErrSessionStartBlocked.Error(),
 			})
 			continue
 		}
@@ -344,6 +367,16 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 		return nil, fmt.Errorf("invalid subscription plan type")
 	}
 
+	// A participant blocked in this context gets nothing: checked before any
+	// budget is reserved or host is asked.
+	orgID, err := parseOrgID(input.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	if err := models.SessionStartRefusal(c.db, userID, orgID); err != nil {
+		return nil, err
+	}
+
 	// Resolve effective persistence mode (free tier hard-fails; empty defaults to ephemeral).
 	// Done up-front so we never hit tt-backend with a request the plan forbids.
 	effectiveMode, persistErr := resolvePersistenceMode(input.PersistenceMode, plan)
@@ -355,10 +388,6 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 	// The host is settled first: the options below are read from its catalog,
 	// a host outside the policy is never asked, and one without the RAM for
 	// this size is skipped for the next.
-	orgID, err := parseOrgID(input.OrganizationID)
-	if err != nil {
-		return nil, err
-	}
 	policy, err := loadBackendPolicy(c.db, c.proxy, orgID, plan)
 	if err != nil {
 		return nil, err

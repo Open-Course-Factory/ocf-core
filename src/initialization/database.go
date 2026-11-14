@@ -147,6 +147,10 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&terminalModels.Terminal{})
 	db.AutoMigrate(&terminalModels.UserTerminalKey{})
 	db.AutoMigrate(&terminalModels.ExposedPort{})
+	db.AutoMigrate(&terminalModels.SessionBlock{})
+	if err := terminalModels.MigrateSessionBlockGlobalIndex(db); err != nil {
+		log.Printf("failed to create the global session block index: %v", err)
+	}
 	// MR !239 (SSOT consolidation): the legacy `status` column on `terminals`
 	// was a parallel field that drifted from `state` and caused zombie-resume
 	// and dashboard banner bugs. The model field is gone; this drops the
