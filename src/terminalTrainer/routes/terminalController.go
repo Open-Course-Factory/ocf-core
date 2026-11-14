@@ -548,6 +548,9 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 	// A stopped machine holds no budget, so the resume is charged against the
 	// plan and refused with the creation path's 403 when it does not fit.
 	if err := tc.service.StartSession(terminal.SessionID, plan); err != nil {
+		if httperrors.WriteSessionStartBlocked(ctx, err) {
+			return
+		}
 		if httperrors.WriteBudgetRejection(ctx, err, userId) {
 			return
 		}
@@ -1970,6 +1973,9 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 		// Structured budget rejection — shared writer (see
 		// httperrors.WriteBudgetRejection) so terminal create and scenario
 		// launch/preview answer the identical 403 shape.
+		if httperrors.WriteSessionStartBlocked(ctx, err) {
+			return
+		}
 		if httperrors.WriteBudgetRejection(ctx, err, userID) {
 			return
 		}

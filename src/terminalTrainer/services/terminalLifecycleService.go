@@ -212,6 +212,12 @@ func (l *terminalLifecycleService) StartSession(sessionID string, plan *paymentM
 		return fmt.Errorf("session not found: %w", err)
 	}
 
+	// Resuming is starting: a block on the terminal's context refuses it
+	// before any budget is reserved or tt-backend is asked.
+	if err := models.SessionStartRefusal(l.db, terminal.UserID, terminal.OrganizationID); err != nil {
+		return err
+	}
+
 	pausedState, pausedExpiresAt := terminal.State, terminal.ExpiresAt
 	reserved, err := l.reserveResumeBudget(terminal, plan)
 	if err != nil {

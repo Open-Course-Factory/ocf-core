@@ -233,6 +233,11 @@ func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
 	if blocked {
 		return authModels.ErrAccountBlocked
 	}
+	// A platform-wide session block disables the key too; organization and
+	// class blocks do not, the key serving every context.
+	if err := models.SessionStartRefusal(tts.db, userID, nil); err != nil {
+		return err
+	}
 
 	// Skip if Terminal Trainer is not configured
 	if tts.baseURL == "" || tts.adminKey == "" {
