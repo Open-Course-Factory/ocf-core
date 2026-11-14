@@ -24,8 +24,10 @@ import (
 	"gorm.io/gorm"
 
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentModels "soli/formations/src/payment/models"
+	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
@@ -648,4 +650,174 @@ func TestRegenerateKey_GlobalBlock_403AndOldKeyKept(t *testing.T) {
 	assert.Equal(t, "fraud", payload["reason"])
 	assert.Empty(t, srv.recordedUpdates(), "the old key is not disabled on tt-backend")
 	assert.True(t, localKeyIsActive(t, db, userID), "the old key row stays active")
+}
+
+// ---------------------------------------------------------------------------
+// Resume through /terminals/:id/start — a paused scenario run of a blocked
+// class or organization stays paused
+// ---------------------------------------------------------------------------
+
+// withScenarioTables gives the test the scenario tables the terminal start
+// reads to find the open run on a terminal. This package does not migrate the
+// scenarios models; linkedScenarioRun creates a narrower scenario_sessions of
+// its own, so the full tables are dropped again when the test ends.
+func withScenarioTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	tables := []string{"scenario_sessions", "scenario_assignments", "scenarios"}
+	drop := func() {
+		for _, table := range tables {
+			require.NoError(t, db.Migrator().DropTable(table))
+		}
+	}
+	drop()
+	require.NoError(t, db.AutoMigrate(&scenarioModels.Scenario{}, &scenarioModels.ScenarioAssignment{}, &scenarioModels.ScenarioSession{}))
+	t.Cleanup(drop)
+}
+
+// pausedScenarioRunOn seeds a private scenario, assigned by assign, and the
+// learner's open run on terminalID, whose terminal is stopped: a paused run.
+func pausedScenarioRunOn(t *testing.T, db *gorm.DB, userID, terminalID string, scenarioOrg *uuid.UUID, assign scenarioModels.ScenarioAssignment) {
+	t.Helper()
+	scenario := scenarioModels.Scenario{
+		Name: "blk-paused-" + uuid.NewString()[:8], Title: "Paused run", InstanceType: "S", OsType: "deb",
+		CreatedByID: "teacher-blk", OrganizationID: scenarioOrg,
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	assign.ScenarioID = scenario.ID
+	assign.CreatedByID = "teacher-blk"
+	assign.IsActive = true
+	require.NoError(t, db.Create(&assign).Error)
+	require.NoError(t, db.Create(&scenarioModels.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: userID, TerminalSessionID: &terminalID,
+		Status: "active", StartedAt: time.Now().Add(-time.Hour),
+	}).Error)
+}
+
+// resumeTTServer answers the resume of sessionID and counts the starts.
+func resumeTTServer(t *testing.T, sessionID string) *atomic.Int32 {
+	t.Helper()
+	var starts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/1.0/metrics":
+			_ = json.NewEncoder(w).Encode(map[string]any{"ram_available_gb": 32.0, "ram_percent": 10.0})
+		case r.Method == http.MethodGet && r.URL.Path == "/1.0/sessions":
+			_ = json.NewEncoder(w).Encode(map[string]any{"sessions": []map[string]any{
+				{"id": sessionID, "session_id": sessionID, "status": 1, "state": "stopped", "persistence_mode": "persistent", "expires_at": time.Now().Add(time.Hour).Unix()},
+			}})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/start"):
+			starts.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{"state": "running", "expires_at": time.Now().Add(time.Hour).Unix()})
+		default:
+			http.Error(w, "unexpected: "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	configureTTServer(t, srv.URL)
+	return &starts
+}
+
+func postTerminalStart(t *testing.T, userID, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	router := setupResumeRouterWithProdMiddleware(t, userID, services.NewTerminalTrainerService(sharedTestDB))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/terminals/"+sessionID+"/start", nil))
+	return w
+}
+
+func requireTerminalState(t *testing.T, db *gorm.DB, sessionID string, want models.TerminalState) {
+	t.Helper()
+	var row models.Terminal
+	require.NoError(t, db.First(&row, "session_id = ?", sessionID).Error)
+	assert.Equal(t, want, row.State)
+}
+
+// The learner's paused run of a scenario they reach only through class C,
+// where they are blocked: starting its terminal directly is resuming that run.
+func TestStartSessionRoute_PausedRunOfBlockedClass_403SessionStartBlocked(t *testing.T) {
+	db := freshTestDB(t)
+	withScenarioTables(t, db)
+	userID := "blk-start-class-run-" + uuid.NewString()
+	seedPersonalPlanFor(t, userID, 64000, 65536, 60, "Roomy")
+	sessionID := seedStoppedTerminal(t, db, userID, nil)
+	class := createTestGroup(t, db, "teacher-blk")
+	addActiveGroupMember(t, db, class.ID, userID, groupModels.GroupMemberRoleMember)
+	pausedScenarioRunOn(t, db, userID, sessionID, nil, scenarioModels.ScenarioAssignment{GroupID: &class.ID, Scope: "group"})
+	blockSessions(t, db, userID, "group", &class.ID, "late")
+	starts := resumeTTServer(t, sessionID)
+
+	w := postTerminalStart(t, userID, sessionID)
+
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	payload := decodeBody(t, w)
+	assert.Equal(t, "session_start_blocked", payload["error_message"])
+	assert.Equal(t, "group", payload["scope"])
+	assert.Equal(t, "late", payload["reason"])
+	assert.Zero(t, starts.Load(), "tt-backend is never asked to start the container")
+	requireTerminalState(t, db, sessionID, models.StateStopped)
+}
+
+// The run was launched with no organization context, so its terminal names no
+// organization; the learner reaches the scenario only through org X's
+// assignment, and is blocked in X.
+func TestStartSessionRoute_PausedRunOfBlockedOrg_TerminalWithoutOrg_403SessionStartBlocked(t *testing.T) {
+	db := freshTestDB(t)
+	withScenarioTables(t, db)
+	userID := "blk-start-org-run-" + uuid.NewString()
+	seedPersonalPlanFor(t, userID, 64000, 65536, 60, "Roomy")
+	sessionID := seedStoppedTerminal(t, db, userID, nil)
+	orgX := createTestOrgForHistory(t, db, "owner-x").ID
+	createTestOrgMember(t, db, orgX, userID, orgModels.OrgRoleMember)
+	pausedScenarioRunOn(t, db, userID, sessionID, &orgX, scenarioModels.ScenarioAssignment{OrganizationID: &orgX, Scope: "org"})
+	blockSessions(t, db, userID, "org", &orgX, "absences")
+	starts := resumeTTServer(t, sessionID)
+
+	w := postTerminalStart(t, userID, sessionID)
+
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	payload := decodeBody(t, w)
+	assert.Equal(t, "session_start_blocked", payload["error_message"])
+	assert.Equal(t, "org", payload["scope"])
+	assert.Equal(t, "absences", payload["reason"])
+	assert.Zero(t, starts.Load(), "tt-backend is never asked to start the container")
+	requireTerminalState(t, db, sessionID, models.StateStopped)
+}
+
+// Guard: a class block refuses nothing but that class's scenario runs; the
+// learner's plain terminal resumes.
+func TestStartSessionRoute_ClassBlock_PlainTerminalResumes(t *testing.T) {
+	db := freshTestDB(t)
+	withScenarioTables(t, db)
+	userID := "blk-start-plain-" + uuid.NewString()
+	seedPersonalPlanFor(t, userID, 64000, 65536, 60, "Roomy")
+	sessionID := seedStoppedTerminal(t, db, userID, nil)
+	class := createTestGroup(t, db, "teacher-blk")
+	addActiveGroupMember(t, db, class.ID, userID, groupModels.GroupMemberRoleMember)
+	blockSessions(t, db, userID, "group", &class.ID, "late")
+	starts := resumeTTServer(t, sessionID)
+
+	w := postTerminalStart(t, userID, sessionID)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 1, starts.Load())
+}
+
+// Guard: a block in another class says nothing about this run.
+func TestStartSessionRoute_PausedRunOfAnotherClass_Resumes(t *testing.T) {
+	db := freshTestDB(t)
+	withScenarioTables(t, db)
+	userID := "blk-start-other-class-" + uuid.NewString()
+	seedPersonalPlanFor(t, userID, 64000, 65536, 60, "Roomy")
+	sessionID := seedStoppedTerminal(t, db, userID, nil)
+	class := createTestGroup(t, db, "teacher-blk")
+	addActiveGroupMember(t, db, class.ID, userID, groupModels.GroupMemberRoleMember)
+	pausedScenarioRunOn(t, db, userID, sessionID, nil, scenarioModels.ScenarioAssignment{GroupID: &class.ID, Scope: "group"})
+	blockSessions(t, db, userID, "group", uuidPtr(uuid.New()), "late")
+	starts := resumeTTServer(t, sessionID)
+
+	w := postTerminalStart(t, userID, sessionID)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 1, starts.Load())
 }
