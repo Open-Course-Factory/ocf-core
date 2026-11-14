@@ -9,6 +9,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 	"time"
 
@@ -657,7 +658,12 @@ func (h *OrganizationMemberDeletionHook) Execute(ctx *hooks.HookContext) error {
 		return err
 	}
 
-	// 3. Revoke permissions from the member
+	// 3. The member's block in the organization leaves with the membership.
+	if err := terminalModels.DeleteOrgBlock(h.db, member.UserID, member.OrganizationID); err != nil {
+		return fmt.Errorf("failed to remove the member's organization session block: %w", err)
+	}
+
+	// 4. Revoke permissions from the member
 	err := h.organizationService.RevokeOrganizationPermissions(member.UserID, member.OrganizationID)
 	if err != nil {
 		utils.Warn("Failed to revoke member permissions from user %s: %v", member.UserID, err)
