@@ -3,6 +3,7 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 
+	terminalDto "soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/httperrors"
 	ttServices "soli/formations/src/terminalTrainer/services"
 )
@@ -32,8 +33,8 @@ func (oc *OrganizationController) SetMemberSessionBlock(ctx *gin.Context) {
 		httperrors.WriteParticipantControlError(ctx, err)
 		return
 	}
-	input, ok := httperrors.BindSessionBlock(ctx)
-	if !ok {
+	var input terminalDto.SetSessionBlockInput
+	if input, ok = httperrors.BindSessionBlock(ctx); !ok {
 		return
 	}
 	results, _, err := oc.participants.SetSessionBlock(
