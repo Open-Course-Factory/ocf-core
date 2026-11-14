@@ -174,6 +174,7 @@ func newOffboardingDB(t *testing.T) *gorm.DB {
 		&groupModels.ClassGroup{},
 		&groupModels.GroupMember{},
 		&terminalModels.UserTerminalKey{},
+		&terminalModels.SessionBlock{},
 		&terminalModels.Terminal{},
 		&paymentModels.SubscriptionPlan{},
 		&paymentModels.SubscriptionBatch{},

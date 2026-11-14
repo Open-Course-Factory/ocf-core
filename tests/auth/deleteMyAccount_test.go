@@ -117,6 +117,7 @@ func setupDeleteMyAccountDB(t *testing.T) *gorm.DB {
 		&authModels.SshKey{},
 		&terminalModels.UserTerminalKey{},
 		&terminalModels.Terminal{},
+		&terminalModels.SessionBlock{},
 		&scenarioModels.Scenario{},
 		&scenarioModels.ScenarioSession{},
 		&scenarioModels.ScenarioStepProgress{},

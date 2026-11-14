@@ -27,6 +27,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
 	orgModels "soli/formations/src/organizations/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -51,6 +52,7 @@ func newGroupRoleCapDB(t *testing.T) *gorm.DB {
 		&orgModels.OrganizationMember{},
 		&groupModels.ClassGroup{},
 		&groupModels.GroupMember{},
+		&terminalModels.SessionBlock{},
 	)
 	require.NoError(t, err, "failed to auto-migrate org/group tables")
 
