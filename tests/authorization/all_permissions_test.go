@@ -164,6 +164,11 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		// the session record and enforces manager+ authorization itself).
 		{"/api/v1/class-groups/:id/terminal-sessions", "GET"},
 		{"/api/v1/terminals/:id/supervise", "GET"},
+		// Trainer controls on class participants (#580) — GroupRole manager on :id.
+		{"/api/v1/class-groups/:id/participant-controls", "GET"},
+		{"/api/v1/class-groups/:id/participants/:userId/stop-sessions", "POST"},
+		{"/api/v1/class-groups/:id/participants/:userId/network", "PUT"},
+		{"/api/v1/class-groups/:id/participants/:userId/session-block", "PUT"},
 		// Organization terminal routes
 		{"/api/v1/organizations/:id/terminal-sessions", "GET"},
 		// Incus UI proxy — MR N derives Layer 1 from the RouteRegistry, so the old
@@ -258,6 +263,7 @@ func TestSetupAdminUsersPermissions(t *testing.T) {
 		{"/api/v1/admin/users", "POST"},
 		{"/api/v1/admin/users/:id/verify-email", "POST"},
 		{"/api/v1/admin/users/:id/password", "PUT"},
+		{"/api/v1/admin/users/:id/session-block", "PUT"},
 	}
 
 	for _, r := range routes {
@@ -596,6 +602,7 @@ func TestRegisterOrganizationPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/organizations/:id/members/offboard", "POST"},
 		{"/api/v1/organizations/:id/members/:userId/reinstate", "POST"},
 		{"/api/v1/organizations/:id/members/:userId/erase", "POST"},
+		{"/api/v1/organizations/:id/members/:userId/session-block", "PUT"},
 		{"/api/v1/organizations/:id/groups", "GET"},
 		{"/api/v1/organizations/:id/convert-to-team", "POST"},
 		{"/api/v1/organizations/:id/backends", "GET"},
