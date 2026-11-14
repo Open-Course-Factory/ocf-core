@@ -32,10 +32,13 @@ import (
 	auditModels "soli/formations/src/audit/models"
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/mocks"
+	"soli/formations/src/entityManagement/hooks"
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/organizations/controller"
+	organizationHooks "soli/formations/src/organizations/hooks"
 	"soli/formations/src/organizations/models"
 	organizationRoutes "soli/formations/src/organizations/routes"
+	organizationServices "soli/formations/src/organizations/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	testTools "soli/formations/tests/testTools"
 )
@@ -202,9 +205,17 @@ func TestOrgMemberSessionBlock_ManagerBlocksUpdatesAndUnblocks(t *testing.T) {
 	var set []auditModels.AuditLog
 	require.NoError(t, f.db.Where("event_type = ?", "user.session_block.set").Find(&set).Error)
 	require.Len(t, set, 2)
+	// Contract change (final round, F): identities live in the typed columns
+	// only, the reason is recorded as has_reason, and a pre-action row says
+	// "requested".
 	for _, row := range set {
-		assert.Contains(t, row.Metadata, obManager)
-		assert.Contains(t, row.Metadata, obLearner)
+		var meta map[string]any
+		require.NoError(t, json.Unmarshal([]byte(row.Metadata), &meta))
+		for _, key := range []string{"actor_user_id", "target_user_id", "impersonator_id", "reason"} {
+			assert.NotContains(t, meta, key)
+		}
+		assert.Equal(t, true, meta["has_reason"])
+		assert.Equal(t, "requested", row.Status)
 		assert.Contains(t, row.Metadata, f.orgID.String())
 		assert.Contains(t, row.Metadata, terminalModels.SessionBlockScopeOrg)
 	}
@@ -292,4 +303,60 @@ func TestOrgMemberSessionBlockRoute_DeclaredOrgRoleManager(t *testing.T) {
 	assert.Equal(t, access.OrgRole, perm.Access.Type)
 	assert.Equal(t, "id", perm.Access.Param)
 	assert.Equal(t, "manager", perm.Access.MinRole)
+}
+
+// =============================================================================
+// Final round (#580)
+// =============================================================================
+
+func TestOrgMemberSessionBlock_UnblockWithoutBlock_200NoClearedAudit(t *testing.T) {
+	f := newOBFixture(t)
+	w := obPut(t, f, obManager, memberRoles, f.orgID, obLearner, map[string]any{"blocked": false})
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	var cleared int64
+	require.NoError(t, f.db.Model(&auditModels.AuditLog{}).Where("event_type = ?", "user.session_block.cleared").Count(&cleared).Error)
+	assert.Zero(t, cleared, "nothing was cleared: no cleared row")
+}
+
+// seedLeaverBlocks gives obLearner a block in f.orgID, one in f.otherOrg, a
+// class block and a global block.
+func seedLeaverBlocks(t *testing.T, f *obFixture) {
+	t.Helper()
+	class := uuid.New()
+	require.NoError(t, testTools.SeedSessionBlock(f.db, obLearner, "org", &f.orgID, "r"))
+	require.NoError(t, testTools.SeedSessionBlock(f.db, obLearner, "org", &f.otherOrg, "r"))
+	require.NoError(t, testTools.SeedSessionBlock(f.db, obLearner, "group", &class, "r"))
+	require.NoError(t, testTools.SeedSessionBlock(f.db, obLearner, "global", nil, "r"))
+}
+
+func assertOnlyThatOrgBlockRemoved(t *testing.T, f *obFixture) {
+	t.Helper()
+	assert.Empty(t, obOrgBlocks(t, f.db, obLearner, f.orgID), "the block in the organization the member left is deleted")
+	assert.Len(t, obOrgBlocks(t, f.db, obLearner, f.otherOrg), 1, "the block in another organization stays")
+	assert.EqualValues(t, 3, testTools.CountSessionBlocks(f.db, obLearner), "class and platform blocks stay")
+}
+
+func TestOrgMemberDeletionHook_DeletesThatOrgSessionBlock(t *testing.T) {
+	useMockEnforcer(t)
+	f := newOBFixture(t)
+	seedLeaverBlocks(t, f)
+
+	hook := organizationHooks.NewOrganizationMemberDeletionHook(f.db)
+	require.NoError(t, hook.Execute(&hooks.HookContext{
+		EntityName: "OrganizationMember",
+		HookType:   hooks.BeforeDelete,
+		NewEntity:  &models.OrganizationMember{OrganizationID: f.orgID, UserID: obLearner, Role: models.OrgRoleMember},
+		UserID:     obManager,
+		UserRoles:  memberRoles,
+	}))
+	assertOnlyThatOrgBlockRemoved(t, f)
+}
+
+func TestRemoveMemberFromOrganization_DeletesThatOrgSessionBlock(t *testing.T) {
+	useMockEnforcer(t)
+	f := newOBFixture(t)
+	seedLeaverBlocks(t, f)
+
+	require.NoError(t, organizationServices.NewOrganizationService(f.db).RemoveMemberFromOrganization(f.orgID, obManager, obLearner))
+	assertOnlyThatOrgBlockRemoved(t, f)
 }

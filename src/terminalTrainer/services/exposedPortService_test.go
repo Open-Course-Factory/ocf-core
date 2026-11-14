@@ -533,3 +533,28 @@ func TestReconcileExposedPorts_UnreachableBackendChangesNothing(t *testing.T) {
 	require.NoError(t, db.Model(&models.ExposedPort{}).Count(&count).Error)
 	assert.EqualValues(t, 1, count, "no answer is not evidence that the container is gone")
 }
+
+// A container whose internet was cut is live but has no address: its
+// exposures route nowhere and are stale (#580, network cut).
+func TestReconcileExposedPorts_LiveInstanceWithoutAddressIsStale(t *testing.T) {
+	db := setupExposedPortTestDB(t)
+	require.NoError(t, db.AutoMigrate(&auditModels.AuditLog{}))
+	planID := createTestPlan(t, db, true)
+	create := httptest.NewServer(infoStub("10.0.0.5"))
+	defer create.Close()
+	svc := newExposedPortTestService(create.URL, db)
+	createTestTerminal(t, db, "sess-cut", planID)
+	_, err := svc.CreateExposedPort("sess-cut", 8000)
+	require.NoError(t, err)
+
+	reconcile := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"stub","status":0,"ip":"","instance_running":true}`))
+	}))
+	defer reconcile.Close()
+	newExposedPortTestService(reconcile.URL, db).ReconcileExposedPorts()
+
+	var count int64
+	require.NoError(t, db.Model(&models.ExposedPort{}).Count(&count).Error)
+	assert.Zero(t, count, "a running instance with no address cannot be reached: its exposure is dropped")
+}
