@@ -11,6 +11,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
+	testTools "soli/formations/tests/testTools"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -67,6 +68,10 @@ func TestMain(m *testing.M) {
 	// Create partial unique index for active session dedup
 	models.MigrateUniqueActiveSessionIndex(db)
 
+	if err := testTools.CreateSessionBlocksTable(db); err != nil {
+		panic("failed to create session_blocks: " + err.Error())
+	}
+
 	sharedTestDB = db
 	os.Exit(m.Run())
 }
@@ -96,6 +101,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM terminals")
 	sharedTestDB.Exec("DELETE FROM user_terminal_keys")
 	sharedTestDB.Exec("DELETE FROM blocked_accounts")
+	sharedTestDB.Exec("DELETE FROM session_blocks")
 	sharedTestDB.Exec("DELETE FROM user_subscriptions")
 	sharedTestDB.Exec("DELETE FROM organization_subscriptions")
 	sharedTestDB.Exec("DELETE FROM organization_role_plans")
