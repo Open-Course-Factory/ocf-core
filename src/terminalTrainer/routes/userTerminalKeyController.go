@@ -9,6 +9,7 @@ import (
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/terminalTrainer/dto"
+	"soli/formations/src/terminalTrainer/httperrors"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
 
@@ -57,6 +58,17 @@ func (utc *UserTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 		return
 	}
 	userId := ctx.GetString("userId")
+
+	// A platform-wide block refuses the new key: refuse before the old one
+	// is disabled, so the refusal leaves the user's key as it was.
+	if err := models.SessionStartRefusal(utc.db, userId, nil); err != nil {
+		if httperrors.WriteSessionStartBlocked(ctx, err) {
+			return
+		}
+		slog.Error("failed to check session blocks", "user", userId, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to check your access, please try again")
+		return
+	}
 
 	// Vérifier si l'utilisateur a une clé existante
 	existingKey, _ := utc.service.GetUserKey(userId)
