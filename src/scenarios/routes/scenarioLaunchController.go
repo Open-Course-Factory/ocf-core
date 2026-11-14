@@ -566,17 +566,8 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	}
 
 	// Check assignment access: admin OR user has group/org assignment
-	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-		hasAccess, err := sc.checkScenarioAccess(userID, scenarioID)
-		if err != nil {
-			slog.Error("failed to check scenario access", "err", err)
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify access")
-			return
-		}
-		if !hasAccess {
-			errors.Respond(ctx, http.StatusForbidden, "No access to this scenario")
-			return
-		}
+	if sc.rejectWithoutScenarioAccess(ctx, userID, scenarioID) {
+		return
 	}
 
 	if sc.rejectIfRunInProgress(ctx, userID, scenarioID) {
@@ -760,17 +751,81 @@ func (sc *scenarioLaunchController) launchResponse(session *models.ScenarioSessi
 }
 
 // openClassMembershipIDs lists the classes userID is an active member of,
-// skipping archived ones and those the user is blocked in: an assignment on
-// either authorises nothing, which is why every access decision below reads
-// its groups here.
+// skipping archived ones and those the user is blocked in, in the class or in
+// its organization: an assignment on any of them authorises nothing, which is
+// why every access decision below reads its groups here.
 func (b *scenarioControllerBase) openClassMembershipIDs(userID string) ([]uuid.UUID, error) {
 	var groupIDs []uuid.UUID
 	err := b.db.Model(&groupModels.GroupMember{}).
 		Joins("JOIN class_groups ON class_groups.id = group_members.group_id AND class_groups.deleted_at IS NULL").
 		Where("group_members.user_id = ? AND group_members.is_active = true", userID).
-		Scopes(entityManagementModels.NotArchived("class_groups"), terminalModels.ExcludeClassBlocked).
+		Scopes(entityManagementModels.NotArchived("class_groups"), terminalModels.ExcludeClassBlocked,
+			terminalModels.ExcludeOrgBlocked("group_members.user_id", "class_groups.organization_id")).
 		Pluck("group_members.group_id", &groupIDs).Error
 	return groupIDs, err
+}
+
+// rejectWithoutScenarioAccess answers 403 and reports true when userID may not
+// run scenarioID; administrators always may. When a block is what removed the
+// access, the learner is told so, with its scope and reason.
+func (sc *scenarioLaunchController) rejectWithoutScenarioAccess(ctx *gin.Context, userID string, scenarioID uuid.UUID) bool {
+	if access.IsAdmin(ctx.GetStringSlice("userRoles")) {
+		return false
+	}
+	hasAccess, err := sc.checkScenarioAccess(userID, scenarioID)
+	if err != nil {
+		slog.Error("failed to check scenario access", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify access")
+		return true
+	}
+	if hasAccess {
+		return false
+	}
+	refusal, err := sc.blockedAssignmentRefusal(userID, scenarioID)
+	if err != nil {
+		slog.Error("failed to read the blocks on a scenario's assignments", "err", err)
+	}
+	if refusal != nil {
+		httperrors.WriteSessionStartBlocked(ctx, refusal)
+		return true
+	}
+	errors.Respond(ctx, http.StatusForbidden, "No access to this scenario")
+	return true
+}
+
+// blockedAssignmentRefusal finds a block that cuts userID off an open
+// assignment of scenarioID: a block in the assigned class, or in the
+// organization that assigned it org-wide or owns the assigned class, among
+// those the user is an active member of. nil when no block explains a missing
+// access. One query, read only once access is denied; an organization block
+// wins, being the wider.
+func (b *scenarioControllerBase) blockedAssignmentRefusal(userID string, scenarioID uuid.UUID) (*terminalModels.SessionStartBlockedError, error) {
+	now := time.Now()
+	var blocks []struct {
+		ScopeType string
+		Reason    string
+	}
+	err := b.db.Table("session_blocks sb").
+		Select("sb.scope_type, sb.reason").
+		Joins(`JOIN scenario_assignments sa ON sa.scenario_id = ? AND sa.deleted_at IS NULL AND sa.is_active = true
+			AND (sa.deadline IS NULL OR sa.deadline > ?) AND (sa.start_date IS NULL OR sa.start_date <= ?)`, scenarioID, now, now).
+		Joins(`LEFT JOIN class_groups cg ON sa.scope = 'group' AND cg.id = sa.group_id
+			AND cg.deleted_at IS NULL AND cg.archived_at IS NULL`).
+		Joins(`LEFT JOIN group_members gm ON gm.group_id = cg.id AND gm.user_id = sb.user_id
+			AND gm.is_active = true AND gm.deleted_at IS NULL`).
+		Joins(`LEFT JOIN organization_members om ON sa.scope = 'org' AND om.organization_id = sa.organization_id
+			AND om.user_id = sb.user_id AND om.is_active = true AND om.deleted_at IS NULL`).
+		Where("sb.user_id = ?", userID).
+		Where(`(gm.id IS NOT NULL AND ((sb.scope_type = ? AND sb.scope_id = sa.group_id) OR (sb.scope_type = ? AND sb.scope_id = cg.organization_id)))
+			OR (om.id IS NOT NULL AND sb.scope_type = ? AND sb.scope_id = sa.organization_id)`,
+			terminalModels.SessionBlockScopeGroup, terminalModels.SessionBlockScopeOrg, terminalModels.SessionBlockScopeOrg).
+		Order("CASE WHEN sb.scope_type = 'org' THEN 0 ELSE 1 END").
+		Limit(1).
+		Scan(&blocks).Error
+	if err != nil || len(blocks) == 0 {
+		return nil, err
+	}
+	return &terminalModels.SessionStartBlockedError{Scope: blocks[0].ScopeType, Reason: blocks[0].Reason}, nil
 }
 
 // checkScenarioAccess checks if a user has access to a scenario via group or org assignments
@@ -789,8 +844,9 @@ func (b *scenarioControllerBase) checkScenarioAccess(userID string, scenarioID u
 	// Get user's org IDs
 	var orgIDs []uuid.UUID
 	if err := b.db.Model(&orgModels.OrganizationMember{}).
-		Where("user_id = ? AND is_active = true", userID).
-		Pluck("organization_id", &orgIDs).Error; err != nil {
+		Where("organization_members.user_id = ? AND organization_members.is_active = true", userID).
+		Scopes(terminalModels.ExcludeOrgBlocked("organization_members.user_id", "organization_members.organization_id")).
+		Pluck("organization_members.organization_id", &orgIDs).Error; err != nil {
 		return false, err
 	}
 
@@ -840,7 +896,8 @@ func (b *scenarioControllerBase) contextAssignments(userID string, orgID *uuid.U
 	classes := b.db.Model(&groupModels.GroupMember{}).
 		Joins("JOIN class_groups cg ON cg.id = group_members.group_id").
 		Where("group_members.user_id = ? AND group_members.is_active = true", userID).
-		Scopes(entityManagementModels.NotArchived("cg"), terminalModels.ExcludeClassBlocked)
+		Scopes(entityManagementModels.NotArchived("cg"), terminalModels.ExcludeClassBlocked,
+			terminalModels.ExcludeOrgBlocked("group_members.user_id", "cg.organization_id"))
 	if orgID != nil {
 		classes = classes.Where("cg.organization_id = ?", *orgID)
 	} else {
@@ -858,8 +915,10 @@ func (b *scenarioControllerBase) contextAssignments(userID string, orgID *uuid.U
 		args = append(args, groupIDs)
 	}
 	if orgID != nil {
-		conditions = append(conditions, "(scope = 'org' AND organization_id = ?)")
-		args = append(args, *orgID)
+		// Not when the user is blocked in that organization.
+		conditions = append(conditions, `(scope = 'org' AND organization_id = ? AND NOT EXISTS (SELECT 1 FROM session_blocks sb
+			WHERE sb.user_id = ? AND sb.scope_type = ? AND sb.scope_id = scenario_assignments.organization_id))`)
+		args = append(args, *orgID, userID, terminalModels.SessionBlockScopeOrg)
 	}
 	if len(conditions) == 0 {
 		return nil, nil
@@ -1158,6 +1217,12 @@ func (sc *scenarioLaunchController) ResumeScenario(ctx *gin.Context) {
 // /terminals/:id/start does, and answers. It reports false, having answered
 // nothing, when the container turned out to be gone.
 func (sc *scenarioLaunchController) resumePausedRun(ctx *gin.Context, run *models.ScenarioSession) bool {
+	// Restarting the container is a new session: the access a rebuild checks
+	// applies, so a block in the class or organization that assigned the
+	// scenario keeps the run paused.
+	if sc.rejectWithoutScenarioAccess(ctx, run.UserID, run.ScenarioID) {
+		return true
+	}
 	terminalID := *run.TerminalSessionID
 	terminal, err := sc.terminalService.GetSessionInfo(terminalID)
 	if err != nil {
@@ -1202,17 +1267,8 @@ func (sc *scenarioLaunchController) rebuildRun(ctx *gin.Context, run *models.Sce
 	if sc.rejectIfArchived(ctx, &scenario) {
 		return
 	}
-	if !access.IsAdmin(ctx.GetStringSlice("userRoles")) {
-		hasAccess, err := sc.checkScenarioAccess(run.UserID, scenario.ID)
-		if err != nil {
-			slog.Error("failed to check scenario access", "err", err)
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify access")
-			return
-		}
-		if !hasAccess {
-			errors.Respond(ctx, http.StatusForbidden, "No access to this scenario")
-			return
-		}
+	if sc.rejectWithoutScenarioAccess(ctx, run.UserID, scenario.ID) {
+		return
 	}
 
 	orgID := sc.runOrganization(run, &scenario)

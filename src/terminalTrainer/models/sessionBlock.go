@@ -138,6 +138,19 @@ func ExcludeClassBlocked(db *gorm.DB) *gorm.DB {
 		SessionBlockScopeGroup)
 }
 
+// ExcludeOrgBlocked scopes a query to the rows whose user is not blocked in
+// their organization: userColumn and orgColumn name the query's columns for
+// the user and the organization (a NULL organization is never blocked). An
+// organization block removes that organization's assignments, org-wide or
+// through its classes, from every context.
+func ExcludeOrgBlocked(userColumn, orgColumn string) func(*gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		return db.Where(`NOT EXISTS (SELECT 1 FROM session_blocks sb
+			WHERE sb.user_id = `+userColumn+` AND sb.scope_type = ? AND sb.scope_id = `+orgColumn+`)`,
+			SessionBlockScopeOrg)
+	}
+}
+
 // DeleteClassBlock removes userID's block in the class groupID: a class block
 // belongs to the membership and leaves with it.
 func DeleteClassBlock(db *gorm.DB, userID string, groupID uuid.UUID) error {
