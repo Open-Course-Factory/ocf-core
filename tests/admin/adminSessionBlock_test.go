@@ -37,6 +37,7 @@ type asbFixture struct {
 	mu          sync.Mutex
 	stops       []string
 	keyDisabled []string
+	keyEnabled  []string
 }
 
 func newASBFixture(t *testing.T) *asbFixture {
@@ -71,6 +72,17 @@ func newASBFixture(t *testing.T) *asbFixture {
 		return nil
 	}
 	t.Cleanup(func() { adminUsersRoutes.DisableUserTerminalKey = original })
+
+	// A global unblock gives the terminal key back: re-enable or regenerate
+	// whichever key exists, through the existing key service.
+	originalEnable := adminUsersRoutes.EnableUserTerminalKey
+	adminUsersRoutes.EnableUserTerminalKey = func(_ *gorm.DB, userID string) error {
+		f.mu.Lock()
+		f.keyEnabled = append(f.keyEnabled, userID)
+		f.mu.Unlock()
+		return nil
+	}
+	t.Cleanup(func() { adminUsersRoutes.EnableUserTerminalKey = originalEnable })
 	return f
 }
 
@@ -84,6 +96,12 @@ func (f *asbFixture) disabledKeys() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.keyDisabled...)
+}
+
+func (f *asbFixture) enabledKeys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.keyEnabled...)
 }
 
 func asbTerminal(t *testing.T, db *gorm.DB, userID string, orgID *uuid.UUID, state terminalModels.TerminalState) string {
@@ -222,4 +240,17 @@ func TestAdminSessionBlockRoute_DeclaredAdminOnly(t *testing.T) {
 	require.True(t, found, "route must be declared in the RouteRegistry")
 	assert.Equal(t, access.RoleAdministrator, perm.Role)
 	assert.Equal(t, access.AdminOnly, perm.Access.Type)
+}
+
+func TestAdminSessionBlock_UnblockReenablesTheTerminalKey(t *testing.T) {
+	f := newASBFixture(t)
+
+	w := asbPut(t, f, true, uidBob, map[string]any{"blocked": true, "reason": "r"})
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	assert.Empty(t, f.enabledKeys(), "blocking never re-enables the key")
+
+	w = asbPut(t, f, true, uidBob, map[string]any{"blocked": false})
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, []string{uidBob}, f.enabledKeys(), "a global unblock re-enables the user's terminal key")
+	assert.Equal(t, []string{uidBob}, f.disabledKeys(), "the unblock does not disable the key again")
 }

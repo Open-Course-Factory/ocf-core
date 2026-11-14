@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -1179,4 +1180,179 @@ func keysOf[V any](m map[string]V) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// =============================================================================
+// Multi-session calls, admin targets (decisions of 2026-11-14)
+// =============================================================================
+
+// failAuditFromRow lets the first n-1 audit rows through and fails the insert
+// that carries the n-th one, counting rows (a batch insert of n rows fails
+// too). All audit rows of a multi-session call are written in ONE transaction
+// before acting, so a failure on the second row must leave nothing acted on
+// and no audit row behind.
+func failAuditFromRow(t *testing.T, db *gorm.DB, n int) {
+	t.Helper()
+	var mu sync.Mutex
+	seen := 0
+	name := "pc:fail_audit_from_" + uuid.NewString()
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register(name, func(tx *gorm.DB) {
+		if tx.Statement == nil || tx.Statement.Table != "audit_logs" {
+			return
+		}
+		rows := 1
+		if v := tx.Statement.ReflectValue; v.Kind() == reflect.Slice || v.Kind() == reflect.Array {
+			rows = v.Len()
+		}
+		mu.Lock()
+		seen += rows
+		reached := seen >= n
+		mu.Unlock()
+		if reached {
+			_ = tx.AddError(errors.New("audit store unavailable"))
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Create().Remove(name) })
+}
+
+func TestStopParticipantSessions_TwoSessions_SecondAuditRowFails_NothingStoppedNoAuditLeft(t *testing.T) {
+	c := newPCClass(t)
+	tt := newPCTT(t)
+	second := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateRunning, "")
+	failAuditFromRow(t, c.db, 2)
+
+	w := pcDo(t, c.db, member(pcManager), http.MethodPost, participantPath(c.group.ID, pcLearner, "stop-sessions"), map[string]any{})
+	assert.Equal(t, http.StatusInternalServerError, w.Code, "body=%s", w.Body.String())
+	assert.Empty(t, tt.stopped(), "all audit rows are written before any stop: nothing is stopped")
+	assert.Equal(t, models.StateRunning, pcState(t, c.db, c.sessions["learner"]))
+	assert.Equal(t, models.StateRunning, pcState(t, c.db, second))
+	assert.Empty(t, auditRowsOf(t, c.db, auditStoppedByTrainer), "the audit rows are one transaction: none is kept")
+}
+
+func TestSetParticipantNetwork_TwoSessions_SecondAuditRowFails_NothingToggledNoAuditLeft(t *testing.T) {
+	c := newPCClass(t)
+	tt := newPCTT(t)
+	a := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateRunning, `{"network":true}`)
+	b := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateRunning, `{"network":true}`)
+	failAuditFromRow(t, c.db, 2)
+
+	w := pcDo(t, c.db, member(pcManager), http.MethodPut, participantPath(c.group.ID, pcLearner, "network"), map[string]any{"enabled": false})
+	assert.Equal(t, http.StatusInternalServerError, w.Code, "body=%s", w.Body.String())
+	assert.Empty(t, tt.toggles(), "all audit rows are written before any toggle: nothing is toggled")
+	assert.False(t, networkDisabledColumn(t, c.db, a))
+	assert.False(t, networkDisabledColumn(t, c.db, b))
+	assert.Empty(t, auditRowsOf(t, c.db, auditNetworkDisabled), "the audit rows are one transaction: none is kept")
+}
+
+// Without session_ids the toggle covers every network session of the target in
+// the class scope, running AND stopped, so internet stays off at the next start.
+func TestSetParticipantNetwork_NoSessionIDs_TogglesRunningAndStoppedNetworkSessions(t *testing.T) {
+	c := newPCClass(t)
+	tt := newPCTT(t)
+	running := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateRunning, `{"network":true}`)
+	stopped := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateStopped, `{"network":true}`)
+	elsewhere := pcTerminal(t, c.db, pcLearner, c.otherGroup.OrganizationID, models.StateRunning, `{"network":true}`)
+	personal := pcTerminal(t, c.db, pcLearner, nil, models.StateRunning, `{"network":true}`)
+	deleted := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateDeleted, `{"network":true}`)
+
+	w := pcDo(t, c.db, member(pcManager), http.MethodPut, participantPath(c.group.ID, pcLearner, "network"), map[string]any{"enabled": false})
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var toggled []string
+	for _, call := range tt.toggles() {
+		toggled = append(toggled, call.sessionID)
+	}
+	assert.ElementsMatch(t, []string{running, stopped}, toggled,
+		"running and stopped network sessions of the class scope are toggled; other scopes and deleted sessions are not")
+	assert.True(t, networkDisabledColumn(t, c.db, running))
+	assert.True(t, networkDisabledColumn(t, c.db, stopped))
+	assert.False(t, networkDisabledColumn(t, c.db, elsewhere))
+	assert.False(t, networkDisabledColumn(t, c.db, personal))
+	assert.False(t, networkDisabledColumn(t, c.db, deleted))
+	assert.Len(t, auditRowsOf(t, c.db, auditNetworkDisabled), 2)
+}
+
+// Mixed results: 200 with per-session results when at least one session
+// succeeded; no top-level code.
+func TestSetParticipantNetwork_MixedResults_200WithPerSessionResults(t *testing.T) {
+	c := newPCClass(t)
+	tt := newPCTT(t)
+	ok := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateRunning, `{"network":true}`)
+	failing := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateRunning, `{"network":true}`)
+	tt.networkReply[failing] = struct {
+		status int
+		code   string
+	}{http.StatusBadGateway, "network_renew_failed"}
+
+	w := pcDo(t, c.db, member(pcManager), http.MethodPut, participantPath(c.group.ID, pcLearner, "network"),
+		map[string]any{"enabled": false, "session_ids": []string{ok, failing}})
+	require.Equal(t, http.StatusOK, w.Code, "one session succeeded: the call answers 200; body=%s", w.Body.String())
+
+	body := decodeBody(t, w)
+	assert.NotContains(t, body, "code", "a top-level code only when every session failed")
+	results := readResults(t, w)
+	require.Contains(t, results, ok)
+	require.Contains(t, results, failing)
+	assert.True(t, results[ok].OK)
+	assert.False(t, results[failing].OK)
+	assert.Equal(t, "network_renew_failed", results[failing].Code)
+	assert.True(t, networkDisabledColumn(t, c.db, ok))
+	assert.False(t, networkDisabledColumn(t, c.db, failing))
+}
+
+// Every session failed: the mapped status and the top-level code.
+func TestSetParticipantNetwork_AllSessionsFail_MappedStatusAndCode(t *testing.T) {
+	c := newPCClass(t)
+	tt := newPCTT(t)
+	a := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateRunning, `{"network":true}`)
+	b := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateRunning, `{"network":true}`)
+	for _, id := range []string{a, b} {
+		tt.networkReply[id] = struct {
+			status int
+			code   string
+		}{http.StatusConflict, "vm_not_supported"}
+	}
+
+	w := pcDo(t, c.db, member(pcManager), http.MethodPut, participantPath(c.group.ID, pcLearner, "network"),
+		map[string]any{"enabled": false, "session_ids": []string{a, b}})
+	assert.Equal(t, http.StatusConflict, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, "vm_not_supported", decodeBody(t, w)["code"])
+	results := readResults(t, w)
+	assert.Equal(t, "vm_not_supported", results[a].Code)
+	assert.Equal(t, "vm_not_supported", results[b].Code)
+}
+
+// A platform admin bypasses the participant-only rule: they may act on a class
+// manager or owner. (Non-admin callers stay refused, see
+// TestParticipantControlsWrites_TargetNotAParticipant_403.)
+func TestParticipantControlsWrites_PlatformAdminOnClassManagerOrOwner_Allowed(t *testing.T) {
+	admin := pcCaller{userID: pcAdmin, roles: []string{"administrator"}}
+	for _, target := range []string{pcOwner, pcManager} {
+		t.Run(target+"/stop", func(t *testing.T) {
+			c := newPCClass(t)
+			tt := newPCTT(t)
+			session := pcTerminal(t, c.db, target, &c.orgID, models.StateRunning, "")
+			w := pcDo(t, c.db, admin, http.MethodPost, participantPath(c.group.ID, target, "stop-sessions"),
+				map[string]any{"session_ids": []string{session}})
+			require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+			assert.Equal(t, []string{session}, tt.stopped())
+		})
+		t.Run(target+"/network", func(t *testing.T) {
+			c := newPCClass(t)
+			tt := newPCTT(t)
+			session := pcTerminal(t, c.db, target, &c.orgID, models.StateRunning, `{"network":true}`)
+			w := pcDo(t, c.db, admin, http.MethodPut, participantPath(c.group.ID, target, "network"),
+				map[string]any{"enabled": false, "session_ids": []string{session}})
+			require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+			assert.Len(t, tt.toggles(), 1)
+		})
+		t.Run(target+"/block", func(t *testing.T) {
+			c := newPCClass(t)
+			newPCTT(t)
+			w := pcDo(t, c.db, admin, http.MethodPut, participantPath(c.group.ID, target, "session-block"),
+				map[string]any{"blocked": true, "reason": "r"})
+			require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+			assert.Len(t, classBlockRows(t, c.db, target, c.group.ID), 1)
+		})
+	}
 }
