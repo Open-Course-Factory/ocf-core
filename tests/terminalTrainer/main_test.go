@@ -52,6 +52,9 @@ func TestMain(m *testing.M) {
 	casdoorsdk.InitConfig("http://localhost:0", "dummy-endpoint", "dummy-client", "dummy-secret", "dummy-org", "dummy-app")
 
 	sharedTestDB = testTools.MemoryDB(terminalTestModels...)
+	if err := testTools.CreateSessionBlocksTable(sharedTestDB); err != nil {
+		panic("failed to create session_blocks: " + err.Error())
+	}
 	os.Exit(m.Run())
 }
 
@@ -136,6 +139,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 		"subscription_plans",
 		"features",
 		"blocked_accounts",
+		"session_blocks",
 	)
 	return sharedTestDB
 }
