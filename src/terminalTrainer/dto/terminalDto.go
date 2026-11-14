@@ -174,6 +174,9 @@ type TerminalTrainerSession struct {
 	// IdleUntil is the absolute deadline (Unix seconds) after which the session
 	// may be reaped or hibernated by tt-backend.
 	IdleUntil int64 `json:"idle_until,omitempty" mapstructure:"idle_until"`
+	// NetworkDisabled reports a session whose internet access an operator cut.
+	// Nil when tt-backend does not send it (older versions): nothing changes.
+	NetworkDisabled *bool `json:"network_disabled,omitempty" mapstructure:"network_disabled"`
 }
 
 // TerminalTrainerSessionsResponse réponse de l'endpoint /1.0/sessions
