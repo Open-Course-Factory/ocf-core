@@ -585,7 +585,9 @@ func (c *terminalComposer) reserveBudget(
 		ComposedFeatures:     composedFeaturesJSON(input.Features),
 		SizeCPU:              input.SizeCPU,
 		SizeMemoryMB:         input.SizeMemoryMB,
-		NetworkDisabled:      input.NetworkDisabled,
+		// Only a session composed with the network feature has internet to
+		// cut; tt-backend ignores the flag on the others.
+		NetworkDisabled: input.NetworkDisabled && input.Features["network"],
 	}
 
 	// The budget is the user's own, whatever plan resolved for them. The
