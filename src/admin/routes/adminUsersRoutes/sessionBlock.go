@@ -2,10 +2,12 @@ package adminUsersRoutes
 
 import (
 	"errors"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	apiErrors "soli/formations/src/auth/errors"
 	"soli/formations/src/terminalTrainer/httperrors"
 	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
@@ -22,20 +24,26 @@ func NewSetSessionBlockHandler(db *gorm.DB) gin.HandlerFunc {
 		if !requireAdmin(ctx) {
 			return
 		}
+		targetID := ctx.Param("id")
+		// An unknown account gets nothing: no block, no audit row naming it.
+		if user, err := GetCasdoorUserByID(targetID); err != nil || user == nil {
+			apiErrors.Abort(ctx, http.StatusNotFound, "user_not_found")
+			return
+		}
 		input, ok := httperrors.BindSessionBlock(ctx)
 		if !ok {
 			return
 		}
 		actor := httperrors.ControlActorFrom(ctx)
-		targetID := ctx.Param("id")
 		if targetID == actor.UserID {
 			httperrors.WriteParticipantControlError(ctx, ttServices.ErrParticipantForbidden)
 			return
 		}
 
-		results, err := participants.SetSessionBlock(
+		results, removed, err := participants.SetSessionBlock(
 			actor, targetID, ttServices.GlobalControlScope(), *input.Blocked, input.Reason, input.StopRunning)
-		if err == nil {
+		// An unblock that lifted nothing leaves the terminal key as it is.
+		if err == nil && (*input.Blocked || removed) {
 			setTerminalKeyAfterBlock(db, targetID, *input.Blocked)
 		}
 		httperrors.WriteSessionBlockResult(ctx, *input.Blocked, results, err)
