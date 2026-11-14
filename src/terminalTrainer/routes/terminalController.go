@@ -1947,6 +1947,11 @@ func (tc *terminalController) gatePastDueBeyondGrace(ctx *gin.Context) bool {
 	return paymentMiddleware.GatePastDueBeyondGrace(ctx)
 }
 
+// sameOrganization compares two organization IDs as written by clients.
+func sameOrganization(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
 func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
@@ -1960,6 +1965,17 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	if err := ctx.ShouldBindBodyWith(&input, binding.JSON); err != nil {
 		errors.Respond(ctx, http.StatusBadRequest, err.Error())
 		return
+	}
+
+	// The plan chain resolved the organization (query string first, then
+	// body): the session runs in that same organization, so its blocks and
+	// its plan apply together.
+	if orgCtx := ctx.GetString("org_context_id"); orgCtx != "" {
+		if input.OrganizationID != "" && !sameOrganization(input.OrganizationID, orgCtx) {
+			errors.Respond(ctx, http.StatusBadRequest, "Organization mismatch between the query and the body")
+			return
+		}
+		input.OrganizationID = orgCtx
 	}
 
 	planInterface, exists := ctx.Get("subscription_plan")
