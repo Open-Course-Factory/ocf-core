@@ -96,6 +96,11 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		// the learner's group from the session record and enforces manager+ itself
 		// (HasSupervisionAccess), so no path :id maps to a group here.
 		access.RoutePermission{Path: "/api/v1/class-groups/:id/terminal-sessions", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "List a class-group's active terminal sessions for supervision (manager+)"},
+		// Trainer controls on class participants (#580): manager+ of the class.
+		access.RoutePermission{Path: "/api/v1/class-groups/:id/participant-controls", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "List a class's participants with their session blocks and sessions (manager+)"},
+		access.RoutePermission{Path: "/api/v1/class-groups/:id/participants/:userId/stop-sessions", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Stop a participant's sessions in the class (manager+)"},
+		access.RoutePermission{Path: "/api/v1/class-groups/:id/participants/:userId/network", Method: "PUT", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Cut or restore a participant's internet access in the class (manager+)"},
+		access.RoutePermission{Path: "/api/v1/class-groups/:id/participants/:userId/session-block", Method: "PUT", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Block or unblock a participant's session starts in the class (manager+)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/supervise", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Supervise a learner's terminal via WebSocket (controller-enforced group manager+ + plan gate)"},
 
 		// Organization terminal routes

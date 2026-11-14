@@ -46,6 +46,12 @@ type TerminalController interface {
 	ConnectConsole(ctx *gin.Context)
 	SuperviseSession(ctx *gin.Context)
 	GetGroupTerminalSessions(ctx *gin.Context)
+
+	// Trainer controls on class participants (#580)
+	GetParticipantControls(ctx *gin.Context)
+	StopParticipantSessions(ctx *gin.Context)
+	SetParticipantNetwork(ctx *gin.Context)
+	SetParticipantSessionBlock(ctx *gin.Context)
 	StopSession(ctx *gin.Context)
 	StartSession(ctx *gin.Context)
 	DeleteSession(ctx *gin.Context)
@@ -129,6 +135,7 @@ type terminalController struct {
 	apiVersion         string
 	terminalType       string
 	service            services.TerminalTrainerService
+	participants       *services.ParticipantControlsService
 }
 
 func NewTerminalController(db *gorm.DB) TerminalController {
@@ -145,6 +152,7 @@ func NewTerminalControllerWithService(db *gorm.DB, svc services.TerminalTrainerS
 		apiVersion:         cmp.Or(os.Getenv("TERMINAL_TRAINER_API_VERSION"), "1.0"),
 		terminalType:       os.Getenv("TERMINAL_TRAINER_TYPE"),
 		service:            svc,
+		participants:       services.NewParticipantControlsService(db),
 	}
 }
 

@@ -104,6 +104,16 @@ const (
 	AuditEventPortExposed   AuditEventType = "terminal.port.exposed"
 	AuditEventPortUnexposed AuditEventType = "terminal.port.unexposed"
 
+	// Trainer controls on class participants (#580): a manager stopping a
+	// participant's sessions, cutting or restoring their internet access, and
+	// blocking them from starting sessions in a class, an organization or the
+	// whole platform.
+	AuditEventTerminalStoppedByTrainer AuditEventType = "terminal.stopped_by_trainer"
+	AuditEventTerminalNetworkDisabled  AuditEventType = "terminal.network.disabled"
+	AuditEventTerminalNetworkEnabled   AuditEventType = "terminal.network.enabled"
+	AuditEventUserSessionBlockSet      AuditEventType = "user.session_block.set"
+	AuditEventUserSessionBlockCleared  AuditEventType = "user.session_block.cleared"
+
 	// A manager reading a frozen participation report, which keeps learners' names
 	// after their erasure.
 	AuditEventParticipationArchiveRead AuditEventType = "participation.archive.read"

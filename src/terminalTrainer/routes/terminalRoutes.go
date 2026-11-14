@@ -79,6 +79,12 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	groupRoutes.GET("/:id/command-history-stats", middleware.AuthManagement(), terminalController.GetGroupCommandHistoryStats)
 	// Supervision (#425): a group's active member terminal sessions (manager+).
 	groupRoutes.GET("/:id/terminal-sessions", middleware.AuthManagement(), terminalController.GetGroupTerminalSessions)
+	// Trainer controls on class participants (#580): manager+ of the class,
+	// enforced by Layer 2 and again by the handlers. Not plan-gated.
+	groupRoutes.GET("/:id/participant-controls", middleware.AuthManagement(), terminalController.GetParticipantControls)
+	groupRoutes.POST("/:id/participants/:userId/stop-sessions", middleware.AuthManagement(), terminalController.StopParticipantSessions)
+	groupRoutes.PUT("/:id/participants/:userId/network", middleware.AuthManagement(), terminalController.SetParticipantNetwork)
+	groupRoutes.PUT("/:id/participants/:userId/session-block", middleware.AuthManagement(), terminalController.SetParticipantSessionBlock)
 
 	// Stop session (POST /:id/stop) is mounted declaratively as a "stop"
 	// ActionConfig on the Terminal entity registration (its ownership gate is the

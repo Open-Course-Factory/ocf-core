@@ -32,36 +32,7 @@ func NewAuditService(db *gorm.DB) AuditService {
 
 // Log creates a new audit log entry with the provided details
 func (as *auditService) Log(entry models.AuditLogCreate) error {
-	// Ensure Metadata is valid JSON (empty string is invalid for jsonb)
-	metadata := entry.Metadata
-	if metadata == "" {
-		metadata = "{}" // Use empty JSON object instead of empty string
-	}
-
-	auditLog := &models.AuditLog{
-		EventType:      entry.EventType,
-		Severity:       entry.Severity,
-		ActorID:        entry.ActorID,
-		ActorEmail:     entry.ActorEmail,
-		ActorIP:        entry.ActorIP,
-		ActorUserAgent: entry.ActorUserAgent,
-		TargetID:       entry.TargetID,
-		TargetType:     entry.TargetType,
-		TargetName:     entry.TargetName,
-		OrganizationID: entry.OrganizationID,
-		GroupID:        entry.GroupID,
-		OnBehalfOfID:   entry.OnBehalfOfID,
-		Action:         entry.Action,
-		Status:         entry.Status,
-		ErrorMessage:   entry.ErrorMessage,
-		Metadata:       metadata,
-		Amount:         entry.Amount,
-		Currency:       entry.Currency,
-		RequestID:      entry.RequestID,
-		SessionID:      entry.SessionID,
-		CreatedAt:      time.Now(),
-		ExpiresAt:      time.Now().AddDate(1, 0, 0), // Default: 1 year retention
-	}
+	auditLog := newAuditLog(entry)
 
 	result := as.db.Create(auditLog)
 	if result.Error != nil {
@@ -87,6 +58,58 @@ func (as *auditService) Log(entry models.AuditLogCreate) error {
 		entry.Status,
 	)
 
+	return nil
+}
+
+// newAuditLog builds the row Log writes for entry.
+func newAuditLog(entry models.AuditLogCreate) *models.AuditLog {
+	// Ensure Metadata is valid JSON (empty string is invalid for jsonb)
+	metadata := entry.Metadata
+	if metadata == "" {
+		metadata = "{}" // Use empty JSON object instead of empty string
+	}
+
+	return &models.AuditLog{
+		EventType:      entry.EventType,
+		Severity:       entry.Severity,
+		ActorID:        entry.ActorID,
+		ActorEmail:     entry.ActorEmail,
+		ActorIP:        entry.ActorIP,
+		ActorUserAgent: entry.ActorUserAgent,
+		TargetID:       entry.TargetID,
+		TargetType:     entry.TargetType,
+		TargetName:     entry.TargetName,
+		OrganizationID: entry.OrganizationID,
+		GroupID:        entry.GroupID,
+		OnBehalfOfID:   entry.OnBehalfOfID,
+		Action:         entry.Action,
+		Status:         entry.Status,
+		ErrorMessage:   entry.ErrorMessage,
+		Metadata:       metadata,
+		Amount:         entry.Amount,
+		Currency:       entry.Currency,
+		RequestID:      entry.RequestID,
+		SessionID:      entry.SessionID,
+		CreatedAt:      time.Now(),
+		ExpiresAt:      time.Now().AddDate(1, 0, 0), // Default: 1 year retention
+	}
+}
+
+// LogAll writes entries with tx in one statement: all of them or none. An
+// action audited before it runs passes its own transaction, so that what it
+// records alongside (a block, say) commits with the trail or not at all.
+func LogAll(tx *gorm.DB, entries []models.AuditLogCreate) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	rows := make([]*models.AuditLog, 0, len(entries))
+	for _, entry := range entries {
+		rows = append(rows, newAuditLog(entry))
+	}
+	if err := tx.Create(&rows).Error; err != nil {
+		log.Printf("❌ [AUDIT] Failed to create %d audit logs: %v", len(rows), err)
+		return err
+	}
 	return nil
 }
 
