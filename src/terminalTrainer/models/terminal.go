@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"slices"
 	"strings"
@@ -394,6 +395,10 @@ type Terminal struct {
 	ComposedDistribution string     `gorm:"type:varchar(100)" json:"composed_distribution,omitempty"`
 	ComposedSize         string     `gorm:"type:varchar(10)" json:"composed_size,omitempty"`
 	ComposedFeatures     string     `gorm:"type:text" json:"composed_features,omitempty"`
+	// NetworkDisabled is true while a trainer has cut the session's internet
+	// access (the session was composed with the network feature, tt-backend
+	// detached its NIC). Mirrored from tt-backend's session list on sync.
+	NetworkDisabled bool `gorm:"column:network_disabled;default:false" json:"network_disabled" mapstructure:"network_disabled"`
 	// Denormalized resource footprint (MR-CORE-3). Populated by the
 	// BeforeCreate hook in a later MR from the size catalog so the budget
 	// quota counter can sum CPU/RAM without re-joining against tt-backend.
@@ -438,4 +443,23 @@ func (u UserTerminalKey) GetBaseModel() entityManagementModels.BaseModel {
 
 func (u UserTerminalKey) GetReferenceObject() string {
 	return "UserTerminalKey"
+}
+
+// ComposedWithNetwork reports whether the session was composed with the
+// network feature: only such a session has internet access to cut or restore.
+// ComposedFeatures is the composer's JSON object (`{"network":true}`); a list
+// of feature names is read too.
+func (t Terminal) ComposedWithNetwork() bool {
+	if t.ComposedFeatures == "" {
+		return false
+	}
+	var features map[string]bool
+	if json.Unmarshal([]byte(t.ComposedFeatures), &features) == nil {
+		return features["network"]
+	}
+	var names []string
+	if json.Unmarshal([]byte(t.ComposedFeatures), &names) == nil {
+		return slices.Contains(names, "network")
+	}
+	return false
 }

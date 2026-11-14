@@ -307,6 +307,13 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 				needsUpdate = true
 			}
 
+			// tt-backend records whether an operator cut the session's
+			// internet; it is the source of truth for that flag too.
+			if apiSession.NetworkDisabled != nil && localSession.NetworkDisabled != *apiSession.NetworkDisabled {
+				localSession.NetworkDisabled = *apiSession.NetworkDisabled
+				needsUpdate = true
+			}
+
 			// Propager l'état lifecycle depuis tt-backend (source de vérité).
 			// Sans ça, une session auto-arrêtée côté tt-backend reste affichée
 			// comme StateRunning en local et le front continue d'afficher
@@ -495,6 +502,9 @@ func BuildTerminalFromAPISession(userID string, userKey *models.UserTerminalKey,
 	}
 	if apiSession.PersistenceMode != "" {
 		terminal.PersistenceMode = apiSession.PersistenceMode
+	}
+	if apiSession.NetworkDisabled != nil {
+		terminal.NetworkDisabled = *apiSession.NetworkDisabled
 	}
 	if apiSession.IdleUntil > 0 {
 		t := time.Unix(apiSession.IdleUntil, 0).UTC()
