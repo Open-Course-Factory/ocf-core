@@ -350,6 +350,8 @@ func bulkCreateWithBlockedMember(t *testing.T, blockScope string, orgID *uuid.UU
 		blockSessions(t, db, blockedID, "group", &group.ID, "late")
 	case "org":
 		blockSessions(t, db, blockedID, "org", orgID, "late")
+	case "global":
+		blockSessions(t, db, blockedID, "global", nil, "fraud")
 	}
 	plan := &paymentModels.SubscriptionPlan{Name: "BulkBlock", IsActive: true, MaxCPU: 100000, MaxMemoryMB: 51200, MaxSessionDurationMinutes: 60}
 	require.NoError(t, db.Create(plan).Error)
@@ -385,6 +387,35 @@ func TestBulkCreateTerminals_OrgBlockedMember_SkippedAndReported(t *testing.T) {
 	assert.False(t, results[blockedID].Success)
 	assert.Equal(t, "session_start_blocked", results[blockedID].Error)
 	assert.NotEqual(t, "session_start_blocked", results[okID].Error, "the other member is still attempted")
+}
+
+func TestBulkCreateTerminals_GloballyBlockedMember_SkippedAndReported(t *testing.T) {
+	blockedID, okID, results := bulkCreateWithBlockedMember(t, "global", nil)
+
+	assert.False(t, results[blockedID].Success)
+	assert.Equal(t, "session_start_blocked", results[blockedID].Error)
+	assert.NotEqual(t, "session_start_blocked", results[okID].Error, "the other member is still attempted")
+}
+
+// ---------------------------------------------------------------------------
+// Schema — one global block per user
+// ---------------------------------------------------------------------------
+
+// The production schema (model + MigrateSessionBlockGlobalIndex), not the test
+// DDL: the composite unique index alone lets NULL scope_ids repeat.
+func TestSessionBlockSchema_SecondGlobalBlockForSameUser_Refused(t *testing.T) {
+	db := testTools.MemoryDB(&models.SessionBlock{})
+	require.NoError(t, models.MigrateSessionBlockGlobalIndex(db))
+	userID := "blk-global-" + uuid.NewString()
+
+	require.NoError(t, db.Create(&models.SessionBlock{UserID: userID, ScopeType: models.SessionBlockScopeGlobal, Reason: "fraud"}).Error)
+	assert.Error(t, db.Create(&models.SessionBlock{UserID: userID, ScopeType: models.SessionBlockScopeGlobal, Reason: "again"}).Error,
+		"a second global block for the same user is refused")
+
+	assert.NoError(t, db.Create(&models.SessionBlock{UserID: userID, ScopeType: models.SessionBlockScopeOrg, ScopeID: uuidPtr(uuid.New())}).Error,
+		"an organisation block alongside the global one is allowed")
+	assert.NoError(t, db.Create(&models.SessionBlock{UserID: "blk-global-other-" + uuid.NewString(), ScopeType: models.SessionBlockScopeGlobal}).Error,
+		"another user's global block is allowed")
 }
 
 // ---------------------------------------------------------------------------
