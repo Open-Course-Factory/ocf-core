@@ -28,6 +28,7 @@ import (
 //	@Success		201	{object}	dto.ExposedPortResponse
 //	@Failure		400	{object}	errors.APIError	"Invalid port or session not running"
 //	@Failure		403	{object}	errors.APIError	"Plan or scenario does not allow port exposure"
+//	@Failure		409	{object}	errors.APIError	"The session's internet access is cut"
 //	@Router			/terminals/{id}/exposed-ports [post]
 func (tc *terminalController) CreateExposedPort(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
@@ -48,6 +49,11 @@ func (tc *terminalController) CreateExposedPort(ctx *gin.Context) {
 		var featureErr *services.FeatureDisabledError
 		if stderrors.As(err, &planErr) || stderrors.As(err, &scenarioErr) || stderrors.As(err, &featureErr) {
 			errors.Respond(ctx, http.StatusForbidden, err.Error())
+			return
+		}
+		var cutErr *services.NetworkCutError
+		if stderrors.As(err, &cutErr) {
+			errors.Respond(ctx, http.StatusConflict, err.Error())
 			return
 		}
 		errors.Respond(ctx, http.StatusBadRequest, err.Error())
