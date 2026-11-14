@@ -467,7 +467,10 @@ func launchInOrg(t *testing.T, cutInLaunchOrg bool) map[string]any {
 	if cutInLaunchOrg {
 		cutOrg = launchOrg
 	}
-	require.NoError(t, testTools.SeedNetworkCut(db, userID, uuid.New(), &cutOrg, "cut-manager"))
+	// The cut belongs to a live class of cutOrg the learner is an active
+	// member of (N1: a cut nobody can lift does not cut).
+	cutClass := assignToNewClass(t, db, userID, privateScenario(t, db, "cut-class-holder", &cutOrg).ID, &cutOrg)
+	require.NoError(t, testTools.SeedNetworkCut(db, userID, cutClass, &cutOrg, "cut-manager"))
 
 	ttSrv, rec := newPersistenceTTBackend(t)
 	configureTTServerForPersistence(t, ttSrv.URL)
