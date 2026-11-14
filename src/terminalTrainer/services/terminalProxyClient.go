@@ -543,3 +543,46 @@ func (p *terminalProxyClient) buildCompleteInAPI(sessionID, userAPIKey string) (
 	}
 	return resp.DroppedProfiles, nil
 }
+
+// NetworkToggleError is tt-backend refusing or failing a network toggle: its
+// HTTP status and its error code (feature_not_in_session, session_not_running,
+// vm_not_supported, network_renew_failed, network_still_present,
+// state_not_recorded). Code is empty when tt-backend could not be reached or
+// answered without one.
+type NetworkToggleError struct {
+	Status int
+	Code   string
+	Err    error
+}
+
+func (e *NetworkToggleError) Error() string {
+	return fmt.Sprintf("network toggle refused by tt-backend (status %d, code %q): %v", e.Status, e.Code, e.Err)
+}
+
+func (e *NetworkToggleError) Unwrap() error { return e.Err }
+
+// setSessionNetworkInAPI calls tt-backend's admin POST /sessions/{id}/network,
+// which attaches (enabled) or detaches the NIC of a session composed with the
+// network feature, and records the choice so a restart keeps it. Admin key:
+// the learner's own key must not be able to undo a trainer's cut.
+func (p *terminalProxyClient) setSessionNetworkInAPI(sessionID string, enabled bool) error {
+	url := fmt.Sprintf("%s/%s/admin/sessions/%s/network", p.baseURL, p.apiVersion, sessionID)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(p.adminKey))
+
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, map[string]bool{"enabled": enabled}, opts)
+	if err == nil {
+		return nil
+	}
+	toggleErr := &NetworkToggleError{Status: http.StatusBadGateway, Err: err}
+	if resp != nil {
+		toggleErr.Status = resp.StatusCode
+		var body struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(resp.Body, &body) == nil {
+			toggleErr.Code = body.Code
+		}
+	}
+	return toggleErr
+}

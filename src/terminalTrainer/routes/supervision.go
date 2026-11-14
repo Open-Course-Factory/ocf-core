@@ -241,17 +241,32 @@ func ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isA
 		return nil, false
 	}
 
-	identity := make(map[string]struct{ name, email string })
+	identityOf := newIdentityResolver()
 	out := make([]SupervisionSession, 0, len(terminals))
 	for _, t := range terminals {
-		id, seen := identity[t.UserID]
-		if !seen {
-			if user, err := services.LookupCasdoorUserForOrgUsage(t.UserID); err == nil && user != nil {
-				id = struct{ name, email string }{user.DisplayName, user.Email}
-			}
-			identity[t.UserID] = id // cache even the empty fallback: don't re-hit Casdoor for a known-failing id
-		}
+		id := identityOf(t.UserID)
 		out = append(out, SupervisionSession{Terminal: t, UserName: id.name, UserEmail: id.email})
 	}
 	return out, true
+}
+
+// displayIdentity is a learner's name and email as a trainer sees them.
+type displayIdentity struct{ name, email string }
+
+// newIdentityResolver resolves learners' display identities through the
+// swappable services.LookupCasdoorUserForOrgUsage seam, once per user id. A
+// resolver error yields an empty identity — a display nicety, never a gate —
+// cached too, so a known-failing id is not asked again.
+func newIdentityResolver() func(userID string) displayIdentity {
+	cache := make(map[string]displayIdentity)
+	return func(userID string) displayIdentity {
+		id, seen := cache[userID]
+		if !seen {
+			if user, err := services.LookupCasdoorUserForOrgUsage(userID); err == nil && user != nil {
+				id = displayIdentity{user.DisplayName, user.Email}
+			}
+			cache[userID] = id
+		}
+		return id
+	}
 }
