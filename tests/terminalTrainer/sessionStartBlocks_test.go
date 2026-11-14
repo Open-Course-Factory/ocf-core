@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -23,9 +24,11 @@ import (
 	"gorm.io/gorm"
 
 	groupModels "soli/formations/src/groups/models"
+	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
+	terminalController "soli/formations/src/terminalTrainer/routes"
 	"soli/formations/src/terminalTrainer/services"
 	testTools "soli/formations/tests/testTools"
 )
@@ -484,4 +487,185 @@ func TestStartSessionRoute_GlobalBlock_403SessionStartBlocked(t *testing.T) {
 	assert.Equal(t, "global", payload["scope"])
 	assert.Equal(t, "fraud", payload["reason"])
 	assert.Zero(t, starts.Load())
+}
+
+// ---------------------------------------------------------------------------
+// Organization context — the query string and the body name the same org
+// ---------------------------------------------------------------------------
+
+// setupComposedRouteWithOrgContext wires POST /terminals/start-composed-session
+// with the production InjectOrgContext and the real service; the plan is
+// injected directly, as InjectEffectivePlan + RequirePlan would.
+func setupComposedRouteWithOrgContext(db *gorm.DB, userID string, plan *paymentModels.SubscriptionPlan) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	ctrl := terminalController.NewTerminalControllerWithService(db, services.NewTerminalTrainerService(db))
+	router.POST("/terminals/start-composed-session",
+		paymentMiddleware.InjectOrgContext(),
+		func(c *gin.Context) {
+			c.Set("subscription_plan", plan)
+			c.Set("has_active_subscription", true)
+			c.Next()
+		},
+		ctrl.StartComposedSession,
+	)
+	return router
+}
+
+func postComposedWithQueryOrg(router *gin.Engine, queryOrg string, bodyOrg *uuid.UUID) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(composedInput(bodyOrg))
+	req := httptest.NewRequest(http.MethodPost, "/terminals/start-composed-session?organization_id="+queryOrg, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+// The plan chain takes the organization from ?organization_id= first; the
+// start must run in that same organization, so its block applies.
+func TestStartComposedSessionRoute_OrgBlockedInQueryOrg_NoBodyOrg_403(t *testing.T) {
+	db, userID, plan := composedStartFixture(t)
+	orgX := uuid.New()
+	blockSessions(t, db, userID, "org", &orgX, "absences")
+
+	w := postComposedWithQueryOrg(setupComposedRouteWithOrgContext(db, userID, plan), orgX.String(), nil)
+
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	payload := decodeBody(t, w)
+	assert.Equal(t, "session_start_blocked", payload["error_message"])
+	assert.Equal(t, "org", payload["scope"])
+	assert.Equal(t, "absences", payload["reason"])
+	assert.Zero(t, terminalCount(db, userID), "no terminal row for a refused start")
+}
+
+func TestStartComposedSessionRoute_QueryOrgDiffersFromBodyOrg_400Mismatch(t *testing.T) {
+	db, userID, plan := composedStartFixture(t)
+	orgX, orgY := uuid.New(), uuid.New()
+	blockSessions(t, db, userID, "org", &orgX, "absences")
+
+	w := postComposedWithQueryOrg(setupComposedRouteWithOrgContext(db, userID, plan), orgX.String(), &orgY)
+
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Contains(t, strings.ToLower(w.Body.String()), "organization mismatch")
+	assert.Zero(t, terminalCount(db, userID), "no terminal row for a refused start")
+}
+
+// ---------------------------------------------------------------------------
+// Class bulk-create — the class's organization when the request names none
+// ---------------------------------------------------------------------------
+
+func TestBulkCreateTerminals_OrgClassWithoutRequestOrg_OrgBlockedMemberSkipped(t *testing.T) {
+	srv, _ := keyCountingTTServer(t)
+	configureTTServer(t, srv.URL)
+	casdoorsdk.InitConfig("http://localhost:0", "dummy-endpoint", "dummy-client", "dummy-secret", "dummy-org", "dummy-app")
+	db := freshTestDB(t)
+	ownerID := "blk-bulk-orgclass-owner-" + uuid.NewString()
+	orgX := uuid.New()
+	group := createTestGroupForHistory(t, db, ownerID, &orgX)
+	blockedID, okID := "blk-bulk-orgclass-ko-"+uuid.NewString(), "blk-bulk-orgclass-ok-"+uuid.NewString()
+	addActiveGroupMember(t, db, group.ID, blockedID, groupModels.GroupMemberRoleMember)
+	addActiveGroupMember(t, db, group.ID, okID, groupModels.GroupMemberRoleMember)
+	blockSessions(t, db, blockedID, "org", &orgX, "absences")
+	plan := &paymentModels.SubscriptionPlan{Name: "BulkOrgClass", IsActive: true, MaxCPU: 100000, MaxMemoryMB: 51200, MaxSessionDurationMinutes: 60}
+	require.NoError(t, db.Create(plan).Error)
+
+	// No organization_id in the request: the class's own organization applies.
+	resp, err := services.NewTerminalTrainerService(db).BulkCreateTerminalsForGroup(
+		group.ID.String(), ownerID, []string{"member"},
+		dto.BulkCreateTerminalsRequest{Terms: "accepted", InstanceType: "ubuntu-24.04"}, plan)
+	require.NoError(t, err)
+
+	results := map[string]dto.BulkTerminalCreationResult{}
+	for _, r := range resp.Terminals {
+		results[r.UserID] = r
+	}
+	require.Len(t, results, 2)
+	assert.False(t, results[blockedID].Success)
+	assert.Equal(t, "session_start_blocked", results[blockedID].Error,
+		"a member blocked in the class's organization is skipped even when the request names no organization")
+	assert.NotEqual(t, "session_start_blocked", results[okID].Error)
+}
+
+// ---------------------------------------------------------------------------
+// Bulk RAM fit — counts only the members that will be started
+// ---------------------------------------------------------------------------
+
+func TestBulkCreateTerminals_RAMFitCountsOnlyUnblockedMembers(t *testing.T) {
+	// 10 GB host, 1.2 GB free, 5% reserve: 0.7 GB spare — one S (512 MiB)
+	// fits, three do not.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/metrics"):
+			_ = json.NewEncoder(w).Encode(dto.ServerMetricsResponse{RAMTotalGB: 10, RAMAvailableGB: 1.2, RAMPercent: 88, Timestamp: time.Now().Unix()})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/admin/api-keys"):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data":    map[string]any{"id": 1, "key_value": "tt-key", "name": "learner", "is_active": true},
+			})
+		default:
+			http.Error(w, "unexpected request", http.StatusServiceUnavailable)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	configureTTServer(t, srv.URL)
+	casdoorsdk.InitConfig("http://localhost:0", "dummy-endpoint", "dummy-client", "dummy-secret", "dummy-org", "dummy-app")
+	db := freshTestDB(t)
+	ownerID := "blk-bulk-ram-owner-" + uuid.NewString()
+	group := createTestGroup(t, db, ownerID)
+	okID := "blk-bulk-ram-ok-" + uuid.NewString()
+	addActiveGroupMember(t, db, group.ID, okID, groupModels.GroupMemberRoleMember)
+	var blockedIDs []string
+	for range 2 {
+		id := "blk-bulk-ram-ko-" + uuid.NewString()
+		addActiveGroupMember(t, db, group.ID, id, groupModels.GroupMemberRoleMember)
+		blockSessions(t, db, id, "group", &group.ID, "late")
+		blockedIDs = append(blockedIDs, id)
+	}
+	plan := &paymentModels.SubscriptionPlan{Name: "BulkRAMBlocked", IsActive: true, MaxCPU: 100000, MaxMemoryMB: 51200, MaxSessionDurationMinutes: 60}
+	require.NoError(t, db.Create(plan).Error)
+
+	resp, err := services.NewTerminalTrainerService(db).BulkCreateTerminalsForGroup(
+		group.ID.String(), ownerID, []string{"member"},
+		dto.BulkCreateTerminalsRequest{Terms: "accepted", InstanceType: "ubuntu-24.04", Size: "S"}, plan)
+
+	require.NotErrorIs(t, err, services.ErrBulkInsufficientRAM,
+		"the one unblocked member fits; the blocked ones are never started and need no room")
+	require.NoError(t, err)
+	results := map[string]dto.BulkTerminalCreationResult{}
+	for _, r := range resp.Terminals {
+		results[r.UserID] = r
+	}
+	for _, id := range blockedIDs {
+		assert.Equal(t, "session_start_blocked", results[id].Error)
+	}
+	assert.Contains(t, results, okID, "the unblocked member is attempted")
+}
+
+// ---------------------------------------------------------------------------
+// Key regeneration — refused under a platform block, old key kept
+// ---------------------------------------------------------------------------
+
+func TestRegenerateKey_GlobalBlock_403AndOldKeyKept(t *testing.T) {
+	srv := newKeyAdminTTServer(t, 42, false)
+	configureTTServer(t, srv.URL)
+	db := freshTestDB(t)
+	userID := "blk-key-regen-" + uuid.NewString()
+	seedProvisionedKey(t, db, userID, 42)
+	blockSessions(t, db, userID, "global", nil, "fraud")
+
+	w := regenerateKey(db, userID)
+
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	payload := decodeBody(t, w)
+	assert.Equal(t, "session_start_blocked", payload["error_message"])
+	assert.Equal(t, "global", payload["scope"])
+	assert.Equal(t, "fraud", payload["reason"])
+	assert.Empty(t, srv.recordedUpdates(), "the old key is not disabled on tt-backend")
+	assert.True(t, localKeyIsActive(t, db, userID), "the old key row stays active")
 }

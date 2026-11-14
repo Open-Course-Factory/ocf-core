@@ -21,11 +21,13 @@ import (
 	"gorm.io/gorm"
 
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	testTools "soli/formations/tests/testTools"
 )
 
@@ -109,8 +111,11 @@ func TestLaunchScenario_ClassBlock_NoAccessThroughThatClass(t *testing.T) {
 	w := postLaunch(setupMemberLaunchRouter(t, db, userID), scenario.ID.String())
 
 	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
-	assert.Contains(t, w.Body.String(), "No access to this scenario",
-		"the class's assignment no longer gives access to its scenario")
+	payload := decodeBlockedPayload(t, w)
+	assert.Equal(t, "session_start_blocked", payload["error_message"],
+		"the class's assignment no longer gives access to its scenario, and the learner is told why")
+	assert.Equal(t, "group", payload["scope"])
+	assert.Equal(t, "late", payload["reason"])
 }
 
 func TestLaunchScenario_ClassBlockElsewhere_AccessKept(t *testing.T) {
@@ -206,4 +211,180 @@ func TestBulkStartScenario_OrgBlockedLearner_SkippedWithReason(t *testing.T) {
 func TestBulkStartScenario_GloballyBlockedLearner_SkippedWithReason(t *testing.T) {
 	result, ttMock := bulkStartWithBlock(t, "blk-bulk-global", "global")
 	assertBlockedLearnerSkipped(t, "blk-bulk-global", result, ttMock)
+}
+
+func decodeBlockedPayload(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload), w.Body.String())
+	return payload
+}
+
+// requireBlockedResponse asserts w is 403 session_start_blocked for scope.
+func requireBlockedResponse(t *testing.T, w *httptest.ResponseRecorder, scope, reason string) {
+	t.Helper()
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	payload := decodeBlockedPayload(t, w)
+	assert.Equal(t, "session_start_blocked", payload["error_message"])
+	assert.Equal(t, scope, payload["scope"])
+	assert.Equal(t, reason, payload["reason"])
+}
+
+// assignToNewClass creates a class (in orgID when set) with userID as an
+// active member, and assigns scenarioID to it.
+func assignToNewClass(t *testing.T, db *gorm.DB, userID string, scenarioID uuid.UUID, orgID *uuid.UUID) uuid.UUID {
+	t.Helper()
+	group := groupModels.ClassGroup{Name: "blk-class-" + uuid.NewString()[:8], DisplayName: "Blocked class", OwnerUserID: "teacher-blk", MaxMembers: 50, OrganizationID: orgID}
+	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: group.ID, UserID: userID, Role: "member", IsActive: true, JoinedAt: time.Now(),
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenarioID, GroupID: &group.ID, Scope: "group", CreatedByID: "teacher-blk", IsActive: true,
+	}).Error)
+	return group.ID
+}
+
+// privateScenario creates a scenario outside the public catalogue, with one step.
+func privateScenario(t *testing.T, db *gorm.DB, name string, orgID *uuid.UUID) models.Scenario {
+	t.Helper()
+	scenario := models.Scenario{Name: name + "-" + uuid.NewString()[:8], Title: name, InstanceType: "M", OsType: "deb", CreatedByID: "teacher-blk", OrganizationID: orgID}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Step", TextContent: "content"}).Error)
+	return scenario
+}
+
+func assignToOrg(t *testing.T, db *gorm.DB, scenarioID, orgID uuid.UUID) {
+	t.Helper()
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenarioID, OrganizationID: &orgID, Scope: "org", CreatedByID: "teacher-blk", IsActive: true,
+	}).Error)
+}
+
+// ---------------------------------------------------------------------------
+// Resume — a class block refuses the paused run of that class
+// ---------------------------------------------------------------------------
+
+func TestResume_ClassBlockedPausedRunOfThatClass_403SessionStartBlocked(t *testing.T) {
+	f := seedResumableRun(t, "blk-resume-class", resumeSeed{terminalState: terminalModels.StateStopped})
+	// The scenario reaches the learner only through the class.
+	require.NoError(t, f.db.Model(&models.Scenario{}).Where("id = ?", f.scenario.ID).Update("is_public", false).Error)
+	classID := assignToNewClass(t, f.db, f.learnerID, f.scenario.ID, nil)
+	require.NoError(t, testTools.SeedSessionBlock(f.db, f.learnerID, "group", &classID, "late"))
+	tt := newPreviewTTBackend(t)
+
+	w := resumeRun(t, f)
+
+	requireBlockedResponse(t, w, "group", "late")
+	assert.Empty(t, tt.startedSessions(), "tt-backend is never asked to start the container")
+	assert.Zero(t, tt.createCalls(), "and nothing is rebuilt")
+	var terminal terminalModels.Terminal
+	require.NoError(t, f.db.First(&terminal, "session_id = ?", f.oldTerminal).Error)
+	assert.Equal(t, terminalModels.StateStopped, terminal.State, "the terminal stays paused")
+}
+
+// ---------------------------------------------------------------------------
+// Organization block — the organization's assignments reach the learner
+// from no context
+// ---------------------------------------------------------------------------
+
+// orgBlockFixture is a learner, member of orgs X and Y, blocked in X, with a
+// personal plan and a terminal key, and a private scenario of each kind:
+// assigned org-wide by X, through a class of X, and org-wide by Y.
+type orgBlockFixture struct {
+	db                         *gorm.DB
+	learnerID                  string
+	orgX, orgY                 uuid.UUID
+	byOrgX, byClassOfX, byOrgY models.Scenario
+}
+
+func seedOrgBlockFixture(t *testing.T, name string) orgBlockFixture {
+	t.Helper()
+	db := freshTestDB(t)
+	f := orgBlockFixture{db: db, learnerID: name + "-" + uuid.NewString()}
+	seedPersistencePlan(t, db, f.learnerID, true)
+	seedPersistenceUserKey(t, db, f.learnerID)
+	f.orgX = createTestOrg(t, db, "owner-x")
+	f.orgY = createTestOrg(t, db, "owner-y")
+	addOrgMember(t, db, f.orgX, f.learnerID, orgModels.OrgRoleMember)
+	addOrgMember(t, db, f.orgY, f.learnerID, orgModels.OrgRoleMember)
+
+	f.byOrgX = privateScenario(t, db, name+"-org-x", &f.orgX)
+	assignToOrg(t, db, f.byOrgX.ID, f.orgX)
+	f.byClassOfX = privateScenario(t, db, name+"-class-x", &f.orgX)
+	assignToNewClass(t, db, f.learnerID, f.byClassOfX.ID, &f.orgX)
+	f.byOrgY = privateScenario(t, db, name+"-org-y", &f.orgY)
+	assignToOrg(t, db, f.byOrgY.ID, f.orgY)
+
+	require.NoError(t, testTools.SeedSessionBlock(db, f.learnerID, "org", &f.orgX, "absences"))
+	return f
+}
+
+func TestLaunchScenario_OrgBlock_OrgWideAssignmentFromNoContext_403(t *testing.T) {
+	f := seedOrgBlockFixture(t, "blk-launch-orgwide")
+	tt := newPreviewTTBackend(t)
+
+	w := postLaunch(setupMemberLaunchRouter(t, f.db, f.learnerID), f.byOrgX.ID.String())
+
+	requireBlockedResponse(t, w, "org", "absences")
+	assert.Zero(t, tt.createCalls(), "no container for a refused launch")
+}
+
+func TestLaunchScenario_OrgBlock_ClassOfThatOrgFromNoContext_403(t *testing.T) {
+	f := seedOrgBlockFixture(t, "blk-launch-orgclass")
+	tt := newPreviewTTBackend(t)
+
+	w := postLaunch(setupMemberLaunchRouter(t, f.db, f.learnerID), f.byClassOfX.ID.String())
+
+	requireBlockedResponse(t, w, "org", "absences")
+	assert.Zero(t, tt.createCalls(), "no container for a refused launch")
+}
+
+func TestLaunchScenario_OrgBlock_AnotherOrgAssignmentNotRefused(t *testing.T) {
+	f := seedOrgBlockFixture(t, "blk-launch-orgy")
+	newPreviewTTBackend(t)
+
+	w := postLaunch(setupMemberLaunchRouter(t, f.db, f.learnerID), f.byOrgY.ID.String())
+
+	assert.NotContains(t, w.Body.String(), "session_start_blocked", "a block in org X says nothing about org Y")
+	assert.NotContains(t, w.Body.String(), "No access to this scenario")
+}
+
+// availableScenarioIDsInOrg lists the available scenarios in the organization
+// context orgID, as InjectOrgContext would set it.
+func availableScenarioIDsInOrg(t *testing.T, db *gorm.DB, userID string, orgID uuid.UUID) map[string]bool {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", []string{"member"})
+		c.Set("org_context_id", orgID.String())
+		c.Next()
+	})
+	router.GET("/api/v1/scenario-sessions/available", scenarioController.NewScenarioLaunchController(db).GetAvailableScenarios)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/scenario-sessions/available", nil)
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var response []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	ids := map[string]bool{}
+	for _, s := range response {
+		if id, ok := s["id"].(string); ok {
+			ids[id] = true
+		}
+	}
+	return ids
+}
+
+func TestGetAvailableScenarios_OrgBlock_HidesThatOrgAssignmentsOnly(t *testing.T) {
+	f := seedOrgBlockFixture(t, "blk-available-org")
+
+	inX := availableScenarioIDsInOrg(t, f.db, f.learnerID, f.orgX)
+	assert.False(t, inX[f.byOrgX.ID.String()], "the blocked org's org-wide assignment is hidden")
+	assert.False(t, inX[f.byClassOfX.ID.String()], "and so are its classes' assignments")
+
+	inY := availableScenarioIDsInOrg(t, f.db, f.learnerID, f.orgY)
+	assert.True(t, inY[f.byOrgY.ID.String()], "another org's assignment stays")
 }
