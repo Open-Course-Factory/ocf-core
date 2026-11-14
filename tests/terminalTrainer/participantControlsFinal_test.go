@@ -134,11 +134,11 @@ func newComposeTT(t *testing.T) *composeTT {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/1.0/distributions":
-			_ = json.NewEncoder(w).Encode([]dto.TTDistribution{{Name: "ubuntu-24.04", Prefix: "ubuntu", Description: "Ubuntu", SupportedFeatures: []string{}}})
+			_ = json.NewEncoder(w).Encode([]dto.TTDistribution{{Name: "ubuntu-24.04", Prefix: "ubuntu", Description: "Ubuntu", SupportedFeatures: []string{"network"}}})
 		case r.Method == http.MethodGet && r.URL.Path == "/1.0/sizes":
 			_ = json.NewEncoder(w).Encode([]dto.TTSize{{Key: "S", Name: "Small", SortOrder: 20, CPU: 1, CPUAllowance: "25%", Memory: "512MB", Disk: "2GB", Processes: 100}})
 		case r.Method == http.MethodGet && r.URL.Path == "/1.0/features":
-			_ = json.NewEncoder(w).Encode([]dto.TTFeature{})
+			_ = json.NewEncoder(w).Encode([]dto.TTFeature{{Key: "network", Name: "Network", ProfileName: "network"}})
 		case strings.HasSuffix(r.URL.Path, "/metrics"):
 			_ = json.NewEncoder(w).Encode(dto.ServerMetricsResponse{RAMTotalGB: 100, RAMAvailableGB: 90, RAMPercent: 10, Timestamp: time.Now().Unix()})
 		case r.Method == http.MethodPost && r.URL.Path == "/1.0/sessions":
@@ -277,22 +277,96 @@ func TestStickyNetworkCut_Audited(t *testing.T) {
 	}
 }
 
-func TestStickyNetworkCut_ComposedStartInThatOrg_CreatedWithoutNetwork(t *testing.T) {
-	tt := newComposeTT(t)
+// cutInLiveClass is a learner with a terminal key, an active member of a live
+// class of a new organization, cut in that class. It returns the database,
+// the learner, the organization and the class.
+func cutInLiveClass(t *testing.T) (*gorm.DB, string, uuid.UUID, uuid.UUID) {
+	t.Helper()
 	db := freshTestDB(t)
 	userID := "cut-learner-" + uuid.NewString()
 	_, err := createTestUserKey(db, userID)
 	require.NoError(t, err)
 	orgID := cutOrg(t, db, "cut-owner")
-	require.NoError(t, testTools.SeedNetworkCut(db, userID, uuid.New(), &orgID, "cut-manager"))
+	group := createTestGroupForHistory(t, db, "cut-owner", &orgID)
+	addActiveGroupMember(t, db, group.ID, userID, groupModels.GroupMemberRoleMember)
+	require.NoError(t, testTools.SeedNetworkCut(db, userID, group.ID, &orgID, "cut-manager"))
+	return db, userID, orgID, group.ID
+}
 
-	resp, err := services.NewTerminalTrainerService(db).StartComposedSession(userID, composeIn(&orgID), makePlan(false))
+// networkPlan allows the network feature.
+func networkPlan() *paymentModels.SubscriptionPlan {
+	plan := makePlan(false)
+	plan.NetworkAccessEnabled = true
+	return plan
+}
+
+// composeWithNetwork is composeIn with the network feature asked for.
+func composeWithNetwork(orgID *uuid.UUID) dto.CreateComposedSessionInput {
+	in := composeIn(orgID)
+	in.Features = map[string]bool{"network": true}
+	return in
+}
+
+// Contract (final round, N1/N3): the cut that applies is one of a live class
+// with an active membership, and a Terminal is recorded cut only when it was
+// composed with the network feature.
+func TestStickyNetworkCut_ComposedStartInThatOrg_CreatedWithoutNetwork(t *testing.T) {
+	tt := newComposeTT(t)
+	db, userID, orgID, _ := cutInLiveClass(t)
+
+	resp, err := services.NewTerminalTrainerService(db).StartComposedSession(userID, composeWithNetwork(&orgID), networkPlan())
 	require.NoError(t, err)
 
 	bodies := tt.bodiesOf(userID)
 	require.Len(t, bodies, 1)
 	assert.Equal(t, true, bodies[0]["network_disabled"], "a participant cut in this organization starts without internet; body=%v", bodies[0])
 	assert.True(t, networkDisabledColumn(t, db, resp.SessionID), "the Terminal row records the cut")
+}
+
+// N1: a cut nobody can lift any more does not cut.
+func TestStickyNetworkCut_ClassArchivedOrDeleted_NoLongerCuts(t *testing.T) {
+	for name, retire := range map[string]string{
+		"archived":     "UPDATE class_groups SET archived_at = ? WHERE id = ?",
+		"soft-deleted": "UPDATE class_groups SET deleted_at = ? WHERE id = ?",
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt := newComposeTT(t)
+			db, userID, orgID, groupID := cutInLiveClass(t)
+			require.NoError(t, db.Exec(retire, time.Now(), groupID.String()).Error)
+
+			resp, err := services.NewTerminalTrainerService(db).StartComposedSession(userID, composeWithNetwork(&orgID), networkPlan())
+			require.NoError(t, err)
+			bodies := tt.bodiesOf(userID)
+			require.Len(t, bodies, 1)
+			assert.NotEqual(t, true, bodies[0]["network_disabled"], "a cut of a %s class no longer applies; body=%v", name, bodies[0])
+			assert.False(t, networkDisabledColumn(t, db, resp.SessionID))
+		})
+	}
+}
+
+func TestStickyNetworkCut_MembershipDeactivated_NoLongerCuts(t *testing.T) {
+	tt := newComposeTT(t)
+	db, userID, orgID, groupID := cutInLiveClass(t)
+	require.NoError(t, db.Exec("UPDATE group_members SET is_active = ? WHERE group_id = ? AND user_id = ?", false, groupID.String(), userID).Error)
+
+	resp, err := services.NewTerminalTrainerService(db).StartComposedSession(userID, composeWithNetwork(&orgID), networkPlan())
+	require.NoError(t, err)
+	bodies := tt.bodiesOf(userID)
+	require.Len(t, bodies, 1)
+	assert.NotEqual(t, true, bodies[0]["network_disabled"], "a cut of a membership no longer active does not apply; body=%v", bodies[0])
+	assert.False(t, networkDisabledColumn(t, db, resp.SessionID))
+}
+
+// N3: tt-backend ignores the flag on a session without the network feature;
+// the Terminal row must agree. (The request may carry the field or not.)
+func TestStickyNetworkCut_ComposeWithoutNetworkFeature_TerminalNotMarkedCut(t *testing.T) {
+	newComposeTT(t)
+	db, userID, orgID, _ := cutInLiveClass(t)
+
+	resp, err := services.NewTerminalTrainerService(db).StartComposedSession(userID, composeIn(&orgID), networkPlan())
+	require.NoError(t, err)
+	assert.False(t, networkDisabledColumn(t, db, resp.SessionID),
+		"a session composed without network has no internet to cut: NetworkDisabled stays false")
 }
 
 func TestStickyNetworkCut_NoCut_FieldAbsent(t *testing.T) {
