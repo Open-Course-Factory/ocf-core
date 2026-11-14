@@ -492,3 +492,48 @@ func TestLaunchScenario_NoCutInThatOrg_NetworkNotDisabled(t *testing.T) {
 	body := launchInOrg(t, false) // cut in another organization
 	assert.NotEqual(t, true, body["network_disabled"], "body=%v", body)
 }
+
+// The cut also follows the scenario's assignments, as ScenarioBlockRefusal
+// (openOnly=false) does for blocks: a scenario reachable through a class (or
+// org assignment) where the learner is cut starts without internet, whatever
+// the launch's organization context, none included.
+func launchClassAssignedWithoutContext(t *testing.T, cutInScenarioClass bool) map[string]any {
+	t.Helper()
+	db := freshTestDB(t)
+	userID := "cut-noctx-" + uuid.NewString()
+	seedPersistencePlan(t, db, userID, false)
+	seedPersistenceUserKey(t, db, userID)
+	orgX := createTestOrg(t, db, "cut-owner-x")
+	orgY := createTestOrg(t, db, "cut-owner-y")
+
+	scenario := privateScenario(t, db, "cut-noctx", &orgX)
+	scenarioClass := assignToNewClass(t, db, userID, scenario.ID, &orgX)
+	cutClass, cutOrg := scenarioClass, orgX
+	if !cutInScenarioClass {
+		// Cut in another class, of another organization, that does not
+		// assign this scenario.
+		other := privateScenario(t, db, "cut-noctx-other", &orgY)
+		cutClass, cutOrg = assignToNewClass(t, db, userID, other.ID, &orgY), orgY
+	}
+	require.NoError(t, testTools.SeedNetworkCut(db, userID, cutClass, &cutOrg, "teacher-blk"))
+
+	tt := newPreviewTTBackend(t)
+	w := postLaunch(setupMemberLaunchRouter(t, db, userID), scenario.ID.String()) // no organization_id
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	require.Equal(t, 1, tt.createCalls())
+	tt.persistenceRecorder.mu.Lock()
+	defer tt.persistenceRecorder.mu.Unlock()
+	return tt.gotBody
+}
+
+func TestLaunchScenario_NoOrgContext_CutInTheAssigningClass_CreatedWithoutNetwork(t *testing.T) {
+	body := launchClassAssignedWithoutContext(t, true)
+	assert.Equal(t, true, body["network_disabled"],
+		"the scenario is reached through the class where the learner is cut: no internet, even without org context; body=%v", body)
+}
+
+func TestLaunchScenario_NoOrgContext_CutInAnotherClassOnly_NetworkKept(t *testing.T) {
+	body := launchClassAssignedWithoutContext(t, false)
+	assert.NotEqual(t, true, body["network_disabled"],
+		"a cut in a class that does not assign this scenario does not reach it; body=%v", body)
+}
