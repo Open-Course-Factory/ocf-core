@@ -57,6 +57,11 @@ func RegisterPermissions(enforcer interfaces.EnforcerInterface) {
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Set a user's password directly, with no email sent (admin only)",
 		},
+		access.RoutePermission{
+			Path: "/api/v1/admin/users/:id/session-block", Method: "PUT",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Block or unblock a user's session starts on the whole platform (admin only)",
+		},
 	)
 
 	log.Println("=== Admin users permissions registered ===")
