@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	auditModels "soli/formations/src/audit/models"
 	auditServices "soli/formations/src/audit/services"
@@ -99,10 +100,41 @@ func ClassControlScope(db *gorm.DB, groupID uuid.UUID, actor ControlActor, targe
 	if err != nil {
 		return ControlScope{}, err
 	}
-	if !actor.IsAdmin && (member.Role != groupModels.GroupMemberRoleMember || group.OwnerUserID == targetUserID) {
-		return ControlScope{}, ErrParticipantForbidden
+	if !actor.IsAdmin {
+		if member.Role != groupModels.GroupMemberRoleMember || group.OwnerUserID == targetUserID {
+			return ControlScope{}, ErrParticipantForbidden
+		}
+		manages, err := managesOrganization(db, group.OrganizationID, targetUserID)
+		if err != nil {
+			return ControlScope{}, err
+		}
+		if manages {
+			return ControlScope{}, ErrParticipantForbidden
+		}
 	}
 	return ControlScope{Type: models.SessionBlockScopeGroup, ID: &groupID, OrgID: group.OrganizationID}, nil
+}
+
+// managesOrganization reports whether userID owns the organization orgID or
+// is an active manager or owner member of it. A nil organization has none.
+func managesOrganization(db *gorm.DB, orgID *uuid.UUID, userID string) (bool, error) {
+	if orgID == nil {
+		return false, nil
+	}
+	var org orgModels.Organization
+	err := db.Select("id", "owner_user_id").First(&org, "id = ?", *orgID).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, err
+	}
+	if err == nil && org.OwnerUserID == userID {
+		return true, nil
+	}
+	var n int64
+	err = db.Model(&orgModels.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ? AND is_active = ? AND role IN ?", *orgID, userID, true,
+			[]orgModels.OrganizationMemberRole{orgModels.OrgRoleManager, orgModels.OrgRoleOwner}).
+		Count(&n).Error
+	return n > 0, err
 }
 
 // OrgControlScope checks that actor manages the organization orgID (a platform
@@ -237,10 +269,14 @@ func (s *ParticipantControlsService) StopSessions(actor ControlActor, targetUser
 // SetNetwork cuts (enabled false) or restores targetUserID's internet access on
 // their sessions in scope composed with the network feature, running or
 // stopped (a stopped one comes back as recorded). Without sessionIDs, every
-// such session. A session without the feature, or in another state, is
-// skipped. On success the session's flag is recorded and its exposed ports
-// are dropped: their address dies with the cut, and a re-attached NIC takes a
-// new one.
+// such session, and in a class the cut is sticky: it is recorded for the
+// participant (participant_network_cuts) so every session composed for them
+// in the class's organization starts without internet until it is lifted the
+// same way. A session without the feature, or in another state, is skipped.
+//
+// A cut drops the session's exposed ports before tt-backend is asked, whatever
+// it answers: their address dies with the cut. A restore drops them on
+// success: a re-attached NIC takes a new address.
 func (s *ParticipantControlsService) SetNetwork(actor ControlActor, targetUserID string, scope ControlScope, enabled bool, sessionIDs []string) ([]SessionActionResult, error) {
 	toggleable := []models.TerminalState{models.StateRunning, models.StateStopped}
 	terminals, err := s.sessionsFor(scope, targetUserID, sessionIDs, toggleable)
@@ -261,11 +297,30 @@ func (s *ParticipantControlsService) SetNetwork(actor ControlActor, targetUserID
 	if enabled {
 		event = auditModels.AuditEventTerminalNetworkEnabled
 	}
-	entries := make([]auditModels.AuditLogCreate, 0, len(toToggle))
-	for _, t := range toToggle {
-		entries = append(entries, controlAudit(event, actor, targetUserID, scope, t.SessionID, nil))
+	// A sticky cut or restore is audited on each session it toggles, marked
+	// sticky; with no session to toggle, once, naming none.
+	sticky := len(sessionIDs) == 0 && scope.Type == models.SessionBlockScopeGroup && scope.ID != nil
+	var extra map[string]any
+	if sticky {
+		extra = map[string]any{"sticky": true}
 	}
-	if err := s.auditThen(nil, entries); err != nil {
+	entries := make([]auditModels.AuditLogCreate, 0, len(toToggle)+1)
+	for _, t := range toToggle {
+		entries = append(entries, controlAudit(event, actor, targetUserID, scope, t.SessionID, extra))
+	}
+	if sticky && len(toToggle) == 0 {
+		entries = append(entries, controlAudit(event, actor, targetUserID, scope, "", extra))
+	}
+	var recordCut func(tx *gorm.DB) error
+	if sticky {
+		recordCut = func(tx *gorm.DB) error {
+			if enabled {
+				return models.DeleteNetworkCut(tx, targetUserID, *scope.ID)
+			}
+			return models.UpsertNetworkCut(tx, targetUserID, *scope.ID, scope.OrgID, actor.UserID)
+		}
+	}
+	if err := s.auditThen(recordCut, entries); err != nil {
 		return nil, err
 	}
 
@@ -276,6 +331,9 @@ func (s *ParticipantControlsService) SetNetwork(actor ControlActor, targetUserID
 }
 
 func (s *ParticipantControlsService) toggleNetwork(t models.Terminal, enabled bool) SessionActionResult {
+	if !enabled {
+		s.dropExposedPorts(t.SessionID)
+	}
 	if err := s.proxy.setSessionNetworkInAPI(t.SessionID, enabled); err != nil {
 		code := "network_toggle_failed"
 		var toggleErr *NetworkToggleError
@@ -293,45 +351,64 @@ func (s *ParticipantControlsService) toggleNetwork(t models.Terminal, enabled bo
 		utils.Error("network of session %s toggled (enabled=%t) but not recorded: %v", t.SessionID, enabled, err)
 		return SessionActionResult{SessionID: t.SessionID, Code: "state_not_recorded", Status: http.StatusInternalServerError}
 	}
-	if err := s.repository.DeleteExposedPortsBySessionID(t.SessionID); err != nil {
-		utils.Warn("failed to drop exposed ports of session %s after a network toggle: %v", t.SessionID, err)
+	if enabled {
+		s.dropExposedPorts(t.SessionID)
 	}
 	return SessionActionResult{SessionID: t.SessionID, OK: true}
+}
+
+func (s *ParticipantControlsService) dropExposedPorts(sessionID string) {
+	if err := s.repository.DeleteExposedPortsBySessionID(sessionID); err != nil {
+		utils.Warn("failed to drop exposed ports of session %s on a network toggle: %v", sessionID, err)
+	}
 }
 
 // SetSessionBlock blocks targetUserID from starting sessions in scope (or
 // lifts the block), recording reason and actor. A second block updates the
 // first. stopRunning also stops the target's running sessions in scope. The
-// block commits with its audit rows, the stops run after.
-func (s *ParticipantControlsService) SetSessionBlock(actor ControlActor, targetUserID string, scope ControlScope, blocked bool, reason string, stopRunning bool) ([]SessionActionResult, error) {
+// block commits with its audit rows, the stops run after. removed reports an
+// unblock that lifted a block: lifting none changes and audits nothing.
+func (s *ParticipantControlsService) SetSessionBlock(actor ControlActor, targetUserID string, scope ControlScope, blocked bool, reason string, stopRunning bool) (results []SessionActionResult, removed bool, err error) {
 	if len([]rune(reason)) > MaxSessionBlockReasonLength {
-		return nil, ErrSessionBlockReasonTooLong
+		return nil, false, ErrSessionBlockReasonTooLong
 	}
+	if !blocked {
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			deleted := blockQuery(tx, targetUserID, scope).Delete(&models.SessionBlock{})
+			if deleted.Error != nil {
+				return deleted.Error
+			}
+			if deleted.RowsAffected == 0 {
+				return nil
+			}
+			removed = true
+			entry := controlAudit(auditModels.AuditEventUserSessionBlockCleared, actor, targetUserID, scope, "", nil)
+			if err := auditServices.LogAll(tx, []auditModels.AuditLogCreate{entry}); err != nil {
+				return fmt.Errorf("audit before acting: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		return []SessionActionResult{}, removed, nil
+	}
+
 	var toStop []models.Terminal
-	if blocked && stopRunning {
-		var err error
+	if stopRunning {
 		if toStop, err = s.sessionsFor(scope, targetUserID, nil, []models.TerminalState{models.StateRunning}); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
-
-	event, extra := auditModels.AuditEventUserSessionBlockCleared, map[string]any(nil)
-	if blocked {
-		event, extra = auditModels.AuditEventUserSessionBlockSet, map[string]any{"reason": reason, "stop_running": stopRunning}
-	}
-	entries := append([]auditModels.AuditLogCreate{controlAudit(event, actor, targetUserID, scope, "", extra)},
+	extra := map[string]any{"has_reason": reason != "", "stop_running": stopRunning}
+	entries := append([]auditModels.AuditLogCreate{controlAudit(auditModels.AuditEventUserSessionBlockSet, actor, targetUserID, scope, "", extra)},
 		stopAudits(actor, targetUserID, scope, toStop)...)
-
-	err := s.auditThen(func(tx *gorm.DB) error {
-		if !blocked {
-			return blockQuery(tx, targetUserID, scope).Delete(&models.SessionBlock{}).Error
-		}
+	if err := s.auditThen(func(tx *gorm.DB) error {
 		return upsertBlock(tx, targetUserID, scope, reason, actor.UserID)
-	}, entries)
-	if err != nil {
-		return nil, err
+	}, entries); err != nil {
+		return nil, false, err
 	}
-	return s.stop(toStop), nil
+	return s.stop(toStop), false, nil
 }
 
 func blockQuery(tx *gorm.DB, userID string, scope ControlScope) *gorm.DB {
@@ -342,18 +419,25 @@ func blockQuery(tx *gorm.DB, userID string, scope ControlScope) *gorm.DB {
 	return query.Where("scope_id = ?", *scope.ID)
 }
 
+// upsertBlock writes the one block of userID in scope, updating its reason and
+// author when it exists. A global block's uniqueness is the partial index
+// MigrateSessionBlockGlobalIndex; the others', the composite one.
 func upsertBlock(tx *gorm.DB, userID string, scope ControlScope, reason, blockedBy string) error {
-	var existing models.SessionBlock
-	err := blockQuery(tx, userID, scope).First(&existing).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return tx.Create(&models.SessionBlock{
-			UserID: userID, ScopeType: scope.Type, ScopeID: scope.ID, Reason: reason, BlockedBy: blockedBy,
-		}).Error
+	conflict := clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "scope_type"}, {Name: "scope_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"reason", "blocked_by"}),
 	}
-	if err != nil {
-		return err
+	if scope.Type == models.SessionBlockScopeGlobal {
+		conflict.Columns = []clause.Column{{Name: "user_id"}}
+		// A literal, not a bound value: PostgreSQL infers the partial index
+		// from the predicate's text.
+		conflict.TargetWhere = clause.Where{Exprs: []clause.Expression{
+			clause.Expr{SQL: "scope_type = 'global'"},
+		}}
 	}
-	return tx.Model(&existing).Updates(map[string]any{"reason": reason, "blocked_by": blockedBy}).Error
+	return tx.Clauses(conflict).Create(&models.SessionBlock{
+		UserID: userID, ScopeType: scope.Type, ScopeID: scope.ID, Reason: reason, BlockedBy: blockedBy,
+	}).Error
 }
 
 // auditThen writes entries and runs also (when given) in one transaction.
@@ -391,22 +475,19 @@ func stopAudits(actor ControlActor, targetUserID string, scope ControlScope, ter
 	return entries
 }
 
-// controlAudit builds the audit row of one action: actor, target, scope and,
-// for a session action, the session, in Metadata, mirrored on the typed
-// columns where the ids parse (Casdoor ids are UUIDs in production).
+// controlAudit builds the audit row of one action, written before it runs
+// (status "requested"). Identities live in the typed columns only (ActorID,
+// TargetID, OnBehalfOfID, where the ids parse: Casdoor ids are UUIDs in
+// production); Metadata keeps the scope, the class, the organization and, for
+// a session action, the session.
 func controlAudit(event auditModels.AuditEventType, actor ControlActor, targetUserID string, scope ControlScope, sessionID string, extra map[string]any) auditModels.AuditLogCreate {
-	meta := map[string]any{
-		"actor_user_id":  actor.UserID,
-		"target_user_id": targetUserID,
-		"scope":          scope.Type,
-	}
+	meta := map[string]any{"scope": scope.Type}
 	entry := auditModels.AuditLogCreate{
 		EventType:  event,
 		Severity:   auditModels.AuditSeverityWarning,
 		TargetType: "user",
-		TargetName: targetUserID,
 		Action:     string(event),
-		Status:     "success",
+		Status:     "requested",
 	}
 	if scope.Type == models.SessionBlockScopeGroup {
 		meta["group_id"] = scope.ID.String()
@@ -429,15 +510,8 @@ func controlAudit(event auditModels.AuditEventType, actor ControlActor, targetUs
 	if id, err := uuid.Parse(actor.UserID); err == nil {
 		entry.ActorID = &id
 	}
-	if actor.ImpersonatorID != "" {
-		meta["impersonator_id"] = actor.ImpersonatorID
-		// Same convention as the audit service's impersonation handling: the
-		// human administrator is the actor, on behalf of the impersonated user.
-		if id, err := uuid.Parse(actor.ImpersonatorID); err == nil {
-			entry.OnBehalfOfID = entry.ActorID
-			entry.ActorID = &id
-		}
-	}
+	// The human administrator is the actor, on behalf of the impersonated user.
+	auditServices.ApplyImpersonation(&entry, actor.ImpersonatorID)
 	for k, v := range extra {
 		meta[k] = v
 	}

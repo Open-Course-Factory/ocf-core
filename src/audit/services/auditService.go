@@ -256,7 +256,7 @@ func getActorEmail(ctx *gin.Context) string {
 //   - Otherwise: OnBehalfOfID = current ActorID (the impersonation middleware
 //     has already substituted ctx.userId to the target), ActorID = impersonator.
 func applyImpersonationFromContext(ctx *gin.Context, entry *models.AuditLogCreate) {
-	if ctx == nil || entry == nil {
+	if ctx == nil {
 		return
 	}
 	raw, exists := ctx.Get("impersonatorId")
@@ -267,19 +267,23 @@ func applyImpersonationFromContext(ctx *gin.Context, entry *models.AuditLogCreat
 	if !ok {
 		return
 	}
-	impersonatorUUID, err := uuid.Parse(impersonatorStr)
+	ApplyImpersonation(entry, impersonatorStr)
+}
+
+// ApplyImpersonation records an impersonated action on entry: the human
+// administrator impersonatorID becomes the actor, and the entry's actor (the
+// impersonated user) moves to OnBehalfOfID. Nothing changes when
+// impersonatorID is empty or not a UUID, or when the caller already set
+// OnBehalfOfID.
+func ApplyImpersonation(entry *models.AuditLogCreate, impersonatorID string) {
+	if entry == nil || impersonatorID == "" || entry.OnBehalfOfID != nil {
+		return
+	}
+	impersonatorUUID, err := uuid.Parse(impersonatorID)
 	if err != nil {
 		// Malformed value — fail gracefully, do not corrupt the entry.
 		return
 	}
-	if entry.OnBehalfOfID != nil {
-		// Caller explicitly supplied OnBehalfOfID — preserve it.
-		return
-	}
-	// Move the existing ActorID (the target — already swapped by the
-	// impersonation middleware into ctx.userId and propagated by the caller)
-	// into OnBehalfOfID, and replace ActorID with the real human admin.
 	entry.OnBehalfOfID = entry.ActorID
-	id := impersonatorUUID
-	entry.ActorID = &id
+	entry.ActorID = &impersonatorUUID
 }

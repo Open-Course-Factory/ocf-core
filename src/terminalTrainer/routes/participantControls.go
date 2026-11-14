@@ -28,12 +28,14 @@ import (
 )
 
 // ListParticipantControls returns one row per ACTIVE member of groupID (owner
-// and managers included, each row carrying its class role): their blocks in this class, in its organization and
-// on the platform, and their sessions — exactly those
-// GET /terminals/user-sessions?group_id= lists (groupMemberSessions), each
-// with its network flags and the scenario run open on it. user_name is the
-// supervision wall's. allowed=false refuses a caller who does not manage the
-// class.
+// and managers included, each row carrying its class role): their block in
+// this class (with its reason), whether they are blocked in its organization
+// or on the platform (no reason, no author: those are not the class's), whether
+// their internet is cut in this class, and their running and stopped sessions
+// in the class's organization — the sessions the actions reach, for an
+// administrator too — each with its network flags, its persistence mode and
+// the scenario run open on it. user_name is the supervision wall's.
+// allowed=false refuses a caller who does not manage the class.
 //
 // A fixed number of queries whatever the class size: no query per member or
 // per session.
@@ -58,11 +60,15 @@ func ListParticipantControls(db *gorm.DB, groupID, callerUserID string, isAdmin 
 	for _, m := range members {
 		memberIDs = append(memberIDs, m.UserID)
 	}
-	terminals, err := groupMemberSessions(db, gid, isAdmin)
+	terminals, err := participantSessions(db, memberIDs, group.OrganizationID)
 	if err != nil {
 		return nil, true, err
 	}
 	blocks, err := participantBlocks(db, memberIDs, gid, group.OrganizationID)
+	if err != nil {
+		return nil, true, err
+	}
+	cut, err := terminalModels.NetworkCutInClass(db, memberIDs, gid)
 	if err != nil {
 		return nil, true, err
 	}
@@ -78,9 +84,10 @@ func ListParticipantControls(db *gorm.DB, groupID, callerUserID string, isAdmin 
 			State:           string(t.State),
 			NetworkFeature:  t.ComposedWithNetwork(),
 			NetworkDisabled: t.NetworkDisabled,
+			PersistenceMode: t.PersistenceMode,
 		}
-		if run, open := runs[t.SessionID]; open {
-			view.ScenarioSessionID, view.ScenarioTitle = &run.ID, &run.Title
+		if runID, open := runs[t.SessionID]; open {
+			view.ScenarioSessionID = &runID
 		}
 		sessionsByUser[t.UserID] = append(sessionsByUser[t.UserID], view)
 	}
@@ -96,21 +103,21 @@ func ListParticipantControls(db *gorm.DB, groupID, callerUserID string, isAdmin 
 			role = string(groupModels.GroupMemberRoleOwner)
 		}
 		row := dto.ParticipantControlsRow{
-			UserID:   userID,
-			UserName: identityOf(userID).name,
-			Role:     role,
-			Sessions: sessionsByUser[userID],
+			UserID:     userID,
+			UserName:   identityOf(userID).name,
+			Role:       role,
+			NetworkCut: cut[userID],
+			Sessions:   sessionsByUser[userID],
 		}
 		if row.Sessions == nil {
 			row.Sessions = []dto.ParticipantSessionView{}
 		}
 		for _, b := range blocks[userID] {
-			view := &dto.ParticipantBlockView{Reason: b.Reason, BlockedBy: b.BlockedBy, CreatedAt: b.CreatedAt}
 			switch b.ScopeType {
 			case terminalModels.SessionBlockScopeGroup:
-				row.ClassBlock = view
+				row.ClassBlock = &dto.ParticipantBlockView{Reason: b.Reason}
 			case terminalModels.SessionBlockScopeOrg:
-				row.OrgBlock = view
+				row.OrgBlocked = true
 			case terminalModels.SessionBlockScopeGlobal:
 				row.GlobalBlock = true
 			}
@@ -118,6 +125,22 @@ func ListParticipantControls(db *gorm.DB, groupID, callerUserID string, isAdmin 
 		rows = append(rows, row)
 	}
 	return rows, true, nil
+}
+
+// participantSessions returns userIDs' running and stopped sessions in the
+// organization orgID, as the actions reach them (ControlScope.sessionsOf): a
+// class with no organization lists none. One query.
+func participantSessions(db *gorm.DB, userIDs []string, orgID *uuid.UUID) ([]terminalModels.Terminal, error) {
+	terminals := []terminalModels.Terminal{}
+	if len(userIDs) == 0 {
+		return terminals, nil
+	}
+	err := db.Where("user_id IN ?", userIDs).
+		Where("state IN ?", []terminalModels.TerminalState{terminalModels.StateRunning, terminalModels.StateStopped}).
+		Scopes(terminalModels.SupervisableByGroupOrgScope(orgID)).
+		Order("created_at").
+		Find(&terminals).Error
+	return terminals, err
 }
 
 // participantBlocks returns, per user, their blocks in the class groupID, in
@@ -133,7 +156,7 @@ func participantBlocks(db *gorm.DB, userIDs []string, groupID uuid.UUID, orgID *
 		scope = scope.Or("scope_type = ? AND scope_id = ?", terminalModels.SessionBlockScopeOrg, *orgID)
 	}
 	var blocks []terminalModels.SessionBlock
-	if err := db.Where("user_id IN ?", userIDs).Where(scope).Find(&blocks).Error; err != nil {
+	if err := db.Select("user_id", "scope_type", "reason").Where("user_id IN ?", userIDs).Where(scope).Find(&blocks).Error; err != nil {
 		return nil, err
 	}
 	for _, b := range blocks {
@@ -142,17 +165,11 @@ func participantBlocks(db *gorm.DB, userIDs []string, groupID uuid.UUID, orgID *
 	return byUser, nil
 }
 
-// openRun is the scenario run open on a terminal.
-type openRun struct {
-	ID                string
-	TerminalSessionID string
-	Title             string
-}
-
-// openRunsOn returns, by terminal session id, the scenario run open on each of
-// terminals (status in scenarioModels.OpenSessionStatuses). One query.
-func openRunsOn(db *gorm.DB, terminals []terminalModels.Terminal) (map[string]openRun, error) {
-	runs := make(map[string]openRun)
+// openRunsOn returns, by terminal session id, the id of the scenario run open
+// on each of terminals (status in scenarioModels.OpenSessionStatuses). One
+// query.
+func openRunsOn(db *gorm.DB, terminals []terminalModels.Terminal) (map[string]string, error) {
+	runs := make(map[string]string)
 	if len(terminals) == 0 {
 		return runs, nil
 	}
@@ -160,19 +177,21 @@ func openRunsOn(db *gorm.DB, terminals []terminalModels.Terminal) (map[string]op
 	for _, t := range terminals {
 		sessionIDs = append(sessionIDs, t.SessionID)
 	}
-	var rows []openRun
+	var rows []struct {
+		ID                string
+		TerminalSessionID string
+	}
 	if err := db.Table("scenario_sessions").
-		Select("scenario_sessions.id, scenario_sessions.terminal_session_id, scenarios.title").
-		Joins("JOIN scenarios ON scenarios.id = scenario_sessions.scenario_id").
-		Where("scenario_sessions.terminal_session_id IN ?", sessionIDs).
-		Where("scenario_sessions.status IN ?", scenarioModels.OpenSessionStatuses).
-		Where("scenario_sessions.deleted_at IS NULL").
-		Order("scenario_sessions.started_at").
+		Select("id, terminal_session_id").
+		Where("terminal_session_id IN ?", sessionIDs).
+		Where("status IN ?", scenarioModels.OpenSessionStatuses).
+		Where("deleted_at IS NULL").
+		Order("started_at").
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
-		runs[r.TerminalSessionID] = r // the latest open run wins
+		runs[r.TerminalSessionID] = r.ID // the latest open run wins
 	}
 	return runs, nil
 }
@@ -180,7 +199,7 @@ func openRunsOn(db *gorm.DB, terminals []terminalModels.Terminal) (map[string]op
 // GetParticipantControls godoc
 //
 //	@Summary		A class's participants with their blocks and sessions
-//	@Description	One row per active member of the class: blocks in the class, its organization and on the platform, and their sessions in the class (with network state and open scenario run). Manager+ of the class (or admin) only.
+//	@Description	One row per active member of the class: their class block (with reason), whether they are blocked in its organization or on the platform, whether their internet is cut in the class, and their running and stopped sessions in the class's organization (network state, persistence mode, open scenario run). Manager+ of the class (or admin) only.
 //	@Tags			terminals
 //	@Produce		json
 //	@Param			id	path	string	true	"Class-group ID"
@@ -310,6 +329,6 @@ func (tc *terminalController) SetParticipantSessionBlock(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	results, err := tc.participants.SetSessionBlock(actor, ctx.Param("userId"), scope, *input.Blocked, input.Reason, input.StopRunning)
+	results, _, err := tc.participants.SetSessionBlock(actor, ctx.Param("userId"), scope, *input.Blocked, input.Reason, input.StopRunning)
 	httperrors.WriteSessionBlockResult(ctx, *input.Blocked, results, err)
 }

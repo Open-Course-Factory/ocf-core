@@ -36,7 +36,7 @@ func (oc *OrganizationController) SetMemberSessionBlock(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	results, err := oc.participants.SetSessionBlock(
+	results, _, err := oc.participants.SetSessionBlock(
 		actor, ctx.Param("userId"), scope, *input.Blocked, input.Reason, input.StopRunning)
 	httperrors.WriteSessionBlockResult(ctx, *input.Blocked, results, err)
 }
