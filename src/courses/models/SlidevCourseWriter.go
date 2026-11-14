@@ -183,13 +183,13 @@ func (scow *SlidevCourseWriter) SetContent() string {
 	return chapters.String()
 }
 
+const authorPagePlaceholder = "@@author_page_content@@"
+
 func (scow *SlidevCourseWriter) SetAuthorPage() string {
-	// Include the author page content from the authors directory
-	// This will be substituted with actual author content during template processing
+	// Emits the author slide with a placeholder; SubstituteAuthorPage fills it with the author
+	// page content, or removes the slide when there is none.
 	return "\n---\nlayout: default\n---\n\n" + authorPagePlaceholder + "\n\n"
 }
-
-const authorPagePlaceholder = "@@author_page_content@@"
 
 // SubstituteAuthorPage fills the author slide emitted by SetAuthorPage with authorPageContent, or
 // removes the whole slide when authorPageContent is blank, so no empty slide is left behind.
