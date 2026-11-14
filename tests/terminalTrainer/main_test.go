@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	auditModels "soli/formations/src/audit/models"
 	authModels "soli/formations/src/auth/models"
 	configModels "soli/formations/src/configuration/models"
 	groupModels "soli/formations/src/groups/models"
@@ -44,6 +45,10 @@ var terminalTestModels = []any{
 	&scenarioModels.Scenario{},
 	&scenarioModels.ScenarioAssignment{},
 	&scenarioModels.ScenarioSession{},
+	// Trainer controls on participants write audit rows before acting and
+	// drop a session's exposed ports when its network is toggled.
+	&auditModels.AuditLog{},
+	&models.ExposedPort{},
 }
 
 func TestMain(m *testing.M) {
@@ -151,6 +156,8 @@ func freshTestDB(t *testing.T) *gorm.DB {
 		"scenario_sessions",
 		"scenario_assignments",
 		"scenarios",
+		"audit_logs",
+		"exposed_ports",
 	)
 	return sharedTestDB
 }
