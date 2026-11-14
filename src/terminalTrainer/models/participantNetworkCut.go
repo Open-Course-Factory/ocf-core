@@ -44,15 +44,29 @@ func DeleteNetworkCut(db *gorm.DB, userID string, groupID uuid.UUID) error {
 	return db.Where("user_id = ? AND group_id = ?", userID, groupID).Delete(&ParticipantNetworkCut{}).Error
 }
 
+// liveNetworkCuts scopes a query on participant_network_cuts (aliased nc) to
+// userID's cuts that still stand: in a live class (not deleted, not archived)
+// the user is an active member of. A cut nobody can lift any more cuts
+// nothing.
+func liveNetworkCuts(db *gorm.DB, userID string) *gorm.DB {
+	return db.Table("participant_network_cuts nc").
+		Joins(`JOIN class_groups ncg ON ncg.id = nc.group_id
+			AND ncg.deleted_at IS NULL AND ncg.archived_at IS NULL`).
+		Joins(`JOIN group_members ngm ON ngm.group_id = nc.group_id AND ngm.user_id = nc.user_id
+			AND ngm.is_active = true AND ngm.deleted_at IS NULL`).
+		Where("nc.user_id = ?", userID)
+}
+
 // IsNetworkCutIn reports whether userID's internet is cut in the organization
-// orgID: a cut in any of its classes. A nil organization is never cut.
+// orgID: a standing cut (liveNetworkCuts) in any of its classes. A nil
+// organization is never cut.
 func IsNetworkCutIn(db *gorm.DB, userID string, orgID *uuid.UUID) (bool, error) {
 	if orgID == nil {
 		return false, nil
 	}
 	var n int64
-	err := db.Model(&ParticipantNetworkCut{}).
-		Where("user_id = ? AND organization_id = ?", userID, *orgID).
+	err := liveNetworkCuts(db, userID).
+		Where("nc.organization_id = ?", *orgID).
 		Count(&n).Error
 	return n > 0, err
 }
@@ -76,9 +90,10 @@ func NetworkCutInClass(db *gorm.DB, userIDs []string, groupID uuid.UUID) (map[st
 	return cut, nil
 }
 
-// ScenarioNetworkCut reports whether userID's internet is cut where the
-// scenario scenarioID is assigned to them, with the reach of
-// ScenarioBlockRefusal(openOnly=false): a cut in an assigning class, or in
+// ScenarioNetworkCut reports whether a standing cut (liveNetworkCuts) of
+// userID's internet applies where the scenario scenarioID is assigned to
+// them, with the reach of ScenarioBlockRefusal(openOnly=false): a cut in an
+// assigning class, or in
 // the organization that owns it, among the classes the user is an active
 // member of; or a cut in the organization that assigned the scenario
 // org-wide, when the user is an active member of it.
@@ -86,7 +101,7 @@ func NetworkCutInClass(db *gorm.DB, userIDs []string, groupID uuid.UUID) (map[st
 // It reads the scenarios tables by name: this package cannot import theirs.
 func ScenarioNetworkCut(db *gorm.DB, userID string, scenarioID uuid.UUID) (bool, error) {
 	var n int64
-	err := db.Table("participant_network_cuts nc").
+	err := liveNetworkCuts(db, userID).
 		Joins(`JOIN scenario_assignments sa ON sa.scenario_id = ? AND sa.deleted_at IS NULL AND sa.is_active = true`, scenarioID).
 		Joins(`LEFT JOIN class_groups cg ON sa.scope = 'group' AND cg.id = sa.group_id
 			AND cg.deleted_at IS NULL AND cg.archived_at IS NULL`).
@@ -94,7 +109,6 @@ func ScenarioNetworkCut(db *gorm.DB, userID string, scenarioID uuid.UUID) (bool,
 			AND gm.is_active = true AND gm.deleted_at IS NULL`).
 		Joins(`LEFT JOIN organization_members om ON sa.scope = 'org' AND om.organization_id = sa.organization_id
 			AND om.user_id = nc.user_id AND om.is_active = true AND om.deleted_at IS NULL`).
-		Where("nc.user_id = ?", userID).
 		Where(`(gm.id IS NOT NULL AND (nc.group_id = sa.group_id OR nc.organization_id = cg.organization_id))
 			OR (om.id IS NOT NULL AND nc.organization_id = sa.organization_id)`).
 		Count(&n).Error
