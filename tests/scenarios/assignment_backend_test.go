@@ -1,8 +1,11 @@
 package scenarios_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/google/uuid"
@@ -111,4 +114,70 @@ func TestScenarioAssignmentBackendHook_Update(t *testing.T) {
 	assert.NoError(t, runBackendHook(t, db, hooks.BeforeUpdate, existing, map[string]any{"backend": "a"}))
 	assert.NoError(t, runBackendHook(t, db, hooks.BeforeUpdate, existing, map[string]any{"backend": ""}), "back to automatic")
 	assert.ErrorIs(t, runBackendHook(t, db, hooks.BeforeUpdate, existing, map[string]any{"backend": "elsewhere"}), ttServices.ErrBackendNotAllowed)
+}
+
+// --- Launch honours the backend the learner requested (#582) ---
+
+// launchRequestingBackend launches a scenario for a learner whose plan allows
+// host-a and host-b, whose class assignment names assigned ("" = automatic),
+// asking for requested ("" = none). The witness is the host the fake
+// tt-backend was asked to build on.
+func launchRequestingBackend(t *testing.T, assigned, requested string) (*httptest.ResponseRecorder, *persistenceRecorder) {
+	t.Helper()
+	db, userID, scenario := seedLaunchableScenario(t, "requested-backend")
+	var plan paymentModels.SubscriptionPlan
+	require.NoError(t, db.Where("name = ?", "PersistencePlan").First(&plan).Error)
+	plan.AllowedBackends = []string{"host-a", "host-b"}
+	require.NoError(t, db.Save(&plan).Error)
+	if assigned != "" {
+		group := newGroupWithMember(t, db, "requested-backend-class", userID)
+		assignWithBackend(t, db, createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group"), assigned)
+	}
+
+	ttSrv, rec := newPersistenceTTBackend(t)
+	configureTTServerForPersistence(t, ttSrv.URL)
+
+	body, _ := json.Marshal(map[string]string{"scenario_id": scenario.ID.String(), "backend": requested})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scenario-sessions/launch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	setupPersistenceRouter(t, db, userID).ServeHTTP(w, req)
+	return w, rec
+}
+
+func assertLaunchedOn(t *testing.T, w *httptest.ResponseRecorder, rec *persistenceRecorder, backend string) {
+	t.Helper()
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	require.Equal(t, 1, rec.calls)
+	assert.Equal(t, backend, rec.backend, "the terminal must be built on %s", backend)
+}
+
+func TestLaunchScenario_RequestedBackend_NoAssignedOne_LaunchesThere(t *testing.T) {
+	w, rec := launchRequestingBackend(t, "", "host-b")
+	assertLaunchedOn(t, w, rec, "host-b")
+}
+
+func TestLaunchScenario_RequestedBackendNotAllowed_Returns403(t *testing.T) {
+	w, rec := launchRequestingBackend(t, "", "elsewhere")
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"a server outside the policy is refused, never swapped; body=%s", w.Body.String())
+	assert.Equal(t, 0, rec.calls, "no terminal may be created")
+}
+
+func TestLaunchScenario_RequestedBackendDiffersFromAssignedOne_Returns409(t *testing.T) {
+	w, rec := launchRequestingBackend(t, "host-a", "host-b")
+	assert.Equal(t, http.StatusConflict, w.Code,
+		"the assignment pins the server: asking for another one is a conflict; body=%s", w.Body.String())
+	assert.Contains(t, w.Body.String(), "host-a", "the answer must name the assigned server")
+	assert.Equal(t, 0, rec.calls, "no terminal may be created")
+}
+
+func TestLaunchScenario_RequestedBackendIsTheAssignedOne_LaunchesThere(t *testing.T) {
+	w, rec := launchRequestingBackend(t, "host-a", "host-a")
+	assertLaunchedOn(t, w, rec, "host-a")
+}
+
+func TestLaunchScenario_NoRequestedBackend_LaunchesOnTheAssignedOne(t *testing.T) {
+	w, rec := launchRequestingBackend(t, "host-a", "")
+	assertLaunchedOn(t, w, rec, "host-a")
 }

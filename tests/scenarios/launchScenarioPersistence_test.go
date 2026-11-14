@@ -62,6 +62,7 @@ import (
 type persistenceRecorder struct {
 	mu       sync.Mutex
 	gotBody  map[string]any
+	backend  string // the ?backend= the session was posted to
 	calls    int
 	onCreate func() string
 	created  string
@@ -119,6 +120,7 @@ func newPersistenceTTBackend(t *testing.T) (*httptest.Server, *persistenceRecord
 			rec.mu.Lock()
 			rec.calls++
 			rec.gotBody = parsed
+			rec.backend = r.URL.Query().Get("backend")
 			id := ""
 			if rec.onCreate != nil {
 				id = rec.onCreate()
