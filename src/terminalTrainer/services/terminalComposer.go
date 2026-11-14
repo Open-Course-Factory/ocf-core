@@ -181,11 +181,34 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 		bulkSize = "S"
 	}
 
+	// A request naming no organization runs in the class's own: its blocks
+	// and its hosts apply.
+	if request.OrganizationID == "" && group.OrganizationID != nil {
+		request.OrganizationID = group.OrganizationID.String()
+	}
+
+	// Members blocked in this class or in the organization it runs in are
+	// skipped and reported, never started.
+	bulkOrgID, err := parseOrgID(request.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	memberIDs := make([]string, 0, len(activeMembers))
+	for _, member := range activeMembers {
+		memberIDs = append(memberIDs, member.UserID)
+	}
+	sessionBlocked, err := models.BlockedInClass(c.db, memberIDs, group.ID, bulkOrgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check session blocks: %w", err)
+	}
+
+	// Only the members that will be started need room on the hosts.
+	toStart := len(activeMembers) - len(sessionBlocked)
 	plan, _ := planInterface.(*paymentModels.SubscriptionPlan)
-	if len(activeMembers) > 0 && !c.bulkFits(request, plan, bulkSize, len(activeMembers)) {
-		utils.Warn("bulk terminal creation blocked: %d terminals of size %s do not fit on the allowed hosts", len(activeMembers), bulkSize)
+	if toStart > 0 && !c.bulkFits(request, plan, bulkSize, toStart) {
+		utils.Warn("bulk terminal creation blocked: %d terminals of size %s do not fit on the allowed hosts", toStart, bulkSize)
 		return nil, fmt.Errorf("%w: %d terminals of size %s do not fit on the allowed hosts",
-			ErrBulkInsufficientRAM, len(activeMembers), bulkSize)
+			ErrBulkInsufficientRAM, toStart, bulkSize)
 	}
 
 	// Initialize response
@@ -211,21 +234,6 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 	}
 
 	blocked := c.provisionMissingKeys(activeMembers, userEmails)
-
-	// Members blocked in this class or in the organization it runs in are
-	// skipped and reported, never started.
-	bulkOrgID, err := parseOrgID(request.OrganizationID)
-	if err != nil {
-		return nil, err
-	}
-	memberIDs := make([]string, 0, len(activeMembers))
-	for _, member := range activeMembers {
-		memberIDs = append(memberIDs, member.UserID)
-	}
-	sessionBlocked, err := models.BlockedInClass(c.db, memberIDs, group.ID, bulkOrgID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check session blocks: %w", err)
-	}
 
 	// Create terminals for each member
 	for _, member := range activeMembers {
