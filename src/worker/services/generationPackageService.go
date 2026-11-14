@@ -108,6 +108,7 @@ func (gps *generationPackageService) GenerateMDContent(course *models.Course, au
 	courseContent = strings.ReplaceAll(courseContent, "@@author_fullname@@", user.DisplayName)
 	courseContent = strings.ReplaceAll(courseContent, "@@author_email@@", authorEmail)
 	courseContent = strings.ReplaceAll(courseContent, "@@version@@", course.Version)
+	courseContent = models.SubstituteAuthorPage(courseContent, "")
 
 	return courseContent, nil
 }
