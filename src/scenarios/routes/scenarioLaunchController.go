@@ -25,6 +25,7 @@ import (
 	"soli/formations/src/scenarios/services"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/httperrors"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -673,6 +674,9 @@ func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, 
 				errors.Respond(ctx, http.StatusForbidden, createErr.Error())
 				return nil, false
 			}
+			if httperrors.WriteSessionStartBlocked(ctx, createErr) {
+				return nil, false
+			}
 			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
 			errors.Respond(ctx, http.StatusInternalServerError, "Failed to provision terminal access")
 			return nil, false
@@ -715,6 +719,9 @@ func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, 
 		// Budget exhaustion answers the same structured 403 the terminal
 		// creation route emits — the launcher renders honest budget copy
 		// from it instead of a generic failure.
+		if httperrors.WriteSessionStartBlocked(ctx, termErr) {
+			return nil, false
+		}
 		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
 			return nil, false
 		}
@@ -753,14 +760,15 @@ func (sc *scenarioLaunchController) launchResponse(session *models.ScenarioSessi
 }
 
 // openClassMembershipIDs lists the classes userID is an active member of,
-// skipping archived ones: an assignment on an archived class authorises
-// nothing, which is why every access decision below reads its groups here.
+// skipping archived ones and those the user is blocked in: an assignment on
+// either authorises nothing, which is why every access decision below reads
+// its groups here.
 func (b *scenarioControllerBase) openClassMembershipIDs(userID string) ([]uuid.UUID, error) {
 	var groupIDs []uuid.UUID
 	err := b.db.Model(&groupModels.GroupMember{}).
 		Joins("JOIN class_groups ON class_groups.id = group_members.group_id AND class_groups.deleted_at IS NULL").
 		Where("group_members.user_id = ? AND group_members.is_active = true", userID).
-		Scopes(entityManagementModels.NotArchived("class_groups")).
+		Scopes(entityManagementModels.NotArchived("class_groups"), terminalModels.ExcludeClassBlocked).
 		Pluck("group_members.group_id", &groupIDs).Error
 	return groupIDs, err
 }
@@ -832,7 +840,7 @@ func (b *scenarioControllerBase) contextAssignments(userID string, orgID *uuid.U
 	classes := b.db.Model(&groupModels.GroupMember{}).
 		Joins("JOIN class_groups cg ON cg.id = group_members.group_id").
 		Where("group_members.user_id = ? AND group_members.is_active = true", userID).
-		Scopes(entityManagementModels.NotArchived("cg"))
+		Scopes(entityManagementModels.NotArchived("cg"), terminalModels.ExcludeClassBlocked)
 	if orgID != nil {
 		classes = classes.Where("cg.organization_id = ?", *orgID)
 	} else {
@@ -1168,6 +1176,9 @@ func (sc *scenarioLaunchController) resumePausedRun(ctx *gin.Context, run *model
 	if err := sc.terminalService.StartSession(terminalID, planResult.Plan); err != nil {
 		if stderrors.Is(err, terminalServices.ErrContainerGone) {
 			return false
+		}
+		if httperrors.WriteSessionStartBlocked(ctx, err) {
+			return true
 		}
 		if httperrors.WriteBudgetRejection(ctx, err, run.UserID) {
 			return true
