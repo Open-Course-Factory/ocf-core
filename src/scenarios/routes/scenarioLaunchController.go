@@ -607,15 +607,24 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Resolve backend + distribution using org-aware logic, on the host the
-	// assignment names when it names one.
+	// Resolve backend + distribution using org-aware logic. The server the
+	// assignment names wins; a request for another server is a 409. With no
+	// assigned server, the requested one is used (Resolve rejects a server
+	// the org/plan disallows).
 	assignedServers, err := sc.assignedBackends(userID, orgID)
 	if err != nil {
 		slog.Error("failed to read the assigned backend", "err", err)
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify access")
 		return
 	}
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, plan, assignedServers[scenarioID])
+	backend := assignedServers[scenarioID]
+	if backend == "" {
+		backend = input.Backend
+	} else if input.Backend != "" && input.Backend != backend {
+		errors.Respond(ctx, http.StatusConflict, "This scenario runs on server "+backend+" for your class")
+		return
+	}
+	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, plan, backend)
 	if distErr != nil {
 		respondProvisioningFailure(ctx, scenario.Name, distErr)
 		return
