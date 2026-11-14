@@ -781,7 +781,7 @@ func (sc *scenarioLaunchController) rejectWithoutScenarioAccess(ctx *gin.Context
 	if hasAccess {
 		return false
 	}
-	refusal, err := sc.blockedAssignmentRefusal(userID, scenarioID)
+	refusal, err := terminalModels.ScenarioBlockRefusal(sc.db, userID, scenarioID, true)
 	if err != nil {
 		slog.Error("failed to read the blocks on a scenario's assignments", "err", err)
 	}
@@ -791,41 +791,6 @@ func (sc *scenarioLaunchController) rejectWithoutScenarioAccess(ctx *gin.Context
 	}
 	errors.Respond(ctx, http.StatusForbidden, "No access to this scenario")
 	return true
-}
-
-// blockedAssignmentRefusal finds a block that cuts userID off an open
-// assignment of scenarioID: a block in the assigned class, or in the
-// organization that assigned it org-wide or owns the assigned class, among
-// those the user is an active member of. nil when no block explains a missing
-// access. One query, read only once access is denied; an organization block
-// wins, being the wider.
-func (b *scenarioControllerBase) blockedAssignmentRefusal(userID string, scenarioID uuid.UUID) (*terminalModels.SessionStartBlockedError, error) {
-	now := time.Now()
-	var blocks []struct {
-		ScopeType string
-		Reason    string
-	}
-	err := b.db.Table("session_blocks sb").
-		Select("sb.scope_type, sb.reason").
-		Joins(`JOIN scenario_assignments sa ON sa.scenario_id = ? AND sa.deleted_at IS NULL AND sa.is_active = true
-			AND (sa.deadline IS NULL OR sa.deadline > ?) AND (sa.start_date IS NULL OR sa.start_date <= ?)`, scenarioID, now, now).
-		Joins(`LEFT JOIN class_groups cg ON sa.scope = 'group' AND cg.id = sa.group_id
-			AND cg.deleted_at IS NULL AND cg.archived_at IS NULL`).
-		Joins(`LEFT JOIN group_members gm ON gm.group_id = cg.id AND gm.user_id = sb.user_id
-			AND gm.is_active = true AND gm.deleted_at IS NULL`).
-		Joins(`LEFT JOIN organization_members om ON sa.scope = 'org' AND om.organization_id = sa.organization_id
-			AND om.user_id = sb.user_id AND om.is_active = true AND om.deleted_at IS NULL`).
-		Where("sb.user_id = ?", userID).
-		Where(`(gm.id IS NOT NULL AND ((sb.scope_type = ? AND sb.scope_id = sa.group_id) OR (sb.scope_type = ? AND sb.scope_id = cg.organization_id)))
-			OR (om.id IS NOT NULL AND sb.scope_type = ? AND sb.scope_id = sa.organization_id)`,
-			terminalModels.SessionBlockScopeGroup, terminalModels.SessionBlockScopeOrg, terminalModels.SessionBlockScopeOrg).
-		Order("CASE WHEN sb.scope_type = 'org' THEN 0 ELSE 1 END").
-		Limit(1).
-		Scan(&blocks).Error
-	if err != nil || len(blocks) == 0 {
-		return nil, err
-	}
-	return &terminalModels.SessionStartBlockedError{Scope: blocks[0].ScopeType, Reason: blocks[0].Reason}, nil
 }
 
 // checkScenarioAccess checks if a user has access to a scenario via group or org assignments
@@ -1217,10 +1182,17 @@ func (sc *scenarioLaunchController) ResumeScenario(ctx *gin.Context) {
 // /terminals/:id/start does, and answers. It reports false, having answered
 // nothing, when the container turned out to be gone.
 func (sc *scenarioLaunchController) resumePausedRun(ctx *gin.Context, run *models.ScenarioSession) bool {
-	// Restarting the container is a new session: the access a rebuild checks
-	// applies, so a block in the class or organization that assigned the
-	// scenario keeps the run paused.
-	if sc.rejectWithoutScenarioAccess(ctx, run.UserID, run.ScenarioID) {
+	// A run under way needs no open assignment to resume: only a block in the
+	// class or organization it exists through keeps it paused, even past the
+	// assignment's deadline.
+	refusal, err := terminalModels.ScenarioBlockRefusal(sc.db, run.UserID, run.ScenarioID, false)
+	if err != nil {
+		slog.Error("failed to read the blocks on a scenario's assignments", "session_id", run.ID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify access")
+		return true
+	}
+	if refusal != nil {
+		httperrors.WriteSessionStartBlocked(ctx, refusal)
 		return true
 	}
 	terminalID := *run.TerminalSessionID

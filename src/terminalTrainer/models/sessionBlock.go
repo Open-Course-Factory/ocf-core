@@ -157,3 +157,45 @@ func DeleteClassBlock(db *gorm.DB, userID string, groupID uuid.UUID) error {
 	return db.Where("user_id = ? AND scope_type = ? AND scope_id = ?", userID, SessionBlockScopeGroup, groupID).
 		Delete(&SessionBlock{}).Error
 }
+
+// ScenarioBlockRefusal finds a block that cuts userID off an assignment of
+// scenarioID: a block in the assigned class, or in the organization that
+// assigned it org-wide or owns the assigned class, among those the user is an
+// active member of. nil when no block applies. An organization block wins,
+// being the wider.
+//
+// openOnly limits it to the assignments open right now (a launch: what the
+// learner may start); without it, an assignment past its deadline or not yet
+// started counts too (a resume: the run under way exists through it).
+//
+// It reads the scenarios tables by name: this package cannot import theirs.
+func ScenarioBlockRefusal(db *gorm.DB, userID string, scenarioID uuid.UUID, openOnly bool) (*SessionStartBlockedError, error) {
+	assignments := `JOIN scenario_assignments sa ON sa.scenario_id = ? AND sa.deleted_at IS NULL AND sa.is_active = true`
+	args := []any{scenarioID}
+	if openOnly {
+		now := time.Now()
+		assignments += ` AND (sa.deadline IS NULL OR sa.deadline > ?) AND (sa.start_date IS NULL OR sa.start_date <= ?)`
+		args = append(args, now, now)
+	}
+	var blocks []SessionBlock
+	err := db.Table("session_blocks sb").
+		Select("sb.scope_type, sb.reason").
+		Joins(assignments, args...).
+		Joins(`LEFT JOIN class_groups cg ON sa.scope = 'group' AND cg.id = sa.group_id
+			AND cg.deleted_at IS NULL AND cg.archived_at IS NULL`).
+		Joins(`LEFT JOIN group_members gm ON gm.group_id = cg.id AND gm.user_id = sb.user_id
+			AND gm.is_active = true AND gm.deleted_at IS NULL`).
+		Joins(`LEFT JOIN organization_members om ON sa.scope = 'org' AND om.organization_id = sa.organization_id
+			AND om.user_id = sb.user_id AND om.is_active = true AND om.deleted_at IS NULL`).
+		Where("sb.user_id = ?", userID).
+		Where(`(gm.id IS NOT NULL AND ((sb.scope_type = ? AND sb.scope_id = sa.group_id) OR (sb.scope_type = ? AND sb.scope_id = cg.organization_id)))
+			OR (om.id IS NOT NULL AND sb.scope_type = ? AND sb.scope_id = sa.organization_id)`,
+			SessionBlockScopeGroup, SessionBlockScopeOrg, SessionBlockScopeOrg).
+		Order("CASE WHEN sb.scope_type = 'org' THEN 0 ELSE 1 END").
+		Limit(1).
+		Scan(&blocks).Error
+	if err != nil || len(blocks) == 0 {
+		return nil, err
+	}
+	return &SessionStartBlockedError{Scope: blocks[0].ScopeType, Reason: blocks[0].Reason}, nil
+}
