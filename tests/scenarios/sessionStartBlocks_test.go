@@ -388,3 +388,59 @@ func TestGetAvailableScenarios_OrgBlock_HidesThatOrgAssignmentsOnly(t *testing.T
 	inY := availableScenarioIDsInOrg(t, f.db, f.learnerID, f.orgY)
 	assert.True(t, inY[f.byOrgY.ID.String()], "another org's assignment stays")
 }
+
+// ---------------------------------------------------------------------------
+// Resume — a paused run checks nothing else than the class and organization
+// blocks: no assignment check starts on a resume
+// ---------------------------------------------------------------------------
+
+// pausedPrivateRun is seedResumableRun's paused run, on a scenario taken out
+// of the public catalogue: only an assignment or a teacher's rights reach it.
+func pausedPrivateRun(t *testing.T, name string, preview bool) resumeFixture {
+	t.Helper()
+	f := seedResumableRun(t, name, resumeSeed{terminalState: terminalModels.StateStopped, preview: preview})
+	require.NoError(t, f.db.Model(&models.Scenario{}).Where("id = ?", f.scenario.ID).Update("is_public", false).Error)
+	return f
+}
+
+// requireResumedInPlace asserts the paused run's own terminal was started.
+func requireResumedInPlace(t *testing.T, f resumeFixture, w *httptest.ResponseRecorder, tt *previewTTBackend) {
+	t.Helper()
+	resp := decodeResume(t, w)
+	assert.Equal(t, f.oldTerminal, resp.TerminalSessionID)
+	assert.Equal(t, []string{f.oldTerminal}, tt.startedSessions(), "the paused terminal is started in place")
+	var terminal terminalModels.Terminal
+	require.NoError(t, f.db.First(&terminal, "session_id = ?", f.oldTerminal).Error)
+	assert.Equal(t, terminalModels.StateRunning, terminal.State)
+}
+
+// A teacher's preview of their own scenario rests on no assignment.
+func TestResume_PausedPreviewRunWithoutAssignment_Resumes(t *testing.T) {
+	f := pausedPrivateRun(t, "blk-resume-preview", true)
+	require.NoError(t, f.db.Model(&models.Scenario{}).Where("id = ?", f.scenario.ID).Update("created_by_id", f.learnerID).Error)
+	tt := newPreviewTTBackend(t)
+
+	requireResumedInPlace(t, f, resumeRun(t, f), tt)
+}
+
+// A deadline closes new launches of the assignment, not the run under way.
+func TestResume_PausedRunAfterAssignmentDeadline_Resumes(t *testing.T) {
+	f := pausedPrivateRun(t, "blk-resume-deadline", false)
+	classID := assignToNewClass(t, f.db, f.learnerID, f.scenario.ID, nil)
+	require.NoError(t, f.db.Model(&models.ScenarioAssignment{}).Where("group_id = ?", classID).
+		Update("deadline", time.Now().Add(-time.Hour)).Error)
+	tt := newPreviewTTBackend(t)
+
+	requireResumedInPlace(t, f, resumeRun(t, f), tt)
+}
+
+// Leaving the class is not a block: the run under way still resumes.
+func TestResume_PausedRunAfterLeavingTheClass_Resumes(t *testing.T) {
+	f := pausedPrivateRun(t, "blk-resume-left", false)
+	classID := assignToNewClass(t, f.db, f.learnerID, f.scenario.ID, nil)
+	require.NoError(t, f.db.Model(&groupModels.GroupMember{}).Where("group_id = ? AND user_id = ?", classID, f.learnerID).
+		Update("is_active", false).Error)
+	tt := newPreviewTTBackend(t)
+
+	requireResumedInPlace(t, f, resumeRun(t, f), tt)
+}
