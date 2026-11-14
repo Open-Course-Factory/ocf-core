@@ -31,9 +31,6 @@ const (
 	SessionBlockScopeGlobal = "global" // every session, and the terminal key itself
 )
 
-// SessionBlockReasonMaxLength bounds the reason shown to the participant.
-const SessionBlockReasonMaxLength = 500
-
 // SessionBlock keeps a participant from starting sessions in one scope. ScopeID
 // is the class or organization; nil for a global block. One row per user and
 // scope: the composite unique index covers class and organization blocks, and
@@ -68,7 +65,8 @@ func MigrateSessionBlockGlobalIndex(db *gorm.DB) error {
 // organization context orgID (nil: their personal context). A global block
 // applies everywhere and wins over an organization block; an organization block
 // applies only to that organization. Class blocks never refuse a start here:
-// they act through IsClassBlocked on that class's assignments and bulk starts.
+// they act on that class's assignments (ExcludeClassBlocked) and on its bulk
+// starts (BlockedInClass).
 func IsSessionStartBlocked(db *gorm.DB, userID string, orgID *uuid.UUID) (bool, string, string, error) {
 	query := db.Model(&SessionBlock{}).Where("user_id = ?", userID)
 	if orgID != nil {
@@ -104,15 +102,6 @@ func SessionStartRefusal(db *gorm.DB, userID string, orgID *uuid.UUID) error {
 		return &SessionStartBlockedError{Scope: scope, Reason: reason}
 	}
 	return nil
-}
-
-// IsClassBlocked reports whether userID is blocked in the class groupID.
-func IsClassBlocked(db *gorm.DB, userID string, groupID uuid.UUID) (bool, error) {
-	var count int64
-	err := db.Model(&SessionBlock{}).
-		Where("user_id = ? AND scope_type = ? AND scope_id = ?", userID, SessionBlockScopeGroup, groupID).
-		Count(&count).Error
-	return count > 0, err
 }
 
 // BlockedInClass returns which of userIDs may not be started by a class-wide

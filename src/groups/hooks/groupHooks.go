@@ -9,8 +9,8 @@ import (
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/groups/models"
-	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/groups/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -372,7 +372,9 @@ func (h *GroupMemberCleanupHook) Execute(ctx *hooks.HookContext) error {
 		}
 	}
 
-	// The class block goes with the membership.
+	// The class block goes with the membership. Deleted here because after-delete
+	// hooks run async and hooks get no transaction: if the membership delete
+	// then fails, the member stays in the class unblocked (trade-off accepted).
 	if err := terminalModels.DeleteClassBlock(h.db, member.UserID, member.GroupID); err != nil {
 		return fmt.Errorf("failed to remove the member's class session block: %w", err)
 	}

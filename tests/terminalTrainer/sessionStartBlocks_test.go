@@ -119,26 +119,6 @@ func TestIsSessionStartBlocked_TruthTable(t *testing.T) {
 	}
 }
 
-func TestIsClassBlocked_OnlyThatClass(t *testing.T) {
-	db := freshTestDB(t)
-	userID := "blk-class-" + uuid.NewString()
-	classA, classB, org := uuid.New(), uuid.New(), uuid.New()
-	blockSessions(t, db, userID, "group", &classA, "late")
-	blockSessions(t, db, userID, "org", &org, "")
-
-	blocked, err := models.IsClassBlocked(db, userID, classA)
-	require.NoError(t, err)
-	assert.True(t, blocked, "blocked in class A")
-
-	blocked, err = models.IsClassBlocked(db, userID, classB)
-	require.NoError(t, err)
-	assert.False(t, blocked, "a block in class A says nothing about class B")
-
-	blocked, err = models.IsClassBlocked(db, "other-"+uuid.NewString(), classA)
-	require.NoError(t, err)
-	assert.False(t, blocked, "another learner of class A is not blocked")
-}
-
 // ---------------------------------------------------------------------------
 // StartComposedSession — composed start, and every path built on it
 // ---------------------------------------------------------------------------
