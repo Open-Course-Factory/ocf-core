@@ -16,6 +16,7 @@ import (
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/services"
 	paymentServices "soli/formations/src/payment/services"
+	ttServices "soli/formations/src/terminalTrainer/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -29,6 +30,7 @@ type OrganizationController struct {
 	offboarding     services.MemberOffboardingService
 	deletionService authServices.UserDeletionService
 	groupService    groupServices.GroupService
+	participants    *ttServices.ParticipantControlsService
 	db              *gorm.DB
 }
 
@@ -49,6 +51,7 @@ func NewOrganizationController(
 		offboarding:     offboarding,
 		deletionService: deletionService,
 		groupService:    groupServices.NewGroupService(db),
+		participants:    ttServices.NewParticipantControlsService(db),
 		db:              db,
 	}
 }

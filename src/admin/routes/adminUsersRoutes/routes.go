@@ -27,4 +27,5 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	users.PUT("/forbidden", mw.AuthManagement(), NewSetForbiddenHandler(db))
 	users.POST("/verify-email", mw.AuthManagement(), NewVerifyEmailHandler(db))
 	users.PUT("/password", mw.AuthManagement(), NewSetPasswordHandler(db))
+	users.PUT("/session-block", mw.AuthManagement(), NewSetSessionBlockHandler(db))
 }

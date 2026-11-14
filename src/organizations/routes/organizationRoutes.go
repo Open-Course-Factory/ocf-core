@@ -37,6 +37,7 @@ func OrganizationRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		organizations.POST("/:id/members/offboard", middleware.AuthManagement(), orgController.OffboardMembers)
 		organizations.POST("/:id/members/:userId/reinstate", middleware.AuthManagement(), orgController.ReinstateMember)
 		organizations.POST("/:id/members/:userId/erase", middleware.AuthManagement(), orgController.EraseMember)
+		organizations.PUT("/:id/members/:userId/session-block", middleware.AuthManagement(), orgController.SetMemberSessionBlock)
 
 		// Get groups of a specific organization
 		organizations.GET("/:id/groups", middleware.AuthManagement(), orgController.GetOrganizationGroups)

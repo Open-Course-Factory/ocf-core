@@ -34,6 +34,11 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Erase an offboarded member now, ahead of the scheduled date (owner only)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/members/:userId/session-block", Method: "PUT",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Block or unblock a member's session starts in the organization",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/groups", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
 			Description: "List organization groups",

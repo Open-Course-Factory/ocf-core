@@ -63,6 +63,13 @@ var (
 		return ttServices.NewTerminalTrainerService(db).DisableUserKey(userID)
 	}
 
+	// EnableUserTerminalKey gives the account a working terminal key back
+	// when a platform session block is lifted: the key the block disabled is
+	// re-enabled, or a new one created.
+	EnableUserTerminalKey = func(db *gorm.DB, userID string) error {
+		return ttServices.EnableUserTerminalKey(db, userID)
+	}
+
 	// CreateCasdoorUser creates the account in the identity provider.
 	CreateCasdoorUser = func(user *casdoorsdk.User) error {
 		return authServices.NewCasdoorUserClient().AddUser(user)

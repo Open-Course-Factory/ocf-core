@@ -327,6 +327,41 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	return tts.repository.UpdateUserTerminalKey(key)
 }
 
+// EnableUserTerminalKey gives userID a working terminal key back after a
+// platform block took it away: the key the block disabled is re-activated on
+// tt-backend then locally, or, when there is none tt-backend still knows, a
+// new key is created. A user who already holds an active key is left as is,
+// and so is one whose account is blocked: that block keeps the key disabled.
+func EnableUserTerminalKey(db *gorm.DB, userID string) error {
+	if blocked, err := authModels.IsAccountBlocked(db, userID); err != nil || blocked {
+		return err
+	}
+	tts := NewTerminalTrainerService(db).(*terminalTrainerService)
+	if _, err := tts.repository.GetUserTerminalKeyByUserID(userID, true); err == nil {
+		return nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	var key models.UserTerminalKey
+	err := db.Where("user_id = ? AND is_active = ?", userID, false).Order("updated_at DESC").First(&key).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if err == nil && key.TerminalTrainerKeyID != 0 {
+		err = tts.updateKeyOnTTBackend(key.TerminalTrainerKeyID, map[string]any{"is_active": true})
+		if err == nil {
+			key.IsActive = true
+			return tts.repository.UpdateUserTerminalKey(&key)
+		}
+		if !errors.Is(err, errKeyNotOnTTBackend) {
+			return fmt.Errorf("enable terminal key of user %s on tt-backend: %w", userID, err)
+		}
+	}
+	// Same placeholder name as the self-service regenerate path.
+	return tts.CreateUserKey(userID, "user-"+userID)
+}
+
 // deactivateKeyOnTTBackend returns nil for the two keys it can do nothing about,
 // so that the caller can still disable them locally and a new key can be
 // created: one with no recorded tt-backend id, and one tt-backend no longer has.
