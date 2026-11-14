@@ -310,6 +310,7 @@ type pcSessionView struct {
 type pcParticipantView struct {
 	UserID      string          `json:"user_id"`
 	UserName    string          `json:"user_name"`
+	Role        string          `json:"role"`
 	ClassBlock  *pcBlockView    `json:"class_block"`
 	OrgBlock    *pcBlockView    `json:"org_block"`
 	GlobalBlock bool            `json:"global_block"`
@@ -1355,4 +1356,70 @@ func TestParticipantControlsWrites_PlatformAdminOnClassManagerOrOwner_Allowed(t 
 			assert.Len(t, classBlockRows(t, c.db, target, c.group.ID), 1)
 		})
 	}
+}
+
+// =============================================================================
+// Participant role (round 2)
+// =============================================================================
+
+// Each row carries the class role of the active membership. The class owner is
+// ClassGroup.OwnerUserID: "owner" whatever their membership row says.
+func TestParticipantControls_RowCarriesTheClassRole(t *testing.T) {
+	c := newPCClass(t)
+	// The owner's membership row says "member": OwnerUserID still makes them the owner.
+	require.NoError(t, c.db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ?", c.group.ID, pcOwner).Update("role", groupModels.GroupMemberRoleMember).Error)
+	// A second "owner" membership row on someone who is not OwnerUserID.
+	createTestGroupMember(t, c.db, c.group.ID, "pc-co-owner", groupModels.GroupMemberRoleOwner)
+
+	rows := readControls(t, c, member(pcManager))
+	assert.Equal(t, "owner", rows[pcOwner].Role, "OwnerUserID is the class owner, whatever their membership row says")
+	assert.Equal(t, "manager", rows[pcManager].Role)
+	assert.Equal(t, "member", rows[pcLearner].Role)
+	assert.Equal(t, "member", rows[pcLearner2].Role)
+	assert.Equal(t, "owner", rows["pc-co-owner"].Role, "an owner membership row reads as owner")
+}
+
+func TestParticipantControls_RoleKeepsTheQueryCountFixed(t *testing.T) {
+	c := newPCClass(t)
+	small := queriesForControls(t, c)
+	for i := range 8 {
+		role := groupModels.GroupMemberRoleMember
+		if i%2 == 0 {
+			role = groupModels.GroupMemberRoleManager
+		}
+		createTestGroupMember(t, c.db, c.group.ID, fmt.Sprintf("pc-role-%d", i), role)
+	}
+	large := queriesForControls(t, c)
+	assert.Equal(t, small, large, "the role adds no query per participant")
+
+	rows := readControls(t, c, member(pcOwner))
+	assert.Equal(t, "manager", rows["pc-role-0"].Role)
+	assert.Equal(t, "member", rows["pc-role-1"].Role)
+}
+
+// =============================================================================
+// The learner's own session list shows a trainer's internet cut
+// =============================================================================
+
+func TestGetUserSessions_CarriesNetworkDisabled(t *testing.T) {
+	c := newPCClass(t)
+	cut := pcTerminal(t, c.db, pcLearner, &c.orgID, models.StateRunning, `{"network":true}`)
+	setNetworkDisabledColumn(t, c.db, cut, true)
+	online := c.sessions["learner"]
+
+	w := getUserSessionsAs(t, c.db, pcLearner, []string{"member"}, "")
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var rows []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &rows), "body=%s", w.Body.String())
+	byID := map[string]map[string]any{}
+	for _, row := range rows {
+		id, _ := row["session_id"].(string)
+		byID[id] = row
+	}
+	require.Contains(t, byID, cut)
+	require.Contains(t, byID, online)
+	assert.Equal(t, true, byID[cut]["network_disabled"], "TerminalOutput carries network_disabled so the learner sees the cut")
+	assert.Equal(t, false, byID[online]["network_disabled"], "network_disabled is always present, false when not cut")
 }
