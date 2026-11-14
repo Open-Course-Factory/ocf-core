@@ -168,9 +168,12 @@ func bulkStartWithBlock(t *testing.T, name, blockScope string) (*services.BulkSt
 	var group groupModels.ClassGroup
 	require.NoError(t, sharedTestDB.First(&group, "id = ?", groupID).Error)
 	scopeID := &groupID
-	if blockScope == "org" {
+	switch blockScope {
+	case "org":
 		require.NotNil(t, group.OrganizationID)
 		scopeID = group.OrganizationID
+	case "global":
+		scopeID = nil
 	}
 	require.NoError(t, testTools.SeedSessionBlock(sharedTestDB, name+"-ko", blockScope, scopeID, "late"))
 
@@ -198,4 +201,9 @@ func TestBulkStartScenario_ClassBlockedLearner_SkippedWithReason(t *testing.T) {
 func TestBulkStartScenario_OrgBlockedLearner_SkippedWithReason(t *testing.T) {
 	result, ttMock := bulkStartWithBlock(t, "blk-bulk-org", "org")
 	assertBlockedLearnerSkipped(t, "blk-bulk-org", result, ttMock)
+}
+
+func TestBulkStartScenario_GloballyBlockedLearner_SkippedWithReason(t *testing.T) {
+	result, ttMock := bulkStartWithBlock(t, "blk-bulk-global", "global")
+	assertBlockedLearnerSkipped(t, "blk-bulk-global", result, ttMock)
 }
