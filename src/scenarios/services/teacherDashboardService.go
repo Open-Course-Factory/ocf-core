@@ -22,6 +22,7 @@ import (
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/repositories"
 	ttDto "soli/formations/src/terminalTrainer/dto"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 )
@@ -497,6 +498,12 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 	if err != nil {
 		return nil, err
 	}
+	// A learner blocked in this class, or in the organization its runs live
+	// in, is left alone and reported.
+	startable, skipped, err = s.splitSessionBlockedLearners(groupID, ClassRunOrganization(group.OrganizationID, &scenario), startable, skipped)
+	if err != nil {
+		return nil, err
+	}
 	result := &BulkStartResult{
 		NoKeyUsers:   make([]UserKeyMissing, 0),
 		Errors:       make([]BulkStartError, 0),
@@ -840,6 +847,24 @@ func (s *TeacherDashboardService) splitExamLockedLearners(scenarioID uuid.UUID, 
 		resettable = append(resettable, id)
 	}
 	return resettable, skipped, nil
+}
+
+// splitSessionBlockedLearners moves the learners blocked from starting a
+// session in this class or organization from userIDs to skipped.
+func (s *TeacherDashboardService) splitSessionBlockedLearners(groupID uuid.UUID, orgID *uuid.UUID, userIDs []string, skipped []SkippedLearner) ([]string, []SkippedLearner, error) {
+	blocked, err := terminalModels.BlockedInClass(s.db, userIDs, groupID, orgID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to check session blocks: %w", err)
+	}
+	startable := make([]string, 0, len(userIDs))
+	for _, id := range userIDs {
+		if blocked[id] {
+			skipped = append(skipped, SkippedLearner{UserID: id, Reason: terminalModels.ErrSessionStartBlocked.Error()})
+			continue
+		}
+		startable = append(startable, id)
+	}
+	return startable, skipped, nil
 }
 
 // SessionStepDetail represents a single step's progress with its metadata

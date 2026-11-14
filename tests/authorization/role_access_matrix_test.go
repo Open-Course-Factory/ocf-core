@@ -639,7 +639,7 @@ func migrateMatrixDB(t *testing.T, db *gorm.DB) {
 		&scenarioModels.ScenarioLexiconEntry{}, &scenarioModels.ScenarioLexiconName{},
 		&groupModels.ClassGroup{}, &groupModels.GroupMember{},
 		&orgModels.Organization{}, &orgModels.OrganizationMember{},
-		&terminalModels.Terminal{}, &terminalModels.UserTerminalKey{},
+		&terminalModels.Terminal{}, &terminalModels.UserTerminalKey{}, &terminalModels.SessionBlock{},
 		&paymentModels.SubscriptionPlan{}, &paymentModels.UserSubscription{}, &paymentModels.OrganizationSubscription{},
 		&paymentModels.OrganizationRolePlan{}, &paymentModels.UsageMetrics{},
 		&configModels.Feature{}, &auditModels.AuditLog{}, &authModels.TokenBlacklist{}, &authModels.BlockedAccount{},
