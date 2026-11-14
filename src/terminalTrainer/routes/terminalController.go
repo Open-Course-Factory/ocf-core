@@ -722,6 +722,7 @@ func toTerminalOutputs(terminals []models.Terminal) []dto.TerminalOutput {
 			Backend:          terminal.Backend,
 			OrganizationID:   terminal.OrganizationID,
 			ComposedFeatures: terminal.ComposedFeatures,
+			NetworkDisabled:  terminal.NetworkDisabled,
 			CreatedAt:        terminal.CreatedAt,
 			CountsTowardQuota: terminal.CountsTowardQuota(),
 		})

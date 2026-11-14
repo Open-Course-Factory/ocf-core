@@ -55,6 +55,9 @@ type TerminalOutput struct {
 	// canonical parser that derives the network on/off status from it — the
 	// backend deliberately does NOT compute a derived boolean here (SSOT).
 	ComposedFeatures string    `json:"composed_features,omitempty"`
+	// NetworkDisabled is true while a trainer has cut the session's internet
+	// access. Always present so the learner's list can show the cut.
+	NetworkDisabled bool `json:"network_disabled"`
 	CreatedAt        time.Time `json:"created_at"`
 	// CountsTowardQuota says whether the session consumes the plan's CPU/RAM
 	// budget right now (models.Terminal.CountsTowardQuota): true while it runs
