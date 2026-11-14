@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,6 +84,16 @@ func newASBFixture(t *testing.T) *asbFixture {
 		return nil
 	}
 	t.Cleanup(func() { adminUsersRoutes.EnableUserTerminalKey = originalEnable })
+
+	// The route refuses an unknown target (404): the fixture's users exist.
+	originalGet := adminUsersRoutes.GetCasdoorUserByID
+	adminUsersRoutes.GetCasdoorUserByID = func(userID string) (*casdoorsdk.User, error) {
+		if userID == uidBob || userID == uidCarol {
+			return fakeUser(userID, userID, userID, userID+"@example.com", ""), nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { adminUsersRoutes.GetCasdoorUserByID = originalGet })
 	return f
 }
 
@@ -161,9 +172,16 @@ func TestAdminSessionBlock_BlockDisablesKeyUpdateAndUnblock(t *testing.T) {
 	var set []auditModels.AuditLog
 	require.NoError(t, f.db.Where("event_type = ?", "user.session_block.set").Find(&set).Error)
 	require.Len(t, set, 2)
+	// Contract change (final round, F): identities in typed columns only,
+	// has_reason instead of the reason, status "requested".
 	for _, row := range set {
-		assert.Contains(t, row.Metadata, uidAdminOp)
-		assert.Contains(t, row.Metadata, uidBob)
+		var meta map[string]any
+		require.NoError(t, json.Unmarshal([]byte(row.Metadata), &meta))
+		for _, key := range []string{"actor_user_id", "target_user_id", "impersonator_id", "reason"} {
+			assert.NotContains(t, meta, key)
+		}
+		assert.Equal(t, true, meta["has_reason"])
+		assert.Equal(t, "requested", row.Status)
 		assert.Contains(t, row.Metadata, terminalModels.SessionBlockScopeGlobal)
 	}
 	var cleared int64
@@ -253,4 +271,29 @@ func TestAdminSessionBlock_UnblockReenablesTheTerminalKey(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 	assert.Equal(t, []string{uidBob}, f.enabledKeys(), "a global unblock re-enables the user's terminal key")
 	assert.Equal(t, []string{uidBob}, f.disabledKeys(), "the unblock does not disable the key again")
+}
+
+// =============================================================================
+// Final round (#580)
+// =============================================================================
+
+func TestAdminSessionBlock_UnknownTarget_404NothingDone(t *testing.T) {
+	f := newASBFixture(t)
+	w := asbPut(t, f, true, uidNobody, map[string]any{"blocked": true, "reason": "r"})
+	assert.Equal(t, http.StatusNotFound, w.Code, "body=%s", w.Body.String())
+	assert.Empty(t, asbGlobalBlocks(t, f.db, uidNobody))
+	assert.Empty(t, f.disabledKeys())
+	var audits int64
+	require.NoError(t, f.db.Model(&auditModels.AuditLog{}).Count(&audits).Error)
+	assert.Zero(t, audits)
+}
+
+func TestAdminSessionBlock_UnblockWithoutBlock_NoKeyEnableNoClearedAudit(t *testing.T) {
+	f := newASBFixture(t)
+	w := asbPut(t, f, true, uidBob, map[string]any{"blocked": false})
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	assert.Empty(t, f.enabledKeys(), "no block was removed: the terminal key is left as it is")
+	var cleared int64
+	require.NoError(t, f.db.Model(&auditModels.AuditLog{}).Where("event_type = ?", "user.session_block.cleared").Count(&cleared).Error)
+	assert.Zero(t, cleared, "nothing was cleared: no cleared row")
 }

@@ -165,10 +165,13 @@ type pcNetworkCall struct {
 // a session id to the (status, code) tt-backend answers its toggle with; a
 // missing entry succeeds.
 type pcTT struct {
-	mu           sync.Mutex
-	stops        []string
-	network      []pcNetworkCall
-	unexpected   []string
+	mu         sync.Mutex
+	stops      []string
+	network    []pcNetworkCall
+	unexpected []string
+	// onNetwork, when set, runs as a network toggle arrives, before it is
+	// answered, outside the lock (assert, not require: server goroutine).
+	onNetwork    func(sessionID string)
 	networkReply map[string]struct {
 		status int
 		code   string
@@ -213,7 +216,11 @@ func newPCTT(t *testing.T) *pcTT {
 			rec.mu.Lock()
 			rec.network = append(rec.network, pcNetworkCall{sessionID: id, apiKey: r.Header.Get("X-API-Key"), enabled: body.Enabled})
 			reply, failing := rec.networkReply[id]
+			onNetwork := rec.onNetwork
 			rec.mu.Unlock()
+			if onNetwork != nil {
+				onNetwork(id)
+			}
 			if failing {
 				w.WriteHeader(reply.status)
 				_ = json.NewEncoder(w).Encode(map[string]string{"code": reply.code, "error": "tt-backend says " + reply.code})
@@ -292,10 +299,10 @@ func participantPath(groupID uuid.UUID, userID, action string) string {
 
 // --- Response shape -----------------------------------------------------------
 
+// pcBlockView is the class block a class manager sees: its reason only
+// (final round, B: no author, no date).
 type pcBlockView struct {
-	Reason    string    `json:"reason"`
-	BlockedBy string    `json:"blocked_by"`
-	CreatedAt time.Time `json:"created_at"`
+	Reason string `json:"reason"`
 }
 
 type pcSessionView struct {
@@ -304,7 +311,6 @@ type pcSessionView struct {
 	NetworkFeature    bool    `json:"network_feature"`
 	NetworkDisabled   bool    `json:"network_disabled"`
 	ScenarioSessionID *string `json:"scenario_session_id"`
-	ScenarioTitle     *string `json:"scenario_title"`
 }
 
 type pcParticipantView struct {
@@ -312,7 +318,7 @@ type pcParticipantView struct {
 	UserName    string          `json:"user_name"`
 	Role        string          `json:"role"`
 	ClassBlock  *pcBlockView    `json:"class_block"`
-	OrgBlock    *pcBlockView    `json:"org_block"`
+	OrgBlocked  bool            `json:"org_blocked"`
 	GlobalBlock bool            `json:"global_block"`
 	Sessions    []pcSessionView `json:"sessions"`
 }
@@ -599,15 +605,14 @@ func TestParticipantControls_ListsEveryActiveMemberWithTheirBlocks(t *testing.T)
 	learner := rows[pcLearner]
 	require.NotNil(t, learner.ClassBlock, "class block must be reported")
 	assert.Equal(t, "class reason", learner.ClassBlock.Reason)
-	assert.Equal(t, "test-blocker", learner.ClassBlock.BlockedBy)
-	assert.False(t, learner.ClassBlock.CreatedAt.IsZero())
-	require.NotNil(t, learner.OrgBlock, "a block in the class's organization must be reported")
-	assert.Equal(t, "org reason", learner.OrgBlock.Reason)
+	// Contract change (final round, B): the organization block is a bare
+	// presence flag for class managers, no reason, no author.
+	assert.True(t, learner.OrgBlocked, "a block in the class's organization must be reported")
 	assert.False(t, learner.GlobalBlock)
 
 	learner2 := rows[pcLearner2]
 	assert.Nil(t, learner2.ClassBlock, "a block in another class is not this class's")
-	assert.Nil(t, learner2.OrgBlock, "a block in another organization is not this class's")
+	assert.False(t, learner2.OrgBlocked, "a block in another organization is not this class's")
 	assert.True(t, learner2.GlobalBlock)
 
 	assert.Equal(t, "Name of "+pcLearner, learner.UserName)
@@ -625,11 +630,12 @@ func TestParticipantControls_UnblockedParticipant_BlocksSerializeAsNull(t *testi
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &rows))
 	require.NotEmpty(t, rows)
 	for _, row := range rows {
-		for _, key := range []string{"user_id", "user_name", "class_block", "org_block", "global_block", "sessions"} {
+		// Contract change (final round, B): org_block became org_blocked (bool).
+		for _, key := range []string{"user_id", "user_name", "class_block", "org_blocked", "global_block", "sessions"} {
 			assert.Contains(t, row, key, "every participant row carries %q", key)
 		}
 		assert.Nil(t, row["class_block"])
-		assert.Nil(t, row["org_block"])
+		assert.Equal(t, false, row["org_blocked"])
 		assert.Equal(t, false, row["global_block"])
 	}
 }
@@ -721,12 +727,11 @@ func TestParticipantControls_ScenarioFieldsOnlyForAnOpenRun(t *testing.T) {
 	require.Contains(t, sessions, openTerminal)
 	require.NotNil(t, sessions[openTerminal].ScenarioSessionID, "an open run on the terminal is reported")
 	assert.Equal(t, openRun.ID.String(), *sessions[openTerminal].ScenarioSessionID)
-	require.NotNil(t, sessions[openTerminal].ScenarioTitle)
-	assert.Equal(t, "Linux basics", *sessions[openTerminal].ScenarioTitle)
+	// Contract change (final round, B): scenario_title is dropped, the
+	// supervisor page reads the run's detail endpoint.
 
 	require.Contains(t, sessions, finished)
 	assert.Nil(t, sessions[finished].ScenarioSessionID, "a finished run is not reported")
-	assert.Nil(t, sessions[finished].ScenarioTitle)
 }
 
 // countQueries counts the SQL statements run on db until the returned stop is
@@ -859,10 +864,13 @@ func TestStopParticipantSessions_AuditsEachStop(t *testing.T) {
 	for _, sid := range []string{c.sessions["learner"], second} {
 		assert.True(t, auditMentionsSession(rows, sid), "an audit row names session %s", sid)
 	}
+	// Contract change (final round, F): actor and target live in the typed
+	// columns only (ActorID/TargetID), never in Metadata; see
+	// TestParticipantControlsAudit_IdentitiesInTypedColumnsOnly.
 	for _, row := range rows {
-		assert.Contains(t, row.Metadata, pcManager, "audit names the actor")
-		assert.Contains(t, row.Metadata, pcLearner, "audit names the target")
-		assert.Contains(t, row.Metadata, c.group.ID.String(), "audit names the class")
+		assertNoIdentityInMetadata(t, row)
+		require.NotNil(t, row.GroupID, "audit names the class")
+		assert.Equal(t, c.group.ID, *row.GroupID)
 	}
 }
 
@@ -889,14 +897,19 @@ func TestStopParticipantSessions_AuditWriteFails_NothingStopped(t *testing.T) {
 func TestStopParticipantSessions_Impersonated_AuditNamesTheImpersonator(t *testing.T) {
 	c := newPCClass(t)
 	newPCTT(t)
-	caller := pcCaller{userID: pcManager, roles: []string{"member"}, impersonator: "pc-support-admin"}
+	// Contract change (final round, F): the impersonator is the typed ActorID,
+	// not a Metadata key.
+	impersonator := uuid.New()
+	caller := pcCaller{userID: pcManager, roles: []string{"member"}, impersonator: impersonator.String()}
 
 	w := pcDo(t, c.db, caller, http.MethodPost, participantPath(c.group.ID, pcLearner, "stop-sessions"), map[string]any{})
 	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 
 	rows := auditRowsOf(t, c.db, auditStoppedByTrainer)
 	require.Len(t, rows, 1)
-	assert.Contains(t, rows[0].Metadata, "pc-support-admin", "audit metadata carries impersonatorId")
+	require.NotNil(t, rows[0].ActorID, "the impersonating administrator is the actor")
+	assert.Equal(t, impersonator, *rows[0].ActorID)
+	assertNoIdentityInMetadata(t, rows[0])
 }
 
 // =============================================================================
@@ -933,9 +946,10 @@ func TestSetParticipantNetwork_Disable_CallsTTWithTheAdminKeyAndRecordsIt(t *tes
 	rows := auditRowsOf(t, c.db, auditNetworkDisabled)
 	require.Len(t, rows, 1)
 	assert.True(t, auditMentionsSession(rows, networked))
-	assert.Contains(t, rows[0].Metadata, pcManager)
-	assert.Contains(t, rows[0].Metadata, pcLearner)
-	assert.Contains(t, rows[0].Metadata, c.group.ID.String())
+	// Contract change (final round, F): identities in typed columns only.
+	assertNoIdentityInMetadata(t, rows[0])
+	require.NotNil(t, rows[0].GroupID)
+	assert.Equal(t, c.group.ID, *rows[0].GroupID)
 }
 
 func TestSetParticipantNetwork_Enable_ClearsTheFlagAndDropsPorts(t *testing.T) {
@@ -1059,10 +1073,13 @@ func TestSetParticipantSessionBlock_BlockUpdateUnblock(t *testing.T) {
 
 	set := auditRowsOf(t, c.db, auditSessionBlockSet)
 	require.Len(t, set, 2)
-	assert.Contains(t, set[0].Metadata+set[1].Metadata, "second", "audit records the reason")
+	// Contract change (final round, F): the audit records THAT a reason was
+	// given (has_reason), never its text, and no identity in Metadata.
 	for _, row := range set {
-		assert.Contains(t, row.Metadata, pcManager)
-		assert.Contains(t, row.Metadata, pcLearner)
+		assert.NotContains(t, row.Metadata, "first", "the reason text is not audited")
+		assert.NotContains(t, row.Metadata, "second", "the reason text is not audited")
+		assert.Equal(t, true, auditMeta(t, row)["has_reason"])
+		assertNoIdentityInMetadata(t, row)
 		assert.Contains(t, row.Metadata, c.group.ID.String())
 		assert.Contains(t, row.Metadata, models.SessionBlockScopeGroup, "audit records the scope")
 	}
@@ -1121,13 +1138,17 @@ func TestSetParticipantSessionBlock_AuditWriteFails_NoBlockNoStop(t *testing.T) 
 func TestSetParticipantSessionBlock_Impersonated_AuditNamesTheImpersonator(t *testing.T) {
 	c := newPCClass(t)
 	newPCTT(t)
-	caller := pcCaller{userID: pcManager, roles: []string{"member"}, impersonator: "pc-support-admin"}
+	// Contract change (final round, F): the impersonator is the typed ActorID.
+	impersonator := uuid.New()
+	caller := pcCaller{userID: pcManager, roles: []string{"member"}, impersonator: impersonator.String()}
 	w := pcDo(t, c.db, caller, http.MethodPut, participantPath(c.group.ID, pcLearner, "session-block"),
 		map[string]any{"blocked": true, "reason": "r"})
 	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 	rows := auditRowsOf(t, c.db, auditSessionBlockSet)
 	require.Len(t, rows, 1)
-	assert.Contains(t, rows[0].Metadata, "pc-support-admin")
+	require.NotNil(t, rows[0].ActorID)
+	assert.Equal(t, impersonator, *rows[0].ActorID)
+	assertNoIdentityInMetadata(t, rows[0])
 }
 
 // =============================================================================

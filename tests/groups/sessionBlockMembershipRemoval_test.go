@@ -67,3 +67,28 @@ func TestGroupMemberDelete_DeletesThatClassSessionBlock(t *testing.T) {
 
 	assertOnlyThatClassBlockRemoved(t, db, groupID, otherClass)
 }
+
+// A sticky internet cut (#580, participant_network_cuts) belongs to the class
+// membership like the class block: leaving the class lifts it there, and only
+// there.
+func TestGroupMemberDelete_DeletesThatClassNetworkCut(t *testing.T) {
+	db, groupID, otherClass := blockedLearnerInClass(t)
+	require.NoError(t, testTools.CreateParticipantNetworkCutsTable(db))
+	org := uuid.New()
+	require.NoError(t, testTools.SeedNetworkCut(db, "blk-learner", groupID, &org, "class-manager"))
+	require.NoError(t, testTools.SeedNetworkCut(db, "blk-learner", otherClass, &org, "class-manager"))
+
+	hook := groupHooks.NewGroupMemberCleanupHook(db)
+	require.NoError(t, hook.Execute(&hooks.HookContext{
+		EntityName: "GroupMember",
+		HookType:   hooks.BeforeDelete,
+		NewEntity:  &groupModels.GroupMember{GroupID: groupID, UserID: "blk-learner", Role: groupModels.GroupMemberRoleMember},
+		UserID:     "class-manager",
+		UserRoles:  platformMember,
+	}))
+
+	cuts, err := testTools.NetworkCutsOf(db, "blk-learner")
+	require.NoError(t, err)
+	require.Len(t, cuts, 1, "the cut in the class the learner left is deleted, the other stays")
+	assert.Equal(t, otherClass.String(), cuts[0].GroupID)
+}

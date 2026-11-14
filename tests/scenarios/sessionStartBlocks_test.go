@@ -8,6 +8,7 @@
 package scenarios_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -443,4 +444,51 @@ func TestResume_PausedRunAfterLeavingTheClass_Resumes(t *testing.T) {
 	tt := newPreviewTTBackend(t)
 
 	requireResumedInPlace(t, f, resumeRun(t, f), tt)
+}
+
+// ---------------------------------------------------------------------------
+// Sticky internet cut (#580, final round): a scenario launched in the
+// organization where the learner's internet was cut starts without internet.
+// Every compose goes through StartComposedSession; this pins the scenario
+// launch end to end, on the body tt-backend receives.
+// ---------------------------------------------------------------------------
+
+func launchInOrg(t *testing.T, cutInLaunchOrg bool) map[string]any {
+	t.Helper()
+	db := freshTestDB(t)
+	userID := "cut-launch-" + uuid.New().String()
+	seedPersistencePlan(t, db, userID, false)
+	seedPersistenceUserKey(t, db, userID)
+	scenario := seedPersistenceScenario(t, db, userID, false)
+	launchOrg := createTestOrg(t, db, "cut-owner")
+	otherOrg := createTestOrg(t, db, "cut-owner-2")
+	addOrgMember(t, db, launchOrg, userID, orgModels.OrgRoleMember)
+	cutOrg := otherOrg
+	if cutInLaunchOrg {
+		cutOrg = launchOrg
+	}
+	require.NoError(t, testTools.SeedNetworkCut(db, userID, uuid.New(), &cutOrg, "cut-manager"))
+
+	ttSrv, rec := newPersistenceTTBackend(t)
+	configureTTServerForPersistence(t, ttSrv.URL)
+	router := setupPersistenceRouter(t, db, userID)
+
+	body, _ := json.Marshal(map[string]string{"scenario_id": scenario.ID.String()})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scenario-sessions/launch?organization_id="+launchOrg.String(), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	require.Equal(t, 1, rec.calls)
+	return rec.gotBody
+}
+
+func TestLaunchScenario_LearnerCutInThatOrg_CreatedWithoutNetwork(t *testing.T) {
+	body := launchInOrg(t, true)
+	assert.Equal(t, true, body["network_disabled"], "body=%v", body)
+}
+
+func TestLaunchScenario_NoCutInThatOrg_NetworkNotDisabled(t *testing.T) {
+	body := launchInOrg(t, false) // cut in another organization
+	assert.NotEqual(t, true, body["network_disabled"], "body=%v", body)
 }

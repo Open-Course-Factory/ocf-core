@@ -71,6 +71,9 @@ func TestMain(m *testing.M) {
 	if err := testTools.CreateSessionBlocksTable(db); err != nil {
 		panic("failed to create session_blocks: " + err.Error())
 	}
+	if err := testTools.CreateParticipantNetworkCutsTable(db); err != nil {
+		panic("failed to create participant_network_cuts: " + err.Error())
+	}
 
 	sharedTestDB = db
 	os.Exit(m.Run())
@@ -102,6 +105,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM user_terminal_keys")
 	sharedTestDB.Exec("DELETE FROM blocked_accounts")
 	sharedTestDB.Exec("DELETE FROM session_blocks")
+	sharedTestDB.Exec("DELETE FROM participant_network_cuts")
 	sharedTestDB.Exec("DELETE FROM user_subscriptions")
 	sharedTestDB.Exec("DELETE FROM organization_subscriptions")
 	sharedTestDB.Exec("DELETE FROM organization_role_plans")

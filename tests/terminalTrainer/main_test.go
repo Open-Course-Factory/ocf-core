@@ -65,6 +65,9 @@ func TestMain(m *testing.M) {
 	if err := testTools.CreateSessionBlocksTable(sharedTestDB); err != nil {
 		panic("failed to create session_blocks: " + err.Error())
 	}
+	if err := testTools.CreateParticipantNetworkCutsTable(sharedTestDB); err != nil {
+		panic("failed to create participant_network_cuts: " + err.Error())
+	}
 	os.Exit(m.Run())
 }
 
@@ -153,6 +156,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 		"features",
 		"blocked_accounts",
 		"session_blocks",
+		"participant_network_cuts",
 		"scenario_sessions",
 		"scenario_assignments",
 		"scenarios",
