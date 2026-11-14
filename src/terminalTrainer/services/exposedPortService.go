@@ -115,6 +115,15 @@ func (e *NoNetworkError) Error() string {
 	return "this session has no network interface; start a session with the network feature to expose a port"
 }
 
+// NetworkCutError is returned when a trainer cut the session's internet
+// access: no public route may reach it while the cut stands. Its own type so
+// the controller answers 409, a state of the session rather than a plan gate.
+type NetworkCutError struct{}
+
+func (e *NetworkCutError) Error() string {
+	return "this session's internet access was cut by a trainer; no port can be exposed while it is cut"
+}
+
 // ScenarioDisallowsError is returned when the session is running a scenario
 // whose PortExposureAllowed is off. Same 403 mapping as PlanDisabledError;
 // kept distinct so the message tells the learner which gate said no.
@@ -150,6 +159,9 @@ func (s *exposedPortService) CreateExposedPort(sessionID string, containerPort i
 	plan, err := s.exposurePlan(terminal)
 	if err != nil {
 		return nil, err
+	}
+	if terminal.NetworkDisabled {
+		return nil, &NetworkCutError{}
 	}
 
 	count, err := s.repository.CountExposedPortsBySessionID(sessionID)
@@ -487,6 +499,9 @@ func (s *exposedPortService) staleReason(exposedPort *models.ExposedPort) (reaso
 	switch {
 	case info.InstanceRunning != nil && !*info.InstanceRunning:
 		return "container stopped", true
+	case info.IP == "" && info.InstanceRunning != nil:
+		// A live instance without address (its internet cut) routes nowhere.
+		return "container has no address", true
 	case info.IP != "" && info.IP != exposedPort.ContainerIP:
 		return "container address changed", true
 	}
