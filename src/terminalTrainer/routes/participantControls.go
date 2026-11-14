@@ -28,7 +28,7 @@ import (
 )
 
 // ListParticipantControls returns one row per ACTIVE member of groupID (owner
-// and managers included): their blocks in this class, in its organization and
+// and managers included, each row carrying its class role): their blocks in this class, in its organization and
 // on the platform, and their sessions — exactly those
 // GET /terminals/user-sessions?group_id= lists (groupMemberSessions), each
 // with its network flags and the scenario run open on it. user_name is the
@@ -44,15 +44,19 @@ func ListParticipantControls(db *gorm.DB, groupID, callerUserID string, isAdmin 
 	}
 
 	var group groupModels.ClassGroup
-	if err := db.Select("id", "organization_id").First(&group, "id = ?", gid).Error; err != nil {
+	if err := db.Select("id", "owner_user_id", "organization_id").First(&group, "id = ?", gid).Error; err != nil {
 		return nil, true, err
 	}
-	var memberIDs []string
-	if err := db.Model(&groupModels.GroupMember{}).
+	var members []groupModels.GroupMember
+	if err := db.Select("user_id", "role").
 		Where("group_id = ? AND is_active = ?", gid, true).
 		Order("created_at").
-		Pluck("user_id", &memberIDs).Error; err != nil {
+		Find(&members).Error; err != nil {
 		return nil, true, err
+	}
+	memberIDs := make([]string, 0, len(members))
+	for _, m := range members {
+		memberIDs = append(memberIDs, m.UserID)
 	}
 	terminals, err := groupMemberSessions(db, gid, isAdmin)
 	if err != nil {
@@ -82,11 +86,19 @@ func ListParticipantControls(db *gorm.DB, groupID, callerUserID string, isAdmin 
 	}
 
 	identityOf := newIdentityResolver()
-	rows = make([]dto.ParticipantControlsRow, 0, len(memberIDs))
-	for _, userID := range memberIDs {
+	rows = make([]dto.ParticipantControlsRow, 0, len(members))
+	for _, m := range members {
+		userID := m.UserID
+		// The class's owner is reported as such whatever their membership
+		// row says: ClassControlScope refuses acting on them the same way.
+		role := string(m.Role)
+		if userID == group.OwnerUserID {
+			role = string(groupModels.GroupMemberRoleOwner)
+		}
 		row := dto.ParticipantControlsRow{
 			UserID:   userID,
 			UserName: identityOf(userID).name,
+			Role:     role,
 			Sessions: sessionsByUser[userID],
 		}
 		if row.Sessions == nil {

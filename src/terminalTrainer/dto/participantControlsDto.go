@@ -48,8 +48,12 @@ type ParticipantSessionView struct {
 // GET /class-groups/:id/participant-controls lists them: their blocks in this
 // class, in its organization and on the platform, and their sessions.
 type ParticipantControlsRow struct {
-	UserID      string                   `json:"user_id"`
-	UserName    string                   `json:"user_name"`
+	UserID   string `json:"user_id"`
+	UserName string `json:"user_name"`
+	// Role is the participant's role in the class: "member", "manager" or
+	// "owner". Trainer actions apply to members only (a platform
+	// administrator excepted).
+	Role        string                   `json:"role"`
 	ClassBlock  *ParticipantBlockView    `json:"class_block"`
 	OrgBlock    *ParticipantBlockView    `json:"org_block"`
 	GlobalBlock bool                     `json:"global_block"`
