@@ -91,6 +91,21 @@ func TestGenerationPackageService_GenerateMDContent_ReplacesPlaceholders(t *test
 	assert.NotContains(t, md, "@@version@@")
 }
 
+// The worker path has no author page source, so the author slide emitted by
+// SlidevCourseWriter must be dropped, not shipped with its raw placeholder (#572).
+func TestGenerationPackageService_GenerateMDContent_NoAuthorPage_DropsAuthorSlide(t *testing.T) {
+	email := "author@example.com"
+	mockCasdoor := newMockCasdoorWithUser(email, "jdoe", "Jane Doe")
+	svc := services.NewGenerationPackageServiceWithDependencies(mockCasdoor)
+
+	md, err := svc.GenerateMDContent(newMinimalCourse(), email)
+	require.NoError(t, err)
+
+	assert.NotContains(t, md, "@@author_page_content@@", "author page placeholder must not reach the generated deck")
+	emptyAuthorSlide := "\n---\nlayout: default\n---\n\n\n\n"
+	assert.NotContains(t, md, emptyAuthorSlide, "author slide must be removed, not left empty")
+}
+
 func TestGenerationPackageService_GenerateMDContent_EmptyCourse(t *testing.T) {
 	email := "author@example.com"
 	mockCasdoor := newMockCasdoorWithUser(email, "testuser", "Test User")
