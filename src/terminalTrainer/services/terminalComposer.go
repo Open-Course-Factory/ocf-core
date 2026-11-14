@@ -181,9 +181,9 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 		bulkSize = "S"
 	}
 
-	// A request naming no organization runs in the class's own: its blocks
-	// and its hosts apply.
-	if request.OrganizationID == "" && group.OrganizationID != nil {
+	// A class's bulk start runs in the class's own organization, whatever the
+	// request names: its blocks, its network cuts and its hosts apply.
+	if group.OrganizationID != nil {
 		request.OrganizationID = group.OrganizationID.String()
 	}
 
@@ -384,6 +384,15 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 	if err := models.SessionStartRefusal(c.db, userID, orgID); err != nil {
 		return nil, err
 	}
+	// A participant whose internet a trainer cut in this organization starts
+	// without it, whatever the request composes.
+	if !input.NetworkDisabled {
+		cut, err := models.IsNetworkCutIn(c.db, userID, orgID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check network cuts: %w", err)
+		}
+		input.NetworkDisabled = cut
+	}
 
 	// Resolve effective persistence mode (free tier hard-fails; empty defaults to ephemeral).
 	// Done up-front so we never hit tt-backend with a request the plan forbids.
@@ -576,6 +585,7 @@ func (c *terminalComposer) reserveBudget(
 		ComposedFeatures:     composedFeaturesJSON(input.Features),
 		SizeCPU:              input.SizeCPU,
 		SizeMemoryMB:         input.SizeMemoryMB,
+		NetworkDisabled:      input.NetworkDisabled,
 	}
 
 	// The budget is the user's own, whatever plan resolved for them. The
@@ -745,6 +755,10 @@ func (c *terminalComposer) startComposedSession(
 	// session's request is byte-for-byte what it was.
 	if input.SessionUser != nil {
 		ttReqBody["session_user"] = *input.SessionUser
+	}
+	// Sent only for a cut participant, so every other request is unchanged.
+	if input.NetworkDisabled {
+		ttReqBody["network_disabled"] = true
 	}
 	// Forward the plan's storage quota so tt-backend sizes the persistent
 	// volume. Only meaningful for a persistent session; a zero/absent quota

@@ -378,6 +378,10 @@ func (h *GroupMemberCleanupHook) Execute(ctx *hooks.HookContext) error {
 	if err := terminalModels.DeleteClassBlock(h.db, member.UserID, member.GroupID); err != nil {
 		return fmt.Errorf("failed to remove the member's class session block: %w", err)
 	}
+	// So does the member's sticky internet cut in the class.
+	if err := terminalModels.DeleteNetworkCut(h.db, member.UserID, member.GroupID); err != nil {
+		return fmt.Errorf("failed to remove the member's network cut in the class: %w", err)
+	}
 
 	// Revoke permissions from the member
 	err := h.groupService.RevokeGroupPermissionsFromUser(member.UserID, member.GroupID)

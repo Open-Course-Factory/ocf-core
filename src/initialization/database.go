@@ -148,6 +148,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&terminalModels.UserTerminalKey{})
 	db.AutoMigrate(&terminalModels.ExposedPort{})
 	db.AutoMigrate(&terminalModels.SessionBlock{})
+	db.AutoMigrate(&terminalModels.ParticipantNetworkCut{})
 	if err := terminalModels.MigrateSessionBlockGlobalIndex(db); err != nil {
 		log.Printf("failed to create the global session block index: %v", err)
 	}

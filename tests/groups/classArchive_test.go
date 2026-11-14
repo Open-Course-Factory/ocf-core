@@ -95,6 +95,7 @@ func classArchiveDB(t *testing.T) *gorm.DB {
 		&terminalModels.Terminal{},
 		&terminalModels.UserTerminalKey{},
 		&terminalModels.SessionBlock{},
+		&terminalModels.ParticipantNetworkCut{},
 	))
 	return db
 }

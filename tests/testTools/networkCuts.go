@@ -5,27 +5,15 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"soli/formations/src/terminalTrainer/models"
 )
 
 // CreateParticipantNetworkCutsTable creates participant_network_cuts, the
-// sticky internet cut a class manager puts on a participant (#580): one row
-// per (user_id, group_id), organization_id is the class's organization at the
-// time of the cut, cut_by the manager. Raw DDL so the test packages compile
-// before the model exists; once models.ParticipantNetworkCut lands, this may
-// become its AutoMigrate (same table, same columns, same unique index).
+// sticky internet cut a class manager puts on a participant (#580), with the
+// production schema: the model's AutoMigrate (one row per user_id, group_id).
 func CreateParticipantNetworkCutsTable(db *gorm.DB) error {
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS participant_network_cuts (
-		id              VARCHAR(36) PRIMARY KEY,
-		user_id         VARCHAR(255) NOT NULL,
-		group_id        VARCHAR(36) NOT NULL,
-		organization_id VARCHAR(36),
-		cut_by          VARCHAR(255),
-		created_at      TIMESTAMP
-	)`).Error; err != nil {
-		return err
-	}
-	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_participant_network_cuts_user_group
-		ON participant_network_cuts (user_id, group_id)`).Error
+	return db.AutoMigrate(&models.ParticipantNetworkCut{})
 }
 
 // SeedNetworkCut records a sticky internet cut on userID in the class groupID

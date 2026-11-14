@@ -118,6 +118,7 @@ func setupDeleteMyAccountDB(t *testing.T) *gorm.DB {
 		&terminalModels.UserTerminalKey{},
 		&terminalModels.Terminal{},
 		&terminalModels.SessionBlock{},
+		&terminalModels.ParticipantNetworkCut{},
 		&scenarioModels.Scenario{},
 		&scenarioModels.ScenarioSession{},
 		&scenarioModels.ScenarioStepProgress{},

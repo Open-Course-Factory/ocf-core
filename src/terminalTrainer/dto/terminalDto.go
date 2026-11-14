@@ -51,9 +51,9 @@ type TerminalOutput struct {
 	OrganizationID     *uuid.UUID `json:"organization_id,omitempty"`
 	SubscriptionPlanID *uuid.UUID `json:"subscription_plan_id,omitempty"`
 	// ComposedFeatures is the raw composed-session feature JSON (e.g.
-	// `{"network":true}`) passed through verbatim. The FE owns the single
-	// canonical parser that derives the network on/off status from it — the
-	// backend deliberately does NOT compute a derived boolean here (SSOT).
+	// `{"network":true}`) passed through verbatim: whether the session was
+	// composed with internet access. Whether that access is cut right now is
+	// NetworkDisabled, below.
 	ComposedFeatures string    `json:"composed_features,omitempty"`
 	// NetworkDisabled is true while a trainer has cut the session's internet
 	// access. Always present so the learner's list can show the cut.
@@ -394,6 +394,11 @@ type CreateComposedSessionInput struct {
 	// Tier enforcement (free tier cannot request persistent) is applied by
 	// StartComposedSession. The value is forwarded to tt-backend.
 	PersistenceMode string `json:"persistence_mode,omitempty"`
+	// NetworkDisabled starts the session without internet access: set by the
+	// service layer when a trainer cut the learner's internet where the
+	// session runs (a scenario launch passes its own finding); never accepted
+	// from a public request body.
+	NetworkDisabled bool `json:"-"`
 	// Set by service layer
 	HistoryRetentionDays   int        `json:"-"`
 	SubscriptionPlanID     *uuid.UUID `json:"-"`

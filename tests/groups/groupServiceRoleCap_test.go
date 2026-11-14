@@ -53,6 +53,7 @@ func newGroupRoleCapDB(t *testing.T) *gorm.DB {
 		&groupModels.ClassGroup{},
 		&groupModels.GroupMember{},
 		&terminalModels.SessionBlock{},
+		&terminalModels.ParticipantNetworkCut{},
 	)
 	require.NoError(t, err, "failed to auto-migrate org/group tables")
 

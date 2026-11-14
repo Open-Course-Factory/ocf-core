@@ -640,6 +640,7 @@ func migrateMatrixDB(t *testing.T, db *gorm.DB) {
 		&groupModels.ClassGroup{}, &groupModels.GroupMember{},
 		&orgModels.Organization{}, &orgModels.OrganizationMember{},
 		&terminalModels.Terminal{}, &terminalModels.UserTerminalKey{}, &terminalModels.SessionBlock{},
+		&terminalModels.ParticipantNetworkCut{},
 		&paymentModels.SubscriptionPlan{}, &paymentModels.UserSubscription{}, &paymentModels.OrganizationSubscription{},
 		&paymentModels.OrganizationRolePlan{}, &paymentModels.UsageMetrics{},
 		&configModels.Feature{}, &auditModels.AuditLog{}, &authModels.TokenBlacklist{}, &authModels.BlockedAccount{},
