@@ -561,6 +561,11 @@ func (e *NetworkToggleError) Error() string {
 
 func (e *NetworkToggleError) Unwrap() error { return e.Err }
 
+// networkToggleTimeout bounds the network toggle call. tt-backend holds a
+// session's network lock while the session starts (up to ~30 s), so a toggle
+// can queue behind a start before its own work begins.
+const networkToggleTimeout = 60 * time.Second
+
 // setSessionNetworkInAPI calls tt-backend's admin POST /sessions/{id}/network,
 // which attaches (enabled) or detaches the NIC of a session composed with the
 // network feature, and records the choice so a restart keeps it. Admin key:
@@ -568,7 +573,7 @@ func (e *NetworkToggleError) Unwrap() error { return e.Err }
 func (p *terminalProxyClient) setSessionNetworkInAPI(sessionID string, enabled bool) error {
 	url := fmt.Sprintf("%s/%s/admin/sessions/%s/network", p.baseURL, p.apiVersion, sessionID)
 	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(p.adminKey))
+	utils.ApplyOptions(&opts, utils.WithAPIKey(p.adminKey), utils.WithTimeout(networkToggleTimeout))
 
 	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, map[string]bool{"enabled": enabled}, opts)
 	if err == nil {

@@ -447,19 +447,14 @@ func (u UserTerminalKey) GetReferenceObject() string {
 
 // ComposedWithNetwork reports whether the session was composed with the
 // network feature: only such a session has internet access to cut or restore.
-// ComposedFeatures is the composer's JSON object (`{"network":true}`); a list
-// of feature names is read too.
+// ComposedFeatures is the composer's JSON object (`{"network":true}`).
 func (t Terminal) ComposedWithNetwork() bool {
 	if t.ComposedFeatures == "" {
 		return false
 	}
 	var features map[string]bool
-	if json.Unmarshal([]byte(t.ComposedFeatures), &features) == nil {
-		return features["network"]
+	if json.Unmarshal([]byte(t.ComposedFeatures), &features) != nil {
+		return false
 	}
-	var names []string
-	if json.Unmarshal([]byte(t.ComposedFeatures), &names) == nil {
-		return slices.Contains(names, "network")
-	}
-	return false
+	return features["network"]
 }
