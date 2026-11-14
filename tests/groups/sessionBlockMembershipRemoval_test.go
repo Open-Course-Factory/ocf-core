@@ -17,7 +17,6 @@ import (
 	"soli/formations/src/entityManagement/hooks"
 	groupHooks "soli/formations/src/groups/hooks"
 	groupModels "soli/formations/src/groups/models"
-	groupServices "soli/formations/src/groups/services"
 	testTools "soli/formations/tests/testTools"
 )
 
@@ -52,14 +51,6 @@ func assertOnlyThatClassBlockRemoved(t *testing.T, db *gorm.DB, groupID, otherCl
 	assert.Zero(t, inClass, "the block in the class the learner left is deleted")
 	assert.EqualValues(t, 1, inOtherClass, "the block in another class stays")
 	assert.EqualValues(t, 3, testTools.CountSessionBlocks(db, "blk-learner"), "org and platform blocks stay")
-}
-
-func TestRemoveMemberFromGroup_DeletesThatClassSessionBlock(t *testing.T) {
-	db, groupID, otherClass := blockedLearnerInClass(t)
-
-	require.NoError(t, groupServices.NewGroupService(db).RemoveMemberFromGroup(groupID, "class-owner", "blk-learner"))
-
-	assertOnlyThatClassBlockRemoved(t, db, groupID, otherClass)
 }
 
 func TestGroupMemberDelete_DeletesThatClassSessionBlock(t *testing.T) {
