@@ -5,32 +5,18 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"soli/formations/src/terminalTrainer/models"
 )
 
-// CreateSessionBlocksTable creates session_blocks the way the tests know it,
-// written by hand so a test package can seed and count blocks without
-// depending on the model. Keep it aligned with terminalTrainer/models.SessionBlock:
-// one row per (user, scope type, scope id); scope_id is NULL for a global block,
-// so a partial index keeps one global block per user, as
-// models.MigrateSessionBlockGlobalIndex does in production.
+// CreateSessionBlocksTable creates session_blocks with the production schema:
+// the model's AutoMigrate, then the partial index that keeps one global block
+// per user.
 func CreateSessionBlocksTable(db *gorm.DB) error {
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS session_blocks (
-		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL,
-		scope_type TEXT NOT NULL,
-		scope_id TEXT,
-		reason TEXT,
-		blocked_by TEXT,
-		created_at DATETIME
-	)`).Error; err != nil {
+	if err := db.AutoMigrate(&models.SessionBlock{}); err != nil {
 		return err
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_session_blocks_user_scope
-		ON session_blocks (user_id, scope_type, scope_id)`).Error; err != nil {
-		return err
-	}
-	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_session_blocks_user_global
-		ON session_blocks (user_id) WHERE scope_type = 'global'`).Error
+	return models.MigrateSessionBlockGlobalIndex(db)
 }
 
 // SeedSessionBlock records a block on userID. scopeType is "group", "org" or
