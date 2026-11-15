@@ -3,8 +3,11 @@ package casdoor
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"soli/formations/src/auth/interfaces"
+
+	"time"
 
 	"github.com/casbin/casbin/v3"
 	"github.com/casbin/casbin/v3/persist"
@@ -16,6 +19,10 @@ import (
 )
 
 var JwtPublicKey string
+
+// HTTPTimeout bounds every Casdoor SDK call: the SDK's default client has none,
+// so an unresponsive Casdoor would otherwise hold a request forever.
+var HTTPTimeout = 10 * time.Second
 
 var Enforcer interfaces.EnforcerInterface
 
@@ -39,6 +46,7 @@ func InitCasdoorConnection(basePath string, fileName string) {
 	JwtPublicKey := string(b)
 
 	casdoorsdk.InitConfig(casdoorEndPoint, casdoorClientId, casdoorClientsecret, JwtPublicKey, casdoorOrganizationName, casdoorApplicationName)
+	casdoorsdk.SetHttpClient(&http.Client{Timeout: HTTPTimeout})
 }
 
 func InitCasdoorEnforcer(db *gorm.DB, basePath string) {

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+
+	"soli/formations/src/utils"
 )
 
 // Identity is a learner's name and email as a trainer sees them.
@@ -64,7 +66,7 @@ func LookupUsers(ids []string) map[string]Identity {
 		out[id] = e.identity
 		if !now.Before(e.expiresAt) && !e.refreshing {
 			e.refreshing = true
-			go refresh(fetchUser, id)
+			go refresh(fetchUser, id, e)
 		}
 	}
 	mu.Unlock()
@@ -75,7 +77,7 @@ func LookupUsers(ids []string) map[string]Identity {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			fetched[i] = fetch(fetchUser, id)
+			fetched[i], _ = fetch(fetchUser, id)
 		}()
 	}
 	wg.Wait()
@@ -93,35 +95,44 @@ func LookupUsers(ids []string) map[string]Identity {
 	return out
 }
 
-// refresh re-fetches an expired entry; on failure the stale identity stays.
-func refresh(fetchUser func(string) (*casdoorsdk.User, error), id string) {
-	got := fetch(fetchUser, id)
+// refresh re-fetches the expired entry e. A user Casdoor no longer knows is
+// evicted; on an error the stale identity stays.
+func refresh(fetchUser func(string) (*casdoorsdk.User, error), id string, e *entry) {
+	got, err := fetch(fetchUser, id)
 	mu.Lock()
 	defer mu.Unlock()
-	e, ok := cache[id]
-	if !ok {
-		return // dropped by Reset meanwhile
+	if cache[id] != e {
+		return // dropped by Reset or replaced by a newer entry meanwhile
 	}
 	e.refreshing = false
-	if got != nil {
+	switch {
+	case got != nil:
 		e.identity = *got
 		e.expiresAt = Now().Add(TTL)
+	case err == nil:
+		delete(cache, id) // deleted user
 	}
 }
 
-// fetch makes one bounded Casdoor call; nil means no identity.
-func fetch(fetchUser func(string) (*casdoorsdk.User, error), id string) *Identity {
+// fetch makes one bounded Casdoor call. (nil, nil) means Casdoor has no such
+// user; (nil, err) means the lookup failed.
+func fetch(fetchUser func(string) (*casdoorsdk.User, error), id string) (*Identity, error) {
 	slots <- struct{}{}
 	defer func() { <-slots }()
 	user, err := fetchUser(id)
-	if err != nil || user == nil {
-		return nil
+	if err != nil {
+		utils.Debug("Failed to fetch user %s from Casdoor: %v", id, err)
+		return nil, err
+	}
+	if user == nil {
+		utils.Debug("Casdoor has no user %s", id)
+		return nil, nil
 	}
 	name := user.DisplayName
 	if name == "" {
 		name = user.Name
 	}
-	return &Identity{Name: name, Email: user.Email}
+	return &Identity{Name: name, Email: user.Email}, nil
 }
 
 // Reset drops every cached entry.
