@@ -15,13 +15,13 @@ package terminalTrainer_tests
 // Bug B — the response carries no learner identity, only the raw user_id, so a
 // tile cannot show who it belongs to. The fix must enrich each session with the
 // learner's display name and email (JSON user_name / user_email), resolved via
-// the existing swappable Casdoor seam services.LookupCasdoorUserForOrgUsage —
+// the shared identity lookup (swappable seam identity.FetchUser) —
 // and MUST NOT drop a session when that resolver errors (the wall must not go
 // blank because Casdoor hiccuped).
 //
 // SEAM CONTRACT pinned for backend-dev (assumed by the Bug B tests):
 //   - ListGroupSupervisionSessions enriches each returned session by calling
-//     services.LookupCasdoorUserForOrgUsage(userID) per unique learner id.
+//     identity.LookupUsers (seam identity.FetchUser), once per unique learner id.
 //   - The value it returns serialises to JSON with fields "user_name" and
 //     "user_email" (e.g. a response struct embedding terminalModels.Terminal
 //     plus UserName/UserEmail, OR transient fields on the row — the tests pin
@@ -44,9 +44,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"soli/formations/src/auth/identity"
 	groupModels "soli/formations/src/groups/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
-	"soli/formations/src/terminalTrainer/services"
 )
 
 // seedWallGroup creates an active class-group owned by "wall-owner" with the
@@ -127,14 +127,15 @@ func TestSupervisionWall_CarriesLearnerNameAndEmail(t *testing.T) {
 	_, err := createTestTerminal(db, "learner-A", "active", time.Now().Add(time.Hour))
 	require.NoError(t, err)
 
-	original := services.LookupCasdoorUserForOrgUsage
-	services.LookupCasdoorUserForOrgUsage = func(id string) (*casdoorsdk.User, error) {
+	original := identity.FetchUser
+	identity.Reset()
+	identity.FetchUser = func(id string) (*casdoorsdk.User, error) {
 		if id == "learner-A" {
 			return &casdoorsdk.User{Id: "learner-A", DisplayName: "Alice Liddell", Email: "alice@example.com"}, nil
 		}
 		return nil, fmt.Errorf("user not found")
 	}
-	t.Cleanup(func() { services.LookupCasdoorUserForOrgUsage = original })
+	t.Cleanup(func() { identity.FetchUser = original; identity.Reset() })
 
 	sessions, ok := terminalController.ListGroupSupervisionSessions(db, group.ID.String(), "admin", true)
 	require.True(t, ok)
@@ -161,11 +162,12 @@ func TestSupervisionWall_ResolverError_SessionStillListed(t *testing.T) {
 	term, err := createTestTerminal(db, "learner-A", "active", time.Now().Add(time.Hour))
 	require.NoError(t, err)
 
-	original := services.LookupCasdoorUserForOrgUsage
-	services.LookupCasdoorUserForOrgUsage = func(id string) (*casdoorsdk.User, error) {
+	original := identity.FetchUser
+	identity.Reset()
+	identity.FetchUser = func(id string) (*casdoorsdk.User, error) {
 		return nil, fmt.Errorf("casdoor unreachable")
 	}
-	t.Cleanup(func() { services.LookupCasdoorUserForOrgUsage = original })
+	t.Cleanup(func() { identity.FetchUser = original; identity.Reset() })
 
 	sessions, ok := terminalController.ListGroupSupervisionSessions(db, group.ID.String(), "admin", true)
 	require.True(t, ok)

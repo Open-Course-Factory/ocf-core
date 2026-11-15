@@ -92,7 +92,7 @@ func ListParticipantControls(db *gorm.DB, groupID, callerUserID string, isAdmin 
 		sessionsByUser[t.UserID] = append(sessionsByUser[t.UserID], view)
 	}
 
-	identityOf := newIdentityResolver()
+	identityOf := newIdentityResolver(memberIDs)
 	rows = make([]dto.ParticipantControlsRow, 0, len(members))
 	for _, m := range members {
 		userID := m.UserID

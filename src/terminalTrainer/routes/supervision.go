@@ -23,10 +23,10 @@ import (
 
 	auditModels "soli/formations/src/audit/models"
 	auditServices "soli/formations/src/audit/services"
+	"soli/formations/src/auth/identity"
 	groupModels "soli/formations/src/groups/models"
 	paymentModels "soli/formations/src/payment/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
-	"soli/formations/src/terminalTrainer/services"
 )
 
 // HasSupervisionAccess decides whether callerUserID may supervise the learner who
@@ -226,8 +226,8 @@ type SupervisionSession struct {
 // state still 'running' but their tt-backend session long gone — never render as
 // dead, unsupervisable tiles.
 //
-// Each session is enriched with the learner's display name/email via the swappable
-// services.LookupCasdoorUserForOrgUsage seam, resolved once per unique learner id.
+// Each session is enriched with the learner's display name/email, resolved in one
+// batch through the shared, cached identity lookup (src/auth/identity).
 // A resolver error leaves the session listed with an empty name — identity is a
 // display nicety, not a gate.
 func ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isAdmin bool) (sessions []SupervisionSession, ok bool) {
@@ -241,7 +241,11 @@ func ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isA
 		return nil, false
 	}
 
-	identityOf := newIdentityResolver()
+	userIDs := make([]string, 0, len(terminals))
+	for _, t := range terminals {
+		userIDs = append(userIDs, t.UserID)
+	}
+	identityOf := newIdentityResolver(userIDs)
 	out := make([]SupervisionSession, 0, len(terminals))
 	for _, t := range terminals {
 		id := identityOf(t.UserID)
@@ -253,20 +257,13 @@ func ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isA
 // displayIdentity is a learner's name and email as a trainer sees them.
 type displayIdentity struct{ name, email string }
 
-// newIdentityResolver resolves learners' display identities through the
-// swappable services.LookupCasdoorUserForOrgUsage seam, once per user id. A
-// resolver error yields an empty identity — a display nicety, never a gate —
-// cached too, so a known-failing id is not asked again.
-func newIdentityResolver() func(userID string) displayIdentity {
-	cache := make(map[string]displayIdentity)
+// newIdentityResolver resolves the display identities of userIDs in one batch
+// through the shared, cached identity lookup. An id that cannot be resolved
+// yields an empty identity — a display nicety, never a gate.
+func newIdentityResolver(userIDs []string) func(userID string) displayIdentity {
+	found := identity.LookupUsers(userIDs)
 	return func(userID string) displayIdentity {
-		id, seen := cache[userID]
-		if !seen {
-			if user, err := services.LookupCasdoorUserForOrgUsage(userID); err == nil && user != nil {
-				id = displayIdentity{user.DisplayName, user.Email}
-			}
-			cache[userID] = id
-		}
-		return id
+		id := found[userID]
+		return displayIdentity{id.Name, id.Email}
 	}
 }

@@ -40,6 +40,7 @@ import (
 
 	auditModels "soli/formations/src/audit/models"
 	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/identity"
 	"soli/formations/src/auth/mocks"
 	groupModels "soli/formations/src/groups/models"
 	scenarioModels "soli/formations/src/scenarios/models"
@@ -143,14 +144,15 @@ func pcTerminal(t *testing.T, db *gorm.DB, userID string, orgID *uuid.UUID, stat
 	return term.SessionID
 }
 
-// stubPCNames answers the display-name seam the supervision wall uses.
+// stubPCNames answers the shared identity lookup the supervision wall uses.
 func stubPCNames(t *testing.T) {
 	t.Helper()
-	original := services.LookupCasdoorUserForOrgUsage
-	services.LookupCasdoorUserForOrgUsage = func(id string) (*casdoorsdk.User, error) {
+	original := identity.FetchUser
+	identity.Reset()
+	identity.FetchUser = func(id string) (*casdoorsdk.User, error) {
 		return &casdoorsdk.User{Id: id, DisplayName: "Name of " + id, Email: id + "@example.com"}, nil
 	}
-	t.Cleanup(func() { services.LookupCasdoorUserForOrgUsage = original })
+	t.Cleanup(func() { identity.FetchUser = original; identity.Reset() })
 }
 
 // --- Fake tt-backend ---------------------------------------------------------
@@ -665,14 +667,15 @@ func TestParticipantControls_SessionsAreExactlyTheGroupFilterOfUserSessions(t *t
 
 func TestParticipantControls_UserNameIsTheWallName(t *testing.T) {
 	c := newPCClass(t)
-	original := services.LookupCasdoorUserForOrgUsage
-	services.LookupCasdoorUserForOrgUsage = func(id string) (*casdoorsdk.User, error) {
+	original := identity.FetchUser
+	identity.Reset()
+	identity.FetchUser = func(id string) (*casdoorsdk.User, error) {
 		if id == pcLearner {
 			return &casdoorsdk.User{Id: id, DisplayName: "Ada Lovelace", Email: "ada@example.com"}, nil
 		}
 		return nil, fmt.Errorf("unknown user")
 	}
-	t.Cleanup(func() { services.LookupCasdoorUserForOrgUsage = original })
+	t.Cleanup(func() { identity.FetchUser = original; identity.Reset() })
 
 	wall, ok := terminalController.ListGroupSupervisionSessions(c.db, c.group.ID.String(), pcOwner, false)
 	require.True(t, ok)

@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
+	"soli/formations/src/auth/identity"
 	authModels "soli/formations/src/auth/models"
 	groupModels "soli/formations/src/groups/models"
 	paymentModels "soli/formations/src/payment/models"
@@ -93,54 +94,13 @@ type ScenarioAnalytics struct {
 	AvgCompletionTimeSecs *float64 `json:"avg_completion_time_seconds,omitempty"`
 }
 
-// fetchUserMap loads display name and email for a set of user IDs from Casdoor.
-// Returns a map[userID] → {name, email}. Errors are logged, not propagated.
-type userInfo struct {
-	Name  string
-	Email string
-}
+// userInfo is a learner's display name and email.
+type userInfo = identity.Identity
 
-// userCache caches Casdoor user info to avoid N+1 HTTP calls.
-// Each entry expires after 5 minutes.
-var userCache sync.Map
-
-type cachedUser struct {
-	info      userInfo
-	expiresAt time.Time
-}
-
+// fetchUserMap loads display name and email for a set of user IDs through the
+// shared, cached identity lookup. Ids Casdoor cannot resolve are absent.
 func fetchUserMap(userIDs []string) map[string]userInfo {
-	m := make(map[string]userInfo, len(userIDs))
-	var misses []string
-	now := time.Now()
-
-	// Check cache first
-	for _, id := range userIDs {
-		if cached, ok := userCache.Load(id); ok {
-			if cu, ok := cached.(cachedUser); ok && now.Before(cu.expiresAt) {
-				m[id] = cu.info
-				continue
-			}
-		}
-		misses = append(misses, id)
-	}
-
-	// Fetch cache misses individually
-	for _, id := range misses {
-		user, err := casdoorsdk.GetUserByUserId(id)
-		if err != nil || user == nil {
-			utils.Debug("Failed to fetch user %s from Casdoor: %v", id, err)
-			continue
-		}
-		name := user.DisplayName
-		if name == "" {
-			name = user.Name
-		}
-		info := userInfo{Name: name, Email: user.Email}
-		m[id] = info
-		userCache.Store(id, cachedUser{info: info, expiresAt: now.Add(5 * time.Minute)})
-	}
-	return m
+	return identity.LookupUsers(userIDs)
 }
 
 // resolveUserIdentities attaches display name and email to a slice of
