@@ -95,7 +95,7 @@ require (
 require (
 	github.com/casbin/casbin/v3 v3.11.0
 	github.com/casbin/gorm-adapter/v3 v3.41.0
-	github.com/casdoor/casdoor-go-sdk v1.56.0
+	github.com/casdoor/casdoor-go-sdk v1.59.0
 	github.com/gertd/go-pluralize v0.2.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-git/go-billy/v5 v5.9.2
