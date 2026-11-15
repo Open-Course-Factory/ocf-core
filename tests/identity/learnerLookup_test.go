@@ -276,6 +276,34 @@ func TestLookupUsers_FailedRefresh_KeepsStaleIdentity(t *testing.T) {
 		identity.LookupUsers([]string{"keep"})["keep"], "a failed refresh keeps the stale identity")
 }
 
+// TestLookupUsers_RefreshFindsNoUser_EvictsEntry: Casdoor answering "no such
+// user" (nil, nil) on a refresh means the account is gone, unlike a transport
+// error (FailedRefresh_KeepsStaleIdentity). The entry is evicted: later
+// lookups never return the deleted user's stale name.
+func TestLookupUsers_RefreshFindsNoUser_EvictsEntry(t *testing.T) {
+	fake, clock := setup(t)
+	require.Equal(t, "Name of gone", identity.LookupUsers([]string{"gone", "kept"})["gone"].Name)
+
+	fake.setReply(func(id string) (*casdoorsdk.User, error) {
+		if id == "gone" {
+			return nil, nil
+		}
+		return named(id)
+	})
+	clock.advance(6 * time.Minute)
+	identity.LookupUsers([]string{"gone", "kept"}) // stale answer allowed; triggers the refresh
+
+	require.Eventually(t, func() bool {
+		_, present := identity.LookupUsers([]string{"gone"})["gone"]
+		return !present
+	}, 2*time.Second, 10*time.Millisecond, "a user Casdoor no longer knows is evicted, not served stale")
+	time.Sleep(50 * time.Millisecond)
+
+	got := identity.LookupUsers([]string{"gone", "kept"})
+	assert.NotContains(t, got, "gone", "the deleted user stays out of later lookups")
+	assert.Equal(t, "Name of kept", got["kept"].Name, "other entries are untouched")
+}
+
 // TestLookupUsers_EmptyDisplayName_FallsBackToLoginName pins the name rule both
 // former implementations are unified on (live progress already had it).
 func TestLookupUsers_EmptyDisplayName_FallsBackToLoginName(t *testing.T) {
