@@ -11,12 +11,16 @@ package groups_tests
 
 import (
 	"testing"
+	"time"
 
 	"soli/formations/src/auth/casdoor"
 	authMocks "soli/formations/src/auth/mocks"
 	"soli/formations/src/entityManagement/hooks"
 	groupHooks "soli/formations/src/groups/hooks"
 	groupModels "soli/formations/src/groups/models"
+	groupServices "soli/formations/src/groups/services"
+	scenarioHooks "soli/formations/src/scenarios/hooks"
+	scenarioModels "soli/formations/src/scenarios/models"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -123,4 +127,140 @@ func TestGroupMemberHooks_ActiveManagerChangesRole_Allowed(t *testing.T) {
 func TestGroupMemberHooks_DeactivatedManagerChangesRole_Rejected(t *testing.T) {
 	require.Error(t, runChangeRoleAsManager(t, false),
 		"a deactivated class manager must not change roles in the class")
+}
+
+// The same rule reaches every caller of the membership lookup: editing the
+// class itself and managing its scenario assignments.
+
+func editClassAs(db *gorm.DB, groupID uuid.UUID, userID string) error {
+	return groupHooks.NewGroupWriteAuthorizationHook(db).Execute(&hooks.HookContext{
+		EntityName: "ClassGroup",
+		HookType:   hooks.BeforeUpdate,
+		EntityID:   groupID,
+		UserID:     userID,
+		UserRoles:  platformMember,
+	})
+}
+
+func deactivateGroupRow(t *testing.T, db *gorm.DB, groupID uuid.UUID, userID string) {
+	t.Helper()
+	require.NoError(t, db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ?", groupID, userID).
+		Update("is_active", false).Error)
+}
+
+func TestGroupWriteAuthorization_DeactivatedManagerEditsClass_Rejected(t *testing.T) {
+	db, groupID := seedManagedClass(t, true)
+	require.NoError(t, editClassAs(db, groupID, inactiveCaseManager), "control: an active manager edits the class")
+
+	deactivateGroupRow(t, db, groupID, inactiveCaseManager)
+	require.Error(t, editClassAs(db, groupID, inactiveCaseManager),
+		"a deactivated class manager must not edit the class")
+}
+
+func TestScenarioAssignmentAuthorization_DeactivatedManager_Rejected(t *testing.T) {
+	db, groupID := seedManagedClass(t, true)
+	svc := groupServices.NewGroupService(db)
+	assignment := &scenarioModels.ScenarioAssignment{GroupID: &groupID}
+
+	ok, err := scenarioHooks.CanManageAssignment(db, svc, assignment, inactiveCaseManager)
+	require.NoError(t, err)
+	require.True(t, ok, "control: an active manager manages the class's assignments")
+
+	deactivateGroupRow(t, db, groupID, inactiveCaseManager)
+	ok, err = scenarioHooks.CanManageAssignment(db, svc, assignment, inactiveCaseManager)
+	require.NoError(t, err)
+	require.False(t, ok, "a deactivated class manager must not manage the class's assignments")
+}
+
+func TestGroupWriteAuthorization_CreatorWithDeactivatedRow_StillManages(t *testing.T) {
+	db, groupID := seedManagedClass(t, true)
+	deactivateGroupRow(t, db, groupID, inactiveCaseOwner)
+	require.NoError(t, editClassAs(db, groupID, inactiveCaseOwner),
+		"the class creator manages the class whatever their member row says")
+}
+
+func TestGroupWriteAuthorization_OrgManagerWithoutGroupRow_StillManages(t *testing.T) {
+	orig := casdoor.Enforcer
+	casdoor.Enforcer = authMocks.NewMockEnforcer()
+	t.Cleanup(func() { casdoor.Enforcer = orig })
+
+	db := newGroupRoleCapDB(t)
+	orgID := seedOrgManager(t, db, "org-manager")
+	groupID := seedGroupRoleCap(t, db, inactiveCaseOwner, &orgID, map[string]groupModels.GroupMemberRole{
+		inactiveCaseOwner: groupModels.GroupMemberRoleOwner,
+	})
+	require.NoError(t, editClassAs(db, groupID, "org-manager"),
+		"an organization manager manages the class through the organization")
+}
+
+// A re-added member holds an old deactivated row and a new active one; only
+// the active row counts, whichever row the database returns first.
+func TestGroupService_ReaddedMember_ActiveRowRoleWins(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		oldRole, newRole groupModels.GroupMemberRole
+		wantManage       bool
+	}{
+		{"demoted on return", groupModels.GroupMemberRoleManager, groupModels.GroupMemberRoleMember, false},
+		{"promoted on return", groupModels.GroupMemberRoleMember, groupModels.GroupMemberRoleManager, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newGroupRoleCapDB(t)
+			groupID := seedGroupRoleCap(t, db, inactiveCaseOwner, nil, map[string]groupModels.GroupMemberRole{
+				"returning": tc.oldRole,
+			})
+			deactivateGroupRow(t, db, groupID, "returning")
+			require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+				GroupID: groupID, UserID: "returning", Role: tc.newRole, JoinedAt: time.Now(), IsActive: true,
+			}).Error)
+
+			svc := groupServices.NewGroupService(db)
+			inGroup, err := svc.IsUserInGroup(groupID, "returning")
+			require.NoError(t, err)
+			require.True(t, inGroup)
+			role, err := svc.GetUserGroupRole(groupID, "returning")
+			require.NoError(t, err)
+			require.Equal(t, tc.newRole, role)
+			canManage, err := svc.CanUserManageGroup(groupID, "returning")
+			require.NoError(t, err)
+			require.Equal(t, tc.wantManage, canManage)
+		})
+	}
+}
+
+// UpdateMemberRole has no HTTP caller (PATCH /group-members/:id goes through
+// GroupMemberRoleChangeHook on the loaded row); a deactivated target reads as
+// "not a member".
+func TestGroupServiceUpdateMemberRole_DeactivatedTarget_NotAMember(t *testing.T) {
+	db, groupID := seedManagedClass(t, true)
+	deactivateGroupRow(t, db, groupID, inactiveCaseMember)
+	err := groupServices.NewGroupService(db).UpdateMemberRole(groupID, inactiveCaseOwner, inactiveCaseMember, groupModels.GroupMemberRoleManager)
+	require.ErrorContains(t, err, "not a member")
+}
+
+func TestGroupMemberValidation_ReaddDeactivatedMember_OneActiveRow(t *testing.T) {
+	db, groupID := seedManagedClass(t, true)
+	deactivateGroupRow(t, db, groupID, inactiveCaseMember)
+
+	readd := func() error {
+		return groupHooks.NewGroupMemberValidationHook(db).Execute(&hooks.HookContext{
+			EntityName: "GroupMember",
+			HookType:   hooks.BeforeCreate,
+			NewEntity:  &groupModels.GroupMember{GroupID: groupID, UserID: inactiveCaseMember, Role: groupModels.GroupMemberRoleMember},
+			UserID:     inactiveCaseOwner,
+			UserRoles:  platformMember,
+		})
+	}
+	require.NoError(t, readd(), "a deactivated member may be added back")
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: inactiveCaseMember, Role: groupModels.GroupMemberRoleMember, JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+	require.Error(t, readd(), "once back, a second add is refused as already a member")
+
+	var active int64
+	require.NoError(t, db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ? AND is_active = ?", groupID, inactiveCaseMember, true).
+		Count(&active).Error)
+	require.EqualValues(t, 1, active)
 }
