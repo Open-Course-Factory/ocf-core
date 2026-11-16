@@ -138,23 +138,27 @@ func ids(prefix string, n int) []string {
 
 // TestLookupUsers_ColdClass_FetchesConcurrentlyWithinPool is the production
 // slowness: a cold class of 40 learners at 50 ms per Casdoor call took 2 s
-// sequentially. Concurrent fetches bring it under 10 calls' worth, and the pool
+// sequentially. Misses are fetched concurrently, filling the pool, and the pool
 // never sends Casdoor more than MaxConcurrentFetches requests at once.
 func TestLookupUsers_ColdClass_FetchesConcurrentlyWithinPool(t *testing.T) {
 	fake, _ := setup(t)
+	// Calls are held until the pool has filled once, so the observed peak does not
+	// depend on runner speed; the shared deadline keeps a sequential lookup from hanging.
+	// The 50 ms Casdoor call then gives an unbounded pool time to exceed the bound.
+	deadline := time.Now().Add(2 * time.Second)
 	fake.setReply(func(id string) (*casdoorsdk.User, error) {
+		for fake.MaxInFlightValue() < identity.MaxConcurrentFetches && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
 		time.Sleep(50 * time.Millisecond)
 		return named(id)
 	})
 	class := ids("cold", 40)
 
-	start := time.Now()
 	got := identity.LookupUsers(class)
-	elapsed := time.Since(start)
 
-	assert.Less(t, elapsed, 10*50*time.Millisecond, "40 lookups at 50 ms each must run concurrently")
 	assert.LessOrEqual(t, fake.MaxInFlightValue(), identity.MaxConcurrentFetches, "the pool bounds concurrent Casdoor calls")
-	assert.Greater(t, fake.MaxInFlightValue(), 1, "misses must be fetched concurrently, not one by one")
+	assert.Equal(t, identity.MaxConcurrentFetches, fake.MaxInFlightValue(), "misses must be fetched concurrently, filling the pool")
 	require.Len(t, got, 40)
 	for _, id := range class {
 		assert.Equal(t, identity.Identity{Name: "Name of " + id, Email: id + "@example.com"}, got[id])
