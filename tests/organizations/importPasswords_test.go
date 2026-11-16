@@ -8,16 +8,20 @@
 package organizations_tests
 
 import (
+	"bytes"
 	"errors"
+	"mime/multipart"
 	"slices"
 	"testing"
 
+	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func columnsMention(columns [][]string, name string) bool {
@@ -107,7 +111,7 @@ func TestCsvImport_UpdateExisting_AccountOutsideTheOrganizationIsUntouched(t *te
 	assert.False(t, identity.users["outsider"].EmailVerified)
 	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "outsider"), "the account is not enrolled")
 	assert.Equal(t, 0, resp.Summary.UsersUpdated)
-	assert.True(t, len(resp.Errors) > 0 || resp.Summary.UsersSkipped == 1, "the row is reported, errors=%+v summary=%+v", resp.Errors, resp.Summary)
+	assert.NotEmpty(t, resp.Errors, "the row is reported")
 }
 
 func TestCsvImport_UpdateExisting_ActiveMemberIsStillUpdated(t *testing.T) {
@@ -371,4 +375,51 @@ func TestCsvImport_UpdateExisting_PlatformAdministratorImporterUpdatesAnAdminist
 	assert.Equal(t, "Ada", identity.users["admin-2"].FirstName)
 	assert.Equal(t, 1, updated)
 	assert.Equal(t, 0, errs)
+}
+
+func csvFile(t *testing.T, field, content string) *multipart.FileHeader {
+	t.Helper()
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	part, err := w.CreateFormFile(field, field+".csv")
+	require.NoError(t, err)
+	_, err = part.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	form, err := multipart.NewReader(&body, w.Boundary()).ReadForm(1 << 20)
+	require.NoError(t, err)
+	return form.File[field][0]
+}
+
+func groupMemberRows(t *testing.T, db *gorm.DB, userID string) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Model(&groupModels.GroupMember{}).Where("user_id = ?", userID).Count(&n).Error)
+	return n
+}
+
+// A refused row must not reach a group through a memberships.csv row naming
+// it for a group created in the same import. student-a, a member, is the
+// control that the membership path runs.
+func TestCsvImport_UpdateExisting_RefusedAccountJoinsNoGroup(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	// SQLite cannot bind the jsonb Metadata map that a created class carries.
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("test:omit_metadata", func(tx *gorm.DB) {
+		tx.Statement.Omits = append(tx.Statement.Omits, "Metadata")
+	}))
+	identity := newFakeIdentity("outsider", "student-a")
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+
+	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity)).ImportOrganizationData(orgID, "owner-1",
+		usersCSV(t, "outsider@example.com,Ada,Lovelace,member\nstudent-a@example.com,Grace,Hopper,member\n"),
+		csvFile(t, "groups", "group_name,display_name\nclass-b,Class B\n"),
+		csvFile(t, "memberships", "user_email,group_name,role\noutsider@example.com,class-b,member\nstudent-a@example.com,class-b,member\n"),
+		false, true, "", true)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(0), groupMemberRows(t, db, "outsider"), "the refused account joins no group")
+	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "outsider"), "the refused account is not enrolled")
+	assert.Equal(t, int64(1), groupMemberRows(t, db, "student-a"), "the member's row still reaches the group, errors=%+v", resp.Errors)
 }
