@@ -297,9 +297,13 @@ func (s *EntityRegistrationService) MemberWritesWithoutBeforeHook() []string {
 		if config == nil {
 			continue // no SwaggerConfig, no generic CRUD route mounted
 		}
+		// A member's generic create grants them PATCH and DELETE on that row
+		// (AddDefaultAccessesForEntity), whatever the declared roles say.
+		memberCreates := config.Create != nil && (!config.Create.Security || memberHasMethod(roles, "POST"))
 		for _, route := range memberWriteRoutes {
 			op := route.operation(config)
-			if op == nil || (op.Security && !memberHasMethod(roles, route.method)) {
+			creatorGranted := memberCreates && route.method != "POST"
+			if op == nil || (op.Security && !creatorGranted && !memberHasMethod(roles, route.method)) {
 				continue
 			}
 			if len(hooks.GlobalHookRegistry.GetHooks(name, route.hookType)) == 0 {
