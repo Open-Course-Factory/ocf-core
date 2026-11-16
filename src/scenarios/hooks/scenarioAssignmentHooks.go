@@ -238,28 +238,45 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 		return nil
 	}
 
-	// Get active group member user IDs
-	var memberUserIDs []string
-	if err := h.db.Table("group_members").
+	// Learners only, as ResetGroupScenarioSessions: a manager's or owner's own
+	// run was not given by this assignment.
+	var learnerIDs []string
+	if err := h.db.Model(&groupModels.GroupMember{}).
 		Where("group_id = ? AND is_active = ?", *assignment.GroupID, true).
-		Pluck("user_id", &memberUserIDs).Error; err != nil {
+		Scopes(groupModels.LearnerRoleScope("group_members")).
+		Pluck("user_id", &learnerIDs).Error; err != nil {
 		slog.Warn("AfterDelete: failed to load group members",
 			"group_id", assignment.GroupID,
 			"error", err)
 		return nil
 	}
 
+	// A learner the scenario still reaches (another assignment, the public
+	// catalogue) keeps their run: the same answer a launch would get.
+	var memberUserIDs []string
+	for _, userID := range learnerIDs {
+		stillReached, err := scenarioServices.CheckScenarioAccess(h.db, userID, assignment.ScenarioID)
+		if err != nil {
+			slog.Warn("AfterDelete: failed to check scenario access", "user_id", userID, "error", err)
+			continue // keep the run rather than abandon it on a guess
+		}
+		if !stillReached {
+			memberUserIDs = append(memberUserIDs, userID)
+		}
+	}
+
 	if len(memberUserIDs) == 0 {
 		return nil
 	}
 
-	// Abandon every session these users could still resume on this scenario.
+	// Abandon every session these users could still resume on this scenario,
+	// previews aside (an author's own test run, not given by the assignment).
 	// The status list is models.OpenSessionStatuses; leaving any of
 	// them behind hands the learner a session for a scenario they are no
 	// longer assigned to, and for 'provisioning' the unique partial index
 	// then blocks a fresh start as well.
-	runs, err := scenarioServices.AbandonOpenRuns(h.db, "user_id IN ? AND scenario_id = ?",
-		memberUserIDs, assignment.ScenarioID)
+	runs, err := scenarioServices.AbandonOpenRuns(h.db, "user_id IN ? AND scenario_id = ? AND is_preview = ?",
+		memberUserIDs, assignment.ScenarioID, false)
 	if err != nil {
 		slog.Warn("AfterDelete: failed to abandon sessions",
 			"group_id", assignment.GroupID,
