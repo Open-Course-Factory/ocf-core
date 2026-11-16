@@ -9,6 +9,7 @@
 package scenarios_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,7 +24,9 @@ import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
+	"soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 )
 
@@ -183,4 +186,109 @@ func TestDeleteScenarioAssignment_ViaGenericRoute_DeletesTerminalsOfAbandonedRun
 		"the abandoned run's terminal must be marked deleted, so it stops counting against the budget")
 	assert.Equal(t, terminalModels.StateRunning, terminalState(t, db, "term-finished"))
 	assert.Equal(t, terminalModels.StateRunning, terminalState(t, db, "term-outsider"))
+}
+
+// A failed org delete rolls the abandon back, so no terminal may be released:
+// the runs are still open and their learners still on them.
+func TestOrgDeleteScenario_TransactionFails_ReleasesNoTerminal(t *testing.T) {
+	srv, rec := newPersistenceTTBackend(t)
+	configureTTServerForPersistence(t, srv.URL)
+	db := freshTestDB(t)
+	f := seedScenarioDeleteFixture(t, db, "org-manager")
+
+	const failDelete = "test:fail_scenario_delete"
+	require.NoError(t, db.Callback().Delete().Before("gorm:delete").Register(failDelete, func(tx *gorm.DB) {
+		if tx.Statement.Table == "scenarios" {
+			_ = tx.AddError(errors.New("simulated scenario delete failure"))
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Delete().Remove(failDelete) })
+
+	router := setupOrgTestRouterWithUserAndRoles(t, db, "org-manager", []string{"Member"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodDelete,
+		"/api/v1/organizations/"+f.orgID.String()+"/scenarios/"+f.scenarioID.String(), nil))
+	require.Equal(t, http.StatusInternalServerError, w.Code, "body: %s", w.Body.String())
+
+	assert.Equal(t, "active", sessionStatus(t, db, f.openRun), "the abandon must roll back with the delete")
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	assert.Empty(t, rec.deleted, "nothing was committed, so no terminal may be released")
+	assert.Equal(t, terminalModels.StateRunning, terminalState(t, db, "term-open"))
+}
+
+// seedLearnerOnTrialPlan gives the learner a plan, which a bulk start resolves
+// before it builds the learner's container.
+func seedLearnerOnTrialPlan(t *testing.T, db *gorm.DB, userID string) {
+	t.Helper()
+	plan := paymentModels.SubscriptionPlan{Name: userID + "-plan", IsActive: true, MaxSessionDurationMinutes: 240}
+	require.NoError(t, db.Create(&plan).Error)
+	require.NoError(t, db.Create(&paymentModels.UserSubscription{
+		UserID: userID, SubscriptionPlanID: plan.ID, Status: "active",
+		CurrentPeriodStart: time.Now().Add(-24 * time.Hour), CurrentPeriodEnd: time.Now().Add(30 * 24 * time.Hour),
+	}).Error)
+}
+
+// Restarting a class replaces each learner's open run: the replaced run's
+// terminal must go, the way the learner's own abandon destroys it, while the
+// new run's terminal and a finished run's are kept.
+func TestBulkStartScenario_ReplacedRun_DeletesItsTerminal(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := models.Scenario{Name: "replace-term", Title: "Replace Term", InstanceType: "xs", CreatedByID: "c1"}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Step", TextContent: "content"}).Error)
+	groupID := createClassGroup(t, db, "replace-term-class", "trainer", nil).ID
+	const learner = "replace-term-s1"
+	addGroupMember(t, db, groupID, learner, groupModels.GroupMemberRoleMember)
+	seedLearnerOnTrialPlan(t, db, learner)
+	finishedRun := seedBulkRun(t, db, scenario.ID, learner, "completed", "term-replace-done", false)
+	oldRun := seedBulkRun(t, db, scenario.ID, learner, "active", "term-replace-old", false)
+
+	ttMock := newMockTTService()
+	ttMock.addKey(learner)
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	dashSvc := services.NewTeacherDashboardService(db, ttMock, sessionSvc)
+
+	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{Distribution: "Debian", Size: "xs"}, 0, "trainer")
+	require.NoError(t, err)
+	require.Empty(t, result.Errors)
+	require.Equal(t, 1, result.Replaced)
+
+	// Controls: the old run was replaced by a new one on a new terminal.
+	assert.Equal(t, "abandoned", sessionStatus(t, db, oldRun))
+	assert.Equal(t, "completed", sessionStatus(t, db, finishedRun))
+	var newRun models.ScenarioSession
+	require.NoError(t, db.First(&newRun, "user_id = ? AND scenario_id = ? AND status IN ?", learner, scenario.ID, models.OpenSessionStatuses).Error)
+	require.NotNil(t, newRun.TerminalSessionID)
+	assert.Equal(t, "terminal-"+learner, *newRun.TerminalSessionID)
+
+	assert.Equal(t, []string{"term-replace-old"}, ttMock.DeletedSessions(),
+		"the replaced run's terminal must be deleted, and neither the new run's nor a finished run's")
+}
+
+// A class reset abandons the learners' open runs: their terminals must go too,
+// a finished run's is kept.
+func TestResetGroupScenarioSessions_DeletesTerminalsOfAbandonedRuns(t *testing.T) {
+	db := freshTestDB(t)
+	groupID, scenarioID := uuid.New(), uuid.New()
+	for _, learner := range []string{"reset-term-open", "reset-term-done"} {
+		addGroupMember(t, db, groupID, learner, groupModels.GroupMemberRoleMember)
+	}
+	openRun := seedBulkRun(t, db, scenarioID, "reset-term-open", "active", "term-reset-open", false)
+	finishedRun := seedBulkRun(t, db, scenarioID, "reset-term-done", "completed", "term-reset-done", false)
+
+	ttMock := newMockTTService()
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	dashSvc := services.NewTeacherDashboardService(db, ttMock, sessionSvc)
+
+	count, _, err := dashSvc.ResetGroupScenarioSessions(groupID, scenarioID)
+	require.NoError(t, err)
+
+	// Controls: the reset itself happened, and only on the open run.
+	assert.Equal(t, int64(1), count)
+	assert.Equal(t, "abandoned", sessionStatus(t, db, openRun))
+	assert.Equal(t, "completed", sessionStatus(t, db, finishedRun))
+
+	assert.Equal(t, []string{"term-reset-open"}, ttMock.DeletedSessions(),
+		"the reset run's terminal must be deleted, and only it")
 }
