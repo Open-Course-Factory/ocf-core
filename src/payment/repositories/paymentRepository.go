@@ -200,6 +200,11 @@ func (r *paymentRepository) GetPrimaryUserSubscription(userID string) (*models.U
 	return &subscriptions[0], nil
 }
 
+// buyerOwnRowFirst orders the rows of one Stripe customer so the buyer's own subscription comes
+// before the licences that share its customer, then newest first; licence rows stay as a fallback
+// for a buyer who holds no subscription of their own.
+const buyerOwnRowFirst = "CASE WHEN purchaser_user_id IS NULL OR purchaser_user_id = user_id THEN 0 ELSE 1 END, created_at DESC"
+
 // GetActiveSubscriptionByCustomerID deliberately uses the BILLABLE predicate, not
 // the entitling one: it must not return a past_due subscription. Callers that need
 // to find and cure one use GetRecoverableSubscriptionByCustomerID below.
@@ -209,6 +214,7 @@ func (r *paymentRepository) GetActiveSubscriptionByCustomerID(customerID string)
 		Preload("SubscriptionPlan").
 		Scopes(models.ScopeBillable).
 		Where("stripe_customer_id = ?", customerID).
+		Order(buyerOwnRowFirst).
 		First(&subscription).Error
 	if err != nil {
 		return nil, err
@@ -229,6 +235,7 @@ func (r *paymentRepository) GetRecoverableSubscriptionByCustomerID(customerID st
 		Preload("SubscriptionPlan").
 		Scopes(models.ScopeEntitling).
 		Where("stripe_customer_id = ?", customerID).
+		Order(buyerOwnRowFirst).
 		First(&subscription).Error
 	if err != nil {
 		return nil, err
