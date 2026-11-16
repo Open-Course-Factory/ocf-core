@@ -15,9 +15,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -31,8 +33,10 @@ import (
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
 	controller "soli/formations/src/entityManagement/routes"
+	groupModels "soli/formations/src/groups/models"
 	terminalRegistration "soli/formations/src/terminalTrainer/entityRegistration"
 	"soli/formations/src/terminalTrainer/models"
+	terminalController "soli/formations/src/terminalTrainer/routes"
 	testTools "soli/formations/tests/testTools"
 )
 
@@ -167,4 +171,94 @@ func TestTerminalRename_Admin_RenamesAnyTerminal(t *testing.T) {
 
 	assert.Equal(t, http.StatusNoContent, w.Code, "body=%s", w.Body.String())
 	assert.Equal(t, "Renamed by admin", reloadTerminal(t, db, term.ID.String()).Name)
+}
+
+func TestTerminalRename_MissingTerminal_Returns404(t *testing.T) {
+	db := freshTestDB(t)
+	r := terminalRenameRouter(t, db, []string{"owner-1"}, nil)
+
+	w := patchTerminalAs(r, "owner-1", uuid.New().String(), `{"name":"x"}`)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body=%s", w.Body.String())
+}
+
+func TestTerminalRename_SoftDeletedTerminal_Returns404(t *testing.T) {
+	db := freshTestDB(t)
+	r := terminalRenameRouter(t, db, []string{"owner-1"}, nil)
+	term, err := createTestTerminal(db, "owner-1", "running", nil)
+	require.NoError(t, err)
+	require.NoError(t, db.Delete(term).Error)
+
+	w := patchTerminalAs(r, "owner-1", term.ID.String(), `{"name":"x"}`)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body=%s", w.Body.String())
+	var got models.Terminal
+	require.NoError(t, db.Unscoped().First(&got, "id = ?", term.ID).Error)
+	assert.Equal(t, "Test Terminal", got.Name)
+}
+
+// Current contract, not a product decision: the generic PATCH has no length or
+// emptiness validation, so an empty name is stored as is.
+func TestTerminalRename_EmptyName_StoredAsIs(t *testing.T) {
+	db := freshTestDB(t)
+	r := terminalRenameRouter(t, db, []string{"owner-1"}, nil)
+	term, err := createTestTerminal(db, "owner-1", "running", nil)
+	require.NoError(t, err)
+
+	w := patchTerminalAs(r, "owner-1", term.ID.String(), `{"name":""}`)
+
+	assert.Equal(t, http.StatusNoContent, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, "", reloadTerminal(t, db, term.ID.String()).Name)
+}
+
+// Update ownership is owner-only: managing the learner's class (which allows
+// stopping their terminal through the participant routes) does not allow a rename.
+func TestTerminalRename_ClassManager_CannotRenameLearnerTerminal(t *testing.T) {
+	db := freshTestDB(t)
+	r := terminalRenameRouter(t, db, []string{"learner-1", "manager-1"}, nil)
+	g := createTestGroup(t, db, "manager-1")
+	addGroupMember(t, db, g.ID, "learner-1", groupModels.GroupMemberRoleMember)
+	addGroupMember(t, db, g.ID, "manager-1", groupModels.GroupMemberRoleManager)
+	term, err := createTestTerminal(db, "learner-1", "running", nil)
+	require.NoError(t, err)
+
+	w := patchTerminalAs(r, "manager-1", term.ID.String(), `{"name":"by-manager"}`)
+
+	assert.Equal(t, http.StatusForbidden, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, "Test Terminal", reloadTerminal(t, db, term.ID.String()).Name)
+}
+
+// Ended sessions stay in My Sessions history, so they stay renamable.
+func TestTerminalRename_EndedTerminals_CanBeRenamed(t *testing.T) {
+	db := freshTestDB(t)
+	r := terminalRenameRouter(t, db, []string{"owner-1"}, nil)
+	for _, state := range []string{"stopped", "deleted", "revoked"} {
+		term, err := createTestTerminal(db, "owner-1", state, nil)
+		require.NoError(t, err)
+		w := patchTerminalAs(r, "owner-1", term.ID.String(), `{"name":"r-`+state+`"}`)
+		assert.Equal(t, http.StatusNoContent, w.Code, "%s: body=%s", state, w.Body.String())
+		assert.Equal(t, "r-"+state, reloadTerminal(t, db, term.ID.String()).Name)
+	}
+	expired, err := createTestTerminal(db, "owner-1", "running", time.Now().Add(-time.Hour))
+	require.NoError(t, err)
+	w := patchTerminalAs(r, "owner-1", expired.ID.String(), `{"name":"r-expired"}`)
+	assert.Equal(t, http.StatusNoContent, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, "r-expired", reloadTerminal(t, db, expired.ID.String()).Name)
+}
+
+// Member lost POST on /terminals/:id: the single-segment POST routes the front
+// calls must still pass Layer 1 through their own policies.
+func TestTerminalRename_MemberPostRoutes_StillAllowedAtLayer1(t *testing.T) {
+	db := freshTestDB(t)
+	terminalRenameRouter(t, db, nil, nil)
+	terminalController.RegisterTerminalPermissions(casdoor.Enforcer)
+
+	for _, path := range []string{"/api/v1/terminals/start-composed-session", "/api/v1/terminals/sync-all"} {
+		ok, err := casdoor.Enforcer.Enforce(string(authModels.Member), path, http.MethodPost)
+		require.NoError(t, err)
+		assert.True(t, ok, "member POST %s must stay allowed", path)
+	}
+	ok, err := casdoor.Enforcer.Enforce(string(authModels.Member), "/api/v1/terminals", http.MethodPost)
+	require.NoError(t, err)
+	assert.False(t, ok, "the generic create stays closed to members: sessions start through start-composed-session")
 }
