@@ -1,6 +1,7 @@
 package services
 
 import (
+	access "soli/formations/src/auth/access"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"errors"
 	"fmt"
@@ -399,6 +400,7 @@ func (l *terminalLifecycleService) checkGroupOwnerAccess(terminalOwnerUserID, re
 	err := l.db.Table("class_groups").
 		Joins("JOIN group_members ON class_groups.id = group_members.group_id").
 		Where("class_groups.owner_user_id = ?", requestingUserID).
+		Where(access.CreatorAuthorityCondition).
 		Where("group_members.user_id = ?", terminalOwnerUserID).
 		Where("group_members.is_active = ?", true).
 		Scopes(entityManagementModels.NotArchived("class_groups")).
