@@ -8,8 +8,10 @@
 package scenarios_test
 
 import (
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	access "soli/formations/src/auth/access"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
@@ -181,25 +184,99 @@ func TestDeleteScenarioAssignment_OtherClassArchived_Abandons(t *testing.T) {
 	assert.Equal(t, []string{"term-two-class"}, f.deleted())
 }
 
-// Pins current behaviour (unchanged from main): the cleanup only follows class
-// assignments, so removing an organisation-wide one abandons nothing.
-func TestDeleteScenarioAssignment_OrgWide_AbandonsNothing(t *testing.T) {
+// --- organization-wide assignment ------------------------------------------
+
+// Removing an organization-wide assignment cleans up like a class one: it
+// abandons (and releases the terminal of) the non-preview runs of the
+// organization's learners the scenario no longer reaches. "Learner" is the
+// organization role member only, as groupModels.LearnerRoles is member only:
+// teacher ranks at RoleMinimumForClassrooms, i.e. staff who run classes.
+type orgWideOutcome struct {
+	runs    map[string]uuid.UUID
+	deleted []string
+}
+
+func deleteOrgWideAssignment(t *testing.T) (orgWideOutcome, func(user string) string) {
+	t.Helper()
 	srv, rec := newPersistenceTTBackend(t)
 	configureTTServerForPersistence(t, srv.URL)
 	db := freshTestDB(t)
 	orgID := createTestOrg(t, db, "org-owner")
-	addOrgMember(t, db, orgID, "org-manager", orgModels.OrgRoleManager)
-	addOrgMember(t, db, orgID, "org-learner", orgModels.OrgRoleMember)
+	members := map[string]orgModels.OrganizationMemberRole{
+		"org-learner":         orgModels.OrgRoleMember,
+		"org-preview-learner": orgModels.OrgRoleMember,
+		"org-class-learner":   orgModels.OrgRoleMember,
+		"org-teacher":         orgModels.OrganizationMemberRole(access.RoleTeacher),
+		"org-manager":         orgModels.OrgRoleManager,
+		"org-owner":           orgModels.OrgRoleOwner,
+	}
+	for user, role := range members {
+		addOrgMember(t, db, orgID, user, role)
+	}
 	scenario := createTestScenarioForOrg(t, db, orgID, "org-wide")
 	assignment := createScenarioAssignment(t, db, scenario.ID, nil, &orgID, "org")
-	run := seedBulkRun(t, db, scenario.ID, "org-learner", "active", "term-org-learner", true)
+
+	// org-class-learner also has the scenario through a class of the org.
+	class := createTestGroupInOrg(t, db, orgID, "org-owner")
+	addGroupMember(t, db, class, "org-class-learner", groupModels.GroupMemberRoleMember)
+	createScenarioAssignment(t, db, scenario.ID, &class, &orgID, "group")
+
+	// A member of another organization only, with a run on the same scenario.
+	otherOrg := createTestOrg(t, db, "other-owner")
+	addOrgMember(t, db, otherOrg, "other-org-learner", orgModels.OrgRoleMember)
+
+	out := orgWideOutcome{runs: map[string]uuid.UUID{}}
+	for _, user := range append(slices.Collect(maps.Keys(members)), "other-org-learner") {
+		out.runs[user] = seedBulkRun(t, db, scenario.ID, user, "active", "term-"+user, true)
+	}
+	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("id = ?", out.runs["org-preview-learner"]).
+		Update("is_preview", true).Error)
 
 	deleteAssignmentAs(t, db, "org-manager", []string{"member"}, assignment.ID)
 
-	assert.Equal(t, "active", sessionStatus(t, db, run))
 	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	assert.Empty(t, rec.deleted)
+	out.deleted = append([]string(nil), rec.deleted...)
+	rec.mu.Unlock()
+	return out, func(user string) string { return sessionStatus(t, db, out.runs[user]) }
+}
+
+func TestDeleteScenarioAssignment_OrgWide_AbandonsLearnerRunAndReleasesTerminal(t *testing.T) {
+	out, status := deleteOrgWideAssignment(t)
+	assert.Equal(t, "abandoned", status("org-learner"),
+		"a plain organization learner the scenario no longer reaches loses the run")
+	assert.Equal(t, []string{"term-org-learner"}, out.deleted,
+		"only that learner's terminal is released")
+}
+
+func assertOrgWideRunKept(t *testing.T, user string) {
+	t.Helper()
+	out, status := deleteOrgWideAssignment(t)
+	assert.Equal(t, "active", status(user), "%s's run must not be abandoned", user)
+	assert.NotContains(t, out.deleted, "term-"+user, "%s's terminal must not be deleted", user)
+}
+
+func TestDeleteScenarioAssignment_OrgWide_KeepsManagerRun(t *testing.T) {
+	assertOrgWideRunKept(t, "org-manager")
+}
+
+func TestDeleteScenarioAssignment_OrgWide_KeepsOwnerRun(t *testing.T) {
+	assertOrgWideRunKept(t, "org-owner")
+}
+
+func TestDeleteScenarioAssignment_OrgWide_KeepsTeacherRun(t *testing.T) {
+	assertOrgWideRunKept(t, "org-teacher")
+}
+
+func TestDeleteScenarioAssignment_OrgWide_KeepsPreviewRun(t *testing.T) {
+	assertOrgWideRunKept(t, "org-preview-learner")
+}
+
+func TestDeleteScenarioAssignment_OrgWide_KeepsRunReachedThroughClassAssignment(t *testing.T) {
+	assertOrgWideRunKept(t, "org-class-learner")
+}
+
+func TestDeleteScenarioAssignment_OrgWide_LeavesOtherOrganizationUntouched(t *testing.T) {
+	assertOrgWideRunKept(t, "other-org-learner")
 }
 
 // Pins the choice made with the fix: a scenario of the public catalogue
