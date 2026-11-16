@@ -707,25 +707,8 @@ func (tc *terminalController) listOwnSessions(ctx *gin.Context) {
 // listings can never expose different fields.
 func toTerminalOutputs(terminals []models.Terminal) []dto.TerminalOutput {
 	var outputs []dto.TerminalOutput
-	for _, terminal := range terminals {
-		outputs = append(outputs, dto.TerminalOutput{
-			ID:               terminal.ID,
-			SessionID:        terminal.SessionID,
-			UserID:           terminal.UserID,
-			Name:             terminal.Name,
-			State:            terminal.State,
-			PersistenceMode:  terminal.PersistenceMode,
-			IdleUntil:        terminal.IdleUntil,
-			ExpiresAt:        terminal.ExpiresAt,
-			InstanceType:     terminal.InstanceType,
-			MachineSize:      terminal.MachineSize,
-			Backend:          terminal.Backend,
-			OrganizationID:   terminal.OrganizationID,
-			ComposedFeatures: terminal.ComposedFeatures,
-			NetworkDisabled:  terminal.NetworkDisabled,
-			CreatedAt:        terminal.CreatedAt,
-			CountsTowardQuota: terminal.CountsTowardQuota(),
-		})
+	for i := range terminals {
+		outputs = append(outputs, dto.TerminalModelToTerminalOutput(&terminals[i]))
 	}
 	return outputs
 }

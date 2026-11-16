@@ -22,23 +22,7 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[models.Terminal, dto.CreateTerminalInput, dto.UpdateTerminalInput, dto.TerminalOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.Terminal, dto.CreateTerminalInput, dto.UpdateTerminalInput, dto.TerminalOutput]{
 				ModelToDto: func(model *models.Terminal) (dto.TerminalOutput, error) {
-					return dto.TerminalOutput{
-						ID:              model.ID,
-						SessionID:       model.SessionID,
-						UserID:          model.UserID,
-						Name:            model.Name,
-						State:           model.State,
-						PersistenceMode: model.PersistenceMode,
-						IdleUntil:       model.IdleUntil,
-						ExpiresAt:       model.ExpiresAt,
-						InstanceType:    model.InstanceType,
-						MachineSize:     model.MachineSize,
-						Backend:          model.Backend,
-						OrganizationID:   model.OrganizationID,
-						ComposedFeatures: model.ComposedFeatures,
-						CreatedAt:        model.CreatedAt,
-						CountsTowardQuota: model.CountsTowardQuota(),
-					}, nil
+					return dto.TerminalModelToTerminalOutput(model), nil
 				},
 				DtoToModel: func(input dto.CreateTerminalInput) *models.Terminal {
 					return &models.Terminal{

@@ -65,6 +65,29 @@ type TerminalOutput struct {
 	CountsTowardQuota bool `json:"counts_toward_quota"`
 }
 
+// TerminalModelToTerminalOutput is the single Terminal wire mapping, shared by the
+// generic entity routes and the custom session lists so they cannot drift apart.
+func TerminalModelToTerminalOutput(terminal *models.Terminal) TerminalOutput {
+	return TerminalOutput{
+		ID:                terminal.ID,
+		SessionID:         terminal.SessionID,
+		UserID:            terminal.UserID,
+		Name:              terminal.Name,
+		State:             terminal.State,
+		PersistenceMode:   terminal.PersistenceMode,
+		IdleUntil:         terminal.IdleUntil,
+		ExpiresAt:         terminal.ExpiresAt,
+		InstanceType:      terminal.InstanceType,
+		MachineSize:       terminal.MachineSize,
+		Backend:           terminal.Backend,
+		OrganizationID:    terminal.OrganizationID,
+		ComposedFeatures:  terminal.ComposedFeatures,
+		NetworkDisabled:   terminal.NetworkDisabled,
+		CreatedAt:         terminal.CreatedAt,
+		CountsTowardQuota: terminal.CountsTowardQuota(),
+	}
+}
+
 // UserTerminalKey DTOs for generic system
 type CreateUserTerminalKeyInput struct {
 	UserID      string `binding:"required" json:"user_id"`
