@@ -23,6 +23,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"soli/formations/src/auth/dto"
 	registration "soli/formations/src/auth/entityRegistration"
 	"soli/formations/src/auth/mocks"
 	authModels "soli/formations/src/auth/models"
@@ -229,6 +230,9 @@ func TestMySettings_SoftDeletedRow_GetAndPatchStillWork(t *testing.T) {
 	code, body := callMySettings(t, r, http.MethodGet, "soft-deleted-user", "")
 	require.Equal(t, http.StatusOK, code, "GET body: %v", body)
 	assert.Equal(t, "soft-deleted-user", body["user_id"])
+	// Deliberate: the row is restored as it was, so the user gets their old values back.
+	assert.Equal(t, "/dashboard", body["default_landing_page"])
+	assert.Equal(t, "en", body["preferred_language"])
 
 	code, body = callMySettings(t, r, http.MethodPatch, "soft-deleted-user", `{"theme":"dark"}`)
 	require.Equal(t, http.StatusOK, code, "PATCH body: %v", body)
@@ -271,4 +275,51 @@ func TestUserSettings_GenericCreate_UnmountedOrUsesDefaultSettings(t *testing.T)
 	var wantMap map[string]any
 	require.NoError(t, json.Unmarshal(raw, &wantMap))
 	assert.Equal(t, pickDefaults(wantMap), pickDefaults(gotMap))
+}
+
+// Signup over a leftover soft-deleted row must leave the user with a live settings row.
+func TestProvisionNewUser_SoftDeletedSettingsRow_LeavesLiveRow(t *testing.T) {
+	db := setupCurrentUserTestDB(t)
+	row := seedUserSettingsRow(t, db, "returning-user", "/dashboard")
+	require.NoError(t, db.Delete(row).Error)
+
+	t.Setenv("TERMINAL_TRAINER_URL", "") // keep the key-creation step offline
+	authServices.ProvisionNewUser(mocks.NewMockEnforcer(), db, &casdoorsdk.User{Id: "returning-user", EmailVerified: true}, "")
+
+	var live int64
+	require.NoError(t, db.Model(&authModels.UserSettings{}).Where("user_id = ?", "returning-user").Count(&live).Error)
+	assert.Equal(t, int64(1), live)
+}
+
+// A forced password change must stamp password_last_changed even when the
+// user has no live settings row yet.
+func TestForceChangePassword_NoSettingsRow_StampsPasswordLastChanged(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/get-user" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": casdoorsdk.User{
+				Id: "forced-user", Owner: "org", Name: "forced",
+				Properties: map[string]string{"force_password_reset": "true"},
+			}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": "Affected"})
+	}))
+	casdoorsdk.InitConfig(srv.URL, "dummy", "dummy", "dummy", "dummy", "dummy")
+	t.Cleanup(func() {
+		casdoorsdk.InitConfig("http://localhost:0", "dummy", "dummy", "dummy", "dummy", "dummy")
+		srv.Close()
+	})
+	db := setupCurrentUserTestDB(t)
+	prevDB := sqldb.DB
+	sqldb.DB = db
+	t.Cleanup(func() { sqldb.DB = prevDB })
+
+	err := authServices.NewUserSettingsService().ForceChangePassword("forced-user",
+		dto.ForceChangePasswordInput{NewPassword: "N3w-Passw0rd!", ConfirmPassword: "N3w-Passw0rd!"}, "")
+	require.NoError(t, err)
+
+	var stored authModels.UserSettings
+	require.NoError(t, db.Where("user_id = ?", "forced-user").First(&stored).Error, "a settings row must hold the stamp")
+	assert.NotNil(t, stored.PasswordLastChanged)
 }

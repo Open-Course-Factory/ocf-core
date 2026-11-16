@@ -138,7 +138,8 @@ func authEntityRoles() []entityRoleDefinition {
 			routeName:  "user-settings",
 			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
 				memberRoles(): methodRegex(http.MethodGet, http.MethodPatch),
-				adminRoles():  adminFullCRUD(),
+				// No POST: the row is only created by GetOrCreateUserSettings.
+				adminRoles(): methodRegex(http.MethodGet, http.MethodPatch, http.MethodDelete),
 			}},
 		},
 	}
