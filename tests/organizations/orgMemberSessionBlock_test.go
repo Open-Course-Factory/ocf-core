@@ -69,6 +69,7 @@ type obFixture struct {
 
 func newOBFixture(t *testing.T) *obFixture {
 	t.Helper()
+	installMockEnforcer(t) // the target's platform role is read and fails closed without an enforcer
 	obDBSeq++
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:org_session_block_%d?mode=memory&cache=shared", obDBSeq)),
 		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})

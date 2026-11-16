@@ -22,6 +22,8 @@ import (
 	"gorm.io/gorm/clause"
 
 	auditModels "soli/formations/src/audit/models"
+	"soli/formations/src/auth/access"
+	"soli/formations/src/auth/casdoor"
 	auditServices "soli/formations/src/audit/services"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
@@ -139,9 +141,9 @@ func managesOrganization(db *gorm.DB, orgID *uuid.UUID, userID string) (bool, er
 
 // OrgControlScope checks that actor manages the organization orgID (a platform
 // administrator always does) and that targetUserID is a participant of it
-// actor may act on — an active member, below manager and not its owner (a
-// platform administrator may also act on those), never the actor — and
-// returns the organization scope.
+// actor may act on — an active member, below manager, not its owner and not a
+// platform administrator (a platform administrator may also act on those),
+// never the actor — and returns the organization scope.
 func OrgControlScope(db *gorm.DB, orgID uuid.UUID, actor ControlActor, targetUserID string) (ControlScope, error) {
 	if !actor.IsAdmin {
 		var caller orgModels.OrganizationMember
@@ -176,6 +178,17 @@ func OrgControlScope(db *gorm.DB, orgID uuid.UUID, actor ControlActor, targetUse
 	}
 	if !actor.IsAdmin && (member.IsManager() || org.OwnerUserID == targetUserID) {
 		return ControlScope{}, ErrParticipantForbidden
+	}
+	if !actor.IsAdmin {
+		// Same lookup as organizations/services' rank rule (which this package cannot
+		// import: it imports us); fails closed, an unknown role counts as administrator.
+		if casdoor.Enforcer == nil {
+			return ControlScope{}, ErrParticipantForbidden
+		}
+		roles, err := casdoor.Enforcer.GetRolesForUser(targetUserID)
+		if err != nil || access.IsAdmin(roles) {
+			return ControlScope{}, ErrParticipantForbidden
+		}
 	}
 	return ControlScope{Type: models.SessionBlockScopeOrg, ID: &orgID, OrgID: &orgID}, nil
 }

@@ -296,13 +296,13 @@ func TestCsvImport_UpdateExisting_ImporterWithoutMembershipOrAdministratorRoleUp
 	}
 }
 
-// The route admits managers and above only; at service level a member-rank
-// importer is still bound by the same rule: equal rank applies, higher is refused.
-func TestCsvImport_UpdateExisting_MemberRankImporterIsCappedAtMember(t *testing.T) {
+// The route admits managers and above only; at service level the rank rule
+// holds the same line: a member-rank importer reaches no one, not even a peer.
+func TestCsvImport_UpdateExisting_MemberRankImporterUpdatesNoOne(t *testing.T) {
 	identity, updated, errs := importAsUpdate(t, "student-b", models.OrgRoleMember, "student-a", models.OrgRoleMember)
-	assert.Equal(t, "Ada", identity.users["student-a"].FirstName)
-	assert.Equal(t, 1, updated)
-	assert.Equal(t, 0, errs)
+	assert.Equal(t, "Original", identity.users["student-a"].FirstName)
+	assert.Equal(t, 0, updated)
+	assert.Equal(t, 1, errs)
 
 	identity, updated, errs = importAsUpdate(t, "student-b", models.OrgRoleMember, "manager-2", models.OrgRoleManager)
 	assert.Empty(t, identity.columns)

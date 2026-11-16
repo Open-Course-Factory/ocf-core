@@ -450,6 +450,16 @@ func authorizeMemberRank(ctx *hooks.HookContext, db *gorm.DB, member *models.Org
 	return err
 }
 
+// refuseOffboardedRow keeps the generic PATCH and DELETE off an offboarded row,
+// for everyone: the offboarding owns it, reinstate or erase are the ways out.
+// Callers run it after the manage check, so a caller who cannot manage learns nothing.
+func refuseOffboardedRow(member *models.OrganizationMember) error {
+	if member.IsOffboarded() {
+		return entityErrors.NewConflictError("an offboarded member is reinstated or erased, not changed or removed")
+	}
+	return nil
+}
+
 // OrganizationMemberUpdateAuthorizationHook authorizes a role/metadata change on an existing
 // OrganizationMember via the generic PATCH route. It mirrors the create-side
 // OrganizationMemberValidationHook (manage check + role cap) and the delete-side
@@ -490,6 +500,9 @@ func (h *OrganizationMemberUpdateAuthorizationHook) Execute(ctx *hooks.HookConte
 	}
 
 	if err := authorizeMemberWrite(ctx, h.organizationService, current.OrganizationID, "update members of"); err != nil {
+		return err
+	}
+	if err := refuseOffboardedRow(current); err != nil {
 		return err
 	}
 	if err := authorizeMemberRank(ctx, h.db, current, "update members of"); err != nil {
@@ -677,9 +690,8 @@ func (h *OrganizationMemberDeletionHook) Execute(ctx *hooks.HookContext) error {
 		return err
 	}
 
-	// The offboarding owns this row: reinstate or erase it, for everyone.
-	if member.IsOffboarded() {
-		return entityErrors.NewConflictError("an offboarded member is reinstated or erased, not removed")
+	if err := refuseOffboardedRow(member); err != nil {
+		return err
 	}
 
 	// The caller must outrank the member.

@@ -96,7 +96,8 @@ func rankCheckAs(db *gorm.DB, org *organizationModels.Organization, actorID stri
 		if err != nil && !errors.Is(err, ErrMemberNotFound) {
 			return nil, err
 		}
-		if actor != nil {
+		// An inactive (offboarded or deactivated) row grants no reach.
+		if actor != nil && actor.IsActive {
 			actorRole = actor.Role
 		}
 	}
@@ -120,14 +121,16 @@ func rankCheckAs(db *gorm.DB, org *organizationModels.Organization, actorID stri
 	}, nil
 }
 
-// withinReach reports whether a non-owner holding actorRole may act on a member
-// holding targetRole; no membership (empty role) and unknown roles reach no one.
+// withinReach reports whether a non-owner holding actorRole (empty without an
+// active membership) may act on a member holding targetRole; an empty or
+// unknown role reaches no one. The narrow reach also requires a manager, as
+// every caller's own gate does.
 func withinReach(actorRole, targetRole organizationModels.OrganizationMemberRole, reach MemberReach) bool {
-	if actorRole == "" {
+	if !access.IsKnownRole(string(actorRole)) {
 		return false
 	}
 	if reach == ReachPlainMembers {
-		return targetRole == organizationModels.OrgRoleMember
+		return targetRole == organizationModels.OrgRoleMember && access.IsRoleAtLeast(string(actorRole), access.RoleManager)
 	}
 	return access.IsKnownRole(string(targetRole)) &&
 		access.RolePriority(string(actorRole)) > access.RolePriority(string(targetRole))

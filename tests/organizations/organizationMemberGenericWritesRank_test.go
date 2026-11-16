@@ -360,3 +360,28 @@ func TestCheckActorOutranksMember_NarrowReach_OnlyActiveManagersAndOwner(t *test
 		})
 	}
 }
+
+// Under the wide reach (generic member PATCH and DELETE) too, an inactive row grants nothing.
+func TestCheckActorOutranksMember_WideReach_InactiveManagerReachesNoOne(t *testing.T) {
+	for _, inactive := range []bool{false, true} {
+		installMockEnforcer(t)
+		db := newOrgRoleCapDB(t)
+		orgID := seedOrgWithMembers(t, db, "owner-1", map[string]models.OrganizationMemberRole{
+			"owner-1": models.OrgRoleOwner, "actor-manager": models.OrgRoleManager, "target-member": models.OrgRoleMember,
+		})
+		if inactive {
+			require.NoError(t, db.Model(&models.OrganizationMember{}).
+				Where("organization_id = ? AND user_id = ?", orgID, "actor-manager").Update("is_active", false).Error)
+		}
+		var org models.Organization
+		require.NoError(t, db.First(&org, "id = ?", orgID).Error)
+
+		err := services.CheckActorOutranksMember(db, &org, "actor-manager", false, "target-member", services.ReachLowerRoles)
+
+		if inactive {
+			assert.ErrorIs(t, err, services.ErrOutranksCaller, "an inactive manager")
+		} else {
+			assert.NoError(t, err, "an active manager")
+		}
+	}
+}
