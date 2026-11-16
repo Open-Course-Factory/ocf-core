@@ -347,9 +347,14 @@ func (gs *groupService) CanUserManageGroup(groupID uuid.UUID, userID string) (bo
 		return false, err
 	}
 
-	// Owner can always manage
 	if group.OwnerUserID == userID {
-		return true, nil
+		keeps, err := access.NewGormMembershipChecker(gs.db).CreatorKeepsAuthority(group.OrganizationID)
+		if err != nil {
+			return false, err
+		}
+		if keeps {
+			return true, nil
+		}
 	}
 
 	// NEW: Check organization-based management access

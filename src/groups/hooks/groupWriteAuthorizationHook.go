@@ -3,6 +3,7 @@ package groupHooks
 import (
 	"fmt"
 
+	access "soli/formations/src/auth/access"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/groups/models"
@@ -103,7 +104,13 @@ func (h *GroupWriteAuthorizationHook) authorizeDelete(groupID uuid.UUID, userID 
 		return fmt.Errorf("failed to load group: %w", err)
 	}
 	if group.IsOwner(userID) {
-		return nil
+		keeps, err := access.NewGormMembershipChecker(h.db).CreatorKeepsAuthority(group.OrganizationID)
+		if err != nil {
+			return fmt.Errorf("failed to verify group permissions: %w", err)
+		}
+		if keeps {
+			return nil
+		}
 	}
 	refused := entityErrors.NewForbiddenError("Only the class's creator or its organization's managers may delete it")
 	if group.OrganizationID == nil {

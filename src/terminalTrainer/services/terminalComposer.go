@@ -141,8 +141,12 @@ func (c *terminalComposer) BulkCreateTerminalsForGroup(
 	// Check permissions - only group owner, group admin, or system administrator can bulk create terminals
 	canManage := false
 	if group.OwnerUserID == requestingUserID {
-		canManage = true
-	} else {
+		canManage, err = access.NewGormMembershipChecker(c.db).CreatorKeepsAuthority(group.OrganizationID)
+		if err != nil {
+			return nil, fmt.Errorf("permission check failed: %w", err)
+		}
+	}
+	if !canManage {
 		// Check if user is a system administrator
 		for _, role := range userRoles {
 			if authModels.IsSystemAdmin(authModels.RoleName(role)) {

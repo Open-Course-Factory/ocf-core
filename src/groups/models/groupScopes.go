@@ -75,7 +75,7 @@ func LearnerRoleScope(alias string) func(*gorm.DB) *gorm.DB {
 func ManagedByScope(callerUserID string) func(*gorm.DB) *gorm.DB {
 	return func(tx *gorm.DB) *gorm.DB {
 		return tx.Where(
-			`(class_groups.owner_user_id = ? OR EXISTS (
+			`((class_groups.owner_user_id = ? AND `+access.CreatorAuthorityCondition+`) OR EXISTS (
 				SELECT 1 FROM group_members gm
 				WHERE gm.group_id = class_groups.id
 				  AND gm.user_id = ?

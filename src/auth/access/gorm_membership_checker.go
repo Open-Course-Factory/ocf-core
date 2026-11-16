@@ -1,6 +1,7 @@
 package access
 
 import (
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -46,6 +47,24 @@ func (c *GormMembershipChecker) ManagesGroupViaOrg(groupID string, userID string
 		Where("cg.id = ? AND cg.deleted_at IS NULL AND om.user_id = ? AND om.is_active = ? AND om.deleted_at IS NULL AND om.role IN ?",
 			groupID, userID, true, RolesAtLeast(RoleManager)).
 		Count(&n).Error
+	return n > 0, err
+}
+
+// CreatorAuthorityCondition holds on a class_groups row while its creator keeps
+// authority over it: the class has no organization or its organization is live.
+// A class of a deleted organization is managed by administrators only.
+const CreatorAuthorityCondition = `(class_groups.organization_id IS NULL OR EXISTS (
+	SELECT 1 FROM organizations o
+	WHERE o.id = class_groups.organization_id AND o.deleted_at IS NULL))`
+
+// CreatorKeepsAuthority is CreatorAuthorityCondition for a class whose
+// organization is orgID (nil: no organization).
+func (c *GormMembershipChecker) CreatorKeepsAuthority(orgID *uuid.UUID) (bool, error) {
+	if orgID == nil {
+		return true, nil
+	}
+	var n int64
+	err := c.db.Table("organizations").Where("id = ? AND deleted_at IS NULL", *orgID).Count(&n).Error
 	return n > 0, err
 }
 
