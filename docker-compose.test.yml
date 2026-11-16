@@ -22,6 +22,8 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
+      # Failed probes in start_period don't count; first success = healthy (#634).
+      start_period: 180s
 
   casdoor-test:
     build:
@@ -40,4 +42,4 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
-      start_period: 15s
+      start_period: 180s

@@ -231,7 +231,8 @@ test:auth:
 
     # Start all services at once — compose handles ordering via depends_on + healthchecks
     - echo "🐳 Starting all services (compose handles dependency ordering)..."
-    - docker compose -p $COMPOSE_PROJECT -f docker-compose.test.yml up -d --wait --wait-timeout 120
+    # 480 = MySQL (180 s start_period + 30 x 2 s) then Casdoor (same), one after the other (#634)
+    - docker compose -p $COMPOSE_PROJECT -f docker-compose.test.yml up -d --wait --wait-timeout 480
 
     - echo "🎉 All services are ready!"
 
