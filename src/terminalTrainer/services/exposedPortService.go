@@ -334,19 +334,20 @@ func (s *exposedPortService) checkExposureAllowed(terminal *models.Terminal) err
 	if err := s.checkPlanAllowsExposure(terminal); err != nil {
 		return err
 	}
-	return s.checkScenarioAllowsExposure(terminal.SessionID)
+	return s.checkScenarioAllowsExposure(terminal)
 }
 
-// checkScenarioAllowsExposure looks for an open scenario run on this
-// terminal. A plain terminal has none and passes; a run whose scenario keeps
-// PortExposureAllowed off is refused. The open-run definition belongs to the
-// scenarios package (OpenSessionStatuses), as in terminalLifecycleService.
-func (s *exposedPortService) checkScenarioAllowsExposure(sessionID string) error {
+// checkScenarioAllowsExposure looks for an open scenario run of the terminal's
+// own user on this terminal. A plain terminal has none and passes; a run whose
+// scenario keeps PortExposureAllowed off is refused. The open-run definition
+// belongs to the scenarios package (OpenSessionStatuses), as in
+// terminalLifecycleService.
+func (s *exposedPortService) checkScenarioAllowsExposure(terminal *models.Terminal) error {
 	var disallowed int64
 	err := s.db.Table("scenario_sessions").
 		Joins("JOIN scenarios ON scenarios.id = scenario_sessions.scenario_id").
-		Where("scenario_sessions.terminal_session_id = ? AND scenario_sessions.status IN ? AND scenarios.port_exposure_allowed = ?",
-			sessionID, scenarioModels.OpenSessionStatuses, false).
+		Where("scenario_sessions.terminal_session_id = ? AND scenario_sessions.user_id = ? AND scenario_sessions.status IN ? AND scenarios.port_exposure_allowed = ?",
+			terminal.SessionID, terminal.UserID, scenarioModels.OpenSessionStatuses, false).
 		Count(&disallowed).Error
 	if err != nil {
 		return fmt.Errorf("failed to check scenario exposure policy: %w", err)

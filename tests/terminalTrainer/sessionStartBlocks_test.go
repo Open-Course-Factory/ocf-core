@@ -783,6 +783,25 @@ func TestStartSessionRoute_ClassBlock_PlainTerminalResumes(t *testing.T) {
 	assert.EqualValues(t, 1, starts.Load())
 }
 
+// A paused run of ANOTHER user naming the learner's terminal is not resuming
+// anything of the learner's: their block in that run's class refuses nothing.
+func TestStartSessionRoute_AnotherUsersRunOnTheTerminal_Resumes(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "blk-start-foreign-run-" + uuid.NewString()
+	seedPersonalPlanFor(t, userID, 64000, 65536, 60, "Roomy")
+	sessionID := seedStoppedTerminal(t, db, userID, nil)
+	class := createTestGroup(t, db, "teacher-blk")
+	addActiveGroupMember(t, db, class.ID, userID, groupModels.GroupMemberRoleMember)
+	pausedScenarioRunOn(t, db, "blk-forger-"+uuid.NewString(), sessionID, nil, scenarioModels.ScenarioAssignment{GroupID: &class.ID, Scope: "group"})
+	blockSessions(t, db, userID, "group", &class.ID, "late")
+	starts := resumeTTServer(t, sessionID)
+
+	w := postTerminalStart(t, userID, sessionID)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 1, starts.Load())
+}
+
 // Guard: a block in another class says nothing about this run.
 func TestStartSessionRoute_PausedRunOfAnotherClass_Resumes(t *testing.T) {
 	db := freshTestDB(t)

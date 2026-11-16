@@ -584,7 +584,7 @@ func (l *terminalLifecycleService) BuildComplete(sessionID string) error {
 func (l *terminalLifecycleService) scenarioRunRefusal(terminal *models.Terminal) error {
 	var scenarioIDs []uuid.UUID
 	if err := l.db.Model(&scenarioModels.ScenarioSession{}).
-		Where("terminal_session_id = ? AND status IN ?", terminal.SessionID, scenarioModels.OpenSessionStatuses).
+		Where("terminal_session_id = ? AND user_id = ? AND status IN ?", terminal.SessionID, terminal.UserID, scenarioModels.OpenSessionStatuses).
 		Pluck("scenario_id", &scenarioIDs).Error; err != nil {
 		return fmt.Errorf("failed to find the scenario run on the terminal: %w", err)
 	}

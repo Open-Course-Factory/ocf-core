@@ -43,6 +43,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
+	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
@@ -665,6 +666,35 @@ func TestCreateExposedPort_NetworkOn_Created(t *testing.T) {
 	db, sessionID := exposeFixture(t, false)
 	w := postExposure(t, db, sessionID)
 	assert.Equal(t, http.StatusCreated, w.Code, "control: the same session with internet is exposed; body=%s", w.Body.String())
+}
+
+// A scenario run's exposure policy applies to the terminal of its own user only.
+func TestCreateExposedPort_DisallowingScenarioRun(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ownRun   bool
+		wantCode int
+	}{
+		{"the terminal's own run refuses", true, http.StatusForbidden},
+		{"another user's run says nothing", false, http.StatusCreated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, sessionID := exposeFixture(t, false)
+			var term models.Terminal
+			require.NoError(t, db.First(&term, "session_id = ?", sessionID).Error)
+			scenario := scenarioModels.Scenario{Name: "noexp-" + uuid.NewString()[:8], Title: "No exposure", InstanceType: "S", OsType: "deb", CreatedByID: "author"}
+			require.NoError(t, db.Create(&scenario).Error)
+			runUser := "expose-forger"
+			if tc.ownRun {
+				runUser = term.UserID
+			}
+			require.NoError(t, db.Create(&scenarioModels.ScenarioSession{ScenarioID: scenario.ID, UserID: runUser,
+				TerminalSessionID: &sessionID, Status: "active", StartedAt: time.Now()}).Error)
+
+			w := postExposure(t, db, sessionID)
+			assert.Equal(t, tc.wantCode, w.Code, "body=%s", w.Body.String())
+		})
+	}
 }
 
 // =============================================================================

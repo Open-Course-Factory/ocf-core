@@ -174,15 +174,18 @@ func openRunsOn(db *gorm.DB, terminals []terminalModels.Terminal) (map[string]st
 		return runs, nil
 	}
 	sessionIDs := make([]string, 0, len(terminals))
+	ownerOf := make(map[string]string, len(terminals))
 	for _, t := range terminals {
 		sessionIDs = append(sessionIDs, t.SessionID)
+		ownerOf[t.SessionID] = t.UserID
 	}
 	var rows []struct {
 		ID                string
 		TerminalSessionID string
+		UserID            string
 	}
 	if err := db.Table("scenario_sessions").
-		Select("id, terminal_session_id").
+		Select("id, terminal_session_id, user_id").
 		Where("terminal_session_id IN ?", sessionIDs).
 		Where("status IN ?", scenarioModels.OpenSessionStatuses).
 		Where("deleted_at IS NULL").
@@ -191,6 +194,9 @@ func openRunsOn(db *gorm.DB, terminals []terminalModels.Terminal) (map[string]st
 		return nil, err
 	}
 	for _, r := range rows {
+		if r.UserID != ownerOf[r.TerminalSessionID] {
+			continue // another user's run never names this terminal's
+		}
 		runs[r.TerminalSessionID] = r.ID // the latest open run wins
 	}
 	return runs, nil

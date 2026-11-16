@@ -742,6 +742,27 @@ func TestParticipantControls_ScenarioFieldsOnlyForAnOpenRun(t *testing.T) {
 	assert.Nil(t, sessions[finished].ScenarioSessionID, "a finished run is not reported")
 }
 
+// A newer open run of another user naming the learner's terminal is not that
+// terminal's run: the learner's own run is reported.
+func TestParticipantControls_AnotherUsersRunOnTheTerminal_NotReported(t *testing.T) {
+	c := newPCClass(t)
+	scenario := scenarioModels.Scenario{Name: "pc-scn-" + uuid.NewString()[:8], Title: "Linux basics", InstanceType: "S", OsType: "deb", CreatedByID: pcOwner}
+	require.NoError(t, c.db.Create(&scenario).Error)
+	terminal := c.sessions["learner"]
+	ownRun := scenarioModels.ScenarioSession{ScenarioID: scenario.ID, UserID: pcLearner, TerminalSessionID: &terminal, Status: "active", StartedAt: time.Now().Add(-time.Hour)}
+	require.NoError(t, c.db.Create(&ownRun).Error)
+	require.NoError(t, c.db.Create(&scenarioModels.ScenarioSession{ScenarioID: scenario.ID, UserID: "pc-forger", TerminalSessionID: &terminal, Status: "active", StartedAt: time.Now()}).Error)
+
+	rows := readControls(t, c, member(pcManager))
+	sessions := map[string]pcSessionView{}
+	for _, s := range rows[pcLearner].Sessions {
+		sessions[s.SessionID] = s
+	}
+	require.NotNil(t, sessions[terminal].ScenarioSessionID)
+	assert.Equal(t, ownRun.ID.String(), *sessions[terminal].ScenarioSessionID,
+		"the latest open run of ANOTHER user must not be reported as this terminal's run")
+}
+
 // countQueries counts the SQL statements run on db until the returned stop is
 // called.
 func countQueries(t *testing.T, db *gorm.DB) (stop func() int) {
