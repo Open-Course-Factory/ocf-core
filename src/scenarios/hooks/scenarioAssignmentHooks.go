@@ -11,6 +11,8 @@ import (
 	groupServices "soli/formations/src/groups/services"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
+	scenarioServices "soli/formations/src/scenarios/services"
+	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -20,15 +22,17 @@ import (
 // ScenarioAssignmentAuthorizationHook verifies group/org authorization before
 // creating, updating, or deleting an assignment.
 type ScenarioAssignmentAuthorizationHook struct {
-	db           *gorm.DB
-	groupService groupServices.GroupService
+	db             *gorm.DB
+	groupService   groupServices.GroupService
+	deleteTerminal scenarioServices.TerminalDeleteFunc
 	hooks.BaseHook
 }
 
 func NewScenarioAssignmentAuthorizationHook(db *gorm.DB) hooks.Hook {
 	return &ScenarioAssignmentAuthorizationHook{
-		db:           db,
-		groupService: groupServices.NewGroupService(db),
+		db:             db,
+		groupService:   groupServices.NewGroupService(db),
+		deleteTerminal: ttServices.NewTerminalTrainerService(db).DeleteSession,
 		BaseHook: hooks.BaseHook{
 			Name:       "scenario_assignment_authorization",
 			EntityName: "ScenarioAssignment",
@@ -254,25 +258,16 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 	// them behind hands the learner a session for a scenario they are no
 	// longer assigned to, and for 'provisioning' the unique partial index
 	// then blocks a fresh start as well.
-	result := h.db.Model(&models.ScenarioSession{}).
-		Where("user_id IN ? AND scenario_id = ? AND status IN ?",
-			memberUserIDs, assignment.ScenarioID, models.OpenSessionStatuses).
-		Updates(map[string]any{"status": "abandoned"})
-
-	if result.Error != nil {
+	terminalIDs, err := scenarioServices.AbandonOpenRuns(h.db.Where("user_id IN ? AND scenario_id = ?",
+		memberUserIDs, assignment.ScenarioID))
+	if err != nil {
 		slog.Warn("AfterDelete: failed to abandon sessions",
 			"group_id", assignment.GroupID,
 			"scenario_id", assignment.ScenarioID,
-			"error", result.Error)
+			"error", err)
 		return nil
 	}
-
-	if result.RowsAffected > 0 {
-		slog.Info("AfterDelete: abandoned active sessions after assignment removal",
-			"group_id", assignment.GroupID,
-			"scenario_id", assignment.ScenarioID,
-			"sessions_abandoned", result.RowsAffected)
-	}
+	scenarioServices.ReleaseTerminals(h.deleteTerminal, terminalIDs)
 
 	return nil
 }

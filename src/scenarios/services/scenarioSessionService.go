@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"soli/formations/src/observability"
 	"soli/formations/src/scenarios/dto"
@@ -2222,17 +2223,52 @@ func (s *ScenarioSessionService) AbandonOwnRun(session *models.ScenarioSession) 
 
 // CleanUpDeletedScenario abandons every open run of a scenario and deletes its
 // assignments, so no learner keeps a run or a class card on a deleted lab.
-// It takes the db so callers can run it inside their delete transaction.
-func CleanUpDeletedScenario(db *gorm.DB, scenarioID uuid.UUID) error {
-	if err := db.Model(&models.ScenarioSession{}).
-		Where("scenario_id = ? AND status IN ?", scenarioID, models.OpenSessionStatuses).
-		Updates(map[string]any{"status": "abandoned"}).Error; err != nil {
-		return fmt.Errorf("abandon sessions: %w", err)
+// It takes the db so callers can run it inside their delete transaction, and
+// returns the abandoned runs' terminals for ReleaseTerminals after the commit.
+func CleanUpDeletedScenario(db *gorm.DB, scenarioID uuid.UUID) ([]string, error) {
+	terminalIDs, err := AbandonOpenRuns(db.Where("scenario_id = ?", scenarioID))
+	if err != nil {
+		return nil, fmt.Errorf("abandon sessions: %w", err)
 	}
 	if err := db.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioAssignment{}).Error; err != nil {
-		return fmt.Errorf("delete assignments: %w", err)
+		return nil, fmt.Errorf("delete assignments: %w", err)
 	}
-	return nil
+	return terminalIDs, nil
+}
+
+// AbandonOpenRuns abandons the open runs matched by scope (a db carrying the
+// caller's Where) and returns the terminal session ids those runs held, read
+// from the same statement so only the runs actually abandoned are released.
+func AbandonOpenRuns(scope *gorm.DB) ([]string, error) {
+	var runs []models.ScenarioSession
+	err := scope.Model(&runs).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}, {Name: "terminal_session_id"}}}).
+		Where("status IN ?", models.OpenSessionStatuses).
+		Updates(map[string]any{"status": "abandoned"}).Error
+	if err != nil {
+		return nil, err
+	}
+	var terminalIDs []string
+	for _, run := range runs {
+		if run.TerminalSessionID != nil && *run.TerminalSessionID != "" {
+			terminalIDs = append(terminalIDs, *run.TerminalSessionID)
+		}
+	}
+	return terminalIDs, nil
+}
+
+// ReleaseTerminals deletes the terminals of abandoned runs, best-effort: a
+// failure is logged and never undoes the abandon. Stopping is not enough: a
+// stopped terminal keeps its share of the plan's CPU/RAM budget by design, so
+// every abandoned run left stopped drains the learner's allowance until
+// nothing launches. Call it outside any transaction: DeleteSession calls
+// tt-backend and writes through its own db handle.
+func ReleaseTerminals(deleteTerminal TerminalDeleteFunc, terminalIDs []string) {
+	for _, id := range terminalIDs {
+		if err := deleteTerminal(id); err != nil {
+			slog.Warn("failed to delete the terminal of an abandoned run", "terminal_session_id", id, "err", err)
+		}
+	}
 }
 
 // AbandonSession marks a session as abandoned. Which statuses qualify is

@@ -13,6 +13,7 @@ import (
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -27,6 +28,7 @@ import (
 // handlers remain on scenarioController.
 type scenarioManagementController struct {
 	scenarioControllerBase
+	deleteTerminal services.TerminalDeleteFunc
 }
 
 // NewScenarioManagementController creates a management controller with its
@@ -34,6 +36,7 @@ type scenarioManagementController struct {
 func NewScenarioManagementController(db *gorm.DB) *scenarioManagementController {
 	return &scenarioManagementController{
 		scenarioControllerBase: newScenarioControllerBase(db),
+		deleteTerminal:         terminalServices.NewTerminalTrainerService(db).DeleteSession,
 	}
 }
 
@@ -567,8 +570,10 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 	}
 
 	// Delete in a transaction: abandon active sessions, delete assignments, then scenario
+	var terminalIDs []string
 	if err := sc.db.Transaction(func(tx *gorm.DB) error {
-		if err := services.CleanUpDeletedScenario(tx, scenarioID); err != nil {
+		var err error
+		if terminalIDs, err = services.CleanUpDeletedScenario(tx, scenarioID); err != nil {
 			return err
 		}
 		if err := tx.Delete(scenario).Error; err != nil {
@@ -580,6 +585,7 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to delete scenario")
 		return
 	}
+	services.ReleaseTerminals(sc.deleteTerminal, terminalIDs)
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Scenario deleted successfully"})
 }

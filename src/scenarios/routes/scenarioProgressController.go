@@ -438,18 +438,8 @@ func (pc *scenarioProgressController) AbandonSession(ctx *gin.Context) {
 		return
 	}
 
-	// Destroy the linked terminal session (best-effort, don't block the abandon).
-	//
-	// Stopping it was not enough: a stopped session keeps its slice of the
-	// plan's CPU/RAM budget, by design — stop means "keep this machine for
-	// me". Abandoning a scenario says the opposite, so the machine has to go,
-	// or the learner's allowance drains one abandoned run at a time until
-	// nothing will launch and the catalogue simply reports every scenario as
-	// unavailable, with nothing pointing at the cause.
 	if session.TerminalSessionID != nil && *session.TerminalSessionID != "" {
-		if delErr := pc.terminalService.DeleteSession(*session.TerminalSessionID); delErr != nil {
-			slog.Warn("failed to delete terminal session on abandon", "terminal_session_id", *session.TerminalSessionID, "err", delErr)
-		}
+		services.ReleaseTerminals(pc.terminalService.DeleteSession, []string{*session.TerminalSessionID})
 	}
 
 	ctx.JSON(http.StatusOK, dto.MessageResponse{Message: "Session abandoned"})
