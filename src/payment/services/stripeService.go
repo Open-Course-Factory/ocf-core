@@ -260,16 +260,13 @@ const maxConsumedSessionReissues = 3
 
 // CreateOrGetCustomer crée ou récupère un client Stripe
 func (ss *stripeService) CreateOrGetCustomer(userID, email, name string) (string, error) {
-	// Check if the user already has a Stripe customer ID from ANY subscription (active or inactive)
-	// This ensures we reuse the same Stripe customer even when upgrading from free to paid
+	// Reuse the user's own customer from ANY subscription (active or inactive, newest first), so an
+	// upgrade from free to paid keeps it; a licence bought by someone else carries their customer.
 	subscriptions, err := ss.repository.GetUserSubscriptions(userID, true) // true = include inactive
 	if err == nil && subscriptions != nil {
-		// Find the first subscription with a StripeCustomerID
-		for _, sub := range *subscriptions {
-			if sub.StripeCustomerID != nil && *sub.StripeCustomerID != "" {
-				utils.Debug("♻️ Reusing existing Stripe customer %s for user %s", *sub.StripeCustomerID, userID)
-				return *sub.StripeCustomerID, nil
-			}
+		if customerID := models.OwnStripeCustomerID(userID, *subscriptions); customerID != "" {
+			utils.Debug("♻️ Reusing existing Stripe customer %s for user %s", customerID, userID)
+			return customerID, nil
 		}
 	}
 
@@ -707,22 +704,34 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 	}, nil
 }
 
+// ownStripeCustomerID returns the Stripe customer the user bought with themselves ("" if none),
+// or gorm.ErrRecordNotFound when the user has no entitling subscription at all.
+func (ss *stripeService) ownStripeCustomerID(userID string) (string, error) {
+	subs, err := ss.repository.GetAllActiveUserSubscriptions(userID)
+	if err != nil {
+		return "", err
+	}
+	if len(subs) == 0 {
+		return "", gorm.ErrRecordNotFound
+	}
+	return models.OwnStripeCustomerID(userID, subs), nil
+}
+
 // CreatePortalSession crée une session pour le portail client Stripe
 func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePortalSessionInput) (*dto.PortalSessionOutput, error) {
-	// Récupérer l'abonnement actif pour obtenir le customer ID
-	subscription, err := ss.subscriptionService.GetActiveUserSubscription(userID)
+	customerID, err := ss.ownStripeCustomerID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("no active subscription found: %w", err)
 	}
 
-	// Check if this is a free subscription
-	if subscription.StripeCustomerID == nil || *subscription.StripeCustomerID == "" {
+	// Free plans and licences bought by someone else give the user no customer of their own
+	if customerID == "" {
 		return nil, fmt.Errorf("portal session not available for free subscriptions")
 	}
 
 	// Créer la session du portail client
 	params := &stripe.BillingPortalSessionParams{
-		Customer:  stripe.String(*subscription.StripeCustomerID),
+		Customer:  stripe.String(customerID),
 		ReturnURL: stripe.String(input.ReturnURL),
 	}
 
@@ -2869,21 +2878,20 @@ func (ss *stripeService) SyncUserInvoices(userID string) (*SyncInvoicesResult, e
 		SkippedDetails: []string{},
 	}
 
-	// Récupérer la subscription active de l'utilisateur pour obtenir le customer ID
-	userSub, err := ss.repository.GetActiveUserSubscription(userID)
+	customerID, err := ss.ownStripeCustomerID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("no active subscription found for user %s: %v", userID, err)
 	}
 
-	// Check if user has a Stripe customer ID (free plans don't have one)
-	if userSub.StripeCustomerID == nil || *userSub.StripeCustomerID == "" {
-		utils.Debug("⚠️ User %s has a free subscription with no Stripe customer ID, skipping invoice sync", userID)
+	// Free plans and licences bought by someone else give the user no customer of their own
+	if customerID == "" {
+		utils.Debug("⚠️ User %s has no Stripe customer of their own, skipping invoice sync", userID)
 		return result, nil // Return empty result, no invoices to sync
 	}
 
 	// Récupérer toutes les factures depuis Stripe pour ce customer
 	params := &stripe.InvoiceListParams{
-		Customer: stripe.String(*userSub.StripeCustomerID),
+		Customer: stripe.String(customerID),
 	}
 	params.Filters.AddFilter("limit", "", "100")
 
@@ -3178,21 +3186,20 @@ func (ss *stripeService) SyncUserPaymentMethods(userID string) (*SyncPaymentMeth
 		SkippedDetails:       []string{},
 	}
 
-	// Récupérer la subscription active de l'utilisateur pour obtenir le customer ID
-	userSub, err := ss.repository.GetActiveUserSubscription(userID)
+	customerID, err := ss.ownStripeCustomerID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("no active subscription found for user %s: %v", userID, err)
 	}
 
-	// Check if user has a Stripe customer ID (free plans don't have one)
-	if userSub.StripeCustomerID == nil || *userSub.StripeCustomerID == "" {
-		utils.Debug("⚠️ User %s has a free subscription with no Stripe customer ID, skipping payment methods sync", userID)
+	// Free plans and licences bought by someone else give the user no customer of their own
+	if customerID == "" {
+		utils.Debug("⚠️ User %s has no Stripe customer of their own, skipping payment methods sync", userID)
 		return result, nil // Return empty result, no payment methods to sync
 	}
 
 	// Récupérer tous les moyens de paiement depuis Stripe pour ce customer
 	params := &stripe.PaymentMethodListParams{
-		Customer: stripe.String(*userSub.StripeCustomerID),
+		Customer: stripe.String(customerID),
 		Type:     stripe.String("card"), // Focus on cards for now
 	}
 	params.Filters.AddFilter("limit", "", "100")
@@ -3202,10 +3209,10 @@ func (ss *stripeService) SyncUserPaymentMethods(userID string) (*SyncPaymentMeth
 		pm := iter.PaymentMethod()
 		result.ProcessedPaymentMethods++
 
-		if err := ss.processSinglePaymentMethod(pm, userID, *userSub.StripeCustomerID, result); err != nil {
+		if err := ss.processSinglePaymentMethod(pm, userID, customerID, result); err != nil {
 			result.FailedPaymentMethods = append(result.FailedPaymentMethods, FailedPaymentMethod{
 				StripePaymentMethodID: pm.ID,
-				CustomerID:            *userSub.StripeCustomerID,
+				CustomerID:            customerID,
 				Error:                 err.Error(),
 			})
 		}
