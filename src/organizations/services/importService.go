@@ -355,37 +355,49 @@ func (s *importService) ImportOrganizationData(
 	return response, nil
 }
 
+var errOutranksImporter = errors.New("outranks the importer; skipped")
+
 // checkImporterRank applies the role cap of the membership hooks: an importer
-// may update only members at or below their own rank. The owner and platform
-// administrators are not capped; the owner outranks every other importer.
+// may update only members at or below their own rank. Platform administrators
+// outrank every other importer and are not capped; the owner outranks every
+// other organization role.
 func (s *importService) checkImporterRank(org *organizationModels.Organization, importerID, targetID string, targetRole organizationModels.OrganizationMemberRole) error {
-	if importerID == org.OwnerUserID || isPlatformAdmin(importerID) {
+	if importerIsAdmin, _ := isPlatformAdmin(importerID); importerIsAdmin {
 		return nil
 	}
-	outranks := errors.New("outranks the importer; skipped")
+	// Fails closed: an unknown platform role for the target counts as administrator.
+	if targetIsAdmin, err := isPlatformAdmin(targetID); err != nil || targetIsAdmin {
+		return errOutranksImporter
+	}
+	if importerID == org.OwnerUserID {
+		return nil
+	}
 	if targetID == org.OwnerUserID {
-		return outranks
+		return errOutranksImporter
 	}
 	importer, err := findMembership(s.db, org.ID, importerID)
 	if errors.Is(err, ErrMemberNotFound) {
-		return outranks
+		return errOutranksImporter
 	}
 	if err != nil {
 		return err
 	}
 	if !access.IsRoleAtLeast(string(importer.Role), string(targetRole)) {
-		return outranks
+		return errOutranksImporter
 	}
 	return nil
 }
 
 // isPlatformAdmin resolves the caller's platform roles the way the JWT resolver does.
-func isPlatformAdmin(userID string) bool {
+func isPlatformAdmin(userID string) (bool, error) {
 	if casdoor.Enforcer == nil {
-		return false
+		return false, errors.New("role enforcer not initialised")
 	}
 	roles, err := casdoor.Enforcer.GetRolesForUser(userID)
-	return err == nil && access.IsAdmin(roles)
+	if err != nil {
+		return false, err
+	}
+	return access.IsAdmin(roles), nil
 }
 
 // processUser creates or updates a user in Casdoor. With verifyEmails the
