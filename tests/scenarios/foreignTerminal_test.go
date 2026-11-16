@@ -70,6 +70,41 @@ func TestTerminalOfAnotherUser_UnreadableTerminalRow_Refuses(t *testing.T) {
 		"an owner that cannot be read must fail closed")
 }
 
+// A soft-deleted terminal keeps its owner: deleting it never hands its id to
+// whoever else's run names it.
+func TestTerminalOfAnotherUser_SoftDeletedForeignTerminal_IsAnotherUsers(t *testing.T) {
+	db := freshTestDB(t)
+	foreign := "soft-deleted-" + uuid.NewString()
+	seedForeignTerminal(t, db, foreign)
+	require.NoError(t, db.Where("session_id = ?", foreign).Delete(&terminalModels.Terminal{}).Error)
+
+	assert.True(t, services.TerminalOfAnotherUser(db, &models.ScenarioSession{UserID: "run-owner", TerminalSessionID: &foreign}))
+	assert.False(t, services.TerminalOfAnotherUser(db, &models.ScenarioSession{UserID: foreignTerminalOwner, TerminalSessionID: &foreign}))
+}
+
+// The by-terminal lookup returns the owner's run even when a newer run of
+// another user names the same, soft-deleted, terminal.
+func TestFindSessionByTerminal_ForeignRunOnSoftDeletedTerminal_DoesNotShadowOwnersRun(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := seedSessionScenario(t, db)
+	terminalID := "shadowed-" + uuid.NewString()
+	seedForeignTerminal(t, db, terminalID)
+	ownerRun := models.ScenarioSession{ScenarioID: scenario.ID, UserID: foreignTerminalOwner, Status: "active",
+		StartedAt: time.Now(), TerminalSessionID: &terminalID}
+	require.NoError(t, db.Create(&ownerRun).Error)
+	forged := models.ScenarioSession{ScenarioID: scenario.ID, UserID: "forger", Status: "active",
+		StartedAt: time.Now(), TerminalSessionID: &terminalID}
+	forged.CreatedAt = ownerRun.CreatedAt.Add(time.Hour)
+	require.NoError(t, db.Create(&forged).Error)
+	require.NoError(t, db.Where("session_id = ?", terminalID).Delete(&terminalModels.Terminal{}).Error)
+
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	found, err := sessionSvc.FindSessionByTerminal(terminalID)
+
+	require.NoError(t, err)
+	assert.Equal(t, ownerRun.ID, found.ID, "the newer run of another user must not shadow the owner's")
+}
+
 // --- learner exec paths not guarded ----------------------------------------
 
 // A correct flag advances the run and sets up the next step: its background

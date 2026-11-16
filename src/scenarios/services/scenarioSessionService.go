@@ -2294,7 +2294,8 @@ func TerminalOfAnotherUser(db *gorm.DB, run *models.ScenarioSession) bool {
 		return false
 	}
 	var owners []string
-	if err := db.Model(&terminalModels.Terminal{}).Where("session_id = ?", *run.TerminalSessionID).
+	// Unscoped: a soft-deleted terminal still has its owner.
+	if err := db.Unscoped().Model(&terminalModels.Terminal{}).Where("session_id = ?", *run.TerminalSessionID).
 		Pluck("user_id", &owners).Error; err != nil {
 		slog.Error("could not read the owner of a run's terminal", "session_id", run.ID, "err", err)
 		return true // fail closed
@@ -2349,7 +2350,7 @@ func (s *ScenarioSessionService) FindSessionByTerminal(terminalSessionID string)
 	var session models.ScenarioSession
 	// A run whose user is not the terminal's owner never shadows the owner's run.
 	err := s.db.Where("terminal_session_id = ?", terminalSessionID).
-		Where("NOT EXISTS (SELECT 1 FROM terminals t WHERE t.session_id = ? AND t.deleted_at IS NULL AND t.user_id <> scenario_sessions.user_id)", terminalSessionID).
+		Where("NOT EXISTS (SELECT 1 FROM terminals t WHERE t.session_id = ? AND t.user_id <> scenario_sessions.user_id)", terminalSessionID).
 		Order("created_at DESC").
 		First(&session).Error
 	if err != nil {
