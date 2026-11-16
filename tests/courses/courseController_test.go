@@ -23,6 +23,7 @@ import (
 	"soli/formations/src/courses/models"
 	courseRoutes "soli/formations/src/courses/routes/courseRoutes"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	genericService "soli/formations/src/entityManagement/services"
@@ -529,7 +530,11 @@ func TestGenerationCreate_MalformedCourseID_ReturnsError(t *testing.T) {
 				_, err = svc.CreateEntityWithUser(dto.GenerationInput{Name: "g", CourseId: courseID}, "Generation", "test-user-1")
 			})
 			assert.Error(t, err)
-			assert.Contains(t, err.Error(), "ENT004") // validation error from generation_course_required
+			var entityErr *entityErrors.EntityError
+			require.ErrorAs(t, err, &entityErr)
+			assert.Equal(t, entityErrors.ErrValidationFailed.Code, entityErr.Code)
+			assert.Equal(t, http.StatusBadRequest, entityErr.HTTPStatus)
+			assert.Equal(t, "must be a valid course id", entityErr.Details["reason"]) // from generation_course_required
 		})
 	}
 
