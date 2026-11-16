@@ -64,21 +64,44 @@ stages:
 
 .test_job_base:
   stage: test
-  image: golang:${GO_VERSION}
+  image:
+    name: golang:${GO_VERSION}
+    # The runner defaults to `always`, which re-pulls the image (~1 min) on every job.
+    pull_policy: [if-not-present]
+  variables:
+    GOPATH: $CI_PROJECT_DIR/.go
+    GOCACHE: $CI_PROJECT_DIR/.go/cache
+  # Module cache, build cache and tool binaries survive across pipelines (runner-local cache).
+  cache:
+    key:
+      files: [go.sum]
+    paths:
+      - .go/pkg/mod
+      - .go/cache
+      - .go/bin
   before_script:
-    - export GOPATH=$CI_PROJECT_DIR/.go
-    - export GOCACHE=$CI_PROJECT_DIR/.go/cache
     - export PATH=$PATH:$GOPATH/bin
     - go mod download
-    - go install github.com/jstemmer/go-junit-report/v2@latest
+    # Pinned versions: a cached binary stays valid; a warm build cache makes these near-instant.
+    - go install github.com/jstemmer/go-junit-report/v2@v2.1.0
     - go install github.com/swaggo/swag/cmd/swag@v1.16.6
     - swag init --parseDependency --parseInternal --quiet
   artifacts:
     expire_in: 1 week
+  rules: !reference [.code_change_rules, rules]
+  needs: []  # Run in parallel with other test jobs
+
+# Test jobs run on MRs and manual pipelines, except MRs that only touch VERSION
+# (release MRs): their code was tested on the MR that brought it to main (#570).
+.code_change_rules:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        # Every path except the top-level VERSION file (complement, not an allow-list):
+        # any file in a subdirectory, plus any top-level name other than exactly VERSION.
+        - "*/**/*"
+        - "{[!V]*,V,V[!E]*,VE[!R]*,VER[!S]*,VERS[!I]*,VERSI[!O]*,VERSIO[!N]*,VERSION?*}"
     - if: $CI_PIPELINE_SOURCE == "web"  # Manual trigger
-  needs: []  # Run in parallel with other test jobs
 
 # NOTE: .postgres_test_base removed — unit tests use in-memory SQLite.
 # PostgreSQL is only needed for integration tests (test:auth job with Docker-in-Docker).
@@ -147,8 +170,16 @@ test:unit:
   extends: .test_job_base
   script:
     - echo "🧪 Running all unit tests with coverage..."
-    - go test -v -short -coverprofile=coverage.out -timeout=120s ./tests/... ./src/... 2>&1 | tee tests.log
-    - cat tests.log | go-junit-report -set-exit-code > report.xml
+    # Full -v output goes to the tests.log artifact only (it exceeds the 4 MB job-log limit).
+    - go test -v -short -coverprofile=coverage.out -timeout=120s ./tests/... ./src/... > tests.log 2>&1 || TEST_RC=$?
+    # Job log: package results, the full output of failing packages, compile errors.
+    - |
+      awk '/^(ok|FAIL|\?)[ \t]/ { if ($1 == "FAIL") printf "%s", buf; print; buf = ""; next }
+           /\.go:[0-9]+:[0-9]+: / { print; next }
+           { buf = buf $0 "\n" }' tests.log
+    - go-junit-report -in tests.log -set-exit-code > report.xml || TEST_RC=${TEST_RC:-1}
+    - go tool cover -func=coverage.out | tail -1 || true
+    - exit ${TEST_RC:-0}
 
   coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
 
@@ -249,9 +280,7 @@ test:auth:
       - auth_tests.log
     expire_in: 1 week
 
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_PIPELINE_SOURCE == "web"  # Manual trigger
+  rules: !reference [.code_change_rules, rules]
 
 # ============================================================================
 # Build Stage
