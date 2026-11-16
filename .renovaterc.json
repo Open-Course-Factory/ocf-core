@@ -8,5 +8,6 @@
   ],
   "postUpdateOptions": [
     "gomodTidyE"
-  ]
+  ],
+  "rebaseWhen": "conflicted"
 }
