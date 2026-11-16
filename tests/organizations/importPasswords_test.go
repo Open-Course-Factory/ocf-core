@@ -8,6 +8,7 @@
 package organizations_tests
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -174,17 +175,22 @@ func TestCsvImport_UpdateExisting_DryRunWritesNothing(t *testing.T) {
 }
 
 // importAsUpdate runs an update_existing import of one row (new name and a
-// password) for the account target, with importer as the calling user.
-func importAsUpdate(t *testing.T, importer string, importerRole models.OrganizationMemberRole, target string, targetRole models.OrganizationMemberRole) (*fakeIdentity, int, int) {
+// password) for the account target, with importer as the calling user. An empty
+// importerRole seeds no membership row for the importer; platformRoles, when
+// set, answers the enforcer's platform-role lookup.
+func importAsUpdate(t *testing.T, importer string, importerRole models.OrganizationMemberRole, target string, targetRole models.OrganizationMemberRole, platformRoles ...func(string) ([]string, error)) (*fakeIdentity, int, int) {
 	t.Helper()
-	installMockEnforcer(t)
+	enforcer := installMockEnforcer(t)
+	if len(platformRoles) > 0 {
+		enforcer.GetRolesForUserFunc = platformRoles[0]
+	}
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity(importer, target)
 	identity.users[target].FirstName = "Original"
 	offboarding := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	for user, role := range map[string]models.OrganizationMemberRole{importer: importerRole, target: targetRole} {
-		if user != "owner-1" {
+		if user != "owner-1" && role != "" {
 			seedMember(t, db, orgID, user, role)
 		}
 	}
@@ -226,6 +232,96 @@ func TestCsvImport_UpdateExisting_MemberAtOrBelowTheImporterRankIsUpdated(t *tes
 			assert.Equal(t, "Ada", identity.users[c.target].FirstName)
 			assert.Equal(t, 1, updated)
 			assert.Equal(t, 0, errs)
+		})
+	}
+}
+
+func adminRoleFor(userID string) func(string) ([]string, error) {
+	return func(name string) ([]string, error) {
+		if name == userID {
+			return []string{"administrator"}, nil
+		}
+		return []string{"member"}, nil
+	}
+}
+
+func TestCsvImport_UpdateExisting_PlatformAdministratorWithoutMembershipUpdatesAnyMember(t *testing.T) {
+	for _, target := range []struct {
+		id   string
+		role models.OrganizationMemberRole
+	}{{"manager-2", models.OrgRoleManager}, {"owner-1", models.OrgRoleOwner}} {
+		t.Run(target.id, func(t *testing.T) {
+			identity, updated, errs := importAsUpdate(t, "admin-1", "", target.id, target.role, adminRoleFor("admin-1"))
+
+			assert.Equal(t, "Str0ng-Pass!", identity.passwordsSet["user-"+target.id])
+			assert.Equal(t, "Ada", identity.users[target.id].FirstName)
+			assert.Equal(t, 1, updated)
+			assert.Equal(t, 0, errs)
+		})
+	}
+}
+
+func TestCsvImport_UpdateExisting_ImporterWithoutMembershipOrAdministratorRoleUpdatesNoMember(t *testing.T) {
+	lookupFails := func(string) ([]string, error) { return nil, errors.New("enforcer unavailable") }
+	for _, c := range []struct {
+		name          string
+		platformRoles func(string) ([]string, error)
+	}{{"plain member role", adminRoleFor("someone-else")}, {"role lookup fails", lookupFails}} {
+		for _, target := range []struct {
+			id   string
+			role models.OrganizationMemberRole
+		}{{"student-a", models.OrgRoleMember}, {"manager-2", models.OrgRoleManager}, {"owner-1", models.OrgRoleOwner}} {
+			t.Run(c.name+"/"+target.id, func(t *testing.T) {
+				identity, updated, errs := importAsUpdate(t, "outsider-1", "", target.id, target.role, c.platformRoles)
+
+				assert.Empty(t, identity.passwordsSet)
+				assert.Empty(t, identity.columns)
+				assert.Equal(t, "Original", identity.users[target.id].FirstName)
+				assert.Equal(t, 0, updated)
+				assert.Equal(t, 1, errs)
+			})
+		}
+	}
+}
+
+// The route admits managers and above only; at service level a member-rank
+// importer is still bound by the same rule: equal rank applies, higher is refused.
+func TestCsvImport_UpdateExisting_MemberRankImporterIsCappedAtMember(t *testing.T) {
+	identity, updated, errs := importAsUpdate(t, "student-b", models.OrgRoleMember, "student-a", models.OrgRoleMember)
+	assert.Equal(t, "Ada", identity.users["student-a"].FirstName)
+	assert.Equal(t, 1, updated)
+	assert.Equal(t, 0, errs)
+
+	identity, updated, errs = importAsUpdate(t, "student-b", models.OrgRoleMember, "manager-2", models.OrgRoleManager)
+	assert.Empty(t, identity.columns)
+	assert.Equal(t, 0, updated)
+	assert.Equal(t, 1, errs)
+}
+
+func TestCsvImport_UpdateExisting_NewAccountsAreCreatedWhateverTheImporterRank(t *testing.T) {
+	for _, c := range []struct {
+		importer      string
+		importerRole  models.OrganizationMemberRole
+		platformRoles func(string) ([]string, error)
+	}{{"manager-1", models.OrgRoleManager, adminRoleFor("nobody")}, {"admin-1", "", adminRoleFor("admin-1")}} {
+		t.Run(c.importer, func(t *testing.T) {
+			enforcer := installMockEnforcer(t)
+			enforcer.GetRolesForUserFunc = c.platformRoles
+			db := newOffboardingDB(t)
+			identity := newFakeIdentity(c.importer)
+			orgID := seedTeamOrg(t, db, "owner-1", new(10))
+			if c.importerRole != "" {
+				seedMember(t, db, orgID, c.importer, c.importerRole)
+			}
+
+			resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity)).ImportOrganizationData(orgID, c.importer,
+				usersCSV(t, "new@example.com,Grace,Hopper,member\n"), nil, nil, false, true, "", true)
+			require.NoError(t, err, "errors=%+v", resp.Errors)
+
+			require.Len(t, identity.created, 1)
+			assert.Equal(t, "new@example.com", identity.created[0].Email)
+			assert.Equal(t, int64(1), countMemberRows(t, db, orgID, identity.created[0].Id))
+			assert.Empty(t, resp.Errors)
 		})
 	}
 }
