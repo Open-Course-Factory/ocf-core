@@ -446,23 +446,30 @@ func TestCsvImport_UpdateExisting_PlatformAdministratorImporterLeavesAnAccountOu
 	assert.NotEmpty(t, resp.Errors)
 }
 
-// importOverMember runs an update_existing import by manager-1 of one row for
-// target, a member of the importing organization with targetRole; seed then
-// adds whatever else the test needs.
-func importOverMember(t *testing.T, target string, targetRole models.OrganizationMemberRole, seed func(db *gorm.DB)) (*fakeIdentity, *dto.ImportOrganizationDataResponse) {
+// importOverMember runs an update_existing import by importer (owner-1,
+// manager-1, or admin-1: a platform administrator without membership) of one
+// row for target, a member of the importing organization with targetRole; seed
+// then adds whatever else the test needs. alone is the belongs-elsewhere check.
+func importOverMember(t *testing.T, importer, target string, targetRole models.OrganizationMemberRole, seed func(db *gorm.DB), alone ...services.OrganizationAloneChecker) (*fakeIdentity, *dto.ImportOrganizationDataResponse) {
 	t.Helper()
-	installMockEnforcer(t)
+	installMockEnforcer(t).GetRolesForUserFunc = adminRoleFor("admin-1")
 	db := newOffboardingDB(t)
-	identity := newFakeIdentity("manager-1", target)
+	identity := newFakeIdentity(importer, target)
 	identity.users[target].FirstName = "Original"
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
-	seedMember(t, db, orgID, "manager-1", models.OrgRoleManager)
+	if importer == "manager-1" {
+		seedMember(t, db, orgID, "manager-1", models.OrgRoleManager)
+	}
 	seedMember(t, db, orgID, target, targetRole)
 	if seed != nil {
 		seed(db)
 	}
+	var checker services.OrganizationAloneChecker = newDeletionService(db, identity)
+	if len(alone) > 0 {
+		checker = alone[0]
+	}
 
-	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity)).ImportOrganizationData(orgID, "manager-1",
+	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity), checker).ImportOrganizationData(orgID, importer,
 		usersCSVWithColumns(t, "email,first_name,last_name,role,password", target+"@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
 		nil, nil, false, true, "", true)
 	require.NoError(t, err)
@@ -480,15 +487,39 @@ func assertImportRefused(t *testing.T, identity *fakeIdentity, resp *dto.ImportO
 }
 
 func TestCsvImport_UpdateExisting_ManagerImporterLeavesAnotherManagerUntouched(t *testing.T) {
-	identity, resp := importOverMember(t, "manager-2", models.OrgRoleManager, nil)
+	identity, resp := importOverMember(t, "manager-1", "manager-2", models.OrgRoleManager, nil)
 
 	assertImportRefused(t, identity, resp, "manager-2", "outranks")
 }
 
-func TestCsvImport_UpdateExisting_ManagerImporterLeavesAMemberWhoBelongsElsewhereUntouched(t *testing.T) {
-	identity, resp := importOverMember(t, "student-a", models.OrgRoleMember, func(db *gorm.DB) {
-		seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), "student-a", models.OrgRoleMember)
-	})
+func activeInAnotherTeamOrg(t *testing.T, userID string) func(db *gorm.DB) {
+	return func(db *gorm.DB) {
+		seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), userID, models.OrgRoleMember)
+	}
+}
+
+func TestCsvImport_UpdateExisting_ManagerOrOwnerImporterLeavesAMemberWhoBelongsElsewhereUntouched(t *testing.T) {
+	for _, importer := range []string{"manager-1", "owner-1"} {
+		t.Run(importer, func(t *testing.T) {
+			identity, resp := importOverMember(t, importer, "student-a", models.OrgRoleMember, activeInAnotherTeamOrg(t, "student-a"))
+
+			assertImportRefused(t, identity, resp, "student-a", "elsewhere")
+		})
+	}
+}
+
+func TestCsvImport_UpdateExisting_PlatformAdministratorImporterUpdatesAMemberWhoBelongsElsewhere(t *testing.T) {
+	identity, resp := importOverMember(t, "admin-1", "student-a", models.OrgRoleMember, activeInAnotherTeamOrg(t, "student-a"))
+
+	assert.Equal(t, "Str0ng-Pass!", identity.passwordsSet["user-student-a"])
+	assert.Equal(t, "Ada", identity.users["student-a"].FirstName)
+	assert.Equal(t, 1, resp.Summary.UsersUpdated)
+	assert.Empty(t, resp.Errors)
+}
+
+// Without the belongs-elsewhere check the import must refuse, not skip the check.
+func TestCsvImport_UpdateExisting_WithoutTheAloneCheckOwnerImporterUpdatesNoMember(t *testing.T) {
+	identity, resp := importOverMember(t, "owner-1", "student-a", models.OrgRoleMember, nil, nil)
 
 	assertImportRefused(t, identity, resp, "student-a", "elsewhere")
 }

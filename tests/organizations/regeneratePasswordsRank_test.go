@@ -17,6 +17,7 @@ import (
 
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/mocks"
+	authServices "soli/formations/src/auth/services"
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
@@ -248,8 +249,8 @@ func TestRegeneratePasswords_EveryTargetRefused_WellFormedResponseAndNoWrites(t 
 
 // student-1 is a plain member of this organization; each case also ties them to
 // something the organization does not answer for, seeded the way the erasure
-// tests do (CheckDepartedMemberErasable refuses the same situations).
-func TestRegeneratePasswords_ManagerTargetsMemberWhoBelongsElsewhere_Refused(t *testing.T) {
+// tests do. The rule binds the owner as well as managers.
+func TestRegeneratePasswords_MemberWhoBelongsElsewhere_RefusedToManagerAndOwner(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		seed func(t *testing.T, db *gorm.DB)
@@ -265,17 +266,78 @@ func TestRegeneratePasswords_ManagerTargetsMemberWhoBelongsElsewhere_Refused(t *
 		{"paid personal subscription", func(t *testing.T, db *gorm.DB) {
 			seedPaidPersonalSubscription(t, db, "student-1")
 		}},
+		{"owner of a group with no organization", func(t *testing.T, db *gorm.DB) {
+			seedOwnedClass(t, db, "student-1", nil)
+		}},
+		{"owner of a group of another organization", func(t *testing.T, db *gorm.DB) {
+			otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
+			seedOwnedClass(t, db, "student-1", &otherOrgID)
+		}},
 	} {
-		t.Run(c.name, func(t *testing.T) {
-			db := newOffboardingDB(t)
-			orgID, classID, identity := seedRankedClass(t, db)
-			c.seed(t, db)
+		for _, caller := range []string{"manager-1", "owner-1"} {
+			t.Run(c.name+"/"+caller, func(t *testing.T) {
+				db := newOffboardingDB(t)
+				orgID, classID, identity := seedRankedClass(t, db)
+				c.seed(t, db)
 
-			resp := regenerate(t, db, identity, orgID, classID, "manager-1", "student-1")
+				resp := regenerate(t, db, identity, orgID, classID, caller, "student-1")
 
-			assertRefused(t, identity, resp, "student-1", 1, "elsewhere")
-		})
+				assertRefused(t, identity, resp, "student-1", 1, "elsewhere")
+			})
+		}
 	}
+}
+
+func seedOwnedClass(t *testing.T, db *gorm.DB, ownerID string, orgID *uuid.UUID) {
+	t.Helper()
+	class := &groupModels.ClassGroup{Name: "owned-" + uuid.NewString()[:8], DisplayName: "Owned", OwnerUserID: ownerID, OrganizationID: orgID}
+	class.ID = uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(class).Error)
+}
+
+func TestRegeneratePasswords_PlatformAdministratorTargetsMemberWhoBelongsElsewhere_Regenerated(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+	// The service lets only owners and managers in; the administrator must hold one of those roles.
+	require.NoError(t, db.Model(&models.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ?", orgID, "admin-1").
+		Update("role", models.OrgRoleManager).Error)
+	seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), "student-1", models.OrgRoleMember)
+
+	resp := regenerate(t, db, identity, orgID, classID, "admin-1", "student-1")
+
+	assertRegenerated(t, identity, resp, "student-1")
+	assert.Empty(t, resp.Errors)
+}
+
+// Owning this organization's own classes is not belonging elsewhere for the
+// password rule, but erasure still waits for those classes to change hands.
+func TestRegeneratePasswords_OwnerTargetsManagerOwningAClassOfThisOrganization_RegeneratedButNotErasable(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db) // manager-1 owns classID, a class of orgID
+
+	resp := regenerate(t, db, identity, orgID, classID, "owner-1", "manager-1")
+
+	assertRegenerated(t, identity, resp, "manager-1")
+	assert.ErrorIs(t, newDeletionService(db, identity).CheckDepartedMemberErasable(orgID, "manager-1"), authServices.ErrOwnsGroups)
+}
+
+// Without the belongs-elsewhere check only a platform administrator may proceed.
+func TestRegeneratePasswords_WithoutTheAloneCheck_RefusedToOwnerAllowedToAdministrator(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+	require.NoError(t, db.Model(&models.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ?", orgID, "admin-1").
+		Update("role", models.OrgRoleManager).Error)
+	svc := services.NewOrganizationServiceWithIdentity(db, identity, nil)
+
+	resp, err := svc.RegenerateGroupMemberPasswords(orgID, classID, "owner-1", []string{"student-1"})
+	require.NoError(t, err)
+	assertRefused(t, identity, resp, "student-1", 1, "elsewhere")
+
+	resp, err = svc.RegenerateGroupMemberPasswords(orgID, classID, "admin-1", []string{"student-1"})
+	require.NoError(t, err)
+	assertRegenerated(t, identity, resp, "student-1")
 }
 
 func seedPaidPersonalSubscription(t *testing.T, db *gorm.DB, userID string) {
