@@ -562,3 +562,50 @@ func TestOrganizationMemberGenericRoutes_BlockStampNeitherExposedNorSettable(t *
 	model, _ := json.Marshal(models.OrganizationMember{AccountForbiddenByOffboarding: true})
 	assert.NotContains(t, strings.ToLower(string(model)), "forbidden", "the model itself never serializes it")
 }
+
+func TestOffboard_AlreadyOffboardedMemberOffboardedAgain_ReinstateStillUnblocks(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	svc := newOffboardingService(db, identity)
+	require.NoError(t, svc.Offboard(orgID, []string{"student-1"}, "manager-1"))
+	first := loadMember(t, db, orgID, "student-1")
+	require.True(t, identity.forbidden["student-1"])
+	// The second call sees the account as blocked, as production does through the local mirror.
+	require.NoError(t, authModels.SetAccountBlocked(db, "student-1", true))
+	time.Sleep(20 * time.Millisecond)
+
+	require.NoError(t, svc.Offboard(orgID, []string{"student-1"}, "manager-1"))
+	second := loadMember(t, db, orgID, "student-1")
+	require.NoError(t, svc.Reinstate(orgID, "student-1", "manager-1"))
+
+	assert.True(t, loadMember(t, db, orgID, "student-1").IsActive)
+	assert.False(t, identity.forbidden["student-1"], "a repeated offboarding keeps the block this organization set: reinstating lifts it")
+	require.NotNil(t, second.ScheduledErasureAt)
+	assert.Equal(t, first.ScheduledErasureAt.UnixMilli(), second.ScheduledErasureAt.UnixMilli(), "a repeated offboarding does not push the erasure later")
+}
+
+func TestReinstateHandler_OwnerReinstatesOffboardedManager_ReinstatedAndUnblocked(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"manager-2"}, "owner-1"))
+	require.True(t, identity.forbidden["manager-2"])
+
+	rec := reinstateAs(t, db, identity, orgID, "owner-1", "manager-2")
+
+	assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	assertStillActiveMember(t, db, identity, orgID, "manager-2")
+}
+
+func TestReinstate_AdministratorUnblocksThenBlocksAfterOffboarding_AccountStillBlocked(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	svc := newOffboardingService(db, identity)
+	require.NoError(t, svc.Offboard(orgID, []string{"student-1"}, "manager-1"))
+	adminSetsForbidden(t, db, identity, "student-1", false)
+	adminSetsForbidden(t, db, identity, "student-1", true)
+
+	require.NoError(t, svc.Reinstate(orgID, "student-1", "manager-1"))
+
+	assert.True(t, loadMember(t, db, orgID, "student-1").IsActive)
+	assert.True(t, identity.forbidden["student-1"], "the administrator's block is not the organization's to lift")
+}
