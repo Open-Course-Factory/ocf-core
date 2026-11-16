@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -26,6 +27,7 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -532,30 +534,9 @@ func TestCsvImport_UpdateExisting_WithoutTheAloneCheckOwnerImporterUpdatesNoMemb
 // A row refused on rank is a skip: the other rows were written and their
 // credentials generated, so the answer is not a 400 and the refusal is a warning.
 func TestImportController_UpdateExistingWithOneRowRefused_OKAndRefusalIsAWarning(t *testing.T) {
-	installMockEnforcer(t)
-	db := newOffboardingDB(t)
-	identity := newFakeIdentity("manager-1", "manager-2")
-	orgID := seedTeamOrg(t, db, "owner-1", new(10))
-	seedMember(t, db, orgID, "manager-1", models.OrgRoleManager)
-	seedMember(t, db, orgID, "manager-2", models.OrgRoleManager)
-	importer := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity))
-	ctrl := orgController.NewOrganizationController(services.NewOrganizationService(db), importer, nil, nil, db)
-	router := gin.New()
-	router.Use(func(c *gin.Context) { c.Set("userId", "manager-1"); c.Next() })
-	router.POST("/organizations/:id/import", ctrl.ImportOrganizationData)
+	db, orgID, identity := seedManagerImport(t)
 
-	var body bytes.Buffer
-	w := multipart.NewWriter(&body)
-	part, err := w.CreateFormFile("users", "users.csv")
-	require.NoError(t, err)
-	_, err = part.Write([]byte("email,first_name,last_name,role\nnew-learner@example.com,Ada,Lovelace,member\nmanager-2@example.com,Grace,Hopper,member\n"))
-	require.NoError(t, err)
-	require.NoError(t, w.WriteField("update_existing", "true"))
-	require.NoError(t, w.Close())
-	req := httptest.NewRequest(http.MethodPost, "/organizations/"+orgID.String()+"/import", &body)
-	req.Header.Set("Content-Type", w.FormDataContentType())
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	rec := postUsersCSV(t, db, orgID, identity, "new-learner@example.com,Ada,Lovelace,member\nmanager-2@example.com,Grace,Hopper,member\n", false)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var resp dto.ImportOrganizationDataResponse
@@ -567,6 +548,84 @@ func TestImportController_UpdateExistingWithOneRowRefused_OKAndRefusalIsAWarning
 	require.Len(t, resp.Credentials, 1, "the created account's credentials reach the teacher")
 	assert.Equal(t, "new-learner@example.com", resp.Credentials[0].Email)
 	assert.Empty(t, identity.columns, "the refused account is not written")
+}
+
+// seedManagerImport seeds an organization owned by owner-1 where manager-1
+// imports, next to a peer manager-2.
+func seedManagerImport(t *testing.T) (*gorm.DB, uuid.UUID, *fakeIdentity) {
+	t.Helper()
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("owner-1", "manager-1", "manager-2")
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	seedMember(t, db, orgID, "manager-1", models.OrgRoleManager)
+	seedMember(t, db, orgID, "manager-2", models.OrgRoleManager)
+	return db, orgID, identity
+}
+
+// postUsersCSV posts rows (after the users.csv header) to the real import
+// controller as manager-1, with update_existing on, through the real service.
+func postUsersCSV(t *testing.T, db *gorm.DB, orgID uuid.UUID, identity *fakeIdentity, rows string, dryRun bool) *httptest.ResponseRecorder {
+	t.Helper()
+	importer := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity))
+	ctrl := orgController.NewOrganizationController(services.NewOrganizationService(db), importer, nil, nil, db)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("userId", "manager-1"); c.Next() })
+	router.POST("/organizations/:id/import", ctrl.ImportOrganizationData)
+
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	part, err := w.CreateFormFile("users", "users.csv")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("email,first_name,last_name,role\n" + rows))
+	require.NoError(t, err)
+	require.NoError(t, w.WriteField("update_existing", "true"))
+	require.NoError(t, w.WriteField("dry_run", strconv.FormatBool(dryRun)))
+	require.NoError(t, w.Close())
+	req := httptest.NewRequest(http.MethodPost, "/organizations/"+orgID.String()+"/import", &body)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestImportController_EveryRowSkipped_OKWithWarningsAndNothingWritten(t *testing.T) {
+	db, orgID, identity := seedManagerImport(t)
+
+	rec := postUsersCSV(t, db, orgID, identity, "manager-2@example.com,Grace,Hopper,member\nowner-1@example.com,Ada,Lovelace,member\n", false)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp dto.ImportOrganizationDataResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.True(t, resp.Success)
+	assert.Empty(t, resp.Errors)
+	assert.Len(t, resp.Warnings, 2)
+	assert.Equal(t, 0, resp.Summary.UsersCreated)
+	assert.Equal(t, 0, resp.Summary.UsersUpdated)
+	assert.Equal(t, 2, resp.Summary.UsersSkipped)
+	assert.Empty(t, resp.Credentials)
+	assert.Empty(t, identity.columns)
+	assert.Empty(t, identity.created)
+}
+
+// A dry run looks no account up: with update_existing every row is announced
+// as an update, refusals included, and nothing is written.
+func TestImportController_DryRun_CountsByTheFlagAndWritesNothing(t *testing.T) {
+	db, orgID, identity := seedManagerImport(t)
+
+	rec := postUsersCSV(t, db, orgID, identity, "new-learner@example.com,Ada,Lovelace,member\nmanager-2@example.com,Grace,Hopper,member\n", true)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp dto.ImportOrganizationDataResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Empty(t, resp.Errors)
+	assert.Empty(t, resp.Warnings, "a dry run does not see the rank refusal")
+	assert.Equal(t, 0, resp.Summary.UsersCreated)
+	assert.Equal(t, 2, resp.Summary.UsersUpdated)
+	assert.Empty(t, resp.Credentials)
+	assert.Empty(t, identity.created)
+	assert.Empty(t, identity.columns)
+	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "new-learner"))
 }
 
 func TestCsvImport_UpdateExisting_CreatedAccountCountsAsCreatedNotUpdated(t *testing.T) {

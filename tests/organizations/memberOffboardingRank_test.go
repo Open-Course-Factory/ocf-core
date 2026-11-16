@@ -16,7 +16,9 @@ import (
 
 	adminUsersRoutes "soli/formations/src/admin/routes/adminUsersRoutes"
 	authModels "soli/formations/src/auth/models"
+	authServices "soli/formations/src/auth/services"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	"soli/formations/src/entityManagement/hooks"
 	orgController "soli/formations/src/organizations/controller"
 	"soli/formations/src/organizations/dto"
 	orgRegistration "soli/formations/src/organizations/entityRegistration"
@@ -632,4 +634,83 @@ func TestReinstate_OffboardedByTwoOrganizations_ReinstatingTheFirstLiftsTheSecon
 	assert.False(t, identity.forbidden["student-1"], "the account belongs to A again: B's offboarding block no longer stands")
 	assert.False(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding, "B's stamp no longer describes the account's block")
 	assert.NotNil(t, loadMember(t, db, orgB, "student-1").LeftAt, "B's membership stays offboarded")
+}
+
+// joinAfterBlockingOffboarding: organization B offboards student-1, who belongs
+// to B alone, so B blocks the account. Organization C then takes the account in
+// through join ("reinstate" / "enrol" of a row C offboarded earlier, or "create",
+// the generic POST /organization-members of a fresh row). Reports whether the
+// account is still blocked, whether B's row keeps its block stamp, and what B's
+// scheduled erasure answers now.
+func joinAfterBlockingOffboarding(t *testing.T, join string) (blocked, bStamp bool, eraseErr error) {
+	t.Helper()
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("owner-b", "owner-c", "student-1")
+	orgB := seedTeamOrg(t, db, "owner-b", new(10))
+	orgC := seedTeamOrg(t, db, "owner-c", new(10))
+	seedMember(t, db, orgB, "student-1", models.OrgRoleMember)
+	svc := newOffboardingService(db, identity)
+	if join != "create" {
+		seedMember(t, db, orgC, "student-1", models.OrgRoleMember)
+		require.NoError(t, svc.Offboard(orgC, []string{"student-1"}, "owner-c"))
+		require.False(t, identity.forbidden["student-1"], "still active in B: C does not block")
+	}
+	require.NoError(t, svc.Offboard(orgB, []string{"student-1"}, "owner-b"))
+	require.True(t, identity.forbidden["student-1"], "B is the only organization left: B blocks")
+
+	switch join {
+	case "reinstate":
+		require.NoError(t, svc.Reinstate(orgC, "student-1", "owner-c"))
+	case "enrol":
+		require.NoError(t, svc.Enrol(orgC, "student-1"))
+	case "create":
+		registerOrgHooks(t, db)
+		member := &models.OrganizationMember{OrganizationID: orgC, UserID: "student-1", Role: models.OrgRoleMember}
+		ctx := &hooks.HookContext{EntityName: "OrganizationMember", HookType: hooks.BeforeCreate, NewEntity: member, UserID: "owner-c", UserRoles: platformMember}
+		require.NoError(t, hooks.GlobalHookRegistry.ExecuteHooks(ctx))
+		require.NoError(t, db.Omit("Metadata").Create(member).Error)
+		ctx.HookType = hooks.AfterCreate
+		require.NoError(t, hooks.GlobalHookRegistry.ExecuteHooks(ctx))
+	}
+	require.True(t, loadMember(t, db, orgC, "student-1").IsActive, "student-1 is an active member of C")
+	return identity.forbidden["student-1"], loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding,
+		svc.EraseNow(orgB, "student-1")
+}
+
+// RED until the product picks one rule: reinstate and enrol lift a block
+// another organization's offboarding set, a fresh membership does not.
+func TestOffboardingBlock_AccountJoinsAnotherOrganization_EveryJoinPathAgrees(t *testing.T) {
+	blocked := map[string]bool{}
+	stamp := map[string]bool{}
+	for _, join := range []string{"reinstate", "enrol", "create"} {
+		t.Run(join, func(t *testing.T) {
+			var eraseErr error
+			blocked[join], stamp[join], eraseErr = joinAfterBlockingOffboarding(t, join)
+			assert.ErrorIs(t, eraseErr, authServices.ErrStillActiveElsewhere, "B's erasure waits while the account is active in C")
+		})
+	}
+	assert.Equal(t, blocked["reinstate"], blocked["create"], "account blocked after joining C, per path: %v", blocked)
+	assert.Equal(t, stamp["reinstate"], stamp["create"], "B's block stamp kept after joining C, per path: %v", stamp)
+}
+
+func TestReinstate_AdministratorBlockAfterTwoOrganizationOffboardings_StillBlocked(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("owner-1", "owner-2", "student-1")
+	orgA := seedTeamOrg(t, db, "owner-1", new(10))
+	orgB := seedTeamOrg(t, db, "owner-2", new(10))
+	seedMember(t, db, orgA, "student-1", models.OrgRoleMember)
+	seedMember(t, db, orgB, "student-1", models.OrgRoleMember)
+	svc := newOffboardingService(db, identity)
+	require.NoError(t, svc.Offboard(orgA, []string{"student-1"}, "owner-1"))
+	require.NoError(t, svc.Offboard(orgB, []string{"student-1"}, "owner-2"))
+	require.True(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding)
+
+	adminSetsForbidden(t, db, identity, "student-1", true)
+	require.NoError(t, svc.Reinstate(orgA, "student-1", "owner-1"))
+
+	assert.True(t, loadMember(t, db, orgA, "student-1").IsActive)
+	assert.True(t, identity.forbidden["student-1"], "the administrator's block is not lifted by any organization's reinstate")
+	assert.False(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding)
 }

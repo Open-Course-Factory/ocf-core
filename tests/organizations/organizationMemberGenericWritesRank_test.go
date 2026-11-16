@@ -8,14 +8,19 @@
 package organizations_tests
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
+	controller "soli/formations/src/entityManagement/routes"
 	orgRegistration "soli/formations/src/organizations/entityRegistration"
 	"soli/formations/src/organizations/models"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/stretchr/testify/assert"
@@ -188,6 +193,91 @@ func TestOrgMemberGenericDelete_OffboardedRow_Refused(t *testing.T) {
 			err := genericDelete(t, db, orgID, c.actor, c.roles, "student-1")
 
 			assert.Error(t, err, "the offboarding owns this row: reinstate or erase it")
+		})
+	}
+}
+
+// genericMemberRoute serves the real generic PATCH and DELETE of
+// /organization-members for actor, over the real registration and hooks.
+func genericMemberRoute(t *testing.T, db *gorm.DB, actor string, roles []string) func(method, target string, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	prev := ems.GlobalEntityRegistrationService
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	orgRegistration.RegisterOrganizationMember(ems.GlobalEntityRegistrationService)
+	t.Cleanup(func() { ems.GlobalEntityRegistrationService = prev })
+
+	gc := controller.NewGenericController(db, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("userId", actor); c.Set("userRoles", roles); c.Next() })
+	router.PATCH("/api/v1/organization-members/:id", gc.EditEntity)
+	router.DELETE("/api/v1/organization-members/:id", func(c *gin.Context) { gc.DeleteEntity(c, true) })
+	return func(method, target, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, "/api/v1/organization-members/"+target, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+}
+
+func memberRowID(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID string) string {
+	t.Helper()
+	return loadMember(t, db, orgID, userID).ID.String()
+}
+
+// A body carrying only is_active is accepted and changes nothing: the field is
+// no longer part of the edit DTO (ocf-front never sends it).
+func TestOrgMemberGenericPatchRoute_OnlyIsActive_NoContentAndRowUnchanged(t *testing.T) {
+	db, orgID := seedGenericWritesOrg(t)
+	markOffboarded(t, db, orgID, "student-1")
+	patch := genericMemberRoute(t, db, "manager-1", platformMember)
+
+	rec := patch(http.MethodPatch, memberRowID(t, db, orgID, "student-1"), `{"is_active":true}`)
+	assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	assert.False(t, loadMember(t, db, orgID, "student-1").IsActive)
+	assert.NotNil(t, loadMember(t, db, orgID, "student-1").LeftAt)
+
+	seedMember(t, db, orgID, "student-2", models.OrgRoleMember)
+	rec = patch(http.MethodPatch, memberRowID(t, db, orgID, "student-2"), `{"is_active":false}`)
+	assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	assert.True(t, loadMember(t, db, orgID, "student-2").IsActive)
+}
+
+func TestOrgMemberGenericRoutes_ActorKinds_StatusAndRow(t *testing.T) {
+	for _, c := range []struct {
+		name, actor    string
+		roles          []string
+		method, target string
+		body           string
+		offboard       bool
+		status         int
+		rowStays       bool
+	}{
+		{"actor holds no membership: patch", "stranger", platformMember, http.MethodPatch, "student-1", `{"role":"manager"}`, false, http.StatusForbidden, true},
+		{"actor holds no membership: delete", "stranger", platformMember, http.MethodDelete, "student-1", ``, false, http.StatusForbidden, true},
+		{"manager patches own metadata", "manager-1", platformMember, http.MethodPatch, "manager-1", `{"metadata":{"a":"b"}}`, false, http.StatusForbidden, true},
+		{"manager demotes self", "manager-1", platformMember, http.MethodPatch, "manager-1", `{"role":"member"}`, false, http.StatusForbidden, true},
+		{"manager removes self", "manager-1", platformMember, http.MethodDelete, "manager-1", ``, false, http.StatusForbidden, true},
+		{"plain member removes self", "student-1", platformMember, http.MethodDelete, "student-1", ``, false, http.StatusForbidden, true},
+		{"platform administrator demotes a manager", "platform-admin", platformAdministrator, http.MethodPatch, "manager-2", `{"role":"member"}`, false, http.StatusNoContent, true},
+		{"platform administrator promotes a platform administrator member", "platform-admin", platformAdministrator, http.MethodPatch, "admin-1", `{"role":"manager"}`, false, http.StatusNoContent, true},
+		{"platform administrator removes a manager", "platform-admin", platformAdministrator, http.MethodDelete, "manager-2", ``, false, http.StatusNoContent, false},
+		{"platform administrator removes an offboarded member", "platform-admin", platformAdministrator, http.MethodDelete, "student-1", ``, true, http.StatusConflict, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			db, orgID := seedGenericWritesOrg(t)
+			if c.offboard {
+				markOffboarded(t, db, orgID, c.target)
+			}
+
+			rec := genericMemberRoute(t, db, c.actor, c.roles)(c.method, memberRowID(t, db, orgID, c.target), c.body)
+
+			assert.Equal(t, c.status, rec.Code, rec.Body.String())
+			want := int64(0)
+			if c.rowStays {
+				want = 1
+			}
+			assert.Equal(t, want, countMemberRows(t, db, orgID, c.target))
 		})
 	}
 }
