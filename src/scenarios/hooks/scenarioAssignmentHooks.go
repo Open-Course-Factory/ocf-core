@@ -258,8 +258,8 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 	// them behind hands the learner a session for a scenario they are no
 	// longer assigned to, and for 'provisioning' the unique partial index
 	// then blocks a fresh start as well.
-	runs, err := scenarioServices.AbandonOpenRuns(h.db.Where("user_id IN ? AND scenario_id = ?",
-		memberUserIDs, assignment.ScenarioID))
+	runs, err := scenarioServices.AbandonOpenRuns(h.db, "user_id IN ? AND scenario_id = ?",
+		memberUserIDs, assignment.ScenarioID)
 	if err != nil {
 		slog.Warn("AfterDelete: failed to abandon sessions",
 			"group_id", assignment.GroupID,

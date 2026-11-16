@@ -779,14 +779,11 @@ func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, 
 	// skipped one would leave the learner unable to restart — 'provisioning'
 	// because the unique partial index covers it, 'setup_failed' because a
 	// class whose launch died is exactly the one a trainer resets.
-	runs, err := AbandonOpenRuns(s.db.Where("user_id IN ? AND scenario_id = ?", resettable, scenarioID))
+	runs, err := AbandonOpenRuns(s.db, "user_id IN ? AND scenario_id = ?", resettable, scenarioID)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to reset sessions: %w", err)
 	}
-	// nil only where the service is built without terminals (dashboard-read tests).
-	if s.terminalService != nil {
-		ReleaseTerminals(s.terminalService.DeleteSession, runs)
-	}
+	ReleaseTerminals(s.terminalService.DeleteSession, runs)
 
 	return int64(len(runs)), skipped, nil
 }

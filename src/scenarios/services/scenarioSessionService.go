@@ -322,6 +322,7 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 		IsPreview:         isPreview,
 	}
 
+	var zombie []models.ScenarioSession
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Check if the terminal already has any scenario bound (permanent binding)
 		// Only enforce when a terminal session ID is actually provided
@@ -354,6 +355,7 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 			if err := tx.Model(existingSession).Update("status", "abandoned").Error; err != nil {
 				return fmt.Errorf("failed to abandon zombie session: %w", err)
 			}
+			zombie = []models.ScenarioSession{*existingSession}
 		}
 
 		// Create session. A concurrent launch that committed after the check
@@ -404,6 +406,8 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 	if err != nil {
 		return nil, err
 	}
+	// After the commit: a setup_failed run's terminal was only stopped and still holds budget.
+	ReleaseTerminals(s.deleteTerminal, zombie)
 
 	// Reload session with associations
 	if err := s.db.Preload("StepProgress").Preload("Flags").First(session, "id = ?", session.ID).Error; err != nil {
@@ -2226,7 +2230,7 @@ func (s *ScenarioSessionService) AbandonOwnRun(session *models.ScenarioSession) 
 // It takes the db so callers can run it inside their delete transaction, and
 // returns the abandoned runs for ReleaseTerminals after the commit.
 func CleanUpDeletedScenario(db *gorm.DB, scenarioID uuid.UUID) ([]models.ScenarioSession, error) {
-	runs, err := AbandonOpenRuns(db.Where("scenario_id = ?", scenarioID))
+	runs, err := AbandonOpenRuns(db, "scenario_id = ?", scenarioID)
 	if err != nil {
 		return nil, fmt.Errorf("abandon sessions: %w", err)
 	}
@@ -2236,12 +2240,13 @@ func CleanUpDeletedScenario(db *gorm.DB, scenarioID uuid.UUID) ([]models.Scenari
 	return runs, nil
 }
 
-// AbandonOpenRuns abandons the open runs matched by scope (a db carrying the
-// caller's Where) and returns them with their terminal session ids, read from
-// the same statement so only the runs actually abandoned are released.
-func AbandonOpenRuns(scope *gorm.DB) ([]models.ScenarioSession, error) {
+// AbandonOpenRuns abandons the open runs matching query/args and returns them
+// with their terminal session ids, read from the same statement so only the
+// runs actually abandoned are released. The condition is a required argument
+// so no caller can abandon every open run on the platform by forgetting it.
+func AbandonOpenRuns(db *gorm.DB, query string, args ...any) ([]models.ScenarioSession, error) {
 	var runs []models.ScenarioSession
-	err := scope.Model(&runs).
+	err := db.Where(query, args...).Model(&runs).
 		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}, {Name: "terminal_session_id"}}}).
 		Where("status IN ?", models.OpenSessionStatuses).
 		Updates(map[string]any{"status": "abandoned"}).Error
@@ -2260,6 +2265,11 @@ func AbandonOpenRuns(scope *gorm.DB) ([]models.ScenarioSession, error) {
 func ReleaseTerminals(deleteTerminal TerminalDeleteFunc, runs []models.ScenarioSession) {
 	for _, run := range runs {
 		if run.TerminalSessionID == nil || *run.TerminalSessionID == "" {
+			continue
+		}
+		if deleteTerminal == nil {
+			slog.Error("terminal to delete but no delete callback is wired — container left running",
+				"terminal_session_id", *run.TerminalSessionID, "session_id", run.ID)
 			continue
 		}
 		if err := deleteTerminal(*run.TerminalSessionID); err != nil {
