@@ -598,3 +598,54 @@ func BenchmarkMockWorkerService_FullWorkflow(b *testing.B) {
 		mockEnforcer.GetLoadPolicyCallCount(),
 		mockEnforcer.GetAddPolicyCallCount())
 }
+
+// fixedStatusWorker answers every status check with the same status and progress.
+type fixedStatusWorker struct {
+	workerServices.WorkerService
+	status   string
+	progress int
+}
+
+func (w fixedStatusWorker) CheckStatus(ctx context.Context, jobID string) (*workerServices.WorkerJobStatus, error) {
+	progress := w.progress
+	return &workerServices.WorkerJobStatus{ID: jobID, Status: w.status, Progress: &progress}, nil
+}
+
+// saveCountingService counts SaveEntity calls on top of the real generic service.
+type saveCountingService struct {
+	genericService.GenericService
+	saves int
+}
+
+func (s *saveCountingService) SaveEntity(entity any) (any, error) {
+	s.saves++
+	return s.GenericService.SaveEntity(entity)
+}
+
+// Polling a generation whose worker status and progress have not changed writes nothing.
+func TestCourseService_CheckGenerationStatus_Unchanged_NoSave(t *testing.T) {
+	db := setupTestDB(t)
+	courseRegistration.RegisterGeneration(ems.GlobalEntityRegistrationService)
+
+	jobID := "job-1"
+	progress := 40
+	generation := &models.Generation{
+		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: []string{"test-user-1"}},
+		Name:        "Polled Generation",
+		Status:      models.StatusProcessing,
+		WorkerJobID: &jobID,
+		Progress:    &progress,
+		Format:      &[]int{1}[0],
+	}
+	require.NoError(t, db.Create(generation).Error)
+
+	counting := &saveCountingService{GenericService: genericService.NewGenericService(db, nil)}
+	svc := courseServices.NewCourseServiceWithDependencies(db, fixedStatusWorker{status: "processing", progress: 40},
+		nil, authMocks.NewMockCasdoorService(), counting)
+
+	status, err := svc.CheckGenerationStatus(generation.ID.String())
+	require.NoError(t, err)
+	require.NotNil(t, status.Progress)
+	assert.Equal(t, 40, *status.Progress)
+	assert.Zero(t, counting.saves, "an unchanged status and progress must not be saved")
+}

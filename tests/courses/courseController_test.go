@@ -22,6 +22,7 @@ import (
 	courseHooks "soli/formations/src/courses/hooks"
 	"soli/formations/src/courses/models"
 	courseRoutes "soli/formations/src/courses/routes/courseRoutes"
+	sqldb "soli/formations/src/db"
 	generationRoutes "soli/formations/src/courses/routes/generationRoutes"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityErrors "soli/formations/src/entityManagement/errors"
@@ -841,4 +842,111 @@ func TestRetryGeneration_Missing_Returns404(t *testing.T) {
 	_, db := setupTestRouter(t)
 	w := serveGeneration(setupGenerationRouterAs(t, db, "member-a", "member"), "POST", "/api/v1/generations/"+uuid.New().String()+"/retry")
 	assert.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+}
+
+// setupGenerationCreateAs mounts POST /generations (generic AddEntity) with the course
+// hooks registered as at startup, for the given caller.
+func setupGenerationCreateAs(t *testing.T, db *gorm.DB, userID string, roles ...string) *gin.Engine {
+	hooks.GlobalHookRegistry.ClearAllHooks()
+	courseHooks.InitCourseHooks(db)
+	t.Cleanup(hooks.GlobalHookRegistry.ClearAllHooks)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", roles)
+		c.Next()
+	})
+	router.POST("/api/v1/generations", generationRoutes.NewGenerationController(db).AddGeneration)
+	return router
+}
+
+func createGenerationBody(courseID uuid.UUID) string {
+	return `{"name":"g","format":1,"courses":"` + courseID.String() + `"}`
+}
+
+func countGenerationsForCourse(t *testing.T, db *gorm.DB, courseID uuid.UUID) int64 {
+	var n int64
+	require.NoError(t, db.Model(&models.Generation{}).Where("course_id = ?", courseID).Count(&n).Error)
+	return n
+}
+
+// A course belongs to the users in its OwnerIDs. A member cannot create a generation
+// for a course they do not own: the answer is the same as for a missing course, and
+// no row is written.
+func TestGenerationCreate_OtherMembersCourse_RefusedLikeMissing(t *testing.T) {
+	_, db := setupTestRouter(t)
+	course, _, _, _ := createTestData(t, db) // owned by test-user-1
+	other := setupGenerationCreateAs(t, db, "member-b", "member")
+
+	foreign := serveGenerationBody(other, "POST", "/api/v1/generations", createGenerationBody(course.ID))
+	missing := serveGenerationBody(other, "POST", "/api/v1/generations", createGenerationBody(uuid.New()))
+
+	assert.GreaterOrEqual(t, foreign.Code, 400, foreign.Body.String())
+	assert.Less(t, foreign.Code, 500, foreign.Body.String())
+	assert.Equal(t, missing.Code, foreign.Code)
+	assert.Equal(t, missing.Body.String(), foreign.Body.String())
+	assert.Zero(t, countGenerationsForCourse(t, db, course.ID), "no generation must be stored for someone else's course")
+}
+
+// The course owner and a platform administrator can create a generation for it.
+func TestGenerationCreate_OwnerAndAdmin_Created(t *testing.T) {
+	_, db := setupTestRouter(t)
+	for name, caller := range map[string][]string{"owner": {"test-user-1", "member"}, "admin": {"platform-admin", "administrator"}} {
+		t.Run(name, func(t *testing.T) {
+			course, _, _, _ := createTestData(t, db)
+			router := setupGenerationCreateAs(t, db, caller[0], caller[1])
+			w := serveGenerationBody(router, "POST", "/api/v1/generations", createGenerationBody(course.ID))
+			assert.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+			assert.Equal(t, int64(1), countGenerationsForCourse(t, db, course.ID))
+		})
+	}
+}
+
+func setupCourseSourceRouterAs(t *testing.T, db *gorm.DB, userID string, roles ...string) *gin.Engine {
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", roles)
+		c.Next()
+	})
+	mockCasdoor := authMocks.NewMockCasdoorService()
+	controller := courseRoutes.NewCourseControllerWithDependencies(db, workerServices.NewMockWorkerService(), mockCasdoor,
+		workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor), genericService.NewGenericService(db, nil))
+	router.POST("/api/v1/courses/source", controller.CreateCourseFromSource)
+	return router
+}
+
+func courseSourceBody(sourceType, source string) string {
+	b, _ := json.Marshal(map[string]string{"source_type": sourceType, "source": source, "name": "c"})
+	return string(b)
+}
+
+// A local source reads the server's own filesystem; it is a CLI mode and is refused
+// over HTTP for everyone, with the same answer whether the path exists or not.
+func TestCreateCourseFromSource_LocalSource_Refused(t *testing.T) {
+	_, db := setupTestRouter(t)
+	existing := t.TempDir()
+	for name, caller := range map[string][]string{"member": {"member-a", "member"}, "admin": {"platform-admin", "administrator"}} {
+		t.Run(name, func(t *testing.T) {
+			router := setupCourseSourceRouterAs(t, db, caller[0], caller[1])
+			found := serveGenerationBody(router, "POST", "/api/v1/courses/source", courseSourceBody("local", existing))
+			notFound := serveGenerationBody(router, "POST", "/api/v1/courses/source", courseSourceBody("local", existing+"/missing"))
+			assert.Equal(t, http.StatusBadRequest, found.Code, found.Body.String())
+			assert.Equal(t, http.StatusBadRequest, notFound.Code, notFound.Body.String())
+			assert.Equal(t, notFound.Body.String(), found.Body.String(), "the answer must not reveal whether the path exists")
+			assert.NotContains(t, found.Body.String(), existing)
+		})
+	}
+}
+
+// A git source still reaches the course loader; it stops on the SSH key lookup, so nothing is cloned.
+func TestCreateCourseFromSource_GitSource_ReachesLoader(t *testing.T) {
+	_, db := setupTestRouter(t)
+	prevDB := sqldb.DB
+	sqldb.DB = db // the git loader reads SSH keys from the global DB
+	t.Cleanup(func() { sqldb.DB = prevDB })
+	router := setupCourseSourceRouterAs(t, db, uuid.NewString(), "member") // the git cache keys on a uuid user id
+	w := serveGenerationBody(router, "POST", "/api/v1/courses/source", courseSourceBody("git", "file:///nonexistent-ocf-test-repo"))
+	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "Impossible de récupérer le cours", w.Body.String())
 }
