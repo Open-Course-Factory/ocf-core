@@ -1,6 +1,7 @@
 package organizationHooks
 
 import (
+	"errors"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	entityServices "soli/formations/src/entityManagement/services"
 	"fmt"
@@ -434,11 +435,26 @@ func authorizeMemberWrite(ctx *hooks.HookContext, orgSvc services.OrganizationSe
 	return nil
 }
 
-// OrganizationMemberUpdateAuthorizationHook authorizes a role/status change on an existing
+// authorizeMemberRank applies the offboarding rank rule to the target row: the
+// caller must outrank the member. The hook's own answer on platform
+// administrator is the actor's, so this check and authorizeMemberWrite agree.
+func authorizeMemberRank(ctx *hooks.HookContext, db *gorm.DB, member *models.OrganizationMember, action string) error {
+	var org models.Organization
+	if err := db.First(&org, "id = ?", member.OrganizationID).Error; err != nil {
+		return fmt.Errorf("organization not found: %w", err)
+	}
+	err := services.CheckActorOutranksMember(db, &org, ctx.UserID, ctx.IsAdmin(), member.UserID)
+	if errors.Is(err, services.ErrOutranksCaller) {
+		return utils.PermissionDeniedError(action, "organization")
+	}
+	return err
+}
+
+// OrganizationMemberUpdateAuthorizationHook authorizes a role/metadata change on an existing
 // OrganizationMember via the generic PATCH route. It mirrors the create-side
 // OrganizationMemberValidationHook (manage check + role cap) and the delete-side
-// OrganizationMemberDeletionHook (owner protection): only an org manager/owner may change a
-// member, no one may raise a member above the granter's own role, and an owner's role may not
+// OrganizationMemberDeletionHook (owner protection, rank rule): only an org manager/owner may
+// change a member they outrank, no one may raise a member above the granter's own role, and an owner's role may not
 // be changed through this path. Platform administrators bypass the manage check and the
 // role cap, not the owner protection.
 type OrganizationMemberUpdateAuthorizationHook struct {
@@ -476,14 +492,16 @@ func (h *OrganizationMemberUpdateAuthorizationHook) Execute(ctx *hooks.HookConte
 	if err := authorizeMemberWrite(ctx, h.organizationService, current.OrganizationID, "update members of"); err != nil {
 		return err
 	}
+	if err := authorizeMemberRank(ctx, h.db, current, "update members of"); err != nil {
+		return err
+	}
 
 	requestedRole, roleChangeRequested, err := requestedRoleFromPatch(patch)
 	if err != nil {
 		return err
 	}
 	if !roleChangeRequested {
-		// A status/metadata-only patch is authorized by the manage check alone; there is no
-		// role transition to cap or owner role to protect.
+		// A metadata-only patch has no role transition to cap or owner role to protect.
 		return nil
 	}
 	// Refused before the cap, which an administrator bypasses (#429).
@@ -653,8 +671,16 @@ func (h *OrganizationMemberDeletionHook) Execute(ctx *hooks.HookContext) error {
 		return utils.ErrCannotRemoveOwner("organization")
 	}
 
-	// 2. Check if requesting user can manage this organization.
+	// The offboarding owns this row: reinstate or erase it, for everyone.
+	if member.IsOffboarded() {
+		return entityErrors.NewConflictError("an offboarded member is reinstated or erased, not removed")
+	}
+
+	// 2. Check if requesting user can manage this organization, and outranks the member.
 	if err := authorizeMemberWrite(ctx, h.organizationService, member.OrganizationID, "remove members from"); err != nil {
+		return err
+	}
+	if err := authorizeMemberRank(ctx, h.db, member, "remove members from"); err != nil {
 		return err
 	}
 

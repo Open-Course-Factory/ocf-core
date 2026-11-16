@@ -33,7 +33,6 @@ type BatchCreateOrganizationMembersInput struct {
 // All fields are pointers to support partial updates (PATCH)
 type EditOrganizationMemberInput struct {
 	Role     *models.OrganizationMemberRole `json:"role,omitempty" mapstructure:"role"`
-	IsActive *bool                          `json:"is_active,omitempty" mapstructure:"is_active"`
 	Metadata *map[string]any        `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 

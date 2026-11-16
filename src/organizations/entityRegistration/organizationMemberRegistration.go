@@ -66,9 +66,6 @@ func RegisterOrganizationMember(service *ems.EntityRegistrationService) {
 					if input.Role != nil {
 						updates["role"] = *input.Role
 					}
-					if input.IsActive != nil {
-						updates["is_active"] = *input.IsActive
-					}
 					if input.Metadata != nil {
 						updates["metadata"] = *input.Metadata
 					}
@@ -110,12 +107,12 @@ func RegisterOrganizationMember(service *ems.EntityRegistrationService) {
 				},
 				Update: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Update organization member",
-					Description: "Update a member's role or status in an organization (owner or manager only)",
+					Description: "Update a member's role or metadata in an organization (owner or manager only, on a member they outrank)",
 					Security:    true,
 				},
 				Delete: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Remove a member from an organization",
-					Description: "Remove a member from an organization (owner or manager only, cannot remove owner)",
+					Description: "Remove a member from an organization (owner or manager only, on a member they outrank; cannot remove the owner or an offboarded member)",
 					Security:    true,
 				},
 			},

@@ -68,6 +68,7 @@ func TestOrgMemberUpdateHook_AdminPatchesUnknownRole_Rejected(t *testing.T) {
 
 // Guard against over-restriction: a registered role still passes the allowlist.
 func TestOrgMemberUpdateHook_OwnerPatchesKnownRole_Allowed(t *testing.T) {
+	installMockEnforcer(t) // the rank rule reads the target's platform role and fails closed without one
 	db := newOrgRoleCapDB(t)
 	orgID := seedOrgWithMembers(t, db, "org-owner-account", map[string]models.OrganizationMemberRole{
 		"org-owner-account": models.OrgRoleOwner,

@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
@@ -52,12 +53,35 @@ func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organization
 // only on plain members.
 func newRankOnlyCheck(db *gorm.DB, org *organizationModels.Organization, actorID string) (func(targetID string) (*organizationModels.OrganizationMember, error), bool, error) {
 	actorIsAdmin, _ := isPlatformAdmin(actorID)
+	check, err := rankCheckAs(db, org, actorID, actorIsAdmin)
+	return check, actorIsAdmin, err
+}
+
+// CheckActorOutranksMember applies the rank rule of newRankOnlyCheck to one
+// target for a caller whose platform-administrator status the request already
+// resolved (the generic member hooks pass their HookContext's answer). Returns
+// ErrOutranksCaller when the target is out of the actor's reach.
+func CheckActorOutranksMember(db *gorm.DB, org *organizationModels.Organization, actorID string, actorIsAdmin bool, targetID string) error {
+	check, err := rankCheckAs(db, org, actorID, actorIsAdmin)
+	if err != nil {
+		return err
+	}
+	if _, err := check(targetID); err != nil {
+		if errors.Is(err, errOutranksActor) {
+			return fmt.Errorf("%w: %s", ErrOutranksCaller, targetID)
+		}
+		return err
+	}
+	return nil
+}
+
+func rankCheckAs(db *gorm.DB, org *organizationModels.Organization, actorID string, actorIsAdmin bool) (func(targetID string) (*organizationModels.OrganizationMember, error), error) {
 	actorIsOwner := actorID == org.OwnerUserID
 	var actorRole organizationModels.OrganizationMemberRole
 	if !actorIsAdmin && !actorIsOwner {
 		actor, err := findMembership(db, org.ID, actorID)
 		if err != nil && !errors.Is(err, ErrMemberNotFound) {
-			return nil, false, err
+			return nil, err
 		}
 		if actor != nil {
 			actorRole = actor.Role
@@ -80,7 +104,7 @@ func newRankOnlyCheck(db *gorm.DB, org *organizationModels.Organization, actorID
 			return target, errOutranksActor
 		}
 		return target, nil
-	}, actorIsAdmin, nil
+	}, nil
 }
 
 // belongsToOrganizationAlone reports whether nothing outside orgID holds the
