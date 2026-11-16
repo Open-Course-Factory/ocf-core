@@ -267,7 +267,7 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 			"error", err)
 		return nil
 	}
-	scenarioServices.ReleaseTerminals(h.deleteTerminal, runs)
+	scenarioServices.ReleaseTerminals(h.db, h.deleteTerminal, runs)
 
 	if len(runs) > 0 {
 		slog.Info("AfterDelete: abandoned active sessions after assignment removal",

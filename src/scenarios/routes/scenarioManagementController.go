@@ -535,7 +535,7 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to delete scenario")
 		return
 	}
-	services.ReleaseTerminals(sc.deleteTerminal, abandoned)
+	services.ReleaseTerminals(sc.db, sc.deleteTerminal, abandoned)
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Scenario deleted successfully"})
 }

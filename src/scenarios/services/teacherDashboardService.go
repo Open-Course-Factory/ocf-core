@@ -657,7 +657,7 @@ func (s *TeacherDashboardService) abandonExistingRun(scenarioID uuid.UUID, userI
 		return false, abandonErr
 	}
 	// Before the new container is created, so the old one's budget is free for it.
-	ReleaseTerminals(s.terminalService.DeleteSession, []models.ScenarioSession{existing})
+	ReleaseTerminals(s.db, s.terminalService.DeleteSession, []models.ScenarioSession{existing})
 	return true, nil
 }
 
@@ -783,7 +783,7 @@ func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, 
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to reset sessions: %w", err)
 	}
-	ReleaseTerminals(s.terminalService.DeleteSession, runs)
+	ReleaseTerminals(s.db, s.terminalService.DeleteSession, runs)
 
 	return int64(len(runs)), skipped, nil
 }

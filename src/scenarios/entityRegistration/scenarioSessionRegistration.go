@@ -99,11 +99,12 @@ func RegisterScenarioSession(service *ems.EntityRegistrationService) {
 			},
 			SubEntities:     []any{models.ScenarioStepProgress{}, models.ScenarioFlag{}},
 			DefaultIncludes: []string{"StepProgress", "Flags"},
-			OwnershipConfig: &access.OwnershipConfig{OwnerField: "UserID", Operations: []string{"read", "create"}, AdminBypass: true},
+			OwnershipConfig: &access.OwnershipConfig{OwnerField: "UserID", Operations: []string{"read"}, AdminBypass: true},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
-					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+					// No generic create: a run is created by the launch routes, which run the access and terminal checks.
+					string(authModels.Member): "(" + http.MethodGet + ")",
+					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
@@ -118,12 +119,6 @@ func RegisterScenarioSession(service *ems.EntityRegistrationService) {
 				GetOne: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Get a scenario session",
 					Description: "Retrieve a specific scenario session by ID",
-					Tags:        []string{"scenario-sessions"},
-					Security:    true,
-				},
-				Create: &entityManagementInterfaces.SwaggerOperation{
-					Summary:     "Start a scenario session",
-					Description: "Start a new scenario session for the current user",
 					Tags:        []string{"scenario-sessions"},
 					Security:    true,
 				},

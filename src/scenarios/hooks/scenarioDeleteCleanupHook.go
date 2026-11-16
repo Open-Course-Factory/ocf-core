@@ -48,6 +48,6 @@ func (h *ScenarioDeleteCleanupHook) Execute(ctx *hooks.HookContext) error {
 		slog.Error("AfterDelete: scenario cleanup failed", "scenario_id", scenario.ID, "error", err)
 		return nil
 	}
-	scenarioServices.ReleaseTerminals(h.deleteTerminal, runs)
+	scenarioServices.ReleaseTerminals(h.db, h.deleteTerminal, runs)
 	return nil
 }

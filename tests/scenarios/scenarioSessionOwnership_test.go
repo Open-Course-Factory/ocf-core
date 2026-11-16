@@ -2,18 +2,10 @@ package scenarios_test
 
 // RED tests for MR D — ScenarioSession ownership enforcement (H4).
 //
-// ScenarioSession is a Casbin "member GET|POST" entity with, today, NO
-// ownership enforcement on either the write or the read path. Two distinct
-// holes are pinned here:
+// ScenarioSession is a Casbin "member GET" entity. Two holes were pinned here:
 //
-//  1. CREATE forgery. CreateScenarioSessionInput.UserID is client-supplied and
-//     the DtoToModel converter copies it verbatim into the persisted row. A
-//     member can therefore POST a session owned by ANOTHER user (impersonation
-//     of session ownership / progress). The fix is a BeforeCreate ownership
-//     hook wired in scenarioHooks.InitScenarioHooks that forces the row's
-//     UserID to the authenticated caller. This test drives the REAL generic
-//     create handler through the REAL hook chain so the forgery is exercised
-//     end-to-end, and asserts on the PERSISTED row (not a mock call).
+//  1. CREATE: the generic create route is no longer mounted; runs are created
+//     by the launch routes only (see scenarioSessionGenericCreate_test.go).
 //
 //  2. READ scope. The registration carries no read OwnershipConfig, so a member
 //     can LIST and GET other users' sessions (their flags, grade, progress).
@@ -24,14 +16,12 @@ package scenarios_test
 // All assertions are USER-OBSERVABLE (HTTP status, response body, DB row).
 //
 // RED today:
-//   - CreateWithForgedUserId_PersistsCallerAsOwner (no create hook)
 //   - ListAsNonOwner_ReturnsOnlyOwnSessions        (no read scope)
 //   - GetByIdOtherUsersSession_Returns404          (no read scope)
 // Green-guard today (regression protection against over-restriction):
 //   - ListAsAdmin_ReturnsAllSessions
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +36,6 @@ import (
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementController "soli/formations/src/entityManagement/routes"
 	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
-	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 
 	"gorm.io/gorm"
@@ -201,81 +190,4 @@ func TestScenarioSession_ListAsAdmin_ReturnsAllSessions(t *testing.T) {
 	assert.True(t, ids[a1.ID.String()], "admin must see A's session")
 	assert.True(t, ids[b1.ID.String()], "admin must see B's session (AdminBypass)")
 	assert.Equal(t, int64(2), resp.Total, "admin Total must count all sessions")
-}
-
-// =============================================================================
-// CREATE-forgery harness — drives the REAL generic create handler through the
-// REAL production hook chain (scenarioHooks.InitScenarioHooks). Hooks are LIVE
-// here (not disabled) precisely because the forgery fix lives in a BeforeCreate
-// hook. The absence of that hook today is what makes the test RED; the test
-// must NOT register the hook itself.
-// =============================================================================
-
-func scenarioSessionCreateRouter(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
-	t.Helper()
-
-	originalSvc := ems.GlobalEntityRegistrationService
-	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
-	scenarioRegistration.RegisterScenarioSession(ems.GlobalEntityRegistrationService)
-
-	// Live hook chain, wired exactly as production does at startup. The
-	// ScenarioSession create ownership hook is auto-registered from the entity's
-	// OwnershipConfig by RegisterOwnershipHooks (MR L); InitScenarioHooks wires
-	// the remaining scenario authorization hooks.
-	hooks.GlobalHookRegistry.ClearAllHooks()
-	hooks.GlobalHookRegistry.DisableAllHooks(false)
-	scenarioHooks.InitScenarioHooks(db)
-	ems.RegisterOwnershipHooks(db)
-	t.Cleanup(func() {
-		hooks.GlobalHookRegistry.ClearAllHooks()
-		ems.GlobalEntityRegistrationService = originalSvc
-	})
-
-	gen := entityManagementController.NewGenericController(db, nil)
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	api := r.Group("/api/v1")
-	api.Use(func(c *gin.Context) {
-		if userID != "" {
-			c.Set("userId", userID)
-		}
-		c.Set("userRoles", roles)
-		c.Next()
-	})
-	api.POST("/scenario-sessions", gen.AddEntity)
-	return r
-}
-
-// A member (caller A) POSTs a session whose body claims user_id = B. After the
-// create, the PERSISTED row must be owned by A — the forged B must be
-// overwritten by the BeforeCreate ownership hook. RED today: with no hook, the
-// converter persists B verbatim.
-func TestScenarioSession_CreateWithForgedUserId_PersistsCallerAsOwner(t *testing.T) {
-	db := freshTestDB(t)
-	scenario := seedSessionScenario(t, db)
-
-	r := scenarioSessionCreateRouter(t, db, "user-A", []string{"member"})
-
-	body, err := json.Marshal(map[string]any{
-		"scenario_id": scenario.ID.String(),
-		"user_id":     "user-B", // forgery attempt
-	})
-	require.NoError(t, err)
-
-	req := httptest.NewRequest("POST", "/api/v1/scenario-sessions", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusCreated, w.Code,
-		"create should succeed; body=%s", w.Body.String())
-
-	// Canonical assertion: read the row back from the DB and prove the owner
-	// is the authenticated caller, NOT the forged value.
-	var persisted models.ScenarioSession
-	require.NoError(t, db.Where("scenario_id = ?", scenario.ID).First(&persisted).Error)
-	assert.Equal(t, "user-A", persisted.UserID,
-		"persisted session must be owned by the authenticated caller (A), not the forged user_id (B)")
-	assert.NotEqual(t, "user-B", persisted.UserID,
-		"forged user_id must never survive the create (anti-impersonation contract)")
 }

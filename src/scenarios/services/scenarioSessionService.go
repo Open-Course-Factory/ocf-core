@@ -407,7 +407,7 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 		return nil, err
 	}
 	// After the commit: a setup_failed run's terminal was only stopped and still holds budget.
-	ReleaseTerminals(s.deleteTerminal, zombie)
+	ReleaseTerminals(s.db, s.deleteTerminal, zombie)
 
 	// Reload session with associations
 	if err := s.db.Preload("StepProgress").Preload("Flags").First(session, "id = ?", session.ID).Error; err != nil {
@@ -1333,7 +1333,7 @@ func (s *ScenarioSessionService) loadReprovisionableSession(sessionID uuid.UUID)
 	if !slices.Contains(reprovisionableStatuses, session.Status) {
 		return nil, fmt.Errorf("session status %q cannot be reprovisioned", session.Status)
 	}
-	if session.TerminalSessionID == nil {
+	if session.TerminalSessionID == nil || TerminalOfAnotherUser(s.db, &session) {
 		return nil, fmt.Errorf("no terminal session attached")
 	}
 	return &session, nil
@@ -1624,7 +1624,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, err
 	}
 
-	if session.TerminalSessionID == nil {
+	if session.TerminalSessionID == nil || TerminalOfAnotherUser(s.db, &session) {
 		return nil, fmt.Errorf("no terminal session attached")
 	}
 
@@ -1733,7 +1733,7 @@ func (s *ScenarioSessionService) SkipToStep(sessionID uuid.UUID, targetOrder int
 	if err := requireActiveSession(&session); err != nil {
 		return nil, err
 	}
-	if session.TerminalSessionID == nil {
+	if session.TerminalSessionID == nil || TerminalOfAnotherUser(s.db, &session) {
 		return nil, fmt.Errorf("no terminal session attached")
 	}
 	if FindStepByOrder(session.Scenario.Steps, targetOrder) == nil {
@@ -2247,7 +2247,7 @@ func CleanUpDeletedScenario(db *gorm.DB, scenarioID uuid.UUID) ([]models.Scenari
 func AbandonOpenRuns(db *gorm.DB, query string, args ...any) ([]models.ScenarioSession, error) {
 	var runs []models.ScenarioSession
 	err := db.Where(query, args...).Model(&runs).
-		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}, {Name: "terminal_session_id"}}}).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}, {Name: "user_id"}, {Name: "terminal_session_id"}}}).
 		Where("status IN ?", models.OpenSessionStatuses).
 		Updates(map[string]any{"status": "abandoned"}).Error
 	if err != nil {
@@ -2261,10 +2261,11 @@ func AbandonOpenRuns(db *gorm.DB, query string, args ...any) ([]models.ScenarioS
 // stopped terminal keeps its share of the plan's CPU/RAM budget by design, so
 // every abandoned run left stopped drains the learner's allowance until
 // nothing launches. Call it outside any transaction: DeleteSession calls
-// tt-backend and writes through its own db handle.
-func ReleaseTerminals(deleteTerminal TerminalDeleteFunc, runs []models.ScenarioSession) {
+// tt-backend and writes through its own db handle. Only a terminal of the
+// run's own user is released (TerminalOfAnotherUser); runs must carry UserID.
+func ReleaseTerminals(db *gorm.DB, deleteTerminal TerminalDeleteFunc, runs []models.ScenarioSession) {
 	for _, run := range runs {
-		if run.TerminalSessionID == nil || *run.TerminalSessionID == "" {
+		if run.TerminalSessionID == nil || *run.TerminalSessionID == "" || TerminalOfAnotherUser(db, &run) {
 			continue
 		}
 		if deleteTerminal == nil {
@@ -2277,6 +2278,28 @@ func ReleaseTerminals(deleteTerminal TerminalDeleteFunc, runs []models.ScenarioS
 				"session_id", run.ID, "terminal_session_id", *run.TerminalSessionID, "err", err)
 		}
 	}
+}
+
+// TerminalOfAnotherUser reports whether the run points at a terminal held by
+// someone other than the run's user. A run row could once be created with any
+// terminal id, so the id alone proves nothing: such a run must never act on,
+// or release, that container. A missing terminal row is not another user's.
+func TerminalOfAnotherUser(db *gorm.DB, run *models.ScenarioSession) bool {
+	if run.TerminalSessionID == nil || *run.TerminalSessionID == "" {
+		return false
+	}
+	var owners []string
+	if err := db.Model(&terminalModels.Terminal{}).Where("session_id = ?", *run.TerminalSessionID).
+		Pluck("user_id", &owners).Error; err != nil {
+		slog.Error("could not read the owner of a run's terminal", "session_id", run.ID, "err", err)
+		return true // fail closed
+	}
+	if len(owners) > 0 && owners[0] != run.UserID {
+		slog.Warn("run points at a terminal of another user — left alone",
+			"session_id", run.ID, "terminal_session_id", *run.TerminalSessionID)
+		return true
+	}
+	return false
 }
 
 // AbandonSession marks a session as abandoned. Which statuses qualify is
