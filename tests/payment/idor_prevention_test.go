@@ -20,6 +20,7 @@
 package payment_tests
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -60,7 +61,8 @@ func registerAllPaymentEntities(t *testing.T) *ems.EntityRegistrationService {
 }
 
 // TestSensitivePaymentEntities_MemberCannotGET verifies that the Member role
-// does NOT have GET in its method regex for any sensitive payment entity.
+// does NOT have GET in its method regex for any sensitive payment entity,
+// unless the entity scopes reads to the owner (OwnershipConfig "read").
 //
 // This test FAILS before the fix (Member has GET) and PASSES after.
 func TestSensitivePaymentEntities_MemberCannotGET(t *testing.T) {
@@ -79,6 +81,11 @@ func TestSensitivePaymentEntities_MemberCannotGET(t *testing.T) {
 
 			if !hasMember {
 				// Member role not defined at all = no access = safe
+				return
+			}
+
+			// An owner "read" scope filters generic GETs to the caller's own rows.
+			if cfg := service.GetOwnershipConfig(entityName); cfg != nil && slices.Contains(cfg.Operations, "read") {
 				return
 			}
 

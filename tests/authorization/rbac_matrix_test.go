@@ -199,10 +199,9 @@ func organizationsEntityRoles() []entityRoleDefinition {
 
 // paymentEntityRoles covers Stripe-related entities. The matrix here is
 // the most varied:
-//   - BillingAddress / PaymentMethod: members can mutate but cannot list
-//     others' records (note: GET is intentionally absent for member at
-//     the role level — handlers serve the user's own records via dedicated
-//     routes).
+//   - BillingAddress / PaymentMethod: members get full CRUD at the role
+//     layer here; BillingAddress reads are scoped to the owner by its
+//     OwnershipConfig "read" operation.
 //   - Invoice / UsageMetrics / SubscriptionPlan / PlanFeature: members read
 //     only; admins have full CRUD.
 //   - UserSubscription: admin-only at the role layer; members use dedicated
