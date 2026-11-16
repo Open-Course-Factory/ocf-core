@@ -258,7 +258,7 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 	// them behind hands the learner a session for a scenario they are no
 	// longer assigned to, and for 'provisioning' the unique partial index
 	// then blocks a fresh start as well.
-	terminalIDs, err := scenarioServices.AbandonOpenRuns(h.db.Where("user_id IN ? AND scenario_id = ?",
+	runs, err := scenarioServices.AbandonOpenRuns(h.db.Where("user_id IN ? AND scenario_id = ?",
 		memberUserIDs, assignment.ScenarioID))
 	if err != nil {
 		slog.Warn("AfterDelete: failed to abandon sessions",
@@ -267,7 +267,14 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 			"error", err)
 		return nil
 	}
-	scenarioServices.ReleaseTerminals(h.deleteTerminal, terminalIDs)
+	scenarioServices.ReleaseTerminals(h.deleteTerminal, runs)
+
+	if len(runs) > 0 {
+		slog.Info("AfterDelete: abandoned active sessions after assignment removal",
+			"group_id", assignment.GroupID,
+			"scenario_id", assignment.ScenarioID,
+			"sessions_abandoned", len(runs))
+	}
 
 	return nil
 }

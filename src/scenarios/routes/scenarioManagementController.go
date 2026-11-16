@@ -570,10 +570,10 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 	}
 
 	// Delete in a transaction: abandon active sessions, delete assignments, then scenario
-	var terminalIDs []string
+	var abandoned []models.ScenarioSession
 	if err := sc.db.Transaction(func(tx *gorm.DB) error {
 		var err error
-		if terminalIDs, err = services.CleanUpDeletedScenario(tx, scenarioID); err != nil {
+		if abandoned, err = services.CleanUpDeletedScenario(tx, scenarioID); err != nil {
 			return err
 		}
 		if err := tx.Delete(scenario).Error; err != nil {
@@ -585,7 +585,7 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to delete scenario")
 		return
 	}
-	services.ReleaseTerminals(sc.deleteTerminal, terminalIDs)
+	services.ReleaseTerminals(sc.deleteTerminal, abandoned)
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Scenario deleted successfully"})
 }

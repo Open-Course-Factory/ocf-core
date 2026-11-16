@@ -438,9 +438,7 @@ func (pc *scenarioProgressController) AbandonSession(ctx *gin.Context) {
 		return
 	}
 
-	if session.TerminalSessionID != nil && *session.TerminalSessionID != "" {
-		services.ReleaseTerminals(pc.terminalService.DeleteSession, []string{*session.TerminalSessionID})
-	}
+	services.ReleaseTerminals(pc.terminalService.DeleteSession, []models.ScenarioSession{*session})
 
 	ctx.JSON(http.StatusOK, dto.MessageResponse{Message: "Session abandoned"})
 }

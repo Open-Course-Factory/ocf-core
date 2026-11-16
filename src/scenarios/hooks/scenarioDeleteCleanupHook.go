@@ -43,11 +43,11 @@ func (h *ScenarioDeleteCleanupHook) Execute(ctx *hooks.HookContext) error {
 		return nil
 	}
 	// shortcut: cleanup runs after the delete and its failure is only logged, move it into the delete transaction if dangling runs are ever observed
-	terminalIDs, err := scenarioServices.CleanUpDeletedScenario(h.db, scenario.ID)
+	runs, err := scenarioServices.CleanUpDeletedScenario(h.db, scenario.ID)
 	if err != nil {
 		slog.Error("AfterDelete: scenario cleanup failed", "scenario_id", scenario.ID, "error", err)
 		return nil
 	}
-	scenarioServices.ReleaseTerminals(h.deleteTerminal, terminalIDs)
+	scenarioServices.ReleaseTerminals(h.deleteTerminal, runs)
 	return nil
 }

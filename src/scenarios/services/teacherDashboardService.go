@@ -656,6 +656,8 @@ func (s *TeacherDashboardService) abandonExistingRun(scenarioID uuid.UUID, userI
 		utils.Warn("BulkStartScenario - Failed to abandon existing session %s for user %s: %v", existing.ID, userID, abandonErr)
 		return false, abandonErr
 	}
+	// Before the new container is created, so the old one's budget is free for it.
+	ReleaseTerminals(s.terminalService.DeleteSession, []models.ScenarioSession{existing})
 	return true, nil
 }
 
@@ -777,16 +779,16 @@ func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, 
 	// skipped one would leave the learner unable to restart — 'provisioning'
 	// because the unique partial index covers it, 'setup_failed' because a
 	// class whose launch died is exactly the one a trainer resets.
-	result := s.db.Model(&models.ScenarioSession{}).
-		Where("user_id IN ? AND scenario_id = ? AND status IN ?",
-			resettable, scenarioID, models.OpenSessionStatuses).
-		Updates(map[string]any{"status": "abandoned"})
-
-	if result.Error != nil {
-		return 0, nil, fmt.Errorf("failed to reset sessions: %w", result.Error)
+	runs, err := AbandonOpenRuns(s.db.Where("user_id IN ? AND scenario_id = ?", resettable, scenarioID))
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to reset sessions: %w", err)
+	}
+	// nil only where the service is built without terminals (dashboard-read tests).
+	if s.terminalService != nil {
+		ReleaseTerminals(s.terminalService.DeleteSession, runs)
 	}
 
-	return result.RowsAffected, skipped, nil
+	return int64(len(runs)), skipped, nil
 }
 
 // splitExamLockedLearners separates the learners a class-wide start or reset
