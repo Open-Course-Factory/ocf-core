@@ -20,6 +20,7 @@ import (
 	apiErrors "soli/formations/src/auth/errors"
 	"soli/formations/src/auth/interfaces"
 	authServices "soli/formations/src/auth/services"
+	organizationModels "soli/formations/src/organizations/models"
 	paymentServices "soli/formations/src/payment/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
@@ -291,6 +292,15 @@ func NewSetForbiddenHandler(db *gorm.DB) gin.HandlerFunc {
 
 		if input.Forbidden && targetID == adminID {
 			apiErrors.Abort(ctx, http.StatusBadRequest, "cannot_block_own_account")
+			return
+		}
+
+		// The administrator now owns the block (or its absence): no reinstate may lift it.
+		// Cleared first so a failure can only leave a block nobody lifts.
+		if err := db.Model(&organizationModels.OrganizationMember{}).Where("user_id = ?", targetID).
+			Update("account_forbidden_by_offboarding", false).Error; err != nil {
+			utils.Error("clearing the offboarding block origin failed for %s: %v", targetID, err)
+			apiErrors.Abort(ctx, http.StatusInternalServerError, "update_failed")
 			return
 		}
 

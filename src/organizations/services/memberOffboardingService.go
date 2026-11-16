@@ -20,8 +20,8 @@ var (
 	ErrNoMembersSelected   = errors.New("no members selected")
 	ErrMemberNotFound      = errors.New("organization member not found")
 	ErrCannotOffboardOwner = errors.New("the organization owner cannot be offboarded")
-	ErrOutranksCaller      = errors.New("a member who outranks the caller cannot be offboarded")
-	ErrMemberNotOffboarded = errors.New("member is not offboarded; erasure is the end of offboarding")
+	ErrOutranksCaller      = errors.New("a member who outranks the caller is out of reach")
+	ErrMemberNotOffboarded = errors.New("member is not offboarded")
 )
 
 // AccountForbidder is the slice of the identity provider offboarding needs:
@@ -90,12 +90,19 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 	}
 	forbid := make(map[string]bool, len(userIDs))
 	setsBlock := make(map[string]bool, len(userIDs))
+	skip := make(map[string]bool, len(userIDs))
 	for _, userID := range userIDs {
-		if _, err := checkRank(userID); err != nil {
+		target, err := checkRank(userID)
+		if err != nil {
 			if errors.Is(err, errOutranksActor) {
 				return fmt.Errorf("%w: %s", ErrOutranksCaller, userID)
 			}
 			return err
+		}
+		if target.IsOffboarded() {
+			// Re-offboarding is a no-op: the row keeps its dates and its block origin.
+			skip[userID] = true
+			continue
 		}
 		// An unknown answer does not forbid: blocking a whole account is the harmful direction.
 		forbid[userID] = belongsToOrganizationAlone(s.alone, org.ID, userID)
@@ -114,6 +121,9 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 	var forbidden []string
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		for _, userID := range userIDs {
+			if skip[userID] {
+				continue
+			}
 			if err := s.offboardOne(tx, &org, userID, now, erasureAt, forbid[userID], setsBlock[userID]); err != nil {
 				return err
 			}
@@ -135,7 +145,9 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 	}
 
 	for _, userID := range userIDs {
-		s.releaseAssignedLicences(userID, actorID)
+		if !skip[userID] {
+			s.releaseAssignedLicences(userID, actorID)
+		}
 	}
 	return nil
 }
