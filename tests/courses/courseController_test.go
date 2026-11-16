@@ -518,7 +518,7 @@ func TestCourseController_GenerationRoutes_MalformedID_Returns400(t *testing.T) 
 func TestGenerationCreate_MalformedCourseID_ReturnsError(t *testing.T) {
 	_, db := setupTestRouter(t) // registers the Generation entity on the test DB
 	svc := genericService.NewGenericService(db, nil)
-	hook := courseHooks.NewGenerationCourseRequiredHook()
+	hook := courseHooks.NewGenerationCourseRequiredHook(db)
 	require.NoError(t, hooks.GlobalHookRegistry.RegisterHook(hook))
 	t.Cleanup(func() { _ = hooks.GlobalHookRegistry.UnregisterHook(hook.GetName()) })
 

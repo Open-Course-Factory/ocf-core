@@ -36,7 +36,7 @@ func InitCourseHooks(db *gorm.DB) {
 		log.Println("✅ Section cascade delete hook registered")
 	}
 
-	if err := hooks.GlobalHookRegistry.RegisterHook(NewGenerationCourseRequiredHook()); err != nil {
+	if err := hooks.GlobalHookRegistry.RegisterHook(NewGenerationCourseRequiredHook(db)); err != nil {
 		log.Printf("❌ Failed to register generation course required hook: %v", err)
 	} else {
 		log.Println("✅ Generation course required hook registered")

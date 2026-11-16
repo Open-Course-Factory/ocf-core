@@ -12,8 +12,8 @@ import (
 
 // Create Course from Source godoc
 //
-//	@Summary		Création cours à partir d'une source (git ou locale)
-//	@Description	Ajoute un nouveau cours dans la base de données à partir d'un dépôt git ou d'un chemin local
+//	@Summary		Création cours à partir d'un dépôt git
+//	@Description	Ajoute un nouveau cours dans la base de données à partir d'un dépôt git (les sources locales sont réservées au CLI)
 //	@Tags			courses
 //	@Accept			json
 //	@Produce		json
@@ -25,6 +25,7 @@ import (
 //
 //	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
 //	@Failure		400	{object}	errors.APIError	"Impossible de créer un cours"
+//	@Failure		400	{object}	errors.APIError	"Source type must be 'git'"
 //	@Failure		409	{object}	errors.APIError	"Cours déjà présent pour cet utilisateur"
 //	@Router			/courses/source [post]
 func (c courseController) CreateCourseFromSource(ctx *gin.Context) {
@@ -36,15 +37,14 @@ func (c courseController) CreateCourseFromSource(ctx *gin.Context) {
 		return
 	}
 
-	// Validate source type
-	if createCourseFromSourceDTO.SourceType != "git" && createCourseFromSourceDTO.SourceType != "local" {
-		errors.Respond(ctx, http.StatusBadRequest, "Source type must be 'git' or 'local'")
+	// Local sources read the server's filesystem: CLI only (src/cli calls the service directly)
+	if createCourseFromSourceDTO.SourceType != "git" {
+		errors.Respond(ctx, http.StatusBadRequest, "Source type must be 'git'")
 		return
 	}
 
-	// For git sources, default branch to "main" if not provided
 	branch := createCourseFromSourceDTO.Branch
-	if createCourseFromSourceDTO.SourceType == "git" && branch == "" {
+	if branch == "" {
 		branch = "main"
 	}
 

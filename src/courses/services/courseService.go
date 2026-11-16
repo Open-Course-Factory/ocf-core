@@ -182,7 +182,7 @@ func (c courseService) CheckGenerationStatus(generationID string) (*dto.Generati
 
 	// 4. Mettre à jour le statut local si nécessaire
 	updated := false
-	if workerStatus.Progress != nil && generation.Progress != workerStatus.Progress {
+	if workerStatus.Progress != nil && (generation.Progress == nil || *generation.Progress != *workerStatus.Progress) {
 		generation.UpdateProgress(*workerStatus.Progress)
 		updated = true
 	}
