@@ -88,19 +88,19 @@ func RegisterEmailTemplate(service *ems.EntityRegistrationService) {
 				},
 				Create: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Create an email template",
-					Description: "Creates a new email template",
+					Description: "Creates a new email template; an unparsable subject or body is refused with 400",
 					Tags:        []string{"email-templates"},
 					Security:    true,
 				},
 				Update: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Update an email template",
-					Description: "Modifies an existing email template",
+					Description: "Modifies an existing email template; an unparsable subject or body is refused with 400",
 					Tags:        []string{"email-templates"},
 					Security:    true,
 				},
 				Delete: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Delete an email template",
-					Description: "Deletes an email template (cannot delete system templates)",
+					Description: "Deletes an email template; a system template is refused with 409",
 					Tags:        []string{"email-templates"},
 					Security:    true,
 				},

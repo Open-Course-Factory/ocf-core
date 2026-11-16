@@ -57,7 +57,7 @@ func (s *templateService) GetAllTemplates() ([]models.EmailTemplate, error) {
 // CreateTemplate creates a new email template
 func (s *templateService) CreateTemplate(tmpl *models.EmailTemplate) error {
 	// Validate template can be rendered
-	if _, _, err := s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]any{}); err != nil {
+	if _, _, err := RenderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]any{}); err != nil {
 		return fmt.Errorf("invalid template syntax: %w", err)
 	}
 
@@ -76,7 +76,7 @@ func (s *templateService) UpdateTemplate(tmpl *models.EmailTemplate) error {
 	}
 
 	// Validate template can be rendered
-	if _, _, err := s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]any{}); err != nil {
+	if _, _, err := RenderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]any{}); err != nil {
 		return fmt.Errorf("invalid template syntax: %w", err)
 	}
 
@@ -110,11 +110,12 @@ func (s *templateService) RenderTemplate(name string, variables map[string]any) 
 		return "", "", err
 	}
 
-	return s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, variables)
+	return RenderTemplateContent(tmpl.Subject, tmpl.HTMLBody, variables)
 }
 
-// renderTemplateContent renders subject and body with variables
-func (s *templateService) renderTemplateContent(subjectTmpl, bodyTmpl string, variables map[string]any) (subject string, body string, err error) {
+// RenderTemplateContent renders subject and body with variables; with an empty
+// map it doubles as the syntax check the EmailTemplate hook runs on writes.
+func RenderTemplateContent(subjectTmpl, bodyTmpl string, variables map[string]any) (subject string, body string, err error) {
 	// Render subject
 	subjectTemplate, err := template.New("subject").Parse(subjectTmpl)
 	if err != nil {
@@ -164,7 +165,7 @@ func (s *templateService) TestTemplate(id uuid.UUID, testEmail string) error {
 	}
 
 	// Render template
-	subject, body, err := s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, exampleData)
+	subject, body, err := RenderTemplateContent(tmpl.Subject, tmpl.HTMLBody, exampleData)
 	if err != nil {
 		return fmt.Errorf("failed to render template: %w", err)
 	}

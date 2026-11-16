@@ -38,6 +38,7 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	emailServices "soli/formations/src/email/services"
 	"soli/formations/src/feedback"
 	courseHooks "soli/formations/src/courses/hooks"
+	emailHooks "soli/formations/src/email/hooks"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -161,6 +162,7 @@ func main() {
 
 	// Initialize remaining hooks
 	courseHooks.InitCourseHooks(sqldb.DB)
+	emailHooks.InitEmailHooks(sqldb.DB)
 	authHooks.InitAuthHooks(sqldb.DB)
 	groupHooks.InitGroupHooks(sqldb.DB)
 	organizationHooks.InitOrganizationHooks(sqldb.DB) // Phase 1: Organization hooks

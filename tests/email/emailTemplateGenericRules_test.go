@@ -18,6 +18,7 @@ import (
 	"soli/formations/src/auth/mocks"
 	emailDto "soli/formations/src/email/dto"
 	registration "soli/formations/src/email/entityRegistration"
+	emailHooks "soli/formations/src/email/hooks"
 	emailModels "soli/formations/src/email/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityErrors "soli/formations/src/entityManagement/errors"
@@ -43,8 +44,7 @@ func setupEmailTemplateEntity(t *testing.T) entityServices.GenericService {
 	orig := hooks.GlobalHookRegistry
 	hooks.GlobalHookRegistry = hooks.NewHookRegistry()
 	t.Cleanup(func() { hooks.GlobalHookRegistry = orig })
-	// The email module has no hook initialiser yet; the fix adds
-	// emailHooks.InitEmailHooks(db) (src/email/hooks) and calls it here.
+	emailHooks.InitEmailHooks(db)
 
 	return entityServices.NewGenericService(db, nil)
 }
