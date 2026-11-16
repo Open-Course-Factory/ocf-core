@@ -7,6 +7,7 @@
 package scenarios_test
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -127,10 +128,11 @@ func TestSubmitFlag_RunOnAnotherUsersTerminal_RunsNothingThere(t *testing.T) {
 	assert.Empty(t, verifySvc.consoleWrites, "nothing may be typed into another user's console")
 }
 
-// The same advance through a quiz (here a survey, which any answer passes).
-func TestSubmitQuiz_RunOnAnotherUsersTerminal_RunsNothingThere(t *testing.T) {
-	db := freshTestDB(t)
-	scenario := models.Scenario{Name: "foreign-quiz", Title: "Foreign Quiz", InstanceType: "ubuntu:22.04", CreatedByID: "creator-1"}
+// surveyThenSetupSession seeds a run on terminalID at a survey step (which any
+// answer passes) followed by a step with a background script.
+func surveyThenSetupSession(t *testing.T, db *gorm.DB, terminalID string) models.ScenarioSession {
+	t.Helper()
+	scenario := models.Scenario{Name: "foreign-quiz-" + uuid.NewString()[:8], Title: "Foreign Quiz", InstanceType: "ubuntu:22.04", CreatedByID: "creator-1"}
 	require.NoError(t, db.Create(&scenario).Error)
 	survey := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Feedback", StepType: "survey"}
 	require.NoError(t, db.Create(&survey).Error)
@@ -141,8 +143,6 @@ func TestSubmitQuiz_RunOnAnotherUsersTerminal_RunsNothingThere(t *testing.T) {
 		ScenarioID: scenario.ID, Order: 1, Title: "Next", StepType: "terminal",
 		BackgroundScript: "echo setting up", BackgroundTimeoutSeconds: 5,
 	}).Error)
-	terminalID := "foreign-quiz-terminal"
-	seedForeignTerminal(t, db, terminalID)
 	session := models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-foreign-quiz", Status: "active",
 		StartedAt: time.Now(), TerminalSessionID: &terminalID,
@@ -150,6 +150,15 @@ func TestSubmitQuiz_RunOnAnotherUsersTerminal_RunsNothingThere(t *testing.T) {
 	require.NoError(t, db.Create(&session).Error)
 	require.NoError(t, db.Create(&models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 0, Status: "active"}).Error)
 	require.NoError(t, db.Create(&models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 1, Status: "locked"}).Error)
+	return session
+}
+
+// The same advance through a quiz (here a survey, which any answer passes).
+func TestSubmitQuiz_RunOnAnotherUsersTerminal_RunsNothingThere(t *testing.T) {
+	db := freshTestDB(t)
+	terminalID := "foreign-quiz-terminal"
+	seedForeignTerminal(t, db, terminalID)
+	session := surveyThenSetupSession(t, db, terminalID)
 
 	verifySvc := &bgTrackingVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
@@ -158,6 +167,51 @@ func TestSubmitQuiz_RunOnAnotherUsersTerminal_RunsNothingThere(t *testing.T) {
 	require.NotNil(t, result.NextStep, "control: the survey advances the run")
 
 	assert.Empty(t, verifySvc.execCalls, "no script may run in another user's container")
+}
+
+// failTerminalReads makes every read of the terminals table fail until the
+// test ends, as a database error would.
+func failTerminalReads(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	const name = "test:fail_terminal_reads"
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(name, func(tx *gorm.DB) {
+		if tx.Statement.Table == "terminals" {
+			_ = tx.AddError(errors.New("terminals unreadable"))
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove(name) })
+}
+
+// When the terminal's owner cannot be read, an advance is refused before it is
+// written: it must not go through with the next step's setup silently skipped.
+func TestSubmitFlag_TerminalOwnerUnreadable_RefusesTheAdvance(t *testing.T) {
+	db := freshTestDB(t)
+	session := flaggedTwoStepSession(t, db, "unreadable-flag", models.ScenarioStep{
+		BackgroundScript: "echo setting up level one", BackgroundTimeoutSeconds: 5,
+	})
+	failTerminalReads(t, db)
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{validateRes: true}, verifySvc)
+	_, err := sessionSvc.SubmitFlag(session.ID, "flag{step-zero}")
+
+	require.Error(t, err)
+	assert.Equal(t, 0, currentStepOf(t, db, *session), "the run must not advance")
+	assert.Empty(t, verifySvc.execCalls)
+}
+
+func TestSubmitQuiz_TerminalOwnerUnreadable_RefusesTheAdvance(t *testing.T) {
+	db := freshTestDB(t)
+	session := surveyThenSetupSession(t, db, "unreadable-quiz-terminal")
+	failTerminalReads(t, db)
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+	_, err := sessionSvc.SubmitQuiz(session.ID, dto.SubmitQuizInput{Answers: map[uuid.UUID]string{}})
+
+	require.Error(t, err)
+	assert.Equal(t, 0, currentStepOf(t, db, session), "the run must not advance")
+	assert.Empty(t, verifySvc.execCalls)
 }
 
 // test-verify runs an arbitrary script: on a preview run pointing at another

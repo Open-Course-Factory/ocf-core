@@ -1866,7 +1866,11 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 	}).Preload("StepProgress").Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
-	DropForeignTerminal(s.db, &session)
+	// An advance is written before the next step is set up: a failed read
+	// must not pass for "no terminal" and skip that setup silently.
+	if err := DropForeignTerminal(s.db, &session); err != nil {
+		return nil, err
+	}
 
 	if err := requireActiveSession(&session); err != nil {
 		return nil, err
@@ -2062,7 +2066,11 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 	}).Preload("StepProgress").Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
-	DropForeignTerminal(s.db, &session)
+	// An advance is written before the next step is set up: a failed read
+	// must not pass for "no terminal" and skip that setup silently.
+	if err := DropForeignTerminal(s.db, &session); err != nil {
+		return nil, err
+	}
 
 	if err := requireActiveSession(&session); err != nil {
 		return nil, err
@@ -2289,33 +2297,43 @@ func ReleaseTerminals(db *gorm.DB, deleteTerminal TerminalDeleteFunc, runs []mod
 // someone other than the run's user. A run row could once be created with any
 // terminal id, so the id alone proves nothing: such a run must never act on,
 // or release, that container. A missing terminal row is not another user's.
+// An owner that cannot be read counts as another user's (fail closed).
 func TerminalOfAnotherUser(db *gorm.DB, run *models.ScenarioSession) bool {
+	foreign, err := terminalOfAnotherUser(db, run)
+	return foreign || err != nil
+}
+
+func terminalOfAnotherUser(db *gorm.DB, run *models.ScenarioSession) (bool, error) {
 	if run.TerminalSessionID == nil || *run.TerminalSessionID == "" {
-		return false
+		return false, nil
 	}
 	var owners []string
 	// Unscoped: a soft-deleted terminal still has its owner.
 	if err := db.Unscoped().Model(&terminalModels.Terminal{}).Where("session_id = ?", *run.TerminalSessionID).
 		Pluck("user_id", &owners).Error; err != nil {
 		slog.Error("could not read the owner of a run's terminal", "session_id", run.ID, "err", err)
-		return true // fail closed
+		return false, fmt.Errorf("read the owner of the run's terminal: %w", err)
 	}
 	if len(owners) > 0 && owners[0] != run.UserID {
 		slog.Warn("run points at a terminal of another user — left alone",
 			"session_id", run.ID, "terminal_session_id", *run.TerminalSessionID)
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 // DropForeignTerminal forgets, on this loaded copy only, a terminal id that
 // names another user's terminal: everything after the load then treats the
 // run as one with no terminal attached. Every load of a run that acts on its
 // terminal (exec, console, start, history, handing the id back) calls it.
-func DropForeignTerminal(db *gorm.DB, run *models.ScenarioSession) {
-	if TerminalOfAnotherUser(db, run) {
+// When the owner cannot be read the id is dropped too, and the error returned
+// for callers that must not mistake a failed read for "no terminal".
+func DropForeignTerminal(db *gorm.DB, run *models.ScenarioSession) error {
+	foreign, err := terminalOfAnotherUser(db, run)
+	if foreign || err != nil {
 		run.TerminalSessionID = nil
 	}
+	return err
 }
 
 // AbandonSession marks a session as abandoned. Which statuses qualify is
