@@ -423,3 +423,24 @@ func TestCsvImport_UpdateExisting_RefusedAccountJoinsNoGroup(t *testing.T) {
 	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "outsider"), "the refused account is not enrolled")
 	assert.Equal(t, int64(1), groupMemberRows(t, db, "student-a"), "the member's row still reaches the group, errors=%+v", resp.Errors)
 }
+
+// The administrator bypass lifts the rank cap only: the account must still
+// belong to the importing organization.
+func TestCsvImport_UpdateExisting_PlatformAdministratorImporterLeavesAnAccountOutsideTheOrganizationUntouched(t *testing.T) {
+	installMockEnforcer(t).GetRolesForUserFunc = adminRoleFor("admin-1")
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("outsider")
+	identity.users["outsider"].FirstName = "Original"
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+
+	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity)).ImportOrganizationData(orgID, "admin-1",
+		usersCSVWithColumns(t, "email,first_name,last_name,role,password,force_reset", "outsider@example.com,Ada,Lovelace,member,Str0ng-Pass!,true\n"),
+		nil, nil, false, true, "", true)
+	require.NoError(t, err)
+
+	assert.Empty(t, identity.passwordsSet)
+	assert.Empty(t, identity.columns)
+	assert.Equal(t, "Original", identity.users["outsider"].FirstName)
+	assert.Equal(t, 0, resp.Summary.UsersUpdated)
+	assert.NotEmpty(t, resp.Errors)
+}

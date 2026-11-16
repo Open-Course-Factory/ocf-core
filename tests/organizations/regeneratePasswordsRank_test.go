@@ -7,10 +7,13 @@
 package organizations_tests
 
 import (
+	"errors"
 	"slices"
 	"testing"
 	"time"
 
+	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/auth/mocks"
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
@@ -152,4 +155,88 @@ func TestRegeneratePasswords_MixedRequest_RegeneratesAllowedAndReportsRefused(t 
 	assertRefused(t, identity, resp, "owner-1", 2)
 	assert.Equal(t, 1, resp.Summary.Succeeded)
 	assert.Equal(t, 1, resp.Summary.Failed)
+}
+
+// failRolesLookupFor makes the platform-role lookup fail for the given user,
+// keeping admin-1 an administrator.
+func failRolesLookupFor(userID string) {
+	casdoor.Enforcer.(*mocks.MockEnforcer).GetRolesForUserFunc = func(name string) ([]string, error) {
+		switch name {
+		case userID:
+			return nil, errors.New("role store unavailable")
+		case "admin-1":
+			return []string{"member", "administrator"}, nil
+		}
+		return []string{"member"}, nil
+	}
+}
+
+func TestRegeneratePasswords_ManagerTargetsThemselves_Regenerated(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+
+	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "manager-1")
+
+	assertRegenerated(t, identity, resp, "manager-1")
+	assert.Empty(t, resp.Errors)
+}
+
+func TestRegeneratePasswords_OwnerTargetsPlatformAdministrator_Refused(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+
+	resp := regenerate(t, db, identity, orgID, classID, "owner-1", "admin-1")
+
+	assertRefused(t, identity, resp, "admin-1", 1)
+}
+
+func TestRegeneratePasswords_PlatformAdministratorManagerTargetsOwnerAndAdministrator_Regenerated(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+	// The service lets only owners and managers in; the administrator must hold one of those roles.
+	require.NoError(t, db.Model(&models.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ?", orgID, "admin-1").
+		Update("role", models.OrgRoleManager).Error)
+
+	resp := regenerate(t, db, identity, orgID, classID, "admin-1", "owner-1", "admin-1")
+
+	assertRegenerated(t, identity, resp, "owner-1")
+	assertRegenerated(t, identity, resp, "admin-1")
+	assert.Empty(t, resp.Errors)
+}
+
+func TestRegeneratePasswords_TargetRolesLookupFails_Refused(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+	failRolesLookupFor("student-1")
+
+	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "student-1")
+
+	assertRefused(t, identity, resp, "student-1", 1)
+}
+
+func TestRegeneratePasswords_CallerRolesLookupFails_CapStillApplies(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+	failRolesLookupFor("manager-1")
+
+	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "student-1", "owner-1")
+
+	assertRegenerated(t, identity, resp, "student-1")
+	assertRefused(t, identity, resp, "owner-1", 2)
+}
+
+func TestRegeneratePasswords_EveryTargetRefused_WellFormedResponseAndNoWrites(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+
+	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "owner-1", "admin-1", "outsider-1")
+
+	assertRefused(t, identity, resp, "owner-1", 1)
+	assertRefused(t, identity, resp, "admin-1", 2)
+	assertRefused(t, identity, resp, "outsider-1", 3)
+	assert.Empty(t, resp.Credentials)
+	assert.Empty(t, identity.passwordsSet, "no password is set")
+	assert.Empty(t, identity.columns, "no force_password_reset write")
+	assert.Equal(t, dto.RegeneratePasswordsSummary{Total: 3, Succeeded: 0, Failed: 3}, resp.Summary)
 }
