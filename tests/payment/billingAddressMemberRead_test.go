@@ -35,9 +35,12 @@ func TestBillingAddressRegistration_Member_HasGet(t *testing.T) {
 }
 
 // billingAddressReadRouter drives the REAL generic list/get handlers over the
-// REAL BillingAddress registration, as the given member.
-func billingAddressReadRouter(t *testing.T, userID string) *gin.Engine {
+// REAL BillingAddress registration, as the given user (Member unless roles given).
+func billingAddressReadRouter(t *testing.T, userID string, roles ...string) *gin.Engine {
 	t.Helper()
+	if len(roles) == 0 {
+		roles = []string{string(authModels.Member)}
+	}
 	if _, ok := ems.GlobalEntityRegistrationService.GetEntityOps("BillingAddress"); !ok {
 		registration.RegisterBillingAddress(ems.GlobalEntityRegistrationService)
 		t.Cleanup(func() { ems.GlobalEntityRegistrationService.UnregisterEntity("BillingAddress") })
@@ -47,7 +50,7 @@ func billingAddressReadRouter(t *testing.T, userID string) *gin.Engine {
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("userId", userID)
-		c.Set("userRoles", []string{string(authModels.Member)})
+		c.Set("userRoles", roles)
 		c.Next()
 	})
 	r.GET("/api/v1/billing-addresses/", func(c *gin.Context) { gc.GetEntities(c) })
@@ -96,4 +99,54 @@ func TestBillingAddressGet_Member_OtherMembersAddressNotFound(t *testing.T) {
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/billing-addresses/"+mine.ID.String(), nil))
 	assert.Equal(t, http.StatusOK, w.Code, "own address must be readable; body=%s", w.Body.String())
+}
+
+// listBillingAddressIDs GETs the list URL and returns the row IDs.
+func listBillingAddressIDs(t *testing.T, r *gin.Engine, url string) []string {
+	t.Helper()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", url, nil))
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	ids := []string{}
+	for _, d := range resp.Data {
+		ids = append(ids, d.ID)
+	}
+	return ids
+}
+
+func TestBillingAddressList_NoUserID_ReturnsEmpty(t *testing.T) {
+	_ = freshTestDB(t)
+	createTestBillingAddress(t, "member-a")
+	r := billingAddressReadRouter(t, "")
+
+	assert.Empty(t, listBillingAddressIDs(t, r, "/api/v1/billing-addresses/"),
+		"a caller without userId must see nothing (fail closed)")
+}
+
+func TestBillingAddressList_Admin_SeesAllAddresses(t *testing.T) {
+	_ = freshTestDB(t)
+	a := createTestBillingAddress(t, "member-a")
+	b := createTestBillingAddress(t, "member-b")
+	r := billingAddressReadRouter(t, "admin-1", string(authModels.Admin))
+
+	ids := listBillingAddressIDs(t, r, "/api/v1/billing-addresses/")
+	assert.Contains(t, ids, a.ID.String())
+	assert.Contains(t, ids, b.ID.String())
+}
+
+func TestBillingAddressList_MemberUserIDFilter_CannotWiden(t *testing.T) {
+	_ = freshTestDB(t)
+	mine := createTestBillingAddress(t, "member-a")
+	theirs := createTestBillingAddress(t, "member-b")
+	r := billingAddressReadRouter(t, "member-a")
+
+	ids := listBillingAddressIDs(t, r, "/api/v1/billing-addresses/?user_id=member-b")
+	assert.NotContains(t, ids, theirs.ID.String(), "?user_id=<other> must not expose another member's address")
+	assert.Contains(t, ids, mine.ID.String(), "the owner filter overrides the query filter")
 }
