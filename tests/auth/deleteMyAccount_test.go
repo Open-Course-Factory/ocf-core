@@ -648,7 +648,7 @@ func TestDeleteMyAccount_RemovesMembershipsTokensSettingsSSHKeys(t *testing.T) {
 	var evTokenCount, prTokenCount, blacklistCount int64
 	db.Model(&organizationModels.OrganizationMember{}).Where("user_id = ?", userID).Count(&orgMemberCount)
 	db.Model(&groupModels.GroupMember{}).Where("user_id = ?", userID).Count(&groupMemberCount)
-	db.Model(&authModels.UserSettings{}).Where("user_id = ?", userID).Count(&settingsCount)
+	db.Unscoped().Model(&authModels.UserSettings{}).Where("user_id = ?", userID).Count(&settingsCount) // erased, not soft-deleted
 	db.Model(&authModels.EmailVerificationToken{}).Where("user_id = ?", userID).Count(&evTokenCount)
 	db.Model(&authModels.PasswordResetToken{}).Where("user_id = ?", userID).Count(&prTokenCount)
 	db.Model(&authModels.TokenBlacklist{}).Where("user_id = ?", userID).Count(&blacklistCount)

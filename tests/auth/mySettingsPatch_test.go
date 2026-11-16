@@ -29,6 +29,8 @@ import (
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	authServices "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
+	ems "soli/formations/src/entityManagement/entityManagementService"
+	controller "soli/formations/src/entityManagement/routes"
 )
 
 // defaultSettingKeys are the fields every settings-creation path fills with defaults.
@@ -184,9 +186,9 @@ func TestMySettings_NoUserID_Returns401AndCreatesNoRow(t *testing.T) {
 	assert.Zero(t, rows)
 }
 
-// The unique index on user_id is what keeps concurrent first requests to one row;
-// the losing FirstOrCreate may answer 500, so only the row count is asserted.
-func TestMySettings_ConcurrentFirstRequests_CreateOneRow(t *testing.T) {
+// The unique index on user_id keeps concurrent first requests to one row, and
+// every request, the losing first insert included, must still answer 200.
+func TestMySettings_ConcurrentFirstRequests_AllSucceedWithOneRow(t *testing.T) {
 	r, _ := setupMySettingsRoutes(t)
 	// A file DB: ":memory:" gives each pooled connection its own empty database.
 	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/settings.db?_busy_timeout=5000"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -208,9 +210,65 @@ func TestMySettings_ConcurrentFirstRequests_CreateOneRow(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	t.Logf("status codes: %v", codes)
+	for i, code := range codes {
+		assert.Equal(t, http.StatusOK, code, "request %d of %v", i, codes)
+	}
 
 	var rows int64
 	require.NoError(t, db.Model(&authModels.UserSettings{}).Where("user_id = ?", "racer").Count(&rows).Error)
 	assert.Equal(t, int64(1), rows)
+}
+
+// A soft-deleted row still holds the unique user_id, so the settings must be
+// served from it (or replace it) instead of failing every call.
+func TestMySettings_SoftDeletedRow_GetAndPatchStillWork(t *testing.T) {
+	r, db := setupMySettingsRoutes(t)
+	row := seedUserSettingsRow(t, db, "soft-deleted-user", "/dashboard")
+	require.NoError(t, db.Delete(row).Error)
+
+	code, body := callMySettings(t, r, http.MethodGet, "soft-deleted-user", "")
+	require.Equal(t, http.StatusOK, code, "GET body: %v", body)
+	assert.Equal(t, "soft-deleted-user", body["user_id"])
+
+	code, body = callMySettings(t, r, http.MethodPatch, "soft-deleted-user", `{"theme":"dark"}`)
+	require.Equal(t, http.StatusOK, code, "PATCH body: %v", body)
+	assert.Equal(t, "dark", body["theme"])
+
+	code, body = callMySettings(t, r, http.MethodGet, "soft-deleted-user", "")
+	require.Equal(t, http.StatusOK, code, "GET after PATCH body: %v", body)
+	assert.Equal(t, "dark", body["theme"], "the PATCH must persist")
+}
+
+// A settings row created through the generic administrator POST must carry the
+// same defaults as every other creation path, unless that route is not offered.
+func TestUserSettings_GenericCreate_UnmountedOrUsesDefaultSettings(t *testing.T) {
+	registerUserSettingsForReadScope(t)
+	cfg := ems.GlobalEntityRegistrationService.GetSwaggerConfig("UserSetting")
+	adminMethods := ems.GlobalEntityRegistrationService.GetAllEntityRoles()["UserSetting"].Roles[string(authModels.Admin)]
+	if cfg == nil || cfg.Create == nil || !strings.Contains(adminMethods, http.MethodPost) {
+		return // no generic create route is offered, so no other defaults can be written
+	}
+
+	db := setupUserSettingsReadScopeDB(t)
+	gc := controller.NewGenericController(db, mocks.NewMockEnforcer())
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("userId", "admin-user")
+		c.Set("userRoles", []string{string(authModels.Admin)})
+	})
+	r.POST("/api/v1/user-settings/", func(c *gin.Context) { gc.AddEntity(c) })
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/user-settings/", strings.NewReader(`{"user_id":"admin-created"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body.String())
+
+	var gotMap map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &gotMap))
+	want := authModels.DefaultUserSettings("admin-created")
+	raw, err := json.Marshal(registration.UserSettingsToOutput(&want))
+	require.NoError(t, err)
+	var wantMap map[string]any
+	require.NoError(t, json.Unmarshal(raw, &wantMap))
+	assert.Equal(t, pickDefaults(wantMap), pickDefaults(gotMap))
 }
