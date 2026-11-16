@@ -157,3 +157,28 @@ func TestClassOfDeletedOrganization_PlatformAdminEditsClass_Allowed(t *testing.T
 	rec := env.do(http.MethodPatch, classPath(group.ID), map[string]any{"display_name": "renamed"})
 	assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
 }
+
+// The creator branch alone (no roster seat, no organization membership) holds
+// while the organization lives.
+func TestClassOfLiveOrganization_CreatorOutsideOrganization_ManagesClass(t *testing.T) {
+	env := setupClassArchiveEnv(t)
+	org := seedOrganization(t, env.db, "org-owner")
+	group := seedClass(t, env.db, "promo", deletedOrgCreator, &org.ID)
+
+	assert.Contains(t, managedClassIDs(t, env, deletedOrgCreator), group.ID)
+}
+
+// A later organization, even one the creator manages, does not revive the
+// creator's authority over a class of the deleted one.
+func TestClassOfDeletedOrganization_NewOrganizationCreated_CreatorStillRefused(t *testing.T) {
+	env := setupClassArchiveEnv(t)
+	org, group := seedOrgClass(t, env)
+	deleteOrg(t, env, org)
+	other := seedOrganization(t, env.db, deletedOrgCreator)
+	seedOrgMember(t, env.db, other.ID, deletedOrgCreator, orgModels.OrgRoleOwner, true)
+
+	env.as(deletedOrgCreator)
+	rec := env.do(http.MethodPatch, classPath(group.ID), map[string]any{"display_name": "renamed"})
+	assert.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	assert.NotContains(t, managedClassIDs(t, env, deletedOrgCreator), group.ID)
+}

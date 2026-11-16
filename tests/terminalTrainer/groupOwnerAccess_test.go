@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/terminalTrainer/services"
 
 	"github.com/stretchr/testify/assert"
@@ -187,4 +188,26 @@ func TestGroupOwnerAccess_UserNotInGroup_NoAccess(t *testing.T) {
 	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID)
 	assert.NoError(t, err)
 	assert.False(t, hasAccess, "group owner should NOT have access when terminal owner is not in the group")
+}
+
+// The creator's authority over a class ends with its organization: once an
+// administrator has reopened such a class and its roster is active again, the
+// creator must still not reach its members' terminals.
+func TestGroupOwnerAccess_ClassOfDeletedOrganization_NoAccess(t *testing.T) {
+	db := setupTestDB(t)
+	trainerUserID, studentUserID := "trainer-1", "student-1"
+	userKey, err := createTestUserKey(db, studentUserID)
+	require.NoError(t, err)
+	terminal, err := createTestTerminal(db, studentUserID, "active", userKey.ID)
+	require.NoError(t, err)
+
+	org := createTestOrgForHistory(t, db, "org-owner")
+	group := createTestGroupForHistory(t, db, trainerUserID, &org.ID)
+	createTestGroupMember(t, db, group.ID, studentUserID, groupModels.GroupMemberRoleMember)
+	require.NoError(t, db.Delete(&orgModels.Organization{}, "id = ?", org.ID).Error)
+
+	svc := services.NewTerminalTrainerService(db)
+	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID)
+	assert.NoError(t, err)
+	assert.False(t, hasAccess, "the creator of a class of a deleted organization must not reach its members' terminals")
 }

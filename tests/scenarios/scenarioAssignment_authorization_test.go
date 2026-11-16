@@ -600,3 +600,29 @@ func TestScenarioAssignmentAuth_BeforeDelete_AdminBypassesOrgCheck(t *testing.T)
 	err := hook.Execute(ctx)
 	assert.NoError(t, err, "Platform admin should bypass org-level checks for delete")
 }
+
+// The class creator's authority ends with the class's organization, so they
+// cannot remove its assignments once the organization is deleted.
+func TestScenarioAssignmentAuth_BeforeDelete_CreatorOfClassOfDeletedOrgBlocked(t *testing.T) {
+	db := freshTestDB(t)
+	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
+	const creator = "class-creator-deleted-org"
+
+	orgID := createTestOrg(t, db, "org-owner-deleted")
+	group := createClassGroup(t, db, "deleted-org-class", creator, &orgID)
+	scenario := &models.Scenario{Name: "deleted-org-assign", Title: "Deleted Org Assign", InstanceType: "ubuntu:22.04", CreatedByID: creator}
+	require.NoError(t, db.Create(scenario).Error)
+	assignment := &models.ScenarioAssignment{
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()}, ScenarioID: scenario.ID,
+		GroupID: &group.ID, Scope: "group", CreatedByID: creator, IsActive: true,
+	}
+	require.NoError(t, db.Create(assignment).Error)
+	ctx := &hooks.HookContext{
+		EntityName: "ScenarioAssignment", HookType: hooks.BeforeDelete, EntityID: assignment.ID,
+		NewEntity: assignment, UserID: creator, UserRoles: []string{"Member"},
+	}
+	require.NoError(t, hook.Execute(ctx), "control: the creator manages the assignment while the organization lives")
+
+	require.NoError(t, db.Delete(&orgModels.Organization{}, "id = ?", orgID).Error)
+	assert.Error(t, hook.Execute(ctx), "the creator of a class of a deleted organization must not remove its assignments")
+}
