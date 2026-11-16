@@ -227,11 +227,14 @@ func paymentEntityRoles() []entityRoleDefinition {
 }
 
 // terminalTrainerEntityRoles covers Terminal sessions and per-user terminal
-// keys. Members can list and create terminal sessions; key management is
-// admin-only at the role layer.
+// keys. Members can list and rename their terminal sessions (sessions are
+// started through custom routes); key management is admin-only at the role layer.
 func terminalTrainerEntityRoles() []entityRoleDefinition {
 	return []entityRoleDefinition{
-		{entityName: "Terminal", routeName: "terminals", roles: rolesForCreatableByMember()},
+		{entityName: "Terminal", routeName: "terminals", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+			memberRoles(): methodRegex(http.MethodGet, http.MethodPatch),
+			adminRoles():  adminFullCRUD(),
+		}}},
 		{entityName: "UserTerminalKey", routeName: "user-terminal-keys", roles: rolesForReadOnlyMember()},
 	}
 }

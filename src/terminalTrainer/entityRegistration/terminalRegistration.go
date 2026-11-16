@@ -35,28 +35,24 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 					}
 				},
 				DtoToMap: func(input dto.UpdateTerminalInput) map[string]any {
+					// Only the name is user-editable: state is synced from tt-backend and
+					// drives budget accounting, persistence_mode is fixed at launch.
 					updates := make(map[string]any)
 					if input.Name != nil {
 						updates["name"] = *input.Name
-					}
-					if input.State != nil {
-						updates["state"] = *input.State
-					}
-					if input.PersistenceMode != nil {
-						updates["persistence_mode"] = *input.PersistenceMode
 					}
 					return updates
 				},
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPatch + ")",
 					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 				},
 			},
 			OwnershipConfig: &access.OwnershipConfig{
 				OwnerField:  "UserID",
-				Operations:  []string{"read", "create"},
+				Operations:  []string{"read", "create", "update"},
 				AdminBypass: true,
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
