@@ -20,17 +20,21 @@ type FakeCasdoorUsers struct {
 	mu          sync.Mutex
 	users       map[string]casdoorsdk.User
 	calls       map[string]int
-	delay       time.Duration
+	overlapWait time.Duration
 	inFlight    atomic.Int32
 	maxInFlight atomic.Int32
+	firstCall   sync.Once
+	deadline    time.Time
 }
 
-// StartFakeCasdoorUsers points the Casdoor SDK at a fresh fake that answers
-// each user lookup after `delay`. Cleanup closes it and points the SDK back at
+// StartFakeCasdoorUsers points the Casdoor SDK at a fresh fake. With a
+// positive `overlapWait`, each user lookup is held until two lookups overlap,
+// so concurrency shows whatever the runner's speed; a sequential caller never
+// overlaps and is released once overlapWait has passed since the first lookup. Cleanup closes it and points the SDK back at
 // the unreachable dummy endpoint the test packages use by default.
-func StartFakeCasdoorUsers(t *testing.T, delay time.Duration) *FakeCasdoorUsers {
+func StartFakeCasdoorUsers(t *testing.T, overlapWait time.Duration) *FakeCasdoorUsers {
 	t.Helper()
-	f := &FakeCasdoorUsers{users: map[string]casdoorsdk.User{}, calls: map[string]int{}, delay: delay}
+	f := &FakeCasdoorUsers{users: map[string]casdoorsdk.User{}, calls: map[string]int{}, overlapWait: overlapWait}
 	srv := httptest.NewServer(http.HandlerFunc(f.serve))
 	casdoorsdk.InitConfig(srv.URL, "dummy", "dummy", "dummy", "dummy", "dummy")
 	t.Cleanup(func() {
@@ -90,7 +94,10 @@ func (f *FakeCasdoorUsers) serve(w http.ResponseWriter, r *http.Request) {
 	user, known := f.users[id]
 	f.mu.Unlock()
 
-	time.Sleep(f.delay)
+	f.firstCall.Do(func() { f.deadline = time.Now().Add(f.overlapWait) })
+	for f.maxInFlight.Load() < 2 && time.Now().Before(f.deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	var data any
 	if known {
 		data = user

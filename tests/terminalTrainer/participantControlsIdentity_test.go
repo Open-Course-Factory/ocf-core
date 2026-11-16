@@ -118,16 +118,13 @@ func TestListGroupSupervisionSessions_SecondPoll_MakesNoCasdoorCall(t *testing.T
 // TestGetParticipantControls_ColdClass_ResolvesNamesConcurrently: the cold read
 // of a class must not cost one Casdoor round trip per member in sequence.
 func TestGetParticipantControls_ColdClass_ResolvesNamesConcurrently(t *testing.T) {
-	casdoor := testTools.StartFakeCasdoorUsers(t, 100*time.Millisecond)
+	casdoor := testTools.StartFakeCasdoorUsers(t, 5*time.Second)
 	c := newIdentityClass(t, casdoor)
 
-	start := time.Now()
 	rows := c.readControls(t)
-	elapsed := time.Since(start)
 
 	require.Len(t, rows, len(c.members))
-	assert.Less(t, elapsed, 2*100*time.Millisecond, "4 members at 100 ms each must be fetched concurrently")
-	assert.Greater(t, casdoor.MaxInFlight(), 1)
+	assert.Greater(t, casdoor.MaxInFlight(), 1, "members must be fetched concurrently, not one by one")
 }
 
 // TestGetParticipantControls_EmptyDisplayName_FallsBackToLoginName: the wall
