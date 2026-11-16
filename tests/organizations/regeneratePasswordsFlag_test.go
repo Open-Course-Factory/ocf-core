@@ -26,6 +26,7 @@ func seedClassForPasswordRegeneration(t *testing.T, db *gorm.DB, identity *fakeI
 	installMockEnforcer(t)
 	orgID = seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
+	seedMember(t, db, orgID, "student-1", models.OrgRoleMember)
 	classID = seedClassWithMember(t, db, orgID, "owner-1", "student-1")
 	identity.users["student-1"] = &casdoorsdk.User{Id: "student-1", Owner: "soli", Name: "student-one", Email: "student@example.com", DisplayName: "Student One"}
 	return orgID, classID
