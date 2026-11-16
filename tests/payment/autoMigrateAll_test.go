@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"os"
 	"testing"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -31,12 +30,13 @@ func TestAutoMigrateAll_ModelMigrationFails_LogsErrorNamingModel(t *testing.T) {
 	casdoorsdk.InitConfig("http://localhost:0", "dummy", "dummy", "dummy", "dummy", "dummy")
 
 	var logs bytes.Buffer
+	prev := log.Writer()
 	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	t.Cleanup(func() { log.SetOutput(prev) })
 
 	initialization.AutoMigrateAll(db)
 
 	require.Error(t, db.AutoMigrate(&courseModels.Page{}), "precondition: the Page migration really fails")
-	assert.Contains(t, logs.String(), "Page",
+	assert.Contains(t, logs.String(), "AutoMigrate *models.Page failed",
 		"the failed migration of the Page model must be logged and name the model; logs were:\n%s", logs.String())
 }
