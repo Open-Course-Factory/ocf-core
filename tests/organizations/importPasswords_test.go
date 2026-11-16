@@ -325,3 +325,50 @@ func TestCsvImport_UpdateExisting_NewAccountsAreCreatedWhateverTheImporterRank(t
 		})
 	}
 }
+
+// platformRoles answers the platform-role lookup: administrator for the ids in
+// admins, an error for failing, member for everyone else.
+func platformRoles(failing string, admins ...string) func(string) ([]string, error) {
+	return func(name string) ([]string, error) {
+		if name == failing {
+			return nil, errors.New("enforcer unavailable")
+		}
+		if slices.Contains(admins, name) {
+			return []string{"administrator"}, nil
+		}
+		return []string{"member"}, nil
+	}
+}
+
+func TestCsvImport_UpdateExisting_PlatformAdministratorMemberIsUntouched(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		importer      string
+		importerRole  models.OrganizationMemberRole
+		platformRoles func(string) ([]string, error)
+	}{
+		{"owner importer", "owner-1", models.OrgRoleOwner, platformRoles("", "admin-2")},
+		{"manager importer", "manager-1", models.OrgRoleManager, platformRoles("", "admin-2")},
+		{"owner importer, target role lookup fails", "owner-1", models.OrgRoleOwner, platformRoles("admin-2")},
+		{"manager importer, target role lookup fails", "manager-1", models.OrgRoleManager, platformRoles("admin-2")},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			identity, updated, errs := importAsUpdate(t, c.importer, c.importerRole, "admin-2", models.OrgRoleMember, c.platformRoles)
+
+			assert.Empty(t, identity.passwordsSet, "no password is applied to a platform administrator")
+			assert.Empty(t, identity.columns, "no column of a platform administrator is written")
+			assert.Equal(t, "Original", identity.users["admin-2"].FirstName)
+			assert.Equal(t, 0, updated)
+			assert.Equal(t, 1, errs, "the row is reported as refused")
+		})
+	}
+}
+
+func TestCsvImport_UpdateExisting_PlatformAdministratorImporterUpdatesAnAdministratorMember(t *testing.T) {
+	identity, updated, errs := importAsUpdate(t, "admin-1", "", "admin-2", models.OrgRoleMember, platformRoles("", "admin-1", "admin-2"))
+
+	assert.Equal(t, "Str0ng-Pass!", identity.passwordsSet["user-admin-2"])
+	assert.Equal(t, "Ada", identity.users["admin-2"].FirstName)
+	assert.Equal(t, 1, updated)
+	assert.Equal(t, 0, errs)
+}
