@@ -250,3 +250,83 @@ func TestOwnStripeCustomer_SyncPaymentMethods_SelfPurchased_CreatesOwnCard(t *te
 	assert.Equal(t, 1, result.CreatedPaymentMethods)
 	assert.Equal(t, int64(1), countRows(t, db, &models.PaymentMethod{}, userID))
 }
+
+// --- Edge cases ---
+
+// mixedHolder returns a fresh user with an older own subscription and a newer licence.
+func mixedHolder(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	userID := "mixed-" + uuid.NewString()
+	holderSub(t, db, userID, ownCustomer, "", time.Now().Add(-time.Hour))
+	holderSub(t, db, userID, purchaserCustomer, "purchaser-"+uuid.NewString(), time.Now())
+	return userID
+}
+
+func TestOwnStripeCustomer_NoEntitlingSubscription_KeepsNoActiveSubscriptionError(t *testing.T) {
+	db := freshTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Invoice{}))
+	fake := installFakeStripeAnyCustomer(t)
+	userID := "nobody-" + uuid.NewString()
+	svc := services.NewStripeService(db)
+
+	_, err := svc.CreatePortalSession(userID, dto.CreatePortalSessionInput{ReturnURL: "https://app.test"})
+	assert.ErrorContains(t, err, "no active subscription found")
+	_, err = svc.SyncUserInvoices(userID)
+	assert.ErrorContains(t, err, "no active subscription found")
+	_, err = svc.SyncUserPaymentMethods(userID)
+	assert.ErrorContains(t, err, "no active subscription found")
+	assert.Empty(t, fake.requests())
+}
+
+func TestOwnStripeCustomer_PortalSession_NewerLicenceAndOlderOwn_UsesOwnCustomer(t *testing.T) {
+	db := freshTestDB(t)
+	fake := installFakeStripeAnyCustomer(t)
+	userID := mixedHolder(t, db)
+
+	out, err := services.NewStripeService(db).CreatePortalSession(userID, dto.CreatePortalSessionInput{ReturnURL: "https://app.test"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://portal.test/"+ownCustomer, out.URL)
+	assertNeverNamed(t, fake, purchaserCustomer)
+}
+
+func TestOwnStripeCustomer_SyncInvoices_NewerLicenceAndOlderOwn_SyncsOwnCustomerOnly(t *testing.T) {
+	db := freshTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Invoice{}))
+	fake := installFakeStripeAnyCustomer(t)
+	userID := mixedHolder(t, db)
+
+	result, err := services.NewStripeService(db).SyncUserInvoices(userID)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.CreatedInvoices)
+	assert.Equal(t, int64(1), countRows(t, db, &models.Invoice{}, userID))
+	assert.Equal(t, []string{"GET /v1/invoices customer=" + ownCustomer}, fake.requests())
+}
+
+func TestOwnStripeCustomer_SyncPaymentMethods_NewerLicenceAndOlderOwn_SyncsOwnCustomerOnly(t *testing.T) {
+	db := freshTestDB(t)
+	fake := installFakeStripeAnyCustomer(t)
+	userID := mixedHolder(t, db)
+
+	result, err := services.NewStripeService(db).SyncUserPaymentMethods(userID)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.CreatedPaymentMethods)
+	assert.Equal(t, int64(1), countRows(t, db, &models.PaymentMethod{}, userID))
+	assertNeverNamed(t, fake, purchaserCustomer)
+}
+
+func TestOwnStripeCustomer_CreateOrGetCustomer_InactiveOwnAndActiveLicence_ReusesOwnCustomer(t *testing.T) {
+	db := freshTestDB(t)
+	fake := installFakeStripeAnyCustomer(t)
+	userID := mixedHolder(t, db)
+	require.NoError(t, db.Model(&models.UserSubscription{}).
+		Where("user_id = ? AND stripe_customer_id = ?", userID, ownCustomer).Update("status", "cancelled").Error)
+
+	customerID, err := services.NewStripeService(db).CreateOrGetCustomer(userID, "mixed@test.local", "Mixed")
+
+	require.NoError(t, err)
+	assert.Equal(t, ownCustomer, customerID, "a cancelled own subscription still names the user's own customer")
+	assert.Empty(t, fake.requests())
+}
