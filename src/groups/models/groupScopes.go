@@ -49,8 +49,9 @@ func LearnerRoleScope(alias string) func(*gorm.DB) *gorm.DB {
 
 // ManagedByScope is the single home of the "callerUserID manages this class-group"
 // predicate as a composable WHERE clause on class_groups: the caller either OWNS
-// the group (ClassGroup.OwnerUserID) or holds an ACTIVE manager/owner membership
-// row. A plain member never manages.
+// the group (ClassGroup.OwnerUserID, while the class has no organization or a
+// live one: access.CreatorAuthorityCondition) or holds an ACTIVE manager/owner
+// membership row. A plain member never manages.
 //
 // The scope deliberately says nothing about whether the group itself is
 // archived, so the two questions stay separable:

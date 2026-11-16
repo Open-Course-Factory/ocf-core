@@ -7,9 +7,10 @@ package terminalController
 // SECURITY MODEL:
 //   - The learner's class-group is derived SERVER-SIDE from the session record.
 //     No client-supplied group id is ever trusted (IDOR guard).
-//   - "manager+" means the caller OWNS the group (ClassGroup.OwnerUserID) OR holds
-//     an active group_members role of manager/owner — checkGroupOwnerAccess only
-//     honours ownership, which is insufficient here.
+//   - "manager+" means the caller OWNS the group (ClassGroup.OwnerUserID, while
+//     the class has no organization or a live one) OR holds an active
+//     group_members role of manager/owner — checkGroupOwnerAccess only honours
+//     ownership, which is insufficient here.
 //   - Platform administrators bypass the group checks (still audited).
 //   - Take-hand is audit-BEFORE-act, fail-closed: if the audit write fails, the
 //     promotion is refused.
