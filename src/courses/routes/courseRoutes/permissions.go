@@ -26,7 +26,7 @@ func RegisterCoursePermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{
 			Path: "/api/v1/courses/generate", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
-			Description: "Trigger course generation",
+			Description: "Trigger course generation (owner or admin; checked in the handler)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/courses/versions", Method: "GET",
@@ -54,22 +54,22 @@ func RegisterCoursePermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{
 			Path: "/api/v1/generations/:id", Method: "DELETE",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
-			Description: "Delete a generation job",
+			Description: "Delete a generation job (owner or admin; checked in the handler)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/generations/:id/status", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
-			Description: "Get generation job status",
+			Description: "Get generation job status (owner or admin; checked in the handler)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/generations/:id/download", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
-			Description: "Download generation output",
+			Description: "Download generation output (owner or admin; checked in the handler)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/generations/:id/retry", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
-			Description: "Retry a failed generation job",
+			Description: "Retry a failed generation job (owner or admin; checked in the handler)",
 		},
 	)
 

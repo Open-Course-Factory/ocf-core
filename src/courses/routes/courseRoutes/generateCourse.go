@@ -8,6 +8,7 @@ import (
 	"soli/formations/src/courses/dto"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // Generate Course godoc
@@ -32,6 +33,13 @@ func (c courseController) GenerateCourse(ctx *gin.Context) {
 	bindError := ctx.BindJSON(&courseGenerateDTO)
 	if bindError != nil {
 		errors.Respond(ctx, http.StatusBadRequest, "Impossible de parser le json: "+bindError.Error())
+		return
+	}
+
+	// binding:"uuid" already validated the id
+	if _, err := c.ownedGeneration(ctx, uuid.MustParse(courseGenerateDTO.GenerationId)); err != nil {
+		// same response GenerateCourseAsync gives for a missing generation
+		errors.Respond(ctx, http.StatusInternalServerError, "Erreur lors de la génération: failed to get generation: "+err.Error())
 		return
 	}
 

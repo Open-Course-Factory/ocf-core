@@ -29,8 +29,14 @@ import (
 func (c courseController) GetGenerationStatus(ctx *gin.Context) {
 	generationID := ctx.Param("id")
 
-	if _, err := uuid.Parse(generationID); err != nil {
+	id, err := uuid.Parse(generationID)
+	if err != nil {
 		errors.Respond(ctx, http.StatusBadRequest, "ID de génération invalide")
+		return
+	}
+
+	if _, err := c.ownedGeneration(ctx, id); err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
 		return
 	}
 
@@ -63,8 +69,14 @@ func (c courseController) GetGenerationStatus(ctx *gin.Context) {
 func (c courseController) DownloadGenerationResults(ctx *gin.Context) {
 	generationID := ctx.Param("id")
 
-	if _, err := uuid.Parse(generationID); err != nil {
+	id, err := uuid.Parse(generationID)
+	if err != nil {
 		errors.Respond(ctx, http.StatusBadRequest, "ID de génération invalide")
+		return
+	}
+
+	if _, err := c.ownedGeneration(ctx, id); err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
 		return
 	}
 
@@ -116,8 +128,14 @@ func (c courseController) DownloadGenerationResults(ctx *gin.Context) {
 func (c courseController) RetryGeneration(ctx *gin.Context) {
 	generationID := ctx.Param("id")
 
-	if _, err := uuid.Parse(generationID); err != nil {
+	id, err := uuid.Parse(generationID)
+	if err != nil {
 		errors.Respond(ctx, http.StatusBadRequest, "ID de génération invalide")
+		return
+	}
+
+	if _, err := c.ownedGeneration(ctx, id); err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
 		return
 	}
 
