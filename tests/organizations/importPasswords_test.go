@@ -129,3 +129,103 @@ func TestCsvImport_UpdateExisting_ActiveMemberIsStillUpdated(t *testing.T) {
 	assert.Equal(t, 1, resp.Summary.UsersUpdated)
 	assert.Equal(t, int64(1), countMemberRows(t, db, orgID, "student-a"))
 }
+
+func TestCsvImport_UpdateExisting_MemberOfAnotherOrganizationIsUntouched(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("elsewhere")
+	identity.users["elsewhere"].FirstName = "Original"
+	offboarding := newOffboardingService(db, identity)
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
+	seedMember(t, db, otherOrgID, "elsewhere", models.OrgRoleMember)
+
+	importer := services.NewImportService(db, identity, offboarding)
+	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
+		usersCSVWithColumns(t, "email,first_name,last_name,role", "elsewhere@example.com,Ada,Lovelace,member\n"),
+		nil, nil, false, true, "", true)
+	require.NoError(t, err)
+
+	assert.Empty(t, identity.columns)
+	assert.Equal(t, "Original", identity.users["elsewhere"].FirstName)
+	assert.False(t, identity.users["elsewhere"].EmailVerified)
+	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "elsewhere"), "the account is not enrolled")
+	assert.Equal(t, int64(1), countMemberRows(t, db, otherOrgID, "elsewhere"))
+	assert.Equal(t, 0, resp.Summary.UsersUpdated)
+	assert.NotEmpty(t, resp.Errors)
+}
+
+func TestCsvImport_UpdateExisting_DryRunWritesNothing(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("outsider")
+	offboarding := newOffboardingService(db, identity)
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+
+	importer := services.NewImportService(db, identity, offboarding)
+	_, err := importer.ImportOrganizationData(orgID, "owner-1",
+		usersCSVWithColumns(t, "email,first_name,last_name,role,password", "outsider@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
+		nil, nil, true, true, "", true)
+	require.NoError(t, err)
+
+	assert.Empty(t, identity.passwordsSet)
+	assert.Empty(t, identity.columns)
+	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "outsider"))
+}
+
+// importAsUpdate runs an update_existing import of one row (new name and a
+// password) for the account target, with importer as the calling user.
+func importAsUpdate(t *testing.T, importer string, importerRole models.OrganizationMemberRole, target string, targetRole models.OrganizationMemberRole) (*fakeIdentity, int, int) {
+	t.Helper()
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity(importer, target)
+	identity.users[target].FirstName = "Original"
+	offboarding := newOffboardingService(db, identity)
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	for user, role := range map[string]models.OrganizationMemberRole{importer: importerRole, target: targetRole} {
+		if user != "owner-1" {
+			seedMember(t, db, orgID, user, role)
+		}
+	}
+
+	resp, err := services.NewImportService(db, identity, offboarding).ImportOrganizationData(orgID, importer,
+		usersCSVWithColumns(t, "email,first_name,last_name,role,password", target+"@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
+		nil, nil, false, true, "", true)
+	require.NoError(t, err)
+	return identity, resp.Summary.UsersUpdated, len(resp.Errors)
+}
+
+func TestCsvImport_UpdateExisting_MemberOutrankingTheImporterIsUntouched(t *testing.T) {
+	identity, updated, errs := importAsUpdate(t, "manager-1", models.OrgRoleManager, "owner-1", models.OrgRoleOwner)
+
+	assert.Empty(t, identity.passwordsSet, "no password is applied to a member who outranks the importer")
+	assert.Empty(t, identity.columns, "no column of a member who outranks the importer is written")
+	assert.Equal(t, "Original", identity.users["owner-1"].FirstName)
+	assert.Equal(t, 0, updated)
+	assert.Equal(t, 1, errs, "the row is reported as refused")
+}
+
+func TestCsvImport_UpdateExisting_MemberAtOrBelowTheImporterRankIsUpdated(t *testing.T) {
+	cases := []struct {
+		name         string
+		importer     string
+		importerRole models.OrganizationMemberRole
+		target       string
+		targetRole   models.OrganizationMemberRole
+	}{
+		{"manager updates a member", "manager-1", models.OrgRoleManager, "student-a", models.OrgRoleMember},
+		{"manager updates another manager", "manager-1", models.OrgRoleManager, "manager-2", models.OrgRoleManager},
+		{"owner updates a manager", "owner-1", models.OrgRoleOwner, "manager-2", models.OrgRoleManager},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			identity, updated, errs := importAsUpdate(t, c.importer, c.importerRole, c.target, c.targetRole)
+
+			assert.Equal(t, "Str0ng-Pass!", identity.passwordsSet["user-"+c.target])
+			assert.Equal(t, "Ada", identity.users[c.target].FirstName)
+			assert.Equal(t, 1, updated)
+			assert.Equal(t, 0, errs)
+		})
+	}
+}
