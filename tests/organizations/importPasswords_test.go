@@ -81,3 +81,49 @@ func TestCsvImport_CreatedAccountGetsAGeneratedPasswordAndACredential(t *testing
 	assert.Equal(t, identity.created[0].Password, resp.Credentials[0].Password, "the credential reported is the one set on the account")
 	assert.Empty(t, identity.passwordsSet, "creation carries the password itself; no separate set-password call")
 }
+
+// update_existing applies to accounts of the importing organization only: an
+// import must not modify an account outside the organization.
+func TestCsvImport_UpdateExisting_AccountOutsideTheOrganizationIsUntouched(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("outsider")
+	identity.users["outsider"].FirstName = "Original"
+	offboarding := newOffboardingService(db, identity)
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+
+	importer := services.NewImportService(db, identity, offboarding)
+	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
+		usersCSVWithColumns(t, "email,first_name,last_name,role,password,force_reset", "outsider@example.com,Ada,Lovelace,member,Str0ng-Pass!,true\n"),
+		nil, nil, false, true, "", true)
+	require.NoError(t, err)
+
+	assert.Empty(t, identity.passwordsSet, "no password is applied to an account outside the organization")
+	assert.Empty(t, identity.columns, "no column of an account outside the organization is written")
+	assert.Equal(t, "Original", identity.users["outsider"].FirstName)
+	assert.False(t, identity.users["outsider"].EmailVerified)
+	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "outsider"), "the account is not enrolled")
+	assert.Equal(t, 0, resp.Summary.UsersUpdated)
+	assert.True(t, len(resp.Errors) > 0 || resp.Summary.UsersSkipped == 1, "the row is reported, errors=%+v summary=%+v", resp.Errors, resp.Summary)
+}
+
+func TestCsvImport_UpdateExisting_ActiveMemberIsStillUpdated(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("student-a")
+	offboarding := newOffboardingService(db, identity)
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+
+	importer := services.NewImportService(db, identity, offboarding)
+	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
+		usersCSVWithColumns(t, "email,first_name,last_name,role,password", "student-a@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
+		nil, nil, false, true, "", true)
+	require.NoError(t, err, "errors=%+v", resp.Errors)
+
+	assert.Equal(t, "Str0ng-Pass!", identity.passwordsSet["user-student-a"])
+	assert.Equal(t, "Ada", identity.users["student-a"].FirstName)
+	assert.Len(t, identity.columns, 1)
+	assert.Equal(t, 1, resp.Summary.UsersUpdated)
+	assert.Equal(t, int64(1), countMemberRows(t, db, orgID, "student-a"))
+}
