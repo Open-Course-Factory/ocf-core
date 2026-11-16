@@ -355,37 +355,50 @@ func (s *importService) ImportOrganizationData(
 	return response, nil
 }
 
-var errOutranksImporter = errors.New("outranks the importer; skipped")
+var errOutranksActor = errors.New("outranks the importer; skipped")
 
-// checkImporterRank applies the role cap of the membership hooks: an importer
-// may update only members at or below their own rank. Platform administrators
-// outrank every other importer and are not capped; the owner outranks every
-// other organization role.
-func (s *importService) checkImporterRank(org *organizationModels.Organization, importerID, targetID string, targetRole organizationModels.OrganizationMemberRole) error {
-	if importerIsAdmin, _ := isPlatformAdmin(importerID); importerIsAdmin {
+// newRankCheck resolves the actor once and returns the role cap of the
+// membership hooks for one target: the target must have a membership row in
+// the organization (ErrMemberNotFound otherwise), and an actor may act only on
+// members at or below their own rank. Platform administrators outrank every
+// other actor and are not capped; the owner outranks every other organization role.
+func newRankCheck(db *gorm.DB, org *organizationModels.Organization, actorID string) (func(targetID string) error, error) {
+	actorIsAdmin, _ := isPlatformAdmin(actorID)
+	actorIsOwner := actorID == org.OwnerUserID
+	var actorRole organizationModels.OrganizationMemberRole
+	if !actorIsAdmin && !actorIsOwner {
+		actor, err := findMembership(db, org.ID, actorID)
+		if err != nil && !errors.Is(err, ErrMemberNotFound) {
+			return nil, err
+		}
+		if actor != nil {
+			actorRole = actor.Role
+		}
+	}
+
+	return func(targetID string) error {
+		target, err := findMembership(db, org.ID, targetID)
+		if err != nil {
+			return err
+		}
+		if actorIsAdmin {
+			return nil
+		}
+		// Fails closed: an unknown platform role for the target counts as administrator.
+		if targetIsAdmin, err := isPlatformAdmin(targetID); err != nil || targetIsAdmin {
+			return errOutranksActor
+		}
+		if actorIsOwner {
+			return nil
+		}
+		if targetID == org.OwnerUserID || actorRole == "" {
+			return errOutranksActor
+		}
+		if !access.IsRoleAtLeast(string(actorRole), string(target.Role)) {
+			return errOutranksActor
+		}
 		return nil
-	}
-	// Fails closed: an unknown platform role for the target counts as administrator.
-	if targetIsAdmin, err := isPlatformAdmin(targetID); err != nil || targetIsAdmin {
-		return errOutranksImporter
-	}
-	if importerID == org.OwnerUserID {
-		return nil
-	}
-	if targetID == org.OwnerUserID {
-		return errOutranksImporter
-	}
-	importer, err := findMembership(s.db, org.ID, importerID)
-	if errors.Is(err, ErrMemberNotFound) {
-		return errOutranksImporter
-	}
-	if err != nil {
-		return err
-	}
-	if !access.IsRoleAtLeast(string(importer.Role), string(targetRole)) {
-		return errOutranksImporter
-	}
-	return nil
+	}, nil
 }
 
 // isPlatformAdmin resolves the caller's platform roles the way the JWT resolver does.
@@ -420,14 +433,14 @@ func (s *importService) processUser(user *dto.UserImportRow, org *organizationMo
 		}
 
 		// An import may only update accounts already attached to this organization (active or offboarded).
-		target, err := findMembership(s.db, orgID, existingUser.Id)
+		checkRank, err := newRankCheck(s.db, org, importerID)
 		if err != nil {
+			return "", err
+		}
+		if err := checkRank(existingUser.Id); err != nil {
 			if errors.Is(err, ErrMemberNotFound) {
 				return "", errors.New("not a member of this organization; skipped")
 			}
-			return "", err
-		}
-		if err := s.checkImporterRank(org, importerID, existingUser.Id, target.Role); err != nil {
 			return "", err
 		}
 

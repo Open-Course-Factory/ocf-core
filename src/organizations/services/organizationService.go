@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -567,6 +568,15 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 		return nil, fmt.Errorf("group not found in this organization")
 	}
 
+	org, err := os.repository.GetOrganizationByID(orgID, false)
+	if err != nil {
+		return nil, err
+	}
+	checkRank, err := newRankCheck(os.db, org, requestingUserID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get group members to verify the requested users are actually members
 	var groupMembers []groupModels.GroupMember
 	os.db.Where("group_id = ? AND is_active = ?", groupID, true).Find(&groupMembers)
@@ -592,6 +602,25 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 				File:    "user_ids",
 				Field:   "user_id",
 				Message: fmt.Sprintf("user %s is not a member of this group", userID),
+				Code:    dto.ErrCodeNotFound,
+			})
+			response.Summary.Failed++
+			continue
+		}
+
+		// A caller must not reset the password of a member who outranks them.
+		if err := checkRank(userID); err != nil {
+			message := fmt.Sprintf("user %s outranks the caller; skipped", userID)
+			if errors.Is(err, ErrMemberNotFound) {
+				message = fmt.Sprintf("user %s is not a member of this organization", userID)
+			} else if !errors.Is(err, errOutranksActor) {
+				message = fmt.Sprintf("could not check the rank of user %s: %v", userID, err)
+			}
+			response.Errors = append(response.Errors, dto.ImportError{
+				Row:     i + 1,
+				File:    "user_ids",
+				Field:   "user_id",
+				Message: message,
 				Code:    dto.ErrCodeNotFound,
 			})
 			response.Summary.Failed++
