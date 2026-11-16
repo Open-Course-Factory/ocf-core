@@ -39,7 +39,7 @@ func TestCsvImport_PlatformRole_NeverGrantedOnEnforcer(t *testing.T) {
 			orgID := seedTeamOrg(t, db, "owner-1", new(10))
 			seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
-			importer := services.NewImportService(db, identity, newOffboardingService(db, identity))
+			importer := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity))
 			_, _ = importer.ImportOrganizationData(orgID, "owner-1",
 				usersCSV(t, "ada@example.com,Ada,Lovelace,"+role+"\n"), nil, nil, false, false, "", true)
 
@@ -62,7 +62,7 @@ func TestCsvImport_AcceptedRole_AddsOnlyDefaultGroupings(t *testing.T) {
 			orgID := seedTeamOrg(t, db, "owner-1", new(10))
 			seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
-			importer := services.NewImportService(db, identity, newOffboardingService(db, identity))
+			importer := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity))
 			resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 				usersCSV(t, "ada@example.com,Ada,Lovelace,"+role+"\n"), nil, nil, false, false, "", true)
 			require.NoError(t, err)
