@@ -43,8 +43,7 @@ func (c courseController) GenerateCourse(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := c.ownedGeneration(ctx, id); err != nil {
-		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
+	if _, ok := c.ownedGeneration(ctx, id); !ok {
 		return
 	}
 

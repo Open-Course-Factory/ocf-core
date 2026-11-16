@@ -26,6 +26,7 @@ import (
 //	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
 //	@Failure		400	{object}	errors.APIError	"Impossible de créer un cours"
 //	@Failure		400	{object}	errors.APIError	"Source type must be 'git'"
+//	@Failure		400	{object}	errors.APIError	"Repository URL must be https://host/path or git@host:path"
 //	@Failure		409	{object}	errors.APIError	"Cours déjà présent pour cet utilisateur"
 //	@Router			/courses/source [post]
 func (c courseController) CreateCourseFromSource(ctx *gin.Context) {
@@ -40,6 +41,11 @@ func (c courseController) CreateCourseFromSource(ctx *gin.Context) {
 	// Local sources read the server's filesystem: CLI only (src/cli calls the service directly)
 	if createCourseFromSourceDTO.SourceType != "git" {
 		errors.Respond(ctx, http.StatusBadRequest, "Source type must be 'git'")
+		return
+	}
+
+	if !isAllowedRepoURL(createCourseFromSourceDTO.Source) {
+		errors.Respond(ctx, http.StatusBadRequest, repoURLRefused)
 		return
 	}
 

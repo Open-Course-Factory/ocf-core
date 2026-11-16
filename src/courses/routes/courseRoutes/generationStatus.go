@@ -35,8 +35,7 @@ func (c courseController) GetGenerationStatus(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := c.ownedGeneration(ctx, id); err != nil {
-		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
+	if _, ok := c.ownedGeneration(ctx, id); !ok {
 		return
 	}
 
@@ -75,8 +74,7 @@ func (c courseController) DownloadGenerationResults(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := c.ownedGeneration(ctx, id); err != nil {
-		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
+	if _, ok := c.ownedGeneration(ctx, id); !ok {
 		return
 	}
 
@@ -134,8 +132,7 @@ func (c courseController) RetryGeneration(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := c.ownedGeneration(ctx, id); err != nil {
-		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
+	if _, ok := c.ownedGeneration(ctx, id); !ok {
 		return
 	}
 

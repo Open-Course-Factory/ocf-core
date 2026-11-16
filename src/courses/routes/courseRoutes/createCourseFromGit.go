@@ -2,6 +2,8 @@ package courseController
 
 import (
 	"net/http"
+	"net/url"
+	"regexp"
 
 	"soli/formations/src/courses/dto"
 
@@ -25,6 +27,7 @@ import (
 //
 //	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
 //	@Failure		400	{object}	errors.APIError	"Impossible de créer un cours"
+//	@Failure		400	{object}	errors.APIError	"Repository URL must be https://host/path or git@host:path"
 //	@Failure		409	{object}	errors.APIError	"Cours déjà présent pour cet utilisateur"
 //	@Router			/courses/git [post]
 func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
@@ -33,6 +36,11 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 	bindError := ctx.BindJSON(&createCourseFromGitDTO)
 	if bindError != nil {
 		errors.Respond(ctx, http.StatusBadRequest, "Impossible de parser le json"+bindError.Error())
+		return
+	}
+
+	if !isAllowedRepoURL(createCourseFromGitDTO.Url) {
+		errors.Respond(ctx, http.StatusBadRequest, repoURLRefused)
 		return
 	}
 
@@ -48,4 +56,20 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 	//ToDo: generate outputDto
 
 	ctx.JSON(http.StatusCreated, nil)
+}
+
+const repoURLRefused = "Repository URL must be https://host/path or git@host:path"
+
+// git@<host>:<path>, host without '/', ':' or '@' and not starting with '-' (no ssh option injection).
+var sshRepoURL = regexp.MustCompile(`^git@[^-/:@\s][^/:@\s]*:\S+$`)
+
+// isAllowedRepoURL accepts only the remote forms the HTTP import offers; the CLI calls the
+// loader directly and keeps its local and other forms.
+// shortcut: an https host that resolves to an internal address is not checked (DNS-level SSRF out of scope).
+func isAllowedRepoURL(raw string) bool {
+	if sshRepoURL.MatchString(raw) {
+		return true
+	}
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
 }

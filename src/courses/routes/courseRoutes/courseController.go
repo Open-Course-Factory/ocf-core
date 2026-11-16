@@ -2,13 +2,18 @@
 package courseController
 
 import (
+	"errors"
+	"net/http"
+
 	"soli/formations/src/auth/casdoor"
+	authErrors "soli/formations/src/auth/errors"
 	authInterfaces "soli/formations/src/auth/interfaces"
 	"soli/formations/src/courses/models"
 	services "soli/formations/src/courses/services"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	emServices "soli/formations/src/entityManagement/services"
+	"soli/formations/src/utils"
 	workerServices "soli/formations/src/worker/services"
 
 	"github.com/gin-gonic/gin"
@@ -37,21 +42,29 @@ type courseController struct {
 	db          *gorm.DB
 }
 
-// ownedGeneration loads the generation if the caller owns it and its course, else a not-found error.
-func (c courseController) ownedGeneration(ctx *gin.Context, id uuid.UUID) (*models.Generation, error) {
+// ownedGeneration loads the generation if the caller owns it and its course. Otherwise it
+// answers the request itself: the same 404 for missing and not yours, a bare 500 on a database error.
+func (c courseController) ownedGeneration(ctx *gin.Context, id uuid.UUID) (*models.Generation, bool) {
 	userID, roles := ctx.GetString("userId"), ctx.GetStringSlice("userRoles")
 	generation, err := services.GetOwnedGeneration(c.generations, id, userID, roles)
-	if err != nil {
-		return nil, err
+	owns := false
+	if err == nil {
+		owns, err = services.CallerOwnsCourse(c.db, generation.CourseID, userID, roles)
+		if err == nil && !owns {
+			err = entityErrors.NewEntityNotFound("Generation", id)
+		}
 	}
-	owns, err := services.CallerOwnsCourse(c.db, generation.CourseID, userID, roles)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		return generation, true
 	}
-	if !owns {
-		return nil, entityErrors.NewEntityNotFound("Generation", id)
+	var entityErr *entityErrors.EntityError
+	if errors.As(err, &entityErr) && entityErr.Code == entityErrors.ErrEntityNotFound.Code {
+		authErrors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
+	} else {
+		utils.Error("generation %s lookup failed: %v", id, err)
+		authErrors.Respond(ctx, http.StatusInternalServerError, "Erreur interne")
 	}
-	return generation, nil
+	return nil, false
 }
 
 func NewCourseController(db *gorm.DB) CourseController {
