@@ -574,7 +574,7 @@ func TestResetGroupScenarioSessions_ResetsActiveSessions(t *testing.T) {
 		ScenarioID: scenario.ID, UserID: "reset-s2", Status: "in_progress", StartedAt: time.Now(),
 	}).Error)
 
-	svc := services.NewTeacherDashboardService(db, nil, nil)
+	svc := services.NewTeacherDashboardService(db, newMockTTService(), nil)
 	count, _, err := svc.ResetGroupScenarioSessions(groupID, scenario.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
@@ -610,7 +610,7 @@ func TestResetGroupScenarioSessions_SkipsCompletedAndAbandoned(t *testing.T) {
 		StartedAt: time.Now().Add(-2 * time.Hour),
 	}).Error)
 
-	svc := services.NewTeacherDashboardService(db, nil, nil)
+	svc := services.NewTeacherDashboardService(db, newMockTTService(), nil)
 	count, _, err := svc.ResetGroupScenarioSessions(groupID, scenario.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
@@ -636,7 +636,7 @@ func TestResetGroupScenarioSessions_NoActiveSessions(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	svc := services.NewTeacherDashboardService(db, nil, nil)
+	svc := services.NewTeacherDashboardService(db, newMockTTService(), nil)
 	count, _, err := svc.ResetGroupScenarioSessions(groupID, scenario.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
@@ -668,7 +668,7 @@ func TestResetGroupScenarioSessions_OnlyAffectsGroupMembers(t *testing.T) {
 	}).Error)
 
 	// Reset only group A
-	svc := services.NewTeacherDashboardService(db, nil, nil)
+	svc := services.NewTeacherDashboardService(db, newMockTTService(), nil)
 	count, _, err := svc.ResetGroupScenarioSessions(groupA, scenario.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)

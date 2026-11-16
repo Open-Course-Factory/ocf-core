@@ -326,3 +326,40 @@ func TestBulkStartScenario_ReplaceThenNewRunFails_LeavesOldRunAbandonedAndReleas
 	assert.Zero(t, open, "the learner is left with no open run")
 	assert.Equal(t, []string{"term-replace-fail-old"}, ttMock.DeletedSessions())
 }
+
+// relaunchAfterFailedSetup seeds a setup_failed run (on oldTerminal when not
+// empty) and relaunches the scenario on a new terminal through the session
+// service wired the way production wires it.
+func relaunchAfterFailedSetup(t *testing.T, name, oldTerminal string) *mockTTService {
+	t.Helper()
+	db := freshTestDB(t)
+	scenario := models.Scenario{Name: name, Title: name, InstanceType: "xs", CreatedByID: "c1"}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Step", TextContent: "content"}).Error)
+	learner := name + "-learner"
+	oldRun := seedBulkRun(t, db, scenario.ID, learner, "setup_failed", oldTerminal, false)
+
+	tt := newMockTTService()
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	services.WireTerminalCallbacks(sessionSvc, tt)
+
+	newRun, err := sessionSvc.StartScenario(learner, scenario.ID, name+"-term-new", "")
+	require.NoError(t, err)
+	assert.Equal(t, "abandoned", sessionStatus(t, db, oldRun), "the failed run is replaced by the relaunch")
+	require.NotNil(t, newRun.TerminalSessionID)
+	assert.Equal(t, name+"-term-new", *newRun.TerminalSessionID)
+	return tt
+}
+
+// A failed setup only stops its terminal, and a stopped terminal still holds
+// budget: the relaunch that abandons the failed run must delete it.
+func TestStartScenario_RelaunchAfterFailedSetup_DeletesTheFailedRunsTerminal(t *testing.T) {
+	tt := relaunchAfterFailedSetup(t, "relaunch-failed", "relaunch-failed-term-old")
+	assert.Equal(t, []string{"relaunch-failed-term-old"}, tt.DeletedSessions(),
+		"the failed run's terminal must be deleted, and not the new run's")
+}
+
+func TestStartScenario_RelaunchAfterFailedSetupWithoutTerminal_DeletesNothing(t *testing.T) {
+	tt := relaunchAfterFailedSetup(t, "relaunch-noterm", "")
+	assert.Empty(t, tt.DeletedSessions())
+}
