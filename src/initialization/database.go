@@ -86,17 +86,26 @@ func SweepAutoAssignedOrgTrials(db *gorm.DB) {
 	}
 }
 
+// migrate logs each failed model migration and carries on: a broken table must be visible, not block startup.
+func migrate(db *gorm.DB, models ...any) {
+	for _, m := range models {
+		if err := db.AutoMigrate(m); err != nil {
+			log.Printf("[MIGRATION] AutoMigrate %T failed: %v", m, err)
+		}
+	}
+}
+
 // AutoMigrateAll performs database migrations for all entities
 func AutoMigrateAll(db *gorm.DB) {
 	// Course entities
-	db.AutoMigrate(&courseModels.Page{})
-	db.AutoMigrate(&courseModels.Section{})
-	db.AutoMigrate(&courseModels.Chapter{})
-	db.AutoMigrate(&courseModels.Course{})
-	db.AutoMigrate(&courseModels.Session{})
+	migrate(db, &courseModels.Page{})
+	migrate(db, &courseModels.Section{})
+	migrate(db, &courseModels.Chapter{})
+	migrate(db, &courseModels.Course{})
+	migrate(db, &courseModels.Session{})
 
 	// Course many-to-many relationships
-	db.AutoMigrate(&courseModels.CourseChapters{})
+	migrate(db, &courseModels.CourseChapters{})
 	errJTChapterC := db.SetupJoinTable(&courseModels.Course{}, "Chapters", &courseModels.CourseChapters{})
 	if errJTChapterC != nil {
 		log.Default().Println(errJTChapterC)
@@ -106,7 +115,7 @@ func AutoMigrateAll(db *gorm.DB) {
 		log.Default().Println(errJTCoursesC)
 	}
 
-	db.AutoMigrate(&courseModels.ChapterSections{})
+	migrate(db, &courseModels.ChapterSections{})
 	errJTSectionC := db.SetupJoinTable(&courseModels.Chapter{}, "Sections", &courseModels.ChapterSections{})
 	if errJTSectionC != nil {
 		log.Default().Println(errJTSectionC)
@@ -116,7 +125,7 @@ func AutoMigrateAll(db *gorm.DB) {
 		log.Default().Println(errJTChaptersS)
 	}
 
-	db.AutoMigrate(&courseModels.SectionPages{})
+	migrate(db, &courseModels.SectionPages{})
 	errJTPage := db.SetupJoinTable(&courseModels.Section{}, "Pages", &courseModels.SectionPages{})
 	if errJTPage != nil {
 		log.Default().Println(errJTPage)
@@ -127,28 +136,28 @@ func AutoMigrateAll(db *gorm.DB) {
 	}
 
 	// Other course entities
-	db.AutoMigrate(&courseModels.Schedule{})
-	db.AutoMigrate(&courseModels.Theme{})
-	db.AutoMigrate(&courseModels.Generation{})
+	migrate(db, &courseModels.Schedule{})
+	migrate(db, &courseModels.Theme{})
+	migrate(db, &courseModels.Generation{})
 
 	// Auth entities
-	db.AutoMigrate(&authModels.SshKey{})
-	db.AutoMigrate(&authModels.UserSettings{})
-	db.AutoMigrate(&authModels.TokenBlacklist{})
-	db.AutoMigrate(&authModels.BlockedAccount{})
-	db.AutoMigrate(&authModels.PasswordResetToken{})
-	db.AutoMigrate(&authModels.EmailVerificationToken{})
-	db.AutoMigrate(&authModels.ImpersonationSession{})
+	migrate(db, &authModels.SshKey{})
+	migrate(db, &authModels.UserSettings{})
+	migrate(db, &authModels.TokenBlacklist{})
+	migrate(db, &authModels.BlockedAccount{})
+	migrate(db, &authModels.PasswordResetToken{})
+	migrate(db, &authModels.EmailVerificationToken{})
+	migrate(db, &authModels.ImpersonationSession{})
 
 	// Email entities
-	db.AutoMigrate(&emailModels.EmailTemplate{})
+	migrate(db, &emailModels.EmailTemplate{})
 
 	// Terminal entities
-	db.AutoMigrate(&terminalModels.Terminal{})
-	db.AutoMigrate(&terminalModels.UserTerminalKey{})
-	db.AutoMigrate(&terminalModels.ExposedPort{})
-	db.AutoMigrate(&terminalModels.SessionBlock{})
-	db.AutoMigrate(&terminalModels.ParticipantNetworkCut{})
+	migrate(db, &terminalModels.Terminal{})
+	migrate(db, &terminalModels.UserTerminalKey{})
+	migrate(db, &terminalModels.ExposedPort{})
+	migrate(db, &terminalModels.SessionBlock{})
+	migrate(db, &terminalModels.ParticipantNetworkCut{})
 	if err := terminalModels.MigrateSessionBlockGlobalIndex(db); err != nil {
 		log.Printf("failed to create the global session block index: %v", err)
 	}
@@ -160,60 +169,60 @@ func AutoMigrateAll(db *gorm.DB) {
 	DropOrphanUserTerminalKeyColumns(db)
 
 	// Group entities
-	db.AutoMigrate(&groupModels.ClassGroup{})
+	migrate(db, &groupModels.ClassGroup{})
 	MigrateInactiveClassesToArchived(db)
-	db.AutoMigrate(&groupModels.GroupMember{})
+	migrate(db, &groupModels.GroupMember{})
 
 	// Organization entities (Phase 1)
-	db.AutoMigrate(&organizationModels.Organization{})
-	db.AutoMigrate(&organizationModels.OrganizationMember{})
-	db.AutoMigrate(&organizationModels.OrganizationAiConfig{})
+	migrate(db, &organizationModels.Organization{})
+	migrate(db, &organizationModels.OrganizationMember{})
+	migrate(db, &organizationModels.OrganizationAiConfig{})
 
 	// Scenario entities
-	db.AutoMigrate(&scenarioModels.ProjectFile{})
-	db.AutoMigrate(&scenarioModels.Scenario{})
+	migrate(db, &scenarioModels.ProjectFile{})
+	migrate(db, &scenarioModels.Scenario{})
 	// After the model, never before: the estimate is carried into a column that
 	// AutoMigrate has just created, and the prose one is dropped only once it
 	// has somewhere to land.
 	scenarioModels.MigrateEstimatedTimeToMinutes(db)
-	db.AutoMigrate(&scenarioModels.ScenarioStep{})
+	migrate(db, &scenarioModels.ScenarioStep{})
 	scenarioModels.MigrateFlagStepConsistency(db)
-	db.AutoMigrate(&scenarioModels.ScenarioStepHint{})
-	db.AutoMigrate(&scenarioModels.ScenarioSession{})
-	db.AutoMigrate(&scenarioModels.ScenarioStepProgress{})
-	db.AutoMigrate(&scenarioModels.ScenarioFlag{})
-	db.AutoMigrate(&scenarioModels.ScenarioAssignment{})
-	db.AutoMigrate(&scenarioModels.ParticipationArchive{})
-	db.AutoMigrate(&scenarioModels.ScenarioInstanceType{})
-	db.AutoMigrate(&scenarioModels.ScenarioStepQuestion{})
-	db.AutoMigrate(&scenarioModels.ScenarioTranslation{})
-	db.AutoMigrate(&scenarioModels.ScenarioStepTranslation{})
+	migrate(db, &scenarioModels.ScenarioStepHint{})
+	migrate(db, &scenarioModels.ScenarioSession{})
+	migrate(db, &scenarioModels.ScenarioStepProgress{})
+	migrate(db, &scenarioModels.ScenarioFlag{})
+	migrate(db, &scenarioModels.ScenarioAssignment{})
+	migrate(db, &scenarioModels.ParticipationArchive{})
+	migrate(db, &scenarioModels.ScenarioInstanceType{})
+	migrate(db, &scenarioModels.ScenarioStepQuestion{})
+	migrate(db, &scenarioModels.ScenarioTranslation{})
+	migrate(db, &scenarioModels.ScenarioStepTranslation{})
 	// Widen the lexicon key index before the model rebuilds it: an earlier
 	// shape could not express one object sitting in two places.
 	scenarioModels.MigrateLexiconKeyIndex(db)
-	db.AutoMigrate(&scenarioModels.ScenarioLexiconEntry{})
-	db.AutoMigrate(&scenarioModels.ScenarioLexiconName{})
+	migrate(db, &scenarioModels.ScenarioLexiconEntry{})
+	migrate(db, &scenarioModels.ScenarioLexiconName{})
 
 	// Scenario indexes
 	scenarioModels.MigrateUniqueActiveSessionIndex(db)
 
 	// Payment entities
-	db.AutoMigrate(&paymentModels.SubscriptionPlan{})
+	migrate(db, &paymentModels.SubscriptionPlan{})
 	// The orphan subscription_plans columns are dropped by DropOrphanPlanColumns
 	// at the end of AutoMigrateAll, after the final backfill that reads one of them.
-	db.AutoMigrate(&paymentModels.SubscriptionBatch{})
-	db.AutoMigrate(&paymentModels.UserSubscription{})         // DEPRECATED in Phase 2 (kept for backward compat)
-	db.AutoMigrate(&paymentModels.OrganizationSubscription{}) // NEW: Phase 2 - Organization subscriptions
+	migrate(db, &paymentModels.SubscriptionBatch{})
+	migrate(db, &paymentModels.UserSubscription{})         // DEPRECATED in Phase 2 (kept for backward compat)
+	migrate(db, &paymentModels.OrganizationSubscription{}) // NEW: Phase 2 - Organization subscriptions
 	// #374: TrialEnd was removed (no paid trials); drop the orphan trial_end
 	// columns AutoMigrate leaves behind on both subscription tables.
 	dropOrphanSubscriptionTrialEndColumns(db)
 	// NOTE: The partial unique index on organization_subscriptions is
 	// created AFTER BackfillSingleActiveOrgSubscription so the cleanup of
 	// legacy duplicate rows has a chance to run first. See line ~149.
-	db.AutoMigrate(&paymentModels.OrganizationRolePlan{}) // NEW: role-based plan entitlements within an organization
-	db.AutoMigrate(&paymentModels.Invoice{})
-	db.AutoMigrate(&paymentModels.PaymentMethod{})
-	db.AutoMigrate(&paymentModels.UsageMetrics{})
+	migrate(db, &paymentModels.OrganizationRolePlan{}) // NEW: role-based plan entitlements within an organization
+	migrate(db, &paymentModels.Invoice{})
+	migrate(db, &paymentModels.PaymentMethod{})
+	migrate(db, &paymentModels.UsageMetrics{})
 	// One-shot cleanup: the legacy `concurrent_terminals` usage metric is
 	// dead infrastructure. The CPU/RAM budget engine
 	// (SubscriptionPlan.MaxCPU / MaxMemoryMB enforced by
@@ -232,16 +241,16 @@ func AutoMigrateAll(db *gorm.DB) {
 	// reading and gets ×1000; anything ≥100 is already in mCPU (the new
 	// catalog/plan values start at 500) and is left alone.
 	RescaleVCPUToMillicores(db)
-	db.AutoMigrate(&paymentModels.BillingAddress{})
-	db.AutoMigrate(&paymentModels.WebhookEvent{}) // ✅ SECURITY: Track processed webhooks in database
-	db.AutoMigrate(&paymentModels.StripeSync{})   // Persistent Stripe sync queue (issue #326)
+	migrate(db, &paymentModels.BillingAddress{})
+	migrate(db, &paymentModels.WebhookEvent{}) // ✅ SECURITY: Track processed webhooks in database
+	migrate(db, &paymentModels.StripeSync{})   // Persistent Stripe sync queue (issue #326)
 
 	// Configuration entities
-	db.AutoMigrate(&configModels.Feature{})
-	db.AutoMigrate(&configModels.Branding{})
+	migrate(db, &configModels.Feature{})
+	migrate(db, &configModels.Branding{})
 
 	// Audit logging entities (compliance & security)
-	db.AutoMigrate(&auditModels.AuditLog{})
+	migrate(db, &auditModels.AuditLog{})
 
 	// Harmonize group roles: admin → manager, assistant → member
 	migrateGroupRoles(db)
