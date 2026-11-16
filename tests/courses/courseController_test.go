@@ -583,24 +583,32 @@ func TestCourseController_GenerationRoutes_NonCanonicalID_FindsGeneration(t *tes
 	}
 }
 
-// setupGenerationRouterAs mounts the four generation item routes with the caller
-// identity a real AuthManagement() would set, reusing setupTestRouter's DB.
+// setupGenerationRouterAs mounts the generation routes with the caller identity a
+// real AuthManagement() would set, reusing setupTestRouter's DB.
 func setupGenerationRouterAs(t *testing.T, db *gorm.DB, userID string, roles ...string) *gin.Engine {
+	router, _ := setupGenerationRouterWithWorkerAs(t, db, userID, roles...)
+	return router
+}
+
+func setupGenerationRouterWithWorkerAs(t *testing.T, db *gorm.DB, userID string, roles ...string) (*gin.Engine, *workerServices.MockWorkerService) {
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set("userId", userID)
 		c.Set("userRoles", roles)
 		c.Next()
 	})
+	mockWorker := workerServices.NewMockWorkerService()
 	mockCasdoor := authMocks.NewMockCasdoorService()
-	controller := courseRoutes.NewCourseControllerWithDependencies(db, workerServices.NewMockWorkerService(), mockCasdoor,
+	controller := courseRoutes.NewCourseControllerWithDependencies(db, mockWorker, mockCasdoor,
 		workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor), genericService.NewGenericService(db, nil))
+	router.POST("/api/v1/courses/generate", controller.GenerateCourse)
 	generations := router.Group("/api/v1/generations")
+	generations.GET("", generationRoutes.NewGenerationController(db).GetGenerations)
 	generations.GET("/:id/status", controller.GetGenerationStatus)
 	generations.GET("/:id/download", controller.DownloadGenerationResults)
 	generations.POST("/:id/retry", controller.RetryGeneration)
 	generations.DELETE("/:id", generationRoutes.NewGenerationController(db).DeleteGeneration)
-	return router
+	return router, mockWorker
 }
 
 // createOwnedGeneration stores a generation owned by ownerID; CourseID points at no
@@ -620,7 +628,12 @@ func createOwnedGeneration(t *testing.T, db *gorm.DB, ownerID string, status str
 }
 
 func serveGeneration(router *gin.Engine, method, path string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
+	return serveGenerationBody(router, method, path, "")
+}
+
+func serveGenerationBody(router *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	return w
@@ -699,4 +712,135 @@ func TestGenerationRoutes_OwnerAndAdmin_Allowed(t *testing.T) {
 			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 		})
 	}
+}
+
+func generateBody(id uuid.UUID) string {
+	return `{"generationId":"` + id.String() + `","format":1,"authorEmail":"test@example.com"}`
+}
+
+// Another member cannot start someone else's generation: same answer as a missing
+// generation, the row is untouched and nothing reaches the worker.
+func TestGenerateCourse_OtherMember_NotFoundAndNoEffect(t *testing.T) {
+	_, db := setupTestRouter(t)
+	other, worker := setupGenerationRouterWithWorkerAs(t, db, "member-b", "member")
+	gen := createOwnedGeneration(t, db, "member-a", models.StatusPending)
+
+	w := serveGenerationBody(other, "POST", "/api/v1/courses/generate", generateBody(gen.ID))
+	missing := serveGenerationBody(other, "POST", "/api/v1/courses/generate", generateBody(uuid.New()))
+	assert.Equal(t, missing.Code, w.Code)
+	assert.Contains(t, w.Body.String(), "failed to get generation", w.Body.String())
+
+	after, err := reloadGeneration(t, db, gen.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusPending, after.Status)
+	assert.Nil(t, after.WorkerJobID)
+	assert.Empty(t, worker.GetAllJobs())
+}
+
+// The owner and an administrator get past the owner check on generate: the request
+// fails later, on the missing course, not on the generation lookup.
+func TestGenerateCourse_OwnerAndAdmin_PassOwnerCheck(t *testing.T) {
+	_, db := setupTestRouter(t)
+	for name, caller := range map[string][]string{"owner": {"member-a", "member"}, "admin": {"platform-admin", "administrator"}} {
+		t.Run(name, func(t *testing.T) {
+			router := setupGenerationRouterAs(t, db, caller[0], caller[1])
+			gen := createOwnedGeneration(t, db, "member-a", models.StatusPending)
+			w := serveGenerationBody(router, "POST", "/api/v1/courses/generate", generateBody(gen.ID))
+			assert.NotContains(t, w.Body.String(), "failed to get generation")
+			assert.Contains(t, w.Body.String(), "failed to get course", w.Body.String())
+		})
+	}
+}
+
+// Someone else's generation and a generation that does not exist get byte-identical
+// answers on every route, so a member cannot probe which ids exist.
+func TestGenerationRoutes_OtherMember_IndistinguishableFromMissing(t *testing.T) {
+	_, db := setupTestRouter(t)
+	other := setupGenerationRouterAs(t, db, "member-b", "member")
+
+	routes := []struct{ name, method, suffix string }{
+		{"status", "GET", "/status"},
+		{"download", "GET", "/download"},
+		{"retry", "POST", "/retry"},
+		{"delete", "DELETE", ""},
+		{"generate", "POST", ""},
+	}
+	for _, rt := range routes {
+		t.Run(rt.name, func(t *testing.T) {
+			gen := createOwnedGeneration(t, db, "member-a", models.StatusFailed)
+			call := func() *httptest.ResponseRecorder {
+				if rt.name == "generate" {
+					return serveGenerationBody(other, "POST", "/api/v1/courses/generate", generateBody(gen.ID))
+				}
+				return serveGeneration(other, rt.method, "/api/v1/generations/"+gen.ID.String()+rt.suffix)
+			}
+			foreign := call()
+			require.NoError(t, db.Unscoped().Delete(&models.Generation{}, "id = ?", gen.ID).Error)
+			missing := call()
+			assert.Equal(t, missing.Code, foreign.Code)
+			assert.Equal(t, missing.Body.String(), foreign.Body.String())
+		})
+	}
+}
+
+// A request without a caller identity is refused on every route, even for a row
+// whose owner list holds an empty id.
+func TestGenerationRoutes_EmptyUserID_Refused(t *testing.T) {
+	_, db := setupTestRouter(t)
+	anon, worker := setupGenerationRouterWithWorkerAs(t, db, "", "member")
+
+	for _, owner := range []string{"member-a", ""} {
+		gen := createOwnedGeneration(t, db, owner, models.StatusFailed)
+		path := "/api/v1/generations/" + gen.ID.String()
+		assert.Equal(t, http.StatusNotFound, serveGeneration(anon, "GET", path+"/status").Code)
+		assert.Equal(t, http.StatusNotFound, serveGeneration(anon, "GET", path+"/download").Code)
+		assert.Equal(t, http.StatusNotFound, serveGeneration(anon, "POST", path+"/retry").Code)
+		assert.Equal(t, http.StatusNotFound, serveGeneration(anon, "DELETE", path).Code)
+		w := serveGenerationBody(anon, "POST", "/api/v1/courses/generate", generateBody(gen.ID))
+		assert.Contains(t, w.Body.String(), "failed to get generation")
+
+		after, err := reloadGeneration(t, db, gen.ID)
+		require.NoError(t, err)
+		assert.Equal(t, models.StatusFailed, after.Status)
+	}
+	assert.Empty(t, worker.GetAllJobs())
+}
+
+// Every owner of a shared generation reaches it.
+func TestGenerationRoutes_SeveralOwners_EachAllowed(t *testing.T) {
+	_, db := setupTestRouter(t)
+	gen := &models.Generation{
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: []string{"member-a", "member-c"}},
+		Name:      "Shared Generation",
+		Status:    models.StatusCompleted,
+		Format:    &[]int{1}[0],
+	}
+	require.NoError(t, db.Create(gen).Error)
+
+	for _, owner := range []string{"member-a", "member-c"} {
+		router := setupGenerationRouterAs(t, db, owner, "member")
+		w := serveGeneration(router, "GET", "/api/v1/generations/"+gen.ID.String()+"/status")
+		assert.Equal(t, http.StatusOK, w.Code, owner+": "+w.Body.String())
+	}
+	w := serveGeneration(setupGenerationRouterAs(t, db, "member-b", "member"), "GET", "/api/v1/generations/"+gen.ID.String()+"/status")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// GET /generations lists only the caller's generations.
+func TestGenerationList_OtherMember_SeesOnlyOwn(t *testing.T) {
+	_, db := setupTestRouter(t)
+	mine := createOwnedGeneration(t, db, "member-b", models.StatusCompleted)
+	theirs := createOwnedGeneration(t, db, "member-a", models.StatusCompleted)
+
+	w := serveGeneration(setupGenerationRouterAs(t, db, "member-b", "member"), "GET", "/api/v1/generations")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), mine.ID.String())
+	assert.NotContains(t, w.Body.String(), theirs.ID.String())
+}
+
+// Retrying a generation that does not exist answers 404.
+func TestRetryGeneration_Missing_Returns404(t *testing.T) {
+	_, db := setupTestRouter(t)
+	w := serveGeneration(setupGenerationRouterAs(t, db, "member-a", "member"), "POST", "/api/v1/generations/"+uuid.New().String()+"/retry")
+	assert.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
 }
