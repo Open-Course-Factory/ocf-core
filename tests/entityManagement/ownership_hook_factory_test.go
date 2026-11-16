@@ -331,3 +331,44 @@ func TestOwnershipHook_BeforeDelete_NonOwnerDenied(t *testing.T) {
 	assert.Contains(t, err.Error(), "permission",
 		"Error should indicate a permission denial")
 }
+
+// --- Issue #613: BeforeCreate owner defaulting ---
+
+// runOwnershipBeforeCreate runs the BeforeCreate ownership hook for the given caller
+// on an entity whose request body named `bodyOwner`, and returns the resulting owner.
+func runOwnershipBeforeCreate(t *testing.T, adminBypass bool, callerID string, roles []string, bodyOwner string) string {
+	t.Helper()
+	config := access.OwnershipConfig{
+		OwnerField:  "UserID",
+		Operations:  []string{"create", "update", "delete"},
+		AdminBypass: adminBypass,
+	}
+	hook := hooks.NewOwnershipHook(setupOwnershipTestDB(t), "TestOwnedEntity", config)
+	entity := TestOwnedEntity{UserID: bodyOwner, Name: "x"}
+	err := hook.Execute(&hooks.HookContext{
+		EntityName: "TestOwnedEntity",
+		HookType:   hooks.BeforeCreate,
+		UserID:     callerID,
+		UserRoles:  roles,
+		NewEntity:  &entity,
+		Context:    context.Background(),
+	})
+	require.NoError(t, err)
+	return entity.UserID
+}
+
+func TestOwnershipHook_BeforeCreate_AdminNamingNoOwner_OwnedByAdmin(t *testing.T) {
+	owner := runOwnershipBeforeCreate(t, true, "admin1", []string{"administrator"}, "")
+	assert.Equal(t, "admin1", owner,
+		"an administrator who names no owner must own the row, not leave it owner-less")
+}
+
+func TestOwnershipHook_BeforeCreate_MemberNamingOtherOwner_ForcedToMember(t *testing.T) {
+	owner := runOwnershipBeforeCreate(t, true, "user1", []string{"member"}, "other-user")
+	assert.Equal(t, "user1", owner, "a member's create is always owned by the member")
+}
+
+func TestOwnershipHook_BeforeCreate_AdminWithoutBypass_ForcedToAdmin(t *testing.T) {
+	owner := runOwnershipBeforeCreate(t, false, "admin1", []string{"administrator"}, "other-user")
+	assert.Equal(t, "admin1", owner, "without AdminBypass an administrator is forced to own the row too")
+}

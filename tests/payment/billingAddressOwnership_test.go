@@ -9,8 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	access "soli/formations/src/auth/access"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
+	entityServices "soli/formations/src/entityManagement/services"
+	paymentDto "soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 )
 
@@ -225,4 +228,28 @@ func TestBillingAddressOwnership_BeforeDelete_AdminCanDelete(t *testing.T) {
 
 	err := hook.Execute(ctx)
 	assert.NoError(t, err, "Admin should be able to delete any billing address")
+}
+
+// TestBillingAddressOwnership_AdminGenericCreate_OwnedByAdmin drives the real
+// BillingAddress registration and generic create path as an administrator. The
+// create DTO has no user_id, so the hook is the only thing that can set the owner.
+func TestBillingAddressOwnership_AdminGenericCreate_OwnedByAdmin(t *testing.T) {
+	_ = freshTestDB(t)
+	setupBillingAddressEntity(t)
+	withPaymentHooksRegistered(t)
+	ems.RegisterOwnershipHooks(sharedTestDB)
+
+	input := paymentDto.CreateBillingAddressInput{Line1: "1 rue de Rivoli", City: "Paris", PostalCode: "75001", Country: "FR"}
+	svc := entityServices.NewGenericService(sharedTestDB, nil)
+	created, err := svc.CreateEntityWithUser(input, "BillingAddress", "admin-user-789", "administrator")
+	require.NoError(t, err)
+
+	ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps("BillingAddress")
+	require.True(t, ok)
+	id, err := ops.ExtractID(created)
+	require.NoError(t, err)
+
+	var row models.BillingAddress
+	require.NoError(t, sharedTestDB.First(&row, "id = ?", id).Error)
+	assert.Equal(t, "admin-user-789", row.UserID, "an administrator's billing address must be owned by the administrator")
 }
