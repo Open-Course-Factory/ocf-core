@@ -31,6 +31,13 @@ func TestScenarioSession_Layer1_MemberIsReadOnly(t *testing.T) {
 	scenarioRegistration.RegisterScenarioSession(svc)
 	roles := svc.GetAllEntityRoles()["ScenarioSession"]
 
+	// What unmounts the route: the generator mounts POST only for a Create op.
+	// The Casbin row below alone is not enough, since the startup reconcile
+	// never deletes an old member policy on an upgraded database.
+	swagger := svc.GetAllSwaggerConfigs()["ScenarioSession"]
+	require.NotNil(t, swagger)
+	assert.Nil(t, swagger.Create, "the generic create route must not be mounted")
+
 	member := roles.Roles[string(authModels.Member)]
 	assert.Contains(t, member, http.MethodGet, "members still read their own runs")
 	assert.NotContains(t, member, http.MethodPost,

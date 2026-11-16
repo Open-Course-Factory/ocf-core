@@ -2,7 +2,6 @@ package scenarioRegistration
 
 import (
 	"net/http"
-	"time"
 
 	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
@@ -13,11 +12,11 @@ import (
 )
 
 func RegisterScenarioSession(service *ems.EntityRegistrationService) {
-	ems.RegisterTypedEntity[models.ScenarioSession, dto.CreateScenarioSessionInput, dto.EditScenarioSessionInput, dto.ScenarioSessionOutput](
+	ems.RegisterTypedEntity[models.ScenarioSession, struct{}, dto.EditScenarioSessionInput, dto.ScenarioSessionOutput](
 		service,
 		"ScenarioSession",
-		entityManagementInterfaces.TypedEntityRegistration[models.ScenarioSession, dto.CreateScenarioSessionInput, dto.EditScenarioSessionInput, dto.ScenarioSessionOutput]{
-			Converters: entityManagementInterfaces.TypedEntityConverters[models.ScenarioSession, dto.CreateScenarioSessionInput, dto.EditScenarioSessionInput, dto.ScenarioSessionOutput]{
+		entityManagementInterfaces.TypedEntityRegistration[models.ScenarioSession, struct{}, dto.EditScenarioSessionInput, dto.ScenarioSessionOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[models.ScenarioSession, struct{}, dto.EditScenarioSessionInput, dto.ScenarioSessionOutput]{
 				ModelToDto: func(model *models.ScenarioSession) (dto.ScenarioSessionOutput, error) {
 					output := dto.ScenarioSessionOutput{
 						ID:                model.ID,
@@ -71,15 +70,9 @@ func RegisterScenarioSession(service *ems.EntityRegistrationService) {
 
 					return output, nil
 				},
-				DtoToModel: func(input dto.CreateScenarioSessionInput) *models.ScenarioSession {
-					return &models.ScenarioSession{
-						ScenarioID:        input.ScenarioID,
-						UserID:            input.UserID,
-						TerminalSessionID: input.TerminalSessionID,
-						Status:            "active",
-						StartedAt:         time.Now(),
-					}
-				},
+				// No generic create: there is no input to map, so a Create op added
+				// later cannot accept a client-chosen owner or terminal.
+				DtoToModel: func(struct{}) *models.ScenarioSession { return &models.ScenarioSession{} },
 				DtoToMap: func(input dto.EditScenarioSessionInput) map[string]any {
 					updates := make(map[string]any)
 					if input.CurrentStep != nil {

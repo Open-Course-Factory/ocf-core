@@ -6,13 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// CreateScenarioSessionInput - DTO for creating a new scenario session
-type CreateScenarioSessionInput struct {
-	ScenarioID        uuid.UUID `json:"scenario_id" mapstructure:"scenario_id" binding:"required"`
-	UserID            string    `json:"user_id" mapstructure:"user_id" binding:"required"`
-	TerminalSessionID *string   `json:"terminal_session_id,omitempty" mapstructure:"terminal_session_id"`
-}
-
 // EditScenarioSessionInput - DTO for editing a scenario session (partial updates)
 // A run's terminal is set by the launch routes only, never by an edit.
 type EditScenarioSessionInput struct {
