@@ -400,6 +400,9 @@ func TestPreviewFromStep_ScriptFails_SetupFailedAndTerminalStopped(t *testing.T)
 	assert.Equal(t, "setup_failed", run.Status, "a script of the replay failed")
 	assert.Equal(t, []string{"setup", "bg1", "bg2"}, tt.builtSteps(),
 		"the build stops at the first script that fails")
+	// The build writes setup_failed before it stops the terminal.
+	require.Eventually(t, func() bool { return len(tt.stoppedSessions()) > 0 },
+		5*time.Second, 10*time.Millisecond, "the failed preview's terminal is stopped")
 	assert.Equal(t, []string{resp.TerminalSessionID}, tt.stoppedSessions(),
 		"the failed preview's terminal is stopped, and only it")
 }

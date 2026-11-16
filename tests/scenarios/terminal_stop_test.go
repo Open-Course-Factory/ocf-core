@@ -110,8 +110,10 @@ func TestRunLaunchBuild_StopsTerminalOnFailure(t *testing.T) {
 	// The setup script failed, so session should be setup_failed
 	assert.Equal(t, "setup_failed", finalStatus, "session should be marked as setup_failed after script failure")
 
-	// The terminal stop function should have been called with our terminal session ID
-	assert.GreaterOrEqual(t, tracker.CallCount(), 1, "terminal stop function should have been called")
+	// The terminal stop function should have been called with our terminal session ID;
+	// the build writes setup_failed before it stops the terminal.
+	require.Eventually(t, func() bool { return tracker.CallCount() >= 1 },
+		5*time.Second, 10*time.Millisecond, "terminal stop function should have been called")
 	calls := tracker.CalledWith()
 	assert.Contains(t, calls, terminalID, "terminal stop should have been called with the correct terminal session ID")
 }
@@ -268,7 +270,9 @@ func TestRunLaunchBuild_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T)
 	assert.Equal(t, "", finalPhase,
 		"runLaunchBuild must clear provisioning_phase after recovering from a panic")
 
-	assert.GreaterOrEqual(t, tracker.CallCount(), 1,
+	// The recovery writes setup_failed before it stops the terminal.
+	require.Eventually(t, func() bool { return tracker.CallCount() >= 1 },
+		5*time.Second, 10*time.Millisecond,
 		"runLaunchBuild must call tryStopTerminal after recovering from a panic")
 	assert.Contains(t, tracker.CalledWith(), terminalID,
 		"tryStopTerminal must be invoked with the linked terminal session ID")
