@@ -198,10 +198,12 @@ func Test_ErrorHandlingWithMocks(t *testing.T) {
 	result, err := courseService.GenerateCourseAsync(generateInput)
 	require.NoError(t, err) // La soumission réussit
 
-	// Mais la génération va échouer
-	time.Sleep(50 * time.Millisecond) // Laisser le temps au mock de "traiter"
-
-	status, err := courseService.CheckGenerationStatus(result.GenerationID)
+	// The mock worker finishes in a goroutine: wait for a terminal status instead of a fixed sleep.
+	var status *dto.GenerationStatusOutput
+	require.Eventually(t, func() bool {
+		status, err = courseService.CheckGenerationStatus(result.GenerationID)
+		return err != nil || status.Status == models.StatusFailed || status.Status == models.StatusCompleted
+	}, 5*time.Second, 10*time.Millisecond)
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusFailed, status.Status)
 	assert.NotNil(t, status.ErrorMessage)
