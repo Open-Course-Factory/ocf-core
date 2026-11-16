@@ -1344,3 +1344,38 @@ func TestGetSessionDetail_PopulatesCorrectCounts(t *testing.T) {
 	assert.Equal(t, int64(6), detail.CorrectCount, "4+1+1 correct on the session-level field")
 	assert.Equal(t, int64(7), detail.TotalCorrectPossible, "4+2+1 total possible on the session-level field")
 }
+
+// A learner removed from the class (soft-deleted roster row, is_active still
+// true) drops out of the class's results and analytics.
+func seedRemovedLearnerSession(t *testing.T, db *gorm.DB) (groupID uuid.UUID, scenarioID uuid.UUID) {
+	t.Helper()
+	groupID = uuid.New()
+	member := groupModels.GroupMember{GroupID: groupID, UserID: "removed-student", Role: "member", JoinedAt: time.Now(), IsActive: true}
+	require.NoError(t, db.Omit("Metadata").Create(&member).Error)
+	require.NoError(t, db.Delete(&member).Error)
+	scenario := models.Scenario{Name: "removed-learner", Title: "Removed", InstanceType: "ubuntu:22.04", CreatedByID: "c1"}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "removed-student", Status: "active", StartedAt: time.Now(),
+	}).Error)
+	return groupID, scenario.ID
+}
+
+func TestGetScenarioResults_RemovedLearner_Excluded(t *testing.T) {
+	db := freshTestDB(t)
+	groupID, scenarioID := seedRemovedLearnerSession(t, db)
+
+	paginated, err := services.NewTeacherDashboardService(db, nil, nil).GetScenarioResults(groupID, scenarioID, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), paginated.Total, "a removed learner is not counted")
+	assert.Empty(t, paginated.Items, "a removed learner is not listed")
+}
+
+func TestGetScenarioAnalytics_RemovedLearner_Excluded(t *testing.T) {
+	db := freshTestDB(t)
+	groupID, scenarioID := seedRemovedLearnerSession(t, db)
+
+	analytics, err := services.NewTeacherDashboardService(db, nil, nil).GetScenarioAnalytics(groupID, scenarioID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), analytics.TotalSessions, "a removed learner's session is not in the analytics")
+}

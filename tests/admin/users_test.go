@@ -498,3 +498,32 @@ func TestAdminUsersHandler_OverrideListAllCasdoorUsers_ReturnsExpectedJSON(t *te
 	assert.Equal(t, "GroupOne", alice.Groups[0].Name)
 	assert.Equal(t, "manager", alice.Groups[0].Role)
 }
+
+// A removed membership (soft-deleted row, is_active still true) is not listed.
+func TestBuildUserListings_RemovedOrgMembership_Excluded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+	orgID := seedOrg(t, db, "org-removed", "someone")
+	seedOrgMember(t, db, orgID, uidAlice, orgModels.OrgRoleMember, true)
+	require.NoError(t, db.Where("user_id = ?", uidAlice).Delete(&orgModels.OrganizationMember{}).Error)
+
+	listings, err := adminUsersRoutes.BuildUserListings([]*casdoorsdk.User{fakeUser(uidAlice, "alice", "Alice", "a@x", "")}, db, noAdminFn())
+	require.NoError(t, err)
+	assert.Empty(t, findListing(t, listings, uidAlice).Organizations)
+}
+
+func TestBuildUserListings_RemovedGroupMembership_Excluded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	db := freshTestDB(t)
+	groupID := seedGroup(t, db, "group-removed", "someone")
+	seedGroupMember(t, db, groupID, uidAlice, groupModels.GroupMemberRoleMember, true)
+	require.NoError(t, db.Where("user_id = ?", uidAlice).Delete(&groupModels.GroupMember{}).Error)
+
+	listings, err := adminUsersRoutes.BuildUserListings([]*casdoorsdk.User{fakeUser(uidAlice, "alice", "Alice", "a@x", "")}, db, noAdminFn())
+	require.NoError(t, err)
+	assert.Empty(t, findListing(t, listings, uidAlice).Groups)
+}

@@ -223,6 +223,7 @@ func TestGormMembershipChecker_CheckOrgRole_ManagerMeetsManager(t *testing.T) {
 	orgID, _ := uuid.NewV7()
 	memberID, _ := uuid.NewV7()
 
+	require.NoError(t, db.Create(&testOrganization{ID: orgID}).Error)
 	member := testOrgMember{
 		ID:             memberID,
 		OrganizationID: orgID,
@@ -402,4 +403,32 @@ func TestGormMembershipChecker_CheckGroupRole_SoftDeletedClassOfDeletedOrgRefuse
 	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "manager", "manager")
 	assert.NoError(t, err)
 	assert.False(t, allowed)
+}
+
+// Deleting an organization leaves its member rows active
+// (OrganizationCleanupHook revokes policies and archives classes only): its
+// members hold no role in it any more.
+func TestGormMembershipChecker_CheckOrgRole_DeletedOrganizationRefused(t *testing.T) {
+	db := setupMembershipDB(t)
+	_, orgID := seedOrgClass(t, db, "org-manager", "manager")
+	checker := access.NewGormMembershipChecker(db)
+
+	allowed, err := checker.CheckOrgRole(orgID.String(), "org-manager", "manager")
+	require.NoError(t, err)
+	require.True(t, allowed, "control: a live organization grants its manager the role")
+
+	require.NoError(t, db.Delete(&testOrganization{ID: orgID}).Error)
+	allowed, err = checker.CheckOrgRole(orgID.String(), "org-manager", "member")
+	assert.NoError(t, err)
+	assert.False(t, allowed, "a deleted organization grants no role")
+}
+
+func TestGormMembershipChecker_CheckOrgRole_MissingOrganizationRefused(t *testing.T) {
+	db := setupMembershipDB(t)
+	orgID := uuid.New()
+	require.NoError(t, db.Create(&testOrgMember{ID: uuid.New(), OrganizationID: orgID, UserID: "orphan", Role: "owner", JoinedAt: time.Now(), IsActive: true}).Error)
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckOrgRole(orgID.String(), "orphan", "member")
+	assert.NoError(t, err)
+	assert.False(t, allowed, "a membership of an organization with no row fails closed")
 }
