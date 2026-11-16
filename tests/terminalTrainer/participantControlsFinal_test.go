@@ -532,7 +532,8 @@ func withClassOrg(t *testing.T, c *pcClass) {
 		Name:      "pc-org-" + uuid.NewString()[:8], DisplayName: "pc org", OwnerUserID: pcOrgOwner,
 		OrganizationType: orgModels.OrgTypeTeam, IsActive: true, MaxGroups: 10, MaxMembers: 50,
 	}
-	require.NoError(t, c.db.Omit("Metadata").Create(org).Error)
+	// Save: newPCClass already seeded the organization row.
+	require.NoError(t, c.db.Omit("Metadata").Save(org).Error)
 	require.NoError(t, c.db.Omit("Metadata").Create(&orgModels.OrganizationMember{
 		OrganizationID: c.orgID, UserID: pcOrgManager, Role: orgModels.OrgRoleManager, JoinedAt: time.Now(), IsActive: true,
 	}).Error)

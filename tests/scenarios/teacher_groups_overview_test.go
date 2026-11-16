@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	testTools "soli/formations/tests/testTools"
 	"testing"
 	"time"
 
@@ -24,6 +25,9 @@ import (
 // takes a display name (the overview sorts on it) and an optional org.
 func createClassGroup(t *testing.T, db *gorm.DB, name, ownerUserID string, orgID *uuid.UUID) groupModels.ClassGroup {
 	t.Helper()
+	if orgID != nil {
+		require.NoError(t, testTools.SeedLiveOrganization(db, *orgID))
+	}
 	group := groupModels.ClassGroup{
 		Name: name, DisplayName: name, OwnerUserID: ownerUserID,
 		OrganizationID: orgID, MaxMembers: 50,

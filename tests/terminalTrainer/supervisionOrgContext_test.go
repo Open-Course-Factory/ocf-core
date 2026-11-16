@@ -36,6 +36,7 @@ package terminalTrainer_tests
 // TestSupervisionOrg_Access_NullGroupOrg_Denied / _Wall_NullGroupOrg_Empty.
 
 import (
+	testTools "soli/formations/tests/testTools"
 	"testing"
 
 	"github.com/google/uuid"
@@ -55,6 +56,9 @@ import (
 func newOrgSupervisedSession(t *testing.T, db *gorm.DB, groupName, ownerUserID, learnerUserID string, groupOrg, terminalOrg *uuid.UUID) (*groupModels.ClassGroup, string) {
 	t.Helper()
 
+	if groupOrg != nil {
+		require.NoError(t, testTools.SeedLiveOrganization(db, *groupOrg))
+	}
 	group := &groupModels.ClassGroup{
 		Name:           groupName,
 		DisplayName:    groupName,

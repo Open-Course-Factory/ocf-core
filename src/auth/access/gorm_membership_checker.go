@@ -16,12 +16,16 @@ func NewGormMembershipChecker(db *gorm.DB) *GormMembershipChecker {
 }
 
 // CheckGroupRole verifies whether a user has at least the given role in a group.
-// Returns false (not an error) if the user is not a member or is inactive.
+// Returns false (not an error) if the user is not a member, is inactive or was
+// removed, or if the class's organization is deleted (CreatorAuthorityCondition).
 func (c *GormMembershipChecker) CheckGroupRole(groupID string, userID string, minRole string) (bool, error) {
 	var role string
-	result := c.db.Table("group_members").
-		Select("role").
-		Where("group_id = ? AND user_id = ? AND is_active = ?", groupID, userID, true).
+	// LEFT JOIN: a roster row whose class row is missing keeps its role, as before.
+	result := c.db.Table("group_members gm").
+		Select("gm.role").
+		Joins("LEFT JOIN class_groups ON class_groups.id = gm.group_id").
+		Where("gm.group_id = ? AND gm.user_id = ? AND gm.is_active = ? AND gm.deleted_at IS NULL AND "+CreatorAuthorityCondition,
+			groupID, userID, true).
 		Scan(&role)
 
 	if result.Error != nil {
@@ -50,9 +54,9 @@ func (c *GormMembershipChecker) ManagesGroupViaOrg(groupID string, userID string
 	return n > 0, err
 }
 
-// CreatorAuthorityCondition holds on a class_groups row while its creator keeps
-// authority over it: the class has no organization or its organization is live.
-// A class of a deleted organization is managed by administrators only.
+// CreatorAuthorityCondition holds on a class_groups row while its creator, or
+// its roster, keeps authority over it: the class has no organization or its
+// organization is live. A class of a deleted organization is administrators' only.
 const CreatorAuthorityCondition = `(class_groups.organization_id IS NULL OR EXISTS (
 	SELECT 1 FROM organizations o
 	WHERE o.id = class_groups.organization_id AND o.deleted_at IS NULL))`
@@ -74,7 +78,7 @@ func (c *GormMembershipChecker) CheckOrgRole(orgID string, userID string, minRol
 	var role string
 	result := c.db.Table("organization_members").
 		Select("role").
-		Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).
+		Where("organization_id = ? AND user_id = ? AND is_active = ? AND deleted_at IS NULL", orgID, userID, true).
 		Scan(&role)
 
 	if result.Error != nil {

@@ -47,6 +47,7 @@ func newIdentityClass(t *testing.T, casdoor *testTools.FakeCasdoorUsers) *identi
 
 	suffix := uuid.NewString()[:8]
 	orgID := uuid.New()
+	require.NoError(t, testTools.SeedLiveOrganization(db, orgID))
 	owner := "id-owner-" + suffix
 	group := &groupModels.ClassGroup{Name: "id-class-" + suffix, DisplayName: "id-class", OwnerUserID: owner, MaxMembers: 50, OrganizationID: &orgID}
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)

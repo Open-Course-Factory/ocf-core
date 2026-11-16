@@ -357,21 +357,8 @@ func (gs *groupService) CanUserManageGroup(groupID uuid.UUID, userID string) (bo
 		}
 	}
 
-	// NEW: Check organization-based management access
-	if group.OrganizationID != nil {
-		hasOrgAccess, _ := gs.CanUserAccessGroupViaOrg(groupID, userID)
-		if hasOrgAccess {
-			return true, nil
-		}
-	}
-
-	// Check if user is a manager member
-	member, err := gs.repository.GetGroupMember(groupID, userID)
-	if err != nil || member == nil {
-		return false, nil
-	}
-
-	return member.IsManager(), nil
+	// A manager on the roster or through the organization: the Layer 2 GroupRole rule.
+	return access.NewGormMembershipChecker(gs.db).CheckGroupRole(groupID.String(), userID, access.RoleManager)
 }
 
 // CanUserAccessGroupViaOrg reports whether the user manages the group as a

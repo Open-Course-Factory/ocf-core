@@ -66,6 +66,7 @@ func (f *GenericMembershipFilter) Apply(
 				WHERE membership_check.%s = %s.%s
 				AND membership_check.%s = ?
 				AND membership_check.%s = true
+				AND membership_check.deleted_at IS NULL
 			)`,
 			f.config.MemberTable,
 			f.config.EntityIDColumn, tableName, f.config.EntityIDColumn,
@@ -81,11 +82,13 @@ func (f *GenericMembershipFilter) Apply(
 				WHERE %s.%s = %s.id
 				AND %s.%s = ?
 				AND %s.%s = true
+				AND %s.deleted_at IS NULL
 			)`,
 			f.config.MemberTable,
 			f.config.MemberTable, f.config.EntityIDColumn, tableName,
 			f.config.MemberTable, f.config.UserIDColumn,
 			f.config.MemberTable, isActiveColumn,
+			f.config.MemberTable,
 		)
 	}
 
@@ -115,6 +118,7 @@ func (f *GenericMembershipFilter) Apply(
 					AND p.deleted_at IS NULL
 					AND om.user_id = ?
 					AND om.is_active = true
+					AND om.deleted_at IS NULL
 					AND om.role IN (%s)
 				)`,
 				parent.ParentTable,
@@ -129,6 +133,7 @@ func (f *GenericMembershipFilter) Apply(
 					WHERE om.organization_id = %s.organization_id
 					AND om.user_id = ?
 					AND om.is_active = true
+					AND om.deleted_at IS NULL
 					AND om.role IN (%s)
 				)`,
 				tableName,

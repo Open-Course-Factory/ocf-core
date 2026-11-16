@@ -157,7 +157,7 @@ func (r *OrganizationSubscriptionRepository) GetUserOrganizationSubscriptions(us
 		// Entitling: this feeds effectivePlanService.resolveGlobal and
 		// GetUserEffectiveFeatures, both of which decide what the user may do.
 		// Qualified column, so the canonical set is used rather than the scope.
-		Where("organization_members.user_id = ? AND organization_members.is_active = ? AND organization_subscriptions.status IN (?)",
+		Where("organization_members.user_id = ? AND organization_members.is_active = ? AND organization_members.deleted_at IS NULL AND organization_subscriptions.status IN (?)",
 			userID, true, models.EntitlingStatuses()).
 		Find(&subscriptions).Error
 	if err != nil {

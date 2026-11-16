@@ -105,6 +105,7 @@ func newPCClass(t *testing.T) *pcClass {
 	t.Cleanup(func() { casdoor.Enforcer = origEnforcer })
 
 	orgID := uuid.New()
+	require.NoError(t, testTools.SeedLiveOrganization(db, orgID))
 	group := &groupModels.ClassGroup{Name: "pc-class", DisplayName: "pc-class", OwnerUserID: pcOwner, MaxMembers: 50, OrganizationID: &orgID}
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)
 	createTestGroupMember(t, db, group.ID, pcOwner, groupModels.GroupMemberRoleOwner)
@@ -113,6 +114,7 @@ func newPCClass(t *testing.T) *pcClass {
 	createTestGroupMember(t, db, group.ID, pcLearner2, groupModels.GroupMemberRoleMember)
 
 	otherOrg := uuid.New()
+	require.NoError(t, testTools.SeedLiveOrganization(db, otherOrg))
 	other := &groupModels.ClassGroup{Name: "pc-other", DisplayName: "pc-other", OwnerUserID: pcOutsider, MaxMembers: 50, OrganizationID: &otherOrg}
 	require.NoError(t, db.Omit("Metadata").Create(other).Error)
 	createTestGroupMember(t, db, other.ID, pcOutsider, groupModels.GroupMemberRoleOwner)

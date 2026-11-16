@@ -14,7 +14,7 @@ import (
 
 // The table a MembershipConfig points at, created by hand like the real ones.
 const createWorkspaceMembers = `CREATE TABLE workspace_members (
-	owner_scope_entity_id TEXT, user_id TEXT, is_active BOOLEAN
+	owner_scope_entity_id TEXT, user_id TEXT, is_active BOOLEAN, deleted_at DATETIME
 )`
 
 func registerMembershipScopedEntity(t *testing.T, db *gorm.DB) OwnerScopeEntity {
@@ -30,7 +30,7 @@ func registerMembershipScopedEntity(t *testing.T, db *gorm.DB) OwnerScopeEntity 
 	})
 	require.NoError(t, db.Exec(createWorkspaceMembers).Error)
 	row := seedOwnerScopeRow(t, db, "creator", "row")
-	require.NoError(t, db.Exec(`INSERT INTO workspace_members VALUES (?, 'member', true), (?, 'left', false)`, row.ID, row.ID).Error)
+	require.NoError(t, db.Exec(`INSERT INTO workspace_members (owner_scope_entity_id, user_id, is_active) VALUES (?, 'member', true), (?, 'left', false)`, row.ID, row.ID).Error)
 	return row
 }
 

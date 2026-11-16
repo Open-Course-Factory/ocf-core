@@ -840,7 +840,7 @@ func (s *BulkLicenseService) canUserReadBatch(batch *models.SubscriptionBatch, u
 	err := s.db.Table("organization_members om1").
 		Joins("JOIN organizations org ON om1.organization_id = org.id AND org.organization_type = 'team'").
 		Joins("JOIN organization_members om2 ON org.id = om2.organization_id").
-		Where("om1.user_id = ? AND om2.user_id = ? AND om1.is_active = true AND om2.is_active = true",
+		Where("om1.user_id = ? AND om2.user_id = ? AND om1.is_active = true AND om2.is_active = true AND om1.deleted_at IS NULL AND om2.deleted_at IS NULL",
 			batch.PurchaserUserID, userID).
 		Count(&count).Error
 
@@ -876,7 +876,7 @@ func (s *BulkLicenseService) canUserManageBatch(batch *models.SubscriptionBatch,
 		Select("om2.role").
 		Joins("JOIN organizations org ON om1.organization_id = org.id AND org.organization_type = 'team'").
 		Joins("JOIN organization_members om2 ON org.id = om2.organization_id").
-		Where("om1.user_id = ? AND om2.user_id = ? AND om1.is_active = true AND om2.is_active = true",
+		Where("om1.user_id = ? AND om2.user_id = ? AND om1.is_active = true AND om2.is_active = true AND om1.deleted_at IS NULL AND om2.deleted_at IS NULL",
 			batch.PurchaserUserID, userID).
 		Scan(&roles).Error
 

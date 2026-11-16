@@ -54,9 +54,9 @@ func LearnerRoleScope(alias string) func(*gorm.DB) *gorm.DB {
 
 // ManagedByScope is the single home of the "callerUserID manages this class-group"
 // predicate as a composable WHERE clause on class_groups: the caller either OWNS
-// the group (ClassGroup.OwnerUserID, while the class has no organization or a
-// live one: access.CreatorAuthorityCondition) or holds an ACTIVE manager/owner
-// membership row. A plain member never manages.
+// the group (ClassGroup.OwnerUserID) or holds an ACTIVE manager/owner
+// membership row, both only while the class has no organization or a live one
+// (access.CreatorAuthorityCondition). A plain member never manages.
 //
 // The scope deliberately says nothing about whether the group itself is
 // archived, so the two questions stay separable:
@@ -81,13 +81,13 @@ func LearnerRoleScope(alias string) func(*gorm.DB) *gorm.DB {
 func ManagedByScope(callerUserID string) func(*gorm.DB) *gorm.DB {
 	return func(tx *gorm.DB) *gorm.DB {
 		return tx.Where(
-			`((class_groups.owner_user_id = ? AND `+access.CreatorAuthorityCondition+`) OR EXISTS (
+			`(((class_groups.owner_user_id = ? OR EXISTS (
 				SELECT 1 FROM group_members gm
 				WHERE gm.group_id = class_groups.id
 				  AND gm.user_id = ?
 				  AND gm.is_active = ?
 				  AND gm.deleted_at IS NULL
-				  AND gm.role IN ?) OR EXISTS (
+				  AND gm.role IN ?)) AND `+access.CreatorAuthorityCondition+`) OR EXISTS (
 				SELECT 1 FROM organization_members om
 				JOIN organizations o ON o.id = om.organization_id AND o.deleted_at IS NULL
 				WHERE om.organization_id = class_groups.organization_id

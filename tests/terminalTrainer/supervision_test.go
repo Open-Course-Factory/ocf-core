@@ -35,6 +35,7 @@ package terminalTrainer_tests
 import (
 	"encoding/json"
 	"net/url"
+	testTools "soli/formations/tests/testTools"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,7 @@ func newSupervisedSession(t *testing.T, db *gorm.DB, groupName, ownerUserID, lea
 	t.Helper()
 
 	orgID := uuid.New()
+	require.NoError(t, testTools.SeedLiveOrganization(db, orgID))
 	group := &groupModels.ClassGroup{
 		Name:           groupName,
 		DisplayName:    groupName,

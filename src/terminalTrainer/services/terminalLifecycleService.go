@@ -402,7 +402,7 @@ func (l *terminalLifecycleService) checkGroupOwnerAccess(terminalOwnerUserID, re
 		Where("class_groups.owner_user_id = ?", requestingUserID).
 		Where(access.CreatorAuthorityCondition).
 		Where("group_members.user_id = ?", terminalOwnerUserID).
-		Where("group_members.is_active = ?", true).
+		Where("group_members.is_active = ? AND group_members.deleted_at IS NULL", true).
 		Scopes(entityManagementModels.NotArchived("class_groups")).
 		Count(&count).Error
 	if err != nil {
