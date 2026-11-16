@@ -11,8 +11,7 @@
 // state (HTTP status + response body rows), never a mock call.
 //
 // Rows are seeded via direct db.Create of the model — NOT the generic create
-// path — so the UserSettings auto-create hook never fires and these tests
-// exercise READ scope in isolation.
+// path — so these tests exercise READ scope in isolation.
 package auth_tests
 
 import (
@@ -64,7 +63,7 @@ func setupUserSettingsReadScopeDB(t *testing.T) *gorm.DB {
 }
 
 // seedUserSettingsRow inserts a UserSettings row owned by userID directly via
-// db.Create, bypassing the generic create path and its auto-create hook. The
+// db.Create, bypassing the generic create path and its hooks. The
 // distinctive landingPage doubles as the owner-only field whose non-leak is
 // asserted on the non-owner 404.
 func seedUserSettingsRow(t *testing.T, db *gorm.DB, userID, landingPage string) *authModels.UserSettings {

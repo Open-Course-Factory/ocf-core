@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,8 +23,11 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	registration "soli/formations/src/auth/entityRegistration"
+	"soli/formations/src/auth/mocks"
 	authModels "soli/formations/src/auth/models"
 	userController "soli/formations/src/auth/routes/usersRoutes"
+	authServices "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
 )
 
@@ -79,8 +83,8 @@ func TestUpdateMySettings_BeforeAnyGet_CreatesSettingsWithDefaults(t *testing.T)
 
 	require.Equal(t, http.StatusOK, code, "body: %v", body)
 	assert.Equal(t, "dark", body["theme"])
-	assert.Equal(t, "/dashboard", body["default_landing_page"])
-	assert.Equal(t, "en", body["preferred_language"])
+	assert.Equal(t, "/terminal-creation", body["default_landing_page"])
+	assert.Equal(t, "fr", body["preferred_language"])
 	assert.Equal(t, true, body["email_notifications"])
 
 	var count int64
@@ -117,8 +121,19 @@ func TestMySettings_DefaultsAreTheSameOnEveryCreationPath(t *testing.T) {
 	var fromCurrentUser map[string]any
 	require.NoError(t, json.Unmarshal(raw, &fromCurrentUser))
 
-	assert.Equal(t, pickDefaults(fromGet), pickDefaults(fromCurrentUser))
-	assert.Equal(t, pickDefaults(fromGet), pickDefaults(fromPatch))
+	// Signup is what every new account gets, so its values are the reference.
+	t.Setenv("TERMINAL_TRAINER_URL", "") // keep the key-creation step offline
+	authServices.ProvisionNewUser(mocks.NewMockEnforcer(), db, &casdoorsdk.User{Id: "via-signup", EmailVerified: true}, "")
+	var signupRow authModels.UserSettings
+	require.NoError(t, db.Where("user_id = ?", "via-signup").First(&signupRow).Error)
+	raw, err = json.Marshal(registration.UserSettingsToOutput(&signupRow))
+	require.NoError(t, err)
+	var fromSignup map[string]any
+	require.NoError(t, json.Unmarshal(raw, &fromSignup))
+
+	assert.Equal(t, pickDefaults(fromSignup), pickDefaults(fromGet), "lazy GET vs signup")
+	assert.Equal(t, pickDefaults(fromSignup), pickDefaults(fromPatch), "lazy PATCH vs signup")
+	assert.Equal(t, pickDefaults(fromSignup), pickDefaults(fromCurrentUser), "current user vs signup")
 }
 
 func TestUpdateMySettings_SecondPatch_KeepsEarlierValuesAndMatchesStoredRow(t *testing.T) {
@@ -133,7 +148,7 @@ func TestUpdateMySettings_SecondPatch_KeepsEarlierValuesAndMatchesStoredRow(t *t
 	require.NoError(t, db.Where("user_id = ?", "sparse-user").First(&stored).Error)
 	assert.Equal(t, "dark", stored.Theme)
 	assert.Equal(t, "fr", stored.PreferredLanguage)
-	assert.Equal(t, "/dashboard", stored.DefaultLandingPage)
+	assert.Equal(t, "/terminal-creation", stored.DefaultLandingPage)
 	assert.Equal(t, stored.Theme, body["theme"])
 	assert.Equal(t, stored.PreferredLanguage, body["preferred_language"])
 	assert.Equal(t, stored.ID.String(), body["id"])

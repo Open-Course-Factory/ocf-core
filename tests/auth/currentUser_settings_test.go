@@ -88,8 +88,8 @@ func TestFetchUserSettings_CreatesDefaultsForNewUser(t *testing.T) {
 	require.NotNil(t, settings)
 
 	assert.Equal(t, "new-user-123", settings.UserID)
-	assert.Equal(t, "/dashboard", settings.DefaultLandingPage)
-	assert.Equal(t, "en", settings.PreferredLanguage)
+	assert.Equal(t, "/terminal-creation", settings.DefaultLandingPage)
+	assert.Equal(t, "fr", settings.PreferredLanguage)
 	assert.Equal(t, "UTC", settings.Timezone)
 	assert.Equal(t, "light", settings.Theme)
 	assert.False(t, settings.CompactMode)
