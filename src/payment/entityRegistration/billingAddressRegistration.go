@@ -66,8 +66,8 @@ func RegisterBillingAddress(service *ems.EntityRegistrationService) {
 				Tag:        "billing-addresses",
 				EntityName: "BillingAddress",
 				GetAll: &entityManagementInterfaces.SwaggerOperation{
-					Summary:     "Récupérer toutes les adresses de facturation",
-					Description: "Retourne la liste de toutes les adresses de facturation disponibles",
+					Summary:     "Récupérer les adresses de facturation",
+					Description: "Retourne les adresses de facturation de l'utilisateur connecté, ou toutes les adresses pour un administrateur",
 					Tags:        []string{"billing-addresses"},
 					Security:    true,
 				},
