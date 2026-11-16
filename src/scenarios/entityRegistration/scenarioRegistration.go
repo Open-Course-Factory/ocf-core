@@ -20,37 +20,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 				ModelToDto: func(model *models.Scenario) (dto.ScenarioOutput, error) {
 					return ScenarioToOutput(model), nil
 				},
-				DtoToModel: func(input dto.CreateScenarioInput) *models.Scenario {
-					scenario := &models.Scenario{
-						Name:           input.Name,
-						Title:          input.Title,
-						Description:    input.Description,
-						Difficulty:     input.Difficulty,
-						EstimatedTimeMinutes:  input.EstimatedTimeMinutes,
-						InstanceType:   input.InstanceType,
-						Hostname:       input.Hostname,
-						OsType:           input.OsType,
-						RequiredFeatures: input.RequiredFeatures,
-						SourceType:       input.SourceType,
-						GitRepository:  input.GitRepository,
-						GitBranch:      input.GitBranch,
-						SourcePath:     input.SourcePath,
-						FlagsEnabled:     input.FlagsEnabled,
-						AllowedFlagPaths: input.AllowedFlagPaths,
-						CrashTraps:     input.CrashTraps,
-						PortExposureAllowed: input.PortExposureAllowed,
-						DefaultLocale:  input.DefaultLocale,
-						Locales:        input.Locales,
-						Objectives:     input.Objectives,
-						Prerequisites:  input.Prerequisites,
-						IntroText:      input.IntroText,
-						FinishText:     input.FinishText,
-						OrganizationID: input.OrganizationID,
-						IsPublic:       input.IsPublic,
-						SetupScript:    input.SetupScript,
-					}
-					return scenario
-				},
+				DtoToModel: ScenarioFromCreateInput,
 				DtoToMap: func(input dto.EditScenarioInput) map[string]any {
 					updates := make(map[string]any)
 					if input.Name != nil {
@@ -193,6 +163,38 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 	// step + question content from non-managers (issue #293).
 	service.RegisterDtoRedactor("Scenario", scenarioRedactor)
 	service.RegisterListScope("Scenario", scenarioListScope)
+}
+
+// ScenarioFromCreateInput is the single CreateScenarioInput -> Scenario mapping, shared by every create path.
+func ScenarioFromCreateInput(input dto.CreateScenarioInput) *models.Scenario {
+	return &models.Scenario{
+		Name:                 input.Name,
+		Title:                input.Title,
+		Description:          input.Description,
+		Difficulty:           input.Difficulty,
+		EstimatedTimeMinutes: input.EstimatedTimeMinutes,
+		InstanceType:         input.InstanceType,
+		Hostname:             input.Hostname,
+		OsType:               input.OsType,
+		RequiredFeatures:     input.RequiredFeatures,
+		SourceType:           input.SourceType,
+		GitRepository:        input.GitRepository,
+		GitBranch:            input.GitBranch,
+		SourcePath:           input.SourcePath,
+		FlagsEnabled:         input.FlagsEnabled,
+		AllowedFlagPaths:     input.AllowedFlagPaths,
+		CrashTraps:           input.CrashTraps,
+		PortExposureAllowed:  input.PortExposureAllowed,
+		DefaultLocale:        input.DefaultLocale,
+		Locales:              input.Locales,
+		Objectives:           input.Objectives,
+		Prerequisites:        input.Prerequisites,
+		IntroText:            input.IntroText,
+		FinishText:           input.FinishText,
+		OrganizationID:       input.OrganizationID,
+		IsPublic:             input.IsPublic,
+		SetupScript:          input.SetupScript,
+	}
 }
 
 // ScenarioToOutput is the one Scenario -> ScenarioOutput mapper, shared by the

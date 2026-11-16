@@ -283,33 +283,8 @@ func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 
 	userID := ctx.GetString("userId")
 
-	scenario := &models.Scenario{
-		Name:             input.Name,
-		Title:            input.Title,
-		Description:      input.Description,
-		Difficulty:       input.Difficulty,
-		EstimatedTimeMinutes:    input.EstimatedTimeMinutes,
-		InstanceType:     input.InstanceType,
-		Hostname:         input.Hostname,
-		OsType:           input.OsType,
-		RequiredFeatures: input.RequiredFeatures,
-		SourceType:       input.SourceType,
-		GitRepository:    input.GitRepository,
-		GitBranch:        input.GitBranch,
-		SourcePath:       input.SourcePath,
-		FlagsEnabled:     input.FlagsEnabled,
-		AllowedFlagPaths: input.AllowedFlagPaths,
-		CrashTraps:       input.CrashTraps,
-		PortExposureAllowed: input.PortExposureAllowed,
-		Objectives:       input.Objectives,
-		Prerequisites:    input.Prerequisites,
-		IntroText:        input.IntroText,
-		FinishText:       input.FinishText,
-		OrganizationID:   &orgID,
-		IsPublic:         input.IsPublic,
-		SetupScript:      input.SetupScript,
-		CreatedByID:      userID,
-	}
+	scenario := scenarioRegistration.ScenarioFromCreateInput(input)
+	scenario.CreatedByID = userID
 
 	if err := sc.db.Create(scenario).Error; err != nil {
 		slog.Error("failed to create org scenario", "err", err, "org_id", orgID)
@@ -369,33 +344,8 @@ func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 
 	userID := ctx.GetString("userId")
 
-	scenario := &models.Scenario{
-		Name:             input.Name,
-		Title:            input.Title,
-		Description:      input.Description,
-		Difficulty:       input.Difficulty,
-		EstimatedTimeMinutes:    input.EstimatedTimeMinutes,
-		InstanceType:     input.InstanceType,
-		Hostname:         input.Hostname,
-		OsType:           input.OsType,
-		RequiredFeatures: input.RequiredFeatures,
-		SourceType:       input.SourceType,
-		GitRepository:    input.GitRepository,
-		GitBranch:        input.GitBranch,
-		SourcePath:       input.SourcePath,
-		FlagsEnabled:     input.FlagsEnabled,
-		AllowedFlagPaths: input.AllowedFlagPaths,
-		CrashTraps:       input.CrashTraps,
-		PortExposureAllowed: input.PortExposureAllowed,
-		Objectives:       input.Objectives,
-		Prerequisites:    input.Prerequisites,
-		IntroText:        input.IntroText,
-		FinishText:       input.FinishText,
-		OrganizationID:   group.OrganizationID,
-		IsPublic:         input.IsPublic,
-		SetupScript:      input.SetupScript,
-		CreatedByID:      userID,
-	}
+	scenario := scenarioRegistration.ScenarioFromCreateInput(input)
+	scenario.CreatedByID = userID
 
 	if err := sc.db.Create(scenario).Error; err != nil {
 		slog.Error("failed to create group scenario", "err", err, "group_id", groupID)
