@@ -497,7 +497,7 @@ func TestGetManagedGroupsOverview_MultipleGroups_AggregatesStayPerGroup(t *testi
 	db := freshTestDB(t)
 	const teacher = "teacher-1"
 
-	orgID := uuid.New()
+	orgID := createTestOrg(t, db, teacher)
 	future := time.Now().Add(time.Hour)
 
 	classA := createClassGroup(t, db, "class-a", teacher, &orgID)

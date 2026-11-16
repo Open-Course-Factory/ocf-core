@@ -502,7 +502,7 @@ func TestGetManagedGroupsOverview_ConnectedButStaleLearner_CountsAsIdle(t *testi
 // report the same student under a label that means something else.
 func TestGetManagedGroupsOverview_DisconnectedLearner_NotCountedAsIdle(t *testing.T) {
 	db := freshTestDB(t)
-	orgID := uuid.New()
+	orgID := createTestOrg(t, db, "teacher-absent")
 	group := createClassGroup(t, db, "absent-class", "teacher-absent", &orgID)
 	addGroupMember(t, db, group.ID, "student-away", groupModels.GroupMemberRoleMember)
 
@@ -533,7 +533,7 @@ func TestGetManagedGroupsOverview_DisconnectedLearner_NotCountedAsIdle(t *testin
 // would render as "unknown" and lose a real answer.
 func TestGetMyGroupsAPI_NobodyIdle_SendsExplicitZeroIdleMemberCount(t *testing.T) {
 	db := freshTestDB(t)
-	orgID := uuid.New()
+	orgID := createTestOrg(t, db, "teacher-wire")
 	group := createClassGroup(t, db, "busy-class", "teacher-wire", &orgID)
 	addGroupMember(t, db, group.ID, "student-working", groupModels.GroupMemberRoleMember)
 
