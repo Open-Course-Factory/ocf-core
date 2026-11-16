@@ -11,11 +11,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	orgController "soli/formations/src/organizations/controller"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
 	paymentServices "soli/formations/src/payment/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"github.com/gin-gonic/gin"
 
@@ -47,7 +49,7 @@ func TestOffboard_ManagerTargetsAnotherManager_Refused(t *testing.T) {
 
 	err := newOffboardingService(db, identity).Offboard(orgID, []string{"manager-2"}, "manager-1")
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, services.ErrOutranksCaller)
 	assertStillActiveMember(t, db, identity, orgID, "manager-2")
 }
 
@@ -59,7 +61,7 @@ func TestOffboard_PlatformAdministratorTarget_RefusedToManagerAndOwner(t *testin
 
 			err := newOffboardingService(db, identity).Offboard(orgID, []string{"admin-1"}, caller)
 
-			require.Error(t, err)
+			require.ErrorIs(t, err, services.ErrOutranksCaller)
 			assertStillActiveMember(t, db, identity, orgID, "admin-1")
 		})
 	}
@@ -160,7 +162,7 @@ func TestOffboard_ForbidFailsMidBatch_OnlyAccountsThisCallForbadeAreUnforbidden(
 
 	err := newOffboardingService(db, identity).Offboard(orgID, []string{"student-2", "student-1", "ghost"}, "manager-1")
 
-	require.Error(t, err)
+	require.ErrorContains(t, err, "failed to forbid account ghost")
 	for _, id := range []string{"student-1", "student-2", "ghost"} {
 		assert.True(t, loadMember(t, db, orgID, id).IsActive, "%s's membership is rolled back", id)
 	}
@@ -231,4 +233,59 @@ func TestOffboardMembersHandler_OutrankingTargetIs403_PlainMemberIs204(t *testin
 	rec = post("student-1")
 	assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
 	assertOffboarded(t, db, orgID, "student-1")
+}
+
+// seedRunningTerminalsInOrgs gives userID one running terminal per organization
+// and returns their session ids in the same order.
+func seedRunningTerminalsInOrgs(t *testing.T, db *gorm.DB, userID string, orgIDs ...uuid.UUID) []string {
+	t.Helper()
+	key := &terminalModels.UserTerminalKey{UserID: userID, APIKey: "key-" + userID, KeyName: "k", IsActive: true}
+	key.ID = uuid.New()
+	require.NoError(t, db.Create(key).Error)
+	var sessions []string
+	for i := range orgIDs {
+		term := &terminalModels.Terminal{
+			SessionID: "sess-" + userID + "-" + orgIDs[i].String()[:8], UserID: userID, State: terminalModels.StateRunning,
+			ExpiresAt: time.Now().Add(2 * time.Hour), LastStartedAt: time.Now(), UserTerminalKeyID: key.ID, OrganizationID: &orgIDs[i],
+		}
+		term.ID = uuid.New()
+		require.NoError(t, db.Create(term).Error)
+		sessions = append(sessions, term.SessionID)
+	}
+	return sessions
+}
+
+func terminalState(t *testing.T, db *gorm.DB, sessionID string) terminalModels.TerminalState {
+	t.Helper()
+	var term terminalModels.Terminal
+	require.NoError(t, db.Where("session_id = ?", sessionID).First(&term).Error)
+	return term.State
+}
+
+func TestOffboard_MemberWhoBelongsElsewhere_KeepsTheTerminalsOfTheOtherOrganization(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
+	seedMember(t, db, otherOrgID, "student-1", models.OrgRoleMember)
+	sessions := seedRunningTerminalsInOrgs(t, db, "student-1", orgID, otherOrgID)
+
+	require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"student-1"}, "manager-1"))
+
+	assert.NotEqual(t, terminalModels.StateRunning, terminalState(t, db, sessions[0]), "this organization's terminal is terminated")
+	assert.Equal(t, terminalModels.StateRunning, terminalState(t, db, sessions[1]),
+		"the account still belongs elsewhere: its terminal in the other organization keeps running")
+}
+
+func TestOffboard_MemberOfThisOrganizationAlone_AllTerminalsTerminated(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
+	sessions := seedRunningTerminalsInOrgs(t, db, "student-1", orgID, otherOrgID)
+
+	require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"student-1"}, "manager-1"))
+
+	require.True(t, identity.forbidden["student-1"])
+	for _, s := range sessions {
+		assert.NotEqual(t, terminalModels.StateRunning, terminalState(t, db, s), "a forbidden account keeps no running terminal")
+	}
 }
