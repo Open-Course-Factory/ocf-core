@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
@@ -435,7 +434,7 @@ func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, up
 	}
 
 	// Add default roles
-	s.addRolesToUser(createdUser.Id, user.Role)
+	s.addRolesToUser(createdUser.Id)
 
 	if err := s.members.Enrol(orgID, createdUser.Id); err != nil {
 		return "", err
@@ -482,16 +481,10 @@ func importedUsername(user dto.UserImportRow) string {
 	return fmt.Sprintf("%s-%d", base, time.Now().Unix())
 }
 
-// addRolesToUser adds roles to a user in Casbin
-func (s *importService) addRolesToUser(userID string, primaryRole string) {
-	rolesToAdd := []string{}
-	// An import must not assign platform roles, whatever the parser let through.
-	if primaryRole != "" && !access.IsAdmin([]string{primaryRole}) {
-		rolesToAdd = append(rolesToAdd, primaryRole)
-	}
-
-	// Add basic roles for compatibility
-	rolesToAdd = append(rolesToAdd, "student", "member")
+// addRolesToUser adds the default roles to an imported user in Casbin.
+// The csv role column is not written: an import must not assign roles.
+func (s *importService) addRolesToUser(userID string) {
+	rolesToAdd := []string{"student", "member"}
 
 	opts := utils.DefaultPermissionOptions()
 	opts.WarnOnError = true

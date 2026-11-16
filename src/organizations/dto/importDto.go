@@ -10,7 +10,7 @@ type UserImportRow struct {
 	FirstName         string `csv:"first_name"`
 	LastName          string `csv:"last_name"`
 	Password          string `csv:"password"`
-	Role              string `csv:"role"`            // member, supervisor, trainer
+	Role              string `csv:"role"`            // member, supervisor, trainer: validated, grants nothing
 	ExternalID        string `csv:"external_id"`     // Optional reference to external system ID
 	ForceReset        string `csv:"force_reset"`     // "true" or "false"
 	UpdateIfExists    string `csv:"update_existing"` // "true" or "false"
