@@ -55,14 +55,16 @@ func (oc *OrganizationController) OffboardMembers(ctx *gin.Context) {
 
 // ReinstateMember godoc
 // @Summary Reinstate an offboarded member
-// @Description Reactivates the membership, clears the erasure schedule and unblocks sign-in.
+// @Description Reactivates the membership and clears the erasure schedule. Sign-in is unblocked only when this offboarding blocked it; a block set otherwise stays.
 // @Tags organizations
 // @Produce json
 // @Param id path string true "Organization ID"
 // @Param userId path string true "User ID"
 // @Success 204
 // @Failure 400 {object} errors.APIError "Invalid organization ID"
+// @Failure 403 {object} errors.APIError "The member outranks the caller"
 // @Failure 404 {object} errors.APIError "Member not found"
+// @Failure 409 {object} errors.APIError "Member is not offboarded"
 // @Failure 500 {object} errors.APIError "Internal server error"
 // @Security BearerAuth
 // @Router /organizations/{id}/members/{userId}/reinstate [post]
@@ -71,7 +73,7 @@ func (oc *OrganizationController) ReinstateMember(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	err := oc.offboarding.Reinstate(orgID, ctx.Param("userId"))
+	err := oc.offboarding.Reinstate(orgID, ctx.Param("userId"), ctx.GetString("userId"))
 	if err != nil {
 		status, message := offboardingErrorResponse(err)
 		if status == http.StatusInternalServerError {

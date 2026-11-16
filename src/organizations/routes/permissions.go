@@ -26,7 +26,7 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/members/:userId/reinstate", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
-			Description: "Reinstate an offboarded member",
+			Description: "Reinstate an offboarded member the caller outranks; lifts the account block only if that offboarding set it",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/members/:userId/erase", Method: "POST",

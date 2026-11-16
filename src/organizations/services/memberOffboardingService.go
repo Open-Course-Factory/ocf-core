@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"soli/formations/src/auth/casdoor"
+	authModels "soli/formations/src/auth/models"
 	organizationModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
@@ -52,8 +53,9 @@ type MemberOffboardingService interface {
 	// assigned seats. A target who outranks actorID refuses the whole call.
 	Offboard(orgID uuid.UUID, userIDs []string, actorID string) error
 	// Reinstate reverses Offboard: the row is active again with both stamps
-	// cleared and the account may sign in.
-	Reinstate(orgID uuid.UUID, userID string) error
+	// cleared, and the account block is lifted only if this offboarding set it.
+	// Refuses a member who is not offboarded or who outranks actorID.
+	Reinstate(orgID uuid.UUID, userID string, actorID string) error
 	// EraseNow erases an offboarded member ahead of its scheduled date.
 	EraseNow(orgID uuid.UUID, userID string) error
 	// Enrol makes userID an active member: it reinstates an existing inactive
@@ -87,6 +89,7 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 		return err
 	}
 	forbid := make(map[string]bool, len(userIDs))
+	setsBlock := make(map[string]bool, len(userIDs))
 	for _, userID := range userIDs {
 		if _, err := checkRank(userID); err != nil {
 			if errors.Is(err, errOutranksActor) {
@@ -96,6 +99,14 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 		}
 		// An unknown answer does not forbid: blocking a whole account is the harmful direction.
 		forbid[userID] = belongsToOrganizationAlone(s.alone, org.ID, userID)
+		if forbid[userID] {
+			// A block someone else set is left alone, so reinstating never lifts it.
+			blocked, err := authModels.IsAccountBlocked(s.db, userID)
+			if err != nil {
+				return fmt.Errorf("failed to read account block of %s: %w", userID, err)
+			}
+			setsBlock[userID] = !blocked
+		}
 	}
 
 	now := time.Now()
@@ -103,10 +114,10 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 	var forbidden []string
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		for _, userID := range userIDs {
-			if err := s.offboardOne(tx, &org, userID, now, erasureAt, forbid[userID]); err != nil {
+			if err := s.offboardOne(tx, &org, userID, now, erasureAt, forbid[userID], setsBlock[userID]); err != nil {
 				return err
 			}
-			if !forbid[userID] {
+			if !setsBlock[userID] {
 				continue
 			}
 			if err := s.accounts.SetForbidden(userID, true); err != nil {
@@ -131,8 +142,9 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 
 // offboardOne stamps a single membership and terminates the member's running
 // terminals on the caller's transaction: all of them when the account is
-// forbidden, only this organization's otherwise.
-func (s *memberOffboardingService) offboardOne(tx *gorm.DB, org *organizationModels.Organization, userID string, now, erasureAt time.Time, forbidden bool) error {
+// forbidden, only this organization's otherwise. setsBlock stamps that this
+// offboarding is the one blocking the account.
+func (s *memberOffboardingService) offboardOne(tx *gorm.DB, org *organizationModels.Organization, userID string, now, erasureAt time.Time, forbidden, setsBlock bool) error {
 	member, err := findMembership(tx, org.ID, userID)
 	if err != nil {
 		return err
@@ -141,9 +153,10 @@ func (s *memberOffboardingService) offboardOne(tx *gorm.DB, org *organizationMod
 		return ErrCannotOffboardOwner
 	}
 	if err := tx.Model(member).Updates(map[string]any{
-		"is_active":            false,
-		"left_at":              now,
-		"scheduled_erasure_at": erasureAt,
+		"is_active":                        false,
+		"left_at":                          now,
+		"scheduled_erasure_at":             erasureAt,
+		"account_forbidden_by_offboarding": setsBlock,
 	}).Error; err != nil {
 		return fmt.Errorf("failed to offboard member %s: %w", userID, err)
 	}
@@ -186,27 +199,47 @@ func (s *memberOffboardingService) releaseAssignedLicences(userID, actorID strin
 	}
 }
 
-func (s *memberOffboardingService) Reinstate(orgID uuid.UUID, userID string) error {
+func (s *memberOffboardingService) Reinstate(orgID uuid.UUID, userID string, actorID string) error {
+	var org organizationModels.Organization
+	if err := s.db.First(&org, "id = ?", orgID).Error; err != nil {
+		return fmt.Errorf("organization not found: %w", err)
+	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		member, err := findMembership(tx, orgID, userID)
+		checkRank, _, err := newRankOnlyCheck(tx, &org, actorID)
 		if err != nil {
 			return err
+		}
+		member, err := checkRank(userID)
+		if errors.Is(err, errOutranksActor) {
+			return fmt.Errorf("%w: %s", ErrOutranksCaller, userID)
+		}
+		if err != nil {
+			return err
+		}
+		if !member.IsOffboarded() {
+			return ErrMemberNotOffboarded
 		}
 		return s.reactivate(tx, member)
 	})
 }
 
 // reactivate is the one place a membership comes back to life: the row is
-// active with both offboarding stamps cleared, and the account may sign in.
+// active with both offboarding stamps cleared, and the account block is lifted
+// only when this membership's offboarding set it.
 // The Casdoor call runs inside the transaction so a failure leaves the member
 // offboarded rather than active-but-locked-out.
 func (s *memberOffboardingService) reactivate(tx *gorm.DB, member *organizationModels.OrganizationMember) error {
+	liftBlock := member.AccountForbiddenByOffboarding
 	if err := tx.Model(member).Updates(map[string]any{
-		"is_active":            true,
-		"left_at":              nil,
-		"scheduled_erasure_at": nil,
+		"is_active":                        true,
+		"left_at":                          nil,
+		"scheduled_erasure_at":             nil,
+		"account_forbidden_by_offboarding": false,
 	}).Error; err != nil {
 		return fmt.Errorf("failed to reinstate member %s: %w", member.UserID, err)
+	}
+	if !liftBlock {
+		return nil
 	}
 	if err := s.accounts.SetForbidden(member.UserID, false); err != nil {
 		return fmt.Errorf("failed to unforbid account %s: %w", member.UserID, err)

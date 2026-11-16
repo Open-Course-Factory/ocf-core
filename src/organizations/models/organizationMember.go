@@ -37,6 +37,9 @@ type OrganizationMember struct {
 	// predicate of its own.
 	LeftAt             *time.Time `json:"left_at,omitempty"`
 	ScheduledErasureAt *time.Time `gorm:"index" json:"scheduled_erasure_at,omitempty"`
+	// AccountForbiddenByOffboarding records that this offboarding set the
+	// account block, so reinstating lifts only a block it owns. Never exposed.
+	AccountForbiddenByOffboarding bool `gorm:"not null;default:false" json:"-"`
 
 	// Optional metadata (custom fields per member)
 	Metadata map[string]any `gorm:"type:jsonb;serializer:json" json:"metadata,omitempty"`

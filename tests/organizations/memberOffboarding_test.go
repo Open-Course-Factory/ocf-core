@@ -492,7 +492,7 @@ func TestReinstate_ClearsBothFieldsAndUnforbidsTheAccount(t *testing.T) {
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
 	require.True(t, identity.forbidden["student-a"])
 
-	require.NoError(t, svc.Reinstate(orgID, "student-a"))
+	require.NoError(t, svc.Reinstate(orgID, "student-a", "owner-1"))
 
 	m := loadMember(t, db, orgID, "student-a")
 	assert.True(t, m.IsActive)
@@ -574,7 +574,7 @@ func TestManualAddMember_ReenrolsAnOffboardedStudent(t *testing.T) {
 	assert.ErrorIs(t, err, models.ErrMemberOffboarded)
 	assert.Equal(t, int64(1), countMemberRows(t, db, orgID, "student-a"), "no duplicate membership row")
 
-	require.NoError(t, svc.Reinstate(orgID, "student-a"))
+	require.NoError(t, svc.Reinstate(orgID, "student-a", "owner-1"))
 	assert.True(t, loadMember(t, db, orgID, "student-a").IsActive)
 }
 
