@@ -11,13 +11,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	authModels "soli/formations/src/auth/models"
 	userController "soli/formations/src/auth/routes/usersRoutes"
@@ -116,4 +119,83 @@ func TestMySettings_DefaultsAreTheSameOnEveryCreationPath(t *testing.T) {
 
 	assert.Equal(t, pickDefaults(fromGet), pickDefaults(fromCurrentUser))
 	assert.Equal(t, pickDefaults(fromGet), pickDefaults(fromPatch))
+}
+
+func TestUpdateMySettings_SecondPatch_KeepsEarlierValuesAndMatchesStoredRow(t *testing.T) {
+	r, db := setupMySettingsRoutes(t)
+
+	code, _ := callMySettings(t, r, http.MethodPatch, "sparse-user", `{"theme":"dark"}`)
+	require.Equal(t, http.StatusOK, code)
+	code, body := callMySettings(t, r, http.MethodPatch, "sparse-user", `{"preferred_language":"fr"}`)
+	require.Equal(t, http.StatusOK, code, "body: %v", body)
+
+	var stored authModels.UserSettings
+	require.NoError(t, db.Where("user_id = ?", "sparse-user").First(&stored).Error)
+	assert.Equal(t, "dark", stored.Theme)
+	assert.Equal(t, "fr", stored.PreferredLanguage)
+	assert.Equal(t, "/dashboard", stored.DefaultLandingPage)
+	assert.Equal(t, stored.Theme, body["theme"])
+	assert.Equal(t, stored.PreferredLanguage, body["preferred_language"])
+	assert.Equal(t, stored.ID.String(), body["id"])
+}
+
+func TestUpdateMySettings_BodyNamesAnotherUser_StaysOnCaller(t *testing.T) {
+	r, db := setupMySettingsRoutes(t)
+
+	code, body := callMySettings(t, r, http.MethodPatch, "caller",
+		`{"user_id":"victim","id":"00000000-0000-0000-0000-000000000001","two_factor_enabled":true,"password_last_changed":"2020-01-01T00:00:00Z","theme":"dark"}`)
+
+	require.Equal(t, http.StatusOK, code, "body: %v", body)
+	assert.Equal(t, "caller", body["user_id"])
+	var stored authModels.UserSettings
+	require.NoError(t, db.Where("user_id = ?", "caller").First(&stored).Error)
+	assert.False(t, stored.TwoFactorEnabled)
+	assert.Nil(t, stored.PasswordLastChanged)
+	var victimRows int64
+	require.NoError(t, db.Model(&authModels.UserSettings{}).Where("user_id = ?", "victim").Count(&victimRows).Error)
+	assert.Zero(t, victimRows)
+}
+
+func TestMySettings_NoUserID_Returns401AndCreatesNoRow(t *testing.T) {
+	r, db := setupMySettingsRoutes(t)
+
+	getCode, _ := callMySettings(t, r, http.MethodGet, "", "")
+	patchCode, _ := callMySettings(t, r, http.MethodPatch, "", `{"theme":"dark"}`)
+
+	assert.Equal(t, http.StatusUnauthorized, getCode)
+	assert.Equal(t, http.StatusUnauthorized, patchCode)
+	var rows int64
+	require.NoError(t, db.Model(&authModels.UserSettings{}).Count(&rows).Error)
+	assert.Zero(t, rows)
+}
+
+// The unique index on user_id is what keeps concurrent first requests to one row;
+// the losing FirstOrCreate may answer 500, so only the row count is asserted.
+func TestMySettings_ConcurrentFirstRequests_CreateOneRow(t *testing.T) {
+	r, _ := setupMySettingsRoutes(t)
+	// A file DB: ":memory:" gives each pooled connection its own empty database.
+	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/settings.db?_busy_timeout=5000"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&authModels.UserSettings{}))
+	sqldb.DB = db // setupMySettingsRoutes' cleanup restores the previous DB
+
+	var wg sync.WaitGroup
+	codes := make([]int, 8)
+	for i := range codes {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			method, body := http.MethodPatch, `{"theme":"dark"}`
+			if i%2 == 0 {
+				method, body = http.MethodGet, ""
+			}
+			codes[i], _ = callMySettings(t, r, method, "racer", body)
+		}(i)
+	}
+	wg.Wait()
+	t.Logf("status codes: %v", codes)
+
+	var rows int64
+	require.NoError(t, db.Model(&authModels.UserSettings{}).Where("user_id = ?", "racer").Count(&rows).Error)
+	assert.Equal(t, int64(1), rows)
 }
