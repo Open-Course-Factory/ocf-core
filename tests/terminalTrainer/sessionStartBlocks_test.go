@@ -547,7 +547,7 @@ func TestBulkCreateTerminals_OrgClassWithoutRequestOrg_OrgBlockedMemberSkipped(t
 	casdoorsdk.InitConfig("http://localhost:0", "dummy-endpoint", "dummy-client", "dummy-secret", "dummy-org", "dummy-app")
 	db := freshTestDB(t)
 	ownerID := "blk-bulk-orgclass-owner-" + uuid.NewString()
-	orgX := createTestOrgForHistory(t, db, ownerID).ID
+	orgX := createTestOrgForHistory(t, db, "blk-bulk-orgclass-org-owner-"+uuid.NewString()).ID
 	group := createTestGroupForHistory(t, db, ownerID, &orgX)
 	blockedID, okID := "blk-bulk-orgclass-ko-"+uuid.NewString(), "blk-bulk-orgclass-ok-"+uuid.NewString()
 	addActiveGroupMember(t, db, group.ID, blockedID, groupModels.GroupMemberRoleMember)

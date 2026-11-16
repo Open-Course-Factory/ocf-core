@@ -182,3 +182,16 @@ func TestClassOfDeletedOrganization_NewOrganizationCreated_CreatorStillRefused(t
 	assert.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
 	assert.NotContains(t, managedClassIDs(t, env, deletedOrgCreator), group.ID)
 }
+
+// Fail closed: a class pointing at an organization id with no row at all is
+// treated like one of a deleted organization.
+func TestClassOfMissingOrganization_CreatorRefused(t *testing.T) {
+	env := setupClassArchiveEnv(t)
+	missing := uuid.New()
+	group := seedClass(t, env.db, "orphan", deletedOrgCreator, &missing)
+
+	env.as(deletedOrgCreator)
+	rec := env.do(http.MethodPatch, classPath(group.ID), map[string]any{"display_name": "renamed"})
+	assert.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	assert.NotContains(t, managedClassIDs(t, env, deletedOrgCreator), group.ID)
+}
