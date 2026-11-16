@@ -40,6 +40,7 @@ func NewPaymentMethodController(db *gorm.DB) *PaymentMethodController {
 //	@Success		200	{object}	string
 //	@Failure		404	{object}	errors.APIError	"Payment method not found"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		409	{object}	errors.APIError	"Payment method is not registered with Stripe"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/payment-methods/{id}/set-default [post]
 func (pmc *PaymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
@@ -51,7 +52,43 @@ func (pmc *PaymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 		return
 	}
 
-	err := pmc.subscriptionService.SetDefaultPaymentMethod(userId, parsedID)
+	methods, err := pmc.subscriptionService.GetUserPaymentMethods(userId)
+	if err != nil {
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var stripePaymentMethodID string
+	found := false
+	for _, pm := range *methods {
+		if pm.ID == parsedID {
+			stripePaymentMethodID, found = pm.StripePaymentMethodID, true
+			break
+		}
+	}
+	if !found {
+		errors.Respond(ctx, http.StatusNotFound, "Payment method not found")
+		return
+	}
+
+	// Stripe first: the payment-method sync rewrites the local default from the Stripe customer.
+	sub, err := pmc.subscriptionService.GetActiveUserSubscription(userId)
+	if err != nil && !goerrors.Is(err, gorm.ErrRecordNotFound) {
+		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if sub != nil && sub.StripeCustomerID != nil && *sub.StripeCustomerID != "" {
+		if stripePaymentMethodID == "" {
+			// A local-only method cannot be the Stripe default, and the sync would undo a local one.
+			errors.Respond(ctx, http.StatusConflict, "Payment method is not registered with Stripe")
+			return
+		}
+		if err := pmc.stripeService.SetDefaultPaymentMethod(*sub.StripeCustomerID, stripePaymentMethodID); err != nil {
+			errors.Respond(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	err = pmc.subscriptionService.SetDefaultPaymentMethod(userId, parsedID)
 	if goerrors.Is(err, gorm.ErrRecordNotFound) {
 		errors.Respond(ctx, http.StatusNotFound, "Payment method not found")
 		return
