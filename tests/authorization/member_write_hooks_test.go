@@ -8,7 +8,6 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	authHooks "soli/formations/src/auth/hooks"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/mocks"
 	courseHooks "soli/formations/src/courses/hooks"
@@ -41,7 +40,6 @@ func bootProductionEntitiesAndHooks(t *testing.T) {
 	initialization.RegisterEntities()
 	payment.InitPaymentEntities(db)
 	courseHooks.InitCourseHooks(db)
-	authHooks.InitAuthHooks(db)
 	groupHooks.InitGroupHooks(db)
 	organizationHooks.InitOrganizationHooks(db)
 	terminalHooks.InitTerminalHooks(db)

@@ -22,7 +22,6 @@ import (
 	authController "soli/formations/src/auth"
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
-	authHooks "soli/formations/src/auth/hooks"
 	authMiddleware "soli/formations/src/auth/middleware"
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
 	emailVerificationController "soli/formations/src/auth/routes/emailVerificationRoutes"
@@ -163,7 +162,6 @@ func main() {
 	// Initialize remaining hooks
 	courseHooks.InitCourseHooks(sqldb.DB)
 	emailHooks.InitEmailHooks(sqldb.DB)
-	authHooks.InitAuthHooks(sqldb.DB)
 	groupHooks.InitGroupHooks(sqldb.DB)
 	organizationHooks.InitOrganizationHooks(sqldb.DB) // Phase 1: Organization hooks
 	terminalHooks.InitTerminalHooks(sqldb.DB)         // Terminal permission hooks
