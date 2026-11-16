@@ -7,6 +7,7 @@ import (
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
+	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
@@ -71,18 +72,18 @@ func (pmc *PaymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 	}
 
 	// Stripe first: the payment-method sync rewrites the local default from the Stripe customer.
-	sub, err := pmc.subscriptionService.GetActiveUserSubscription(userId)
-	if err != nil && !goerrors.Is(err, gorm.ErrRecordNotFound) {
+	subs, err := pmc.subscriptionService.GetAllActiveUserSubscriptions(userId)
+	if err != nil {
 		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if sub != nil && sub.StripeCustomerID != nil && *sub.StripeCustomerID != "" {
+	if customerID := models.OwnStripeCustomerID(userId, subs); customerID != "" {
 		if stripePaymentMethodID == "" {
 			// A local-only method cannot be the Stripe default, and the sync would undo a local one.
 			errors.Respond(ctx, http.StatusConflict, "Payment method is not registered with Stripe")
 			return
 		}
-		if err := pmc.stripeService.SetDefaultPaymentMethod(*sub.StripeCustomerID, stripePaymentMethodID); err != nil {
+		if err := pmc.stripeService.SetDefaultPaymentMethod(customerID, stripePaymentMethodID); err != nil {
 			errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}

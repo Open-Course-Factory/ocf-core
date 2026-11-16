@@ -50,3 +50,14 @@ func (u UserSubscription) GetBaseModel() entityManagementModels.BaseModel {
 func (u UserSubscription) GetReferenceObject() string {
 	return "UserSubscription"
 }
+
+// OwnStripeCustomerID returns the Stripe customer of the newest subscription in subs that userID
+// bought themselves, or "" if none: a batch licence carries its purchaser's customer.
+func OwnStripeCustomerID(userID string, subs []UserSubscription) string {
+	for _, s := range subs {
+		if (s.PurchaserUserID == nil || *s.PurchaserUserID == userID) && s.StripeCustomerID != nil && *s.StripeCustomerID != "" {
+			return *s.StripeCustomerID
+		}
+	}
+	return ""
+}
