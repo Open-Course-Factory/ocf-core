@@ -2220,6 +2220,21 @@ func (s *ScenarioSessionService) AbandonOwnRun(session *models.ScenarioSession) 
 	return s.AbandonSession(session.ID)
 }
 
+// CleanUpDeletedScenario abandons every open run of a scenario and deletes its
+// assignments, so no learner keeps a run or a class card on a deleted lab.
+// It takes the db so callers can run it inside their delete transaction.
+func CleanUpDeletedScenario(db *gorm.DB, scenarioID uuid.UUID) error {
+	if err := db.Model(&models.ScenarioSession{}).
+		Where("scenario_id = ? AND status IN ?", scenarioID, models.OpenSessionStatuses).
+		Updates(map[string]any{"status": "abandoned"}).Error; err != nil {
+		return fmt.Errorf("abandon sessions: %w", err)
+	}
+	if err := db.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioAssignment{}).Error; err != nil {
+		return fmt.Errorf("delete assignments: %w", err)
+	}
+	return nil
+}
+
 // AbandonSession marks a session as abandoned. Which statuses qualify is
 // owned by models.OpenSessionStatuses; see there for why each one is in.
 //

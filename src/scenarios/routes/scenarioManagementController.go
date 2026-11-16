@@ -12,6 +12,7 @@ import (
 	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
+	"soli/formations/src/scenarios/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -567,16 +568,8 @@ func (sc *scenarioManagementController) OrgDeleteScenario(ctx *gin.Context) {
 
 	// Delete in a transaction: abandon active sessions, delete assignments, then scenario
 	if err := sc.db.Transaction(func(tx *gorm.DB) error {
-		// Abandon every open run before deletion. The status list is
-		// models.OpenSessionStatuses — this copy used to lack in_progress, the
-		// historical name still on older rows, which the delete then left behind.
-		if err := tx.Model(&models.ScenarioSession{}).
-			Where("scenario_id = ? AND status IN ?", scenarioID, models.OpenSessionStatuses).
-			Updates(map[string]any{"status": "abandoned"}).Error; err != nil {
-			return fmt.Errorf("abandon sessions: %w", err)
-		}
-		if err := tx.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioAssignment{}).Error; err != nil {
-			return fmt.Errorf("delete assignments: %w", err)
+		if err := services.CleanUpDeletedScenario(tx, scenarioID); err != nil {
+			return err
 		}
 		if err := tx.Delete(scenario).Error; err != nil {
 			return fmt.Errorf("delete scenario: %w", err)

@@ -43,6 +43,13 @@ func InitScenarioHooks(db *gorm.DB) {
 		log.Println("Scenario authorization hook registered")
 	}
 
+	scenarioDeleteCleanupHook := NewScenarioDeleteCleanupHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(scenarioDeleteCleanupHook); err != nil {
+		log.Printf("Failed to register scenario delete cleanup hook: %v", err)
+	} else {
+		log.Println("Scenario delete cleanup hook registered")
+	}
+
 	// Hook for verifying parent-scenario authorship before creating/updating/deleting steps
 	scenarioArchiveAuthHook := NewScenarioArchiveAuthorizationHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(scenarioArchiveAuthHook); err != nil {
