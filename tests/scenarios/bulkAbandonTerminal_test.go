@@ -292,3 +292,37 @@ func TestResetGroupScenarioSessions_DeletesTerminalsOfAbandonedRuns(t *testing.T
 	assert.Equal(t, []string{"term-reset-open"}, ttMock.DeletedSessions(),
 		"the reset run's terminal must be deleted, and only it")
 }
+
+// When the new container cannot be built, the replaced run stays abandoned and
+// its terminal released: the learner is left with no open run, the same as
+// before the release existed, minus a terminal that could no longer be resumed.
+func TestBulkStartScenario_ReplaceThenNewRunFails_LeavesOldRunAbandonedAndReleased(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := models.Scenario{Name: "replace-fail", Title: "Replace Fail", InstanceType: "xs", CreatedByID: "c1"}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Step", TextContent: "content"}).Error)
+	groupID := createClassGroup(t, db, "replace-fail-class", "trainer", nil).ID
+	const learner = "replace-fail-s1"
+	addGroupMember(t, db, groupID, learner, groupModels.GroupMemberRoleMember)
+	oldRun := seedBulkRun(t, db, scenario.ID, learner, "active", "term-replace-fail-old", false)
+
+	ttMock := newMockTTService()
+	ttMock.addKey(learner)
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	dashSvc := services.NewTeacherDashboardService(db, ttMock, sessionSvc)
+
+	// No plan for the learner: building the new container fails.
+	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{Distribution: "Debian", Size: "xs"}, 0, "trainer")
+	require.NoError(t, err)
+	require.Len(t, result.Errors, 1, "the new run must fail for this test to mean anything")
+	assert.Equal(t, "failed to resolve subscription plan", result.Errors[0].Error)
+	assert.Equal(t, 0, result.Created)
+
+	assert.Equal(t, "abandoned", sessionStatus(t, db, oldRun))
+	var open int64
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("user_id = ? AND scenario_id = ? AND status IN ?", learner, scenario.ID, models.OpenSessionStatuses).
+		Count(&open).Error)
+	assert.Zero(t, open, "the learner is left with no open run")
+	assert.Equal(t, []string{"term-replace-fail-old"}, ttMock.DeletedSessions())
+}
