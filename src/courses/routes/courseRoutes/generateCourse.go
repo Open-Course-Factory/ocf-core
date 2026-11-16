@@ -25,6 +25,7 @@ import (
 //	@Success		202	{object}	dto.AsyncGenerationOutput
 //
 //	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
+//	@Failure		404	{object}	errors.APIError	"Génération non trouvée"
 //	@Failure		500	{object}	errors.APIError	"Erreur lors de la génération"
 //	@Router			/courses/generate [post]
 func (c courseController) GenerateCourse(ctx *gin.Context) {
@@ -36,10 +37,14 @@ func (c courseController) GenerateCourse(ctx *gin.Context) {
 		return
 	}
 
-	// binding:"uuid" already validated the id
-	if _, err := c.ownedGeneration(ctx, uuid.MustParse(courseGenerateDTO.GenerationId)); err != nil {
-		// same response GenerateCourseAsync gives for a missing generation
-		errors.Respond(ctx, http.StatusInternalServerError, "Erreur lors de la génération: failed to get generation: "+err.Error())
+	id, err := uuid.Parse(courseGenerateDTO.GenerationId)
+	if err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, "ID de génération invalide")
+		return
+	}
+
+	if _, err := c.ownedGeneration(ctx, id); err != nil {
+		errors.Respond(ctx, http.StatusNotFound, "Génération non trouvée: "+err.Error())
 		return
 	}
 
