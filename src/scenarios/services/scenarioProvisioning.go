@@ -1,5 +1,18 @@
 package services
 
+import (
+	"fmt"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	paymentModels "soli/formations/src/payment/models"
+	"soli/formations/src/scenarios/models"
+	ttDto "soli/formations/src/terminalTrainer/dto"
+	terminalModels "soli/formations/src/terminalTrainer/models"
+	ttServices "soli/formations/src/terminalTrainer/services"
+)
+
 // ScenarioProvisioning is how a scenario's container must be built: which
 // distribution and size it needs, the features it keeps for the whole run, and
 // the ones it holds only while it is being provisioned.
@@ -42,4 +55,36 @@ type ScenarioProvisioning struct {
 // CreatesTerminal reports whether this provisioning asks for a container.
 func (p ScenarioProvisioning) CreatesTerminal() bool {
 	return p.Distribution != ""
+}
+
+// ComposedSessionInput is the container request of a scenario run, shared by
+// the learner's own launch and the class bulk-start so the two cannot diverge
+// (the console uid and the internet cut once reached only the solo launch).
+// The caller may still set what only it knows: Expiry, or another Backend.
+func (p ScenarioProvisioning) ComposedSessionInput(db *gorm.DB, userID string, scenario *models.Scenario, terms string, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, namePrefix string) (ttDto.CreateComposedSessionInput, error) {
+	// A trainer's internet cut reaches the scenario through the classes and
+	// organizations that assign it, whatever the run's organization context.
+	networkCut, err := terminalModels.ScenarioNetworkCut(db, userID, scenario.ID)
+	if err != nil {
+		return ttDto.CreateComposedSessionInput{}, fmt.Errorf("check network cuts: %w", err)
+	}
+	input := ttDto.CreateComposedSessionInput{
+		Distribution:  p.Distribution,
+		Size:          p.Size,
+		Features:      p.Features,
+		BuildFeatures: p.BuildFeatures,
+		Terms:         terms,
+		Name:          namePrefix + scenario.Title,
+		Hostname:      scenario.Hostname,
+		Backend:       p.Backend,
+		// Recording is always on (RGPD Art. 6.1.f — legitimate interest).
+		RecordingEnabled: 1,
+		SessionUser:      scenario.SessionUser,
+		NetworkDisabled:  networkCut,
+		PersistenceMode:  ttServices.ResolveScenarioPersistenceMode(plan),
+	}
+	if orgID != nil {
+		input.OrganizationID = orgID.String()
+	}
+	return input, nil
 }

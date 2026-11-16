@@ -22,7 +22,6 @@ import (
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/repositories"
-	ttDto "soli/formations/src/terminalTrainer/dto"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
@@ -719,27 +718,13 @@ func (s *TeacherDashboardService) createRunContainer(run bulkStartRun, userID st
 		return "", "failed to resolve subscription plan"
 	}
 
-	orgID := ""
-	if run.orgID != nil {
-		orgID = run.orgID.String()
+	composedInput, inputErr := run.provisioning.ComposedSessionInput(s.db, userID, &run.scenario, run.terms, run.orgID, planResult.Plan, "scenario-")
+	if inputErr != nil {
+		utils.Warn("BulkStartScenario - Failed to compose the terminal for user %s: %v", userID, inputErr)
+		return "", "failed to create terminal session"
 	}
-	composedInput := ttDto.CreateComposedSessionInput{
-		Distribution:   run.provisioning.Distribution,
-		Size:           run.provisioning.Size,
-		Features:       run.provisioning.Features,
-		BuildFeatures:  run.provisioning.BuildFeatures,
-		Terms:          run.terms,
-		Backend:        s.memberBackend(run, planResult.Plan),
-		Name:           fmt.Sprintf("scenario-%s", run.scenario.Title),
-		Expiry:         run.sessionExpirySecs,
-		Hostname:       run.scenario.Hostname,
-		OrganizationID: orgID,
-		// RecordingEnabled: recording is always on (RGPD Art. 6.1.f — legitimate interest)
-		RecordingEnabled: 1,
-		// Persistence: SSOT lives in ResolveScenarioPersistenceMode, shared
-		// with the single-learner launch (whatever the plan allows).
-		PersistenceMode: ttServices.ResolveScenarioPersistenceMode(planResult.Plan),
-	}
+	composedInput.Backend = s.memberBackend(run, planResult.Plan)
+	composedInput.Expiry = run.sessionExpirySecs
 
 	terminalResp, termErr := s.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
 	if termErr != nil {

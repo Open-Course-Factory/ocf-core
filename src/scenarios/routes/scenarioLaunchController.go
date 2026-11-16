@@ -691,36 +691,12 @@ func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, 
 		return nil, false
 	}
 
-	// A trainer's internet cut reaches the scenario through the classes and
-	// organizations that assign it, whatever the launch's organization
-	// context; the composer adds the cut in that context.
-	networkCut, cutErr := terminalModels.ScenarioNetworkCut(sc.db, userID, scenario.ID)
-	if cutErr != nil {
-		slog.Error("failed to check network cuts for scenario", "scenario", scenario.Name, "userID", userID, "err", cutErr)
+	composedInput, inputErr := provisioning.ComposedSessionInput(sc.db, userID, scenario, terms, orgID, plan, namePrefix)
+	if inputErr != nil {
+		slog.Error("failed to compose the scenario terminal", "scenario", scenario.Name, "userID", userID, "err", inputErr)
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start terminal session. Please try again or contact support.")
 		return nil, false
 	}
-
-	// Create terminal session via composed session flow (distribution + size + features)
-	composedInput := terminalDto.CreateComposedSessionInput{
-		Distribution:     provisioning.Distribution,
-		Size:             provisioning.Size,
-		Features:         provisioning.Features,
-		BuildFeatures:    provisioning.BuildFeatures,
-		Terms:            terms,
-		Name:             namePrefix + scenario.Title,
-		Hostname:         scenario.Hostname,
-		Backend:          provisioning.Backend,
-		RecordingEnabled: 1,
-		SessionUser:      scenario.SessionUser,
-		NetworkDisabled:  networkCut,
-	}
-	if orgID != nil {
-		composedInput.OrganizationID = orgID.String()
-	}
-	// Persistence: SSOT lives in ResolveScenarioPersistenceMode
-	// (plan-allows-persistence → persistent; else empty default).
-	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(plan)
 
 	// Budget enforcement is performed by StartComposedSession via
 	// QuotaService.CheckBudget.
