@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -422,4 +423,43 @@ func TestSetDefaultPaymentMethodHandler_SelfPurchased_SetsStripeDefault(t *testi
 
 	assert.Equal(t, []string{other.StripePaymentMethodID}, fake.updates())
 	assert.Equal(t, []uuid.UUID{other.ID}, defaultPaymentMethodIDs(t, db, "caller"))
+}
+
+func TestSetDefaultPaymentMethodHandler_NewerLicenceAndOwnSubscription_UpdatesOwnCustomerOnly(t *testing.T) {
+	db := freshTestDB(t)
+	_, other, fake := setupStripeCustomerWithDefault(t, db, "caller") // own subscription on cus_test_caller
+	require.NoError(t, db.Model(&models.UserSubscription{}).Where("user_id = ?", "caller").
+		Update("created_at", time.Now().Add(-time.Hour)).Error)
+	licence := createTestUserSubscription(t, "caller", createTestSubscriptionPlan(t))
+	require.NoError(t, db.Model(licence).Updates(map[string]any{
+		"purchaser_user_id": "purchaser", "subscription_type": "assigned", "stripe_customer_id": "cus_test_purchaser",
+	}).Error)
+	r := setDefaultRouter(db, "caller")
+
+	// The fake only serves cus_test_caller: a call for the purchaser's customer would fail the route.
+	assert.Equal(t, http.StatusOK, postSetDefault(r, "/payment-methods/"+other.ID.String()+"/set-default"))
+
+	assert.Equal(t, []string{other.StripePaymentMethodID}, fake.updates())
+	assert.Equal(t, []uuid.UUID{other.ID}, defaultPaymentMethodIDs(t, db, "caller"))
+}
+
+func TestOwnStripeCustomerID_PicksNewestSelfPurchasedCustomer(t *testing.T) {
+	own := models.UserSubscription{StripeCustomerID: stripe.String("cus_own")}
+	ownNamed := models.UserSubscription{PurchaserUserID: stripe.String("caller"), StripeCustomerID: stripe.String("cus_own_named")}
+	ownEmpty := models.UserSubscription{StripeCustomerID: stripe.String("")}
+	licence := models.UserSubscription{PurchaserUserID: stripe.String("purchaser"), StripeCustomerID: stripe.String("cus_purchaser")}
+
+	cases := map[string]struct {
+		subs []models.UserSubscription
+		want string
+	}{
+		"no subscription":                   {nil, ""},
+		"only licences":                     {[]models.UserSubscription{licence}, ""},
+		"own subscription without customer": {[]models.UserSubscription{ownEmpty, licence}, ""},
+		"own first":                         {[]models.UserSubscription{own, licence}, "cus_own"},
+		"licence first":                     {[]models.UserSubscription{licence, ownNamed}, "cus_own_named"},
+	}
+	for name, c := range cases {
+		assert.Equal(t, c.want, models.OwnStripeCustomerID("caller", c.subs), name)
+	}
 }
