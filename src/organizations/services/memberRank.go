@@ -2,11 +2,11 @@ package services
 
 import (
 	"errors"
-	"fmt"
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	organizationModels "soli/formations/src/organizations/models"
+	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -60,10 +60,13 @@ func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organization
 			return target, errOutranksActor
 		}
 		if alone == nil {
-			return target, fmt.Errorf("%w: no check available", errBelongsElsewhere)
+			utils.Warn("No organization-alone check wired; refusing user %s in %s", targetID, org.ID)
+			return target, errBelongsElsewhere
 		}
+		// The cause stays in the log: it describes another person's account.
 		if err := alone.CheckBelongsToOrganizationAlone(org.ID, targetID); err != nil {
-			return target, fmt.Errorf("%w: %v", errBelongsElsewhere, err)
+			utils.Debug("User %s refused in %s: %v", targetID, org.ID, err)
+			return target, errBelongsElsewhere
 		}
 		return target, nil
 	}, nil
