@@ -1,14 +1,17 @@
 // tests/organizations/regeneratePasswordsRank_test.go
 //
-// Password regeneration follows the same rank rule as role changes: a caller
-// must not reset the password of an account that outranks them in the
-// organization, nor of a platform administrator, nor of an account outside the
-// organization. Equal rank is allowed, as it is for role changes.
+// Password regeneration is limited to accounts the organization alone answers
+// for: an owner or a platform administrator may reset any active member of this
+// organization; any other caller only a plain member. Never a platform
+// administrator (unless the caller is one), an account outside the organization,
+// an offboarded member, or an account that also belongs elsewhere (another team
+// organization, an organization it owns, a paid personal subscription).
 package organizations_tests
 
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +21,7 @@ import (
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
+	paymentModels "soli/formations/src/payment/models"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -74,14 +78,16 @@ func assertRegenerated(t *testing.T, identity *fakeIdentity, resp *dto.Regenerat
 }
 
 // assertRefused checks the target's password is untouched, no credential is
-// returned for them, and the refusal is reported on their row.
-func assertRefused(t *testing.T, identity *fakeIdentity, resp *dto.RegeneratePasswordsResponse, userID string, row int) {
+// returned for them, and the refusal is reported on their row with a message
+// containing reason: every refusal shares one error code.
+func assertRefused(t *testing.T, identity *fakeIdentity, resp *dto.RegeneratePasswordsResponse, userID string, row int, reason string) {
 	t.Helper()
 	assert.Empty(t, identity.passwordsSet["user-"+userID], "%s's password must not change", userID)
 	assert.False(t, slices.ContainsFunc(resp.Credentials, func(c dto.UserCredential) bool { return c.Email == userID+"@example.com" }),
 		"no credential may be returned for %s", userID)
-	assert.True(t, slices.ContainsFunc(resp.Errors, func(e dto.ImportError) bool { return e.Row == row && e.Code == dto.ErrCodeNotFound }),
-		"the refusal of %s is reported on row %d, errors=%+v", userID, row, resp.Errors)
+	assert.True(t, slices.ContainsFunc(resp.Errors, func(e dto.ImportError) bool {
+		return e.Row == row && e.Code == dto.ErrCodeNotFound && strings.Contains(e.Message, reason)
+	}), "the refusal of %s is reported on row %d with %q, errors=%+v", userID, row, reason, resp.Errors)
 	assert.False(t, resp.Success)
 }
 
@@ -91,7 +97,7 @@ func TestRegeneratePasswords_ManagerTargetsOrganizationOwner_Refused(t *testing.
 
 	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "owner-1")
 
-	assertRefused(t, identity, resp, "owner-1", 1)
+	assertRefused(t, identity, resp, "owner-1", 1, "outranks")
 	assert.Equal(t, 0, resp.Summary.Succeeded)
 }
 
@@ -101,7 +107,7 @@ func TestRegeneratePasswords_ManagerTargetsPlatformAdministrator_Refused(t *test
 
 	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "admin-1")
 
-	assertRefused(t, identity, resp, "admin-1", 1)
+	assertRefused(t, identity, resp, "admin-1", 1, "outranks")
 	assert.Equal(t, 0, resp.Summary.Succeeded)
 }
 
@@ -111,7 +117,7 @@ func TestRegeneratePasswords_TargetOutsideOrganization_Refused(t *testing.T) {
 
 	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "outsider-1")
 
-	assertRefused(t, identity, resp, "outsider-1", 1)
+	assertRefused(t, identity, resp, "outsider-1", 1, "not a member")
 	assert.Equal(t, 0, resp.Summary.Succeeded)
 }
 
@@ -125,14 +131,13 @@ func TestRegeneratePasswords_ManagerTargetsMember_Regenerated(t *testing.T) {
 	assert.Empty(t, resp.Errors)
 }
 
-func TestRegeneratePasswords_ManagerTargetsEqualRankManager_Regenerated(t *testing.T) {
+func TestRegeneratePasswords_ManagerTargetsAnotherManager_Refused(t *testing.T) {
 	db := newOffboardingDB(t)
 	orgID, classID, identity := seedRankedClass(t, db)
 
 	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "manager-2")
 
-	assertRegenerated(t, identity, resp, "manager-2")
-	assert.Empty(t, resp.Errors)
+	assertRefused(t, identity, resp, "manager-2", 1, "outranks")
 }
 
 func TestRegeneratePasswords_OwnerTargetsManager_Regenerated(t *testing.T) {
@@ -152,7 +157,7 @@ func TestRegeneratePasswords_MixedRequest_RegeneratesAllowedAndReportsRefused(t 
 	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "student-1", "owner-1")
 
 	assertRegenerated(t, identity, resp, "student-1")
-	assertRefused(t, identity, resp, "owner-1", 2)
+	assertRefused(t, identity, resp, "owner-1", 2, "outranks")
 	assert.Equal(t, 1, resp.Summary.Succeeded)
 	assert.Equal(t, 1, resp.Summary.Failed)
 }
@@ -171,14 +176,14 @@ func failRolesLookupFor(userID string) {
 	}
 }
 
-func TestRegeneratePasswords_ManagerTargetsThemselves_Regenerated(t *testing.T) {
+// A manager is not a plain member, so the rule covers their own account too.
+func TestRegeneratePasswords_ManagerTargetsThemselves_Refused(t *testing.T) {
 	db := newOffboardingDB(t)
 	orgID, classID, identity := seedRankedClass(t, db)
 
 	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "manager-1")
 
-	assertRegenerated(t, identity, resp, "manager-1")
-	assert.Empty(t, resp.Errors)
+	assertRefused(t, identity, resp, "manager-1", 1, "outranks")
 }
 
 func TestRegeneratePasswords_OwnerTargetsPlatformAdministrator_Refused(t *testing.T) {
@@ -187,7 +192,7 @@ func TestRegeneratePasswords_OwnerTargetsPlatformAdministrator_Refused(t *testin
 
 	resp := regenerate(t, db, identity, orgID, classID, "owner-1", "admin-1")
 
-	assertRefused(t, identity, resp, "admin-1", 1)
+	assertRefused(t, identity, resp, "admin-1", 1, "outranks")
 }
 
 func TestRegeneratePasswords_PlatformAdministratorManagerTargetsOwnerAndAdministrator_Regenerated(t *testing.T) {
@@ -212,7 +217,7 @@ func TestRegeneratePasswords_TargetRolesLookupFails_Refused(t *testing.T) {
 
 	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "student-1")
 
-	assertRefused(t, identity, resp, "student-1", 1)
+	assertRefused(t, identity, resp, "student-1", 1, "outranks")
 }
 
 func TestRegeneratePasswords_CallerRolesLookupFails_CapStillApplies(t *testing.T) {
@@ -223,7 +228,7 @@ func TestRegeneratePasswords_CallerRolesLookupFails_CapStillApplies(t *testing.T
 	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "student-1", "owner-1")
 
 	assertRegenerated(t, identity, resp, "student-1")
-	assertRefused(t, identity, resp, "owner-1", 2)
+	assertRefused(t, identity, resp, "owner-1", 2, "outranks")
 }
 
 func TestRegeneratePasswords_EveryTargetRefused_WellFormedResponseAndNoWrites(t *testing.T) {
@@ -232,11 +237,63 @@ func TestRegeneratePasswords_EveryTargetRefused_WellFormedResponseAndNoWrites(t 
 
 	resp := regenerate(t, db, identity, orgID, classID, "manager-1", "owner-1", "admin-1", "outsider-1")
 
-	assertRefused(t, identity, resp, "owner-1", 1)
-	assertRefused(t, identity, resp, "admin-1", 2)
-	assertRefused(t, identity, resp, "outsider-1", 3)
+	assertRefused(t, identity, resp, "owner-1", 1, "outranks")
+	assertRefused(t, identity, resp, "admin-1", 2, "outranks")
+	assertRefused(t, identity, resp, "outsider-1", 3, "not a member")
 	assert.Empty(t, resp.Credentials)
 	assert.Empty(t, identity.passwordsSet, "no password is set")
 	assert.Empty(t, identity.columns, "no force_password_reset write")
 	assert.Equal(t, dto.RegeneratePasswordsSummary{Total: 3, Succeeded: 0, Failed: 3}, resp.Summary)
+}
+
+// student-1 is a plain member of this organization; each case also ties them to
+// something the organization does not answer for, seeded the way the erasure
+// tests do (CheckDepartedMemberErasable refuses the same situations).
+func TestRegeneratePasswords_ManagerTargetsMemberWhoBelongsElsewhere_Refused(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		seed func(t *testing.T, db *gorm.DB)
+	}{
+		{"active member of another team organization", func(t *testing.T, db *gorm.DB) {
+			seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), "student-1", models.OrgRoleMember)
+		}},
+		{"owner of another organization", func(t *testing.T, db *gorm.DB) {
+			otherOrgID := seedTeamOrg(t, db, "student-1", new(10))
+			// Ownership alone: no membership row in the other organization.
+			require.NoError(t, db.Where("organization_id = ? AND user_id = ?", otherOrgID, "student-1").Delete(&models.OrganizationMember{}).Error)
+		}},
+		{"paid personal subscription", func(t *testing.T, db *gorm.DB) {
+			seedPaidPersonalSubscription(t, db, "student-1")
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			db := newOffboardingDB(t)
+			orgID, classID, identity := seedRankedClass(t, db)
+			c.seed(t, db)
+
+			resp := regenerate(t, db, identity, orgID, classID, "manager-1", "student-1")
+
+			assertRefused(t, identity, resp, "student-1", 1, "elsewhere")
+		})
+	}
+}
+
+func seedPaidPersonalSubscription(t *testing.T, db *gorm.DB, userID string) {
+	t.Helper()
+	plan := &paymentModels.SubscriptionPlan{Name: "Personal plan " + uuid.NewString()[:8], PriceAmount: 1000, IsActive: true}
+	plan.ID = uuid.New()
+	require.NoError(t, db.Create(plan).Error)
+	sub := &paymentModels.UserSubscription{UserID: userID, SubscriptionType: "personal", SubscriptionPlanID: plan.ID, Status: "active"}
+	sub.ID = uuid.New()
+	require.NoError(t, db.Create(sub).Error)
+}
+
+func TestRegeneratePasswords_OffboardedMemberStillInTheGroup_Refused(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+	offboardedAt(t, db, orgID, "student-1", time.Now().AddDate(0, 0, -1), time.Now().AddDate(0, 0, 9))
+
+	resp := regenerate(t, db, identity, orgID, classID, "owner-1", "student-1")
+
+	assertRefused(t, identity, resp, "student-1", 1, "offboarded")
 }

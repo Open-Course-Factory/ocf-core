@@ -12,9 +12,11 @@ import (
 	"errors"
 	"mime/multipart"
 	"slices"
+	"strings"
 	"testing"
 
 	groupModels "soli/formations/src/groups/models"
+	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
 
@@ -216,7 +218,7 @@ func TestCsvImport_UpdateExisting_MemberOutrankingTheImporterIsUntouched(t *test
 	assert.Equal(t, 1, errs, "the row is reported as refused")
 }
 
-func TestCsvImport_UpdateExisting_MemberAtOrBelowTheImporterRankIsUpdated(t *testing.T) {
+func TestCsvImport_UpdateExisting_PlainMemberOrOwnerImportIsUpdated(t *testing.T) {
 	cases := []struct {
 		name         string
 		importer     string
@@ -225,7 +227,6 @@ func TestCsvImport_UpdateExisting_MemberAtOrBelowTheImporterRankIsUpdated(t *tes
 		targetRole   models.OrganizationMemberRole
 	}{
 		{"manager updates a member", "manager-1", models.OrgRoleManager, "student-a", models.OrgRoleMember},
-		{"manager updates another manager", "manager-1", models.OrgRoleManager, "manager-2", models.OrgRoleManager},
 		{"owner updates a manager", "owner-1", models.OrgRoleOwner, "manager-2", models.OrgRoleManager},
 	}
 	for _, c := range cases {
@@ -443,4 +444,51 @@ func TestCsvImport_UpdateExisting_PlatformAdministratorImporterLeavesAnAccountOu
 	assert.Equal(t, "Original", identity.users["outsider"].FirstName)
 	assert.Equal(t, 0, resp.Summary.UsersUpdated)
 	assert.NotEmpty(t, resp.Errors)
+}
+
+// importOverMember runs an update_existing import by manager-1 of one row for
+// target, a member of the importing organization with targetRole; seed then
+// adds whatever else the test needs.
+func importOverMember(t *testing.T, target string, targetRole models.OrganizationMemberRole, seed func(db *gorm.DB)) (*fakeIdentity, *dto.ImportOrganizationDataResponse) {
+	t.Helper()
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("manager-1", target)
+	identity.users[target].FirstName = "Original"
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	seedMember(t, db, orgID, "manager-1", models.OrgRoleManager)
+	seedMember(t, db, orgID, target, targetRole)
+	if seed != nil {
+		seed(db)
+	}
+
+	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity)).ImportOrganizationData(orgID, "manager-1",
+		usersCSVWithColumns(t, "email,first_name,last_name,role,password", target+"@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
+		nil, nil, false, true, "", true)
+	require.NoError(t, err)
+	return identity, resp
+}
+
+func assertImportRefused(t *testing.T, identity *fakeIdentity, resp *dto.ImportOrganizationDataResponse, target, reason string) {
+	t.Helper()
+	assert.Empty(t, identity.passwordsSet)
+	assert.Empty(t, identity.columns)
+	assert.Equal(t, "Original", identity.users[target].FirstName)
+	assert.Equal(t, 0, resp.Summary.UsersUpdated)
+	assert.True(t, slices.ContainsFunc(resp.Errors, func(e dto.ImportError) bool { return strings.Contains(e.Message, reason) }),
+		"the row is reported with %q, errors=%+v", reason, resp.Errors)
+}
+
+func TestCsvImport_UpdateExisting_ManagerImporterLeavesAnotherManagerUntouched(t *testing.T) {
+	identity, resp := importOverMember(t, "manager-2", models.OrgRoleManager, nil)
+
+	assertImportRefused(t, identity, resp, "manager-2", "outranks")
+}
+
+func TestCsvImport_UpdateExisting_ManagerImporterLeavesAMemberWhoBelongsElsewhereUntouched(t *testing.T) {
+	identity, resp := importOverMember(t, "student-a", models.OrgRoleMember, func(db *gorm.DB) {
+		seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), "student-a", models.OrgRoleMember)
+	})
+
+	assertImportRefused(t, identity, resp, "student-a", "elsewhere")
 }
