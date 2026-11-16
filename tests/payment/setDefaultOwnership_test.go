@@ -223,6 +223,7 @@ type fakeStripeCustomerDefault struct {
 	defaultPM  string
 	pmIDs      []string
 	failUpdate bool
+	onUpdate   func()   // runs when a customer update arrives, before it is applied
 	updatedTo  []string // invoice_settings[default_payment_method] of each customer update
 }
 
@@ -240,6 +241,9 @@ func installFakeStripeCustomerDefault(t *testing.T, f *fakeStripeCustomerDefault
 		defer f.mu.Unlock()
 		switch {
 		case r.URL.Path == "/v1/customers/"+f.customerID && r.Method == http.MethodPost:
+			if f.onUpdate != nil {
+				f.onUpdate()
+			}
 			if f.failUpdate {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(w, `{"error":{"message":"injected customer update failure","type":"api_error"}}`)
@@ -296,13 +300,19 @@ func setupStripeCustomerWithDefault(t *testing.T, db *gorm.DB, userID string) (c
 
 func TestSetDefaultPaymentMethodHandler_StripeCustomer_SetsStripeDefault(t *testing.T) {
 	db := freshTestDB(t)
-	_, other, fake := setupStripeCustomerWithDefault(t, db, "caller")
+	current, other, fake := setupStripeCustomerWithDefault(t, db, "caller")
+	var localDefaultAtStripeCall []uuid.UUID
+	fake.onUpdate = func() {
+		db.Model(&models.PaymentMethod{}).Where("user_id = ? AND is_default = ?", "caller", true).Pluck("id", &localDefaultAtStripeCall)
+	}
 	r := setDefaultRouter(db, "caller")
 
 	assert.Equal(t, http.StatusOK, postSetDefault(r, "/payment-methods/"+other.ID.String()+"/set-default"))
 
 	assert.Equal(t, []string{other.StripePaymentMethodID}, fake.updates(),
 		"the Stripe customer's invoice_settings.default_payment_method must be set to the chosen method")
+	assert.Equal(t, []uuid.UUID{current.ID}, localDefaultAtStripeCall, "Stripe must be called before the local rows change")
+	assert.Equal(t, []uuid.UUID{other.ID}, defaultPaymentMethodIDs(t, db, "caller"))
 }
 
 func TestSetDefaultPaymentMethodHandler_ThenSync_KeepsChosenDefault(t *testing.T) {
@@ -341,4 +351,43 @@ func TestSetDefaultPaymentMethodHandler_StripeCustomer_ForeignID_NotFoundAndNoth
 
 	assert.Empty(t, fake.updates())
 	assert.Equal(t, []uuid.UUID{current.ID}, defaultPaymentMethodIDs(t, db, "caller"))
+}
+
+func TestSetDefaultPaymentMethodHandler_StripeCustomer_NoStripeID_ConflictAndNothingSent(t *testing.T) {
+	db := freshTestDB(t)
+	current, _, fake := setupStripeCustomerWithDefault(t, db, "caller")
+	localOnly := createTestPaymentMethod(t, "caller")
+	require.NoError(t, db.Model(localOnly).Update("stripe_payment_method_id", "").Error)
+	r := setDefaultRouter(db, "caller")
+
+	assert.Equal(t, http.StatusConflict, postSetDefault(r, "/payment-methods/"+localOnly.ID.String()+"/set-default"))
+
+	assert.Empty(t, fake.updates())
+	assert.Equal(t, []uuid.UUID{current.ID}, defaultPaymentMethodIDs(t, db, "caller"))
+}
+
+// A row turns inactive when Stripe reports it detached (handlePaymentMethodDetached), so it can
+// no longer be the customer's default.
+func TestSetDefaultPaymentMethodHandler_InactiveRow_NotFoundAndNothingSent(t *testing.T) {
+	db := freshTestDB(t)
+	current, other, fake := setupStripeCustomerWithDefault(t, db, "caller")
+	require.NoError(t, db.Model(other).Update("is_active", false).Error)
+	r := setDefaultRouter(db, "caller")
+
+	assert.Equal(t, http.StatusNotFound, postSetDefault(r, "/payment-methods/"+other.ID.String()+"/set-default"))
+
+	assert.Empty(t, fake.updates())
+	assert.Equal(t, []uuid.UUID{current.ID}, defaultPaymentMethodIDs(t, db, "caller"))
+}
+
+func TestSetDefaultPaymentMethodHandler_EmptyCustomerID_LocalOnly(t *testing.T) {
+	db := freshTestDB(t)
+	_, other, fake := setupStripeCustomerWithDefault(t, db, "caller")
+	require.NoError(t, db.Model(&models.UserSubscription{}).Where("user_id = ?", "caller").Update("stripe_customer_id", "").Error)
+	r := setDefaultRouter(db, "caller")
+
+	assert.Equal(t, http.StatusOK, postSetDefault(r, "/payment-methods/"+other.ID.String()+"/set-default"))
+
+	assert.Empty(t, fake.updates())
+	assert.Equal(t, []uuid.UUID{other.ID}, defaultPaymentMethodIDs(t, db, "caller"))
 }
