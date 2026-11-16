@@ -14,6 +14,7 @@ import (
 	registration "soli/formations/src/auth/entityRegistration"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/auth/models"
+	services "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
 	"soli/formations/src/utils"
 )
@@ -134,18 +135,9 @@ func GetCurrentUser(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
-// getOrCreateUserSettings loads the user's settings, creating the default row on first use.
-func getOrCreateUserSettings(db *gorm.DB, userID string) (*models.UserSettings, error) {
-	var settings models.UserSettings
-	if err := db.Where("user_id = ?", userID).Attrs(models.DefaultUserSettings(userID)).FirstOrCreate(&settings).Error; err != nil {
-		return nil, err
-	}
-	return &settings, nil
-}
-
 // FetchUserSettings loads or creates the user's settings for the /auth/me payload.
 func FetchUserSettings(db *gorm.DB, userID string) (*dto.UserSettingsOutput, error) {
-	settings, err := getOrCreateUserSettings(db, userID)
+	settings, err := services.GetOrCreateUserSettings(db, userID)
 	if err != nil {
 		return nil, err
 	}

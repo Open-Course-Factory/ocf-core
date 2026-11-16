@@ -24,18 +24,6 @@ type UserSettingsOutput struct {
 	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
-// UserSettingsInput for creating new settings (typically done automatically)
-type UserSettingsInput struct {
-	UserID               string  `json:"user_id" binding:"required"`
-	DefaultLandingPage   *string `json:"default_landing_page"`
-	PreferredLanguage    *string `json:"preferred_language"`
-	Timezone             *string `json:"timezone"`
-	Theme                *string `json:"theme"`
-	CompactMode          *bool   `json:"compact_mode"`
-	EmailNotifications   *bool   `json:"email_notifications"`
-	DesktopNotifications *bool   `json:"desktop_notifications"`
-}
-
 // EditUserSettingsInput for partial updates (all fields optional)
 type EditUserSettingsInput struct {
 	DefaultLandingPage      *string    `json:"default_landing_page"`

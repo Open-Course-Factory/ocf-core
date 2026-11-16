@@ -66,7 +66,7 @@ func (uc *UserController) GetMySettings(ctx *gin.Context) {
 		return
 	}
 
-	settings, err := getOrCreateUserSettings(sqldb.DB, userID)
+	settings, err := services.GetOrCreateUserSettings(sqldb.DB, userID)
 	if err != nil {
 		utils.Error("Failed to get or create settings for user %s: %v", userID, err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create settings"})
@@ -101,7 +101,7 @@ func (uc *UserController) UpdateMySettings(ctx *gin.Context) {
 		return
 	}
 
-	settings, err := getOrCreateUserSettings(sqldb.DB, userID)
+	settings, err := services.GetOrCreateUserSettings(sqldb.DB, userID)
 	if err != nil {
 		utils.Error("Failed to get or create settings for user %s: %v", userID, err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})

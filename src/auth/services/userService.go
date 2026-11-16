@@ -18,6 +18,7 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ErrUserNotFound is returned when the identity provider knows no user with
@@ -128,7 +129,7 @@ func ProvisionNewUser(enforcer interfaces.EnforcerInterface, db *gorm.DB, user *
 	if err := ttServices.NewTerminalTrainerService(db).CreateUserKey(user.Id, user.Name); err != nil {
 		utils.Warn("Could not create terminal trainer key for user %s: %v", user.Id, err)
 	}
-	if err := createDefaultUserSettings(db, user.Id); err != nil {
+	if _, err := GetOrCreateUserSettings(db, user.Id); err != nil {
 		utils.Warn("Could not create default settings for user %s: %v", user.Id, err)
 	}
 	if err := AssignFreeTrialPlan(db, user.Id); err != nil {
@@ -384,17 +385,25 @@ func (us *userService) SearchUsers(query string) (*[]dto.UserOutput, error) {
 	return &results, nil
 }
 
-// createDefaultUserSettings creates default settings for a new user
-func createDefaultUserSettings(db *gorm.DB, userID string) error {
-	// Check if settings already exist
-	var existingSettings models.UserSettings
-	result := db.Where("user_id = ?", userID).First(&existingSettings)
-	if result.Error == nil {
-		return nil // Settings already exist
+// GetOrCreateUserSettings loads the user's settings, creating the default row on first use.
+func GetOrCreateUserSettings(db *gorm.DB, userID string) (*models.UserSettings, error) {
+	defaults := models.DefaultUserSettings(userID)
+	// DoNothing on the unique user_id: concurrent first requests and an existing row (even soft-deleted) must not fail.
+	if err := db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "user_id"}}, DoNothing: true}).Create(&defaults).Error; err != nil {
+		return nil, err
 	}
-
-	defaultSettings := models.DefaultUserSettings(userID)
-	return db.Create(&defaultSettings).Error
+	var settings models.UserSettings
+	if err := db.Unscoped().Where("user_id = ?", userID).First(&settings).Error; err != nil {
+		return nil, err
+	}
+	// A soft-deleted row still holds the unique user_id: restore it rather than serve nothing.
+	if settings.DeletedAt.Valid {
+		if err := db.Unscoped().Model(&settings).Update("deleted_at", nil).Error; err != nil {
+			return nil, err
+		}
+		settings.DeletedAt = gorm.DeletedAt{}
+	}
+	return &settings, nil
 }
 
 // AssignFreeTrialPlan assigns the free Trial plan to a new user

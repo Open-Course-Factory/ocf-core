@@ -11,10 +11,10 @@ type UserSettings struct {
 	UserID string `gorm:"uniqueIndex;not null" json:"user_id"`
 
 	// Navigation
-	DefaultLandingPage string `gorm:"default:'/dashboard'" json:"default_landing_page"` // e.g., /dashboard, /courses, /terminals
+	DefaultLandingPage string `gorm:"default:'/terminal-creation'" json:"default_landing_page"` // e.g., /dashboard, /courses, /terminals
 
 	// Localization
-	PreferredLanguage string `gorm:"default:'en'" json:"preferred_language"` // en, fr, es, etc.
+	PreferredLanguage string `gorm:"default:'fr'" json:"preferred_language"` // en, fr, es, etc.
 	Timezone          string `gorm:"default:'UTC'" json:"timezone"`
 
 	// UI Preferences

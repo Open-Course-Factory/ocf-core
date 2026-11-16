@@ -10,41 +10,15 @@ import (
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
+// RegisterUserSettings offers no generic create: the row is created by services.GetOrCreateUserSettings, with the defaults.
 func RegisterUserSettings(service *ems.EntityRegistrationService) {
-	ems.RegisterTypedEntity[authModels.UserSettings, dto.UserSettingsInput, dto.EditUserSettingsInput, dto.UserSettingsOutput](
+	ems.RegisterTypedEntity[authModels.UserSettings, struct{}, dto.EditUserSettingsInput, dto.UserSettingsOutput](
 		service,
 		"UserSetting",
-		entityManagementInterfaces.TypedEntityRegistration[authModels.UserSettings, dto.UserSettingsInput, dto.EditUserSettingsInput, dto.UserSettingsOutput]{
-			Converters: entityManagementInterfaces.TypedEntityConverters[authModels.UserSettings, dto.UserSettingsInput, dto.EditUserSettingsInput, dto.UserSettingsOutput]{
+		entityManagementInterfaces.TypedEntityRegistration[authModels.UserSettings, struct{}, dto.EditUserSettingsInput, dto.UserSettingsOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[authModels.UserSettings, struct{}, dto.EditUserSettingsInput, dto.UserSettingsOutput]{
 				ModelToDto: func(model *authModels.UserSettings) (dto.UserSettingsOutput, error) {
 					return UserSettingsToOutput(model), nil
-				},
-				DtoToModel: func(input dto.UserSettingsInput) *authModels.UserSettings {
-					settings := &authModels.UserSettings{
-						UserID: input.UserID,
-					}
-					if input.DefaultLandingPage != nil {
-						settings.DefaultLandingPage = *input.DefaultLandingPage
-					}
-					if input.PreferredLanguage != nil {
-						settings.PreferredLanguage = *input.PreferredLanguage
-					}
-					if input.Timezone != nil {
-						settings.Timezone = *input.Timezone
-					}
-					if input.Theme != nil {
-						settings.Theme = *input.Theme
-					}
-					if input.CompactMode != nil {
-						settings.CompactMode = *input.CompactMode
-					}
-					if input.EmailNotifications != nil {
-						settings.EmailNotifications = *input.EmailNotifications
-					}
-					if input.DesktopNotifications != nil {
-						settings.DesktopNotifications = *input.DesktopNotifications
-					}
-					return settings
 				},
 				DtoToMap: func(input dto.EditUserSettingsInput) map[string]any {
 					updateMap := make(map[string]any)
@@ -79,7 +53,7 @@ func RegisterUserSettings(service *ems.EntityRegistrationService) {
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPatch + ")",
-					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
@@ -94,12 +68,6 @@ func RegisterUserSettings(service *ems.EntityRegistrationService) {
 				GetOne: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Get user settings",
 					Description: "Returns settings for a specific user",
-					Tags:        []string{"user-settings"},
-					Security:    true,
-				},
-				Create: &entityManagementInterfaces.SwaggerOperation{
-					Summary:     "Create user settings",
-					Description: "Creates new user settings (typically done automatically on user creation)",
 					Tags:        []string{"user-settings"},
 					Security:    true,
 				},

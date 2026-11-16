@@ -487,9 +487,9 @@ func (s *userDeletionService) deleteAuthTokens(tx *gorm.DB, userID string) error
 	return nil
 }
 
-// deleteUserSettings deletes the user's settings row.
+// deleteUserSettings erases the user's settings row (hard delete, like the tokens).
 func (s *userDeletionService) deleteUserSettings(tx *gorm.DB, userID string) error {
-	if err := tx.Where("user_id = ?", userID).Delete(&authModels.UserSettings{}).Error; err != nil {
+	if err := tx.Unscoped().Where("user_id = ?", userID).Delete(&authModels.UserSettings{}).Error; err != nil {
 		return fmt.Errorf("failed to delete user settings: %w", err)
 	}
 	return nil
