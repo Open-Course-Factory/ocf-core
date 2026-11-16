@@ -175,11 +175,8 @@ func TestCourseController_GenerateCourse(t *testing.T) {
 		assert.NotEmpty(t, response.Status)
 		assert.NotEmpty(t, response.Message)
 	} else {
-		// Échec attendu - vérifier que c'est une erreur structurée
-		assert.Contains(t, []int{
-			http.StatusBadRequest,
-			http.StatusInternalServerError,
-		}, w.Code)
+		// The generation was never saved: it does not exist, so 404
+		assert.Equal(t, http.StatusNotFound, w.Code)
 
 		var errorResponse map[string]any
 		err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
@@ -727,8 +724,9 @@ func TestGenerateCourse_OtherMember_NotFoundAndNoEffect(t *testing.T) {
 
 	w := serveGenerationBody(other, "POST", "/api/v1/courses/generate", generateBody(gen.ID))
 	missing := serveGenerationBody(other, "POST", "/api/v1/courses/generate", generateBody(uuid.New()))
+	assert.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "Génération non trouvée")
 	assert.Equal(t, missing.Code, w.Code)
-	assert.Contains(t, w.Body.String(), "failed to get generation", w.Body.String())
 
 	after, err := reloadGeneration(t, db, gen.ID)
 	require.NoError(t, err)
@@ -777,6 +775,7 @@ func TestGenerationRoutes_OtherMember_IndistinguishableFromMissing(t *testing.T)
 			foreign := call()
 			require.NoError(t, db.Unscoped().Delete(&models.Generation{}, "id = ?", gen.ID).Error)
 			missing := call()
+			assert.Equal(t, http.StatusNotFound, missing.Code, missing.Body.String())
 			assert.Equal(t, missing.Code, foreign.Code)
 			assert.Equal(t, missing.Body.String(), foreign.Body.String())
 		})
@@ -796,8 +795,7 @@ func TestGenerationRoutes_EmptyUserID_Refused(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, serveGeneration(anon, "GET", path+"/download").Code)
 		assert.Equal(t, http.StatusNotFound, serveGeneration(anon, "POST", path+"/retry").Code)
 		assert.Equal(t, http.StatusNotFound, serveGeneration(anon, "DELETE", path).Code)
-		w := serveGenerationBody(anon, "POST", "/api/v1/courses/generate", generateBody(gen.ID))
-		assert.Contains(t, w.Body.String(), "failed to get generation")
+		assert.Equal(t, http.StatusNotFound, serveGenerationBody(anon, "POST", "/api/v1/courses/generate", generateBody(gen.ID)).Code)
 
 		after, err := reloadGeneration(t, db, gen.ID)
 		require.NoError(t, err)
