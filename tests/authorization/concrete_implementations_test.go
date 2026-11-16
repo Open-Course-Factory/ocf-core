@@ -335,3 +335,71 @@ func TestGormMembershipChecker_CheckGroupRole_SoftDeletedRosterManagerRefused(t 
 	assert.NoError(t, err)
 	assert.False(t, allowed, "a removed class manager must not pass the role check")
 }
+
+// No GroupRole route asks for less than manager today, but the roster rule
+// holds at every level: a learner of a class of a deleted or missing
+// organization holds no role in it either.
+func TestGormMembershipChecker_CheckGroupRole_LearnerOfDeletedOrgRefused(t *testing.T) {
+	db := setupMembershipDB(t)
+	groupID, orgID := seedOrgClass(t, db, "learner", "member")
+	require.NoError(t, db.Create(&testGroupMember{ID: uuid.New(), GroupID: groupID, UserID: "learner", Role: "member", JoinedAt: time.Now(), IsActive: true}).Error)
+	checker := access.NewGormMembershipChecker(db)
+
+	allowed, err := checker.CheckGroupRole(groupID.String(), "learner", "member")
+	require.NoError(t, err)
+	require.True(t, allowed, "control: a learner of a live organization's class holds the member role")
+
+	require.NoError(t, db.Delete(&testOrganization{ID: orgID}).Error)
+	allowed, err = checker.CheckGroupRole(groupID.String(), "learner", "member")
+	assert.NoError(t, err)
+	assert.False(t, allowed, "a class of a deleted organization grants its learners nothing")
+}
+
+func TestGormMembershipChecker_CheckGroupRole_LearnerOfMissingOrgRefused(t *testing.T) {
+	db := setupMembershipDB(t)
+	missing, groupID := uuid.New(), uuid.New()
+	require.NoError(t, db.Create(&testClassGroup{ID: groupID, OrganizationID: &missing}).Error)
+	require.NoError(t, db.Create(&testGroupMember{ID: uuid.New(), GroupID: groupID, UserID: "learner", Role: "member", JoinedAt: time.Now(), IsActive: true}).Error)
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "learner", "member")
+	assert.NoError(t, err)
+	assert.False(t, allowed, "a class pointing at a missing organization fails closed")
+}
+
+// The LEFT JOIN on class_groups: a roster row whose class row is missing, or
+// soft-deleted with no organization, keeps its role exactly as before the
+// organization condition was added; a soft-deleted class of a deleted
+// organization is refused.
+func TestGormMembershipChecker_CheckGroupRole_RosterRowWithoutClassRowKeepsRole(t *testing.T) {
+	db := setupMembershipDB(t)
+	groupID := uuid.New()
+	require.NoError(t, db.Create(&testGroupMember{ID: uuid.New(), GroupID: groupID, UserID: "manager", Role: "manager", JoinedAt: time.Now(), IsActive: true}).Error)
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "manager", "manager")
+	assert.NoError(t, err)
+	assert.True(t, allowed)
+}
+
+func TestGormMembershipChecker_CheckGroupRole_SoftDeletedPersonalClassKeepsRole(t *testing.T) {
+	db := setupMembershipDB(t)
+	groupID := uuid.New()
+	require.NoError(t, db.Create(&testClassGroup{ID: groupID}).Error)
+	require.NoError(t, db.Create(&testGroupMember{ID: uuid.New(), GroupID: groupID, UserID: "manager", Role: "manager", JoinedAt: time.Now(), IsActive: true}).Error)
+	require.NoError(t, db.Delete(&testClassGroup{ID: groupID}).Error)
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "manager", "manager")
+	assert.NoError(t, err)
+	assert.True(t, allowed, "unchanged: the roster check does not look at the class's own deleted_at")
+}
+
+func TestGormMembershipChecker_CheckGroupRole_SoftDeletedClassOfDeletedOrgRefused(t *testing.T) {
+	db := setupMembershipDB(t)
+	groupID, orgID := seedOrgClass(t, db, "someone", "member")
+	require.NoError(t, db.Create(&testGroupMember{ID: uuid.New(), GroupID: groupID, UserID: "manager", Role: "manager", JoinedAt: time.Now(), IsActive: true}).Error)
+	require.NoError(t, db.Delete(&testClassGroup{ID: groupID}).Error)
+	require.NoError(t, db.Delete(&testOrganization{ID: orgID}).Error)
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "manager", "manager")
+	assert.NoError(t, err)
+	assert.False(t, allowed)
+}

@@ -211,3 +211,21 @@ func TestGroupOwnerAccess_ClassOfDeletedOrganization_NoAccess(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, hasAccess, "the creator of a class of a deleted organization must not reach its members' terminals")
 }
+
+// A student removed from the class (soft-deleted roster row) is no longer the
+// owner's to reach: the owner loses implicit access to their terminal.
+func TestGroupOwnerAccess_RemovedMember_NoAccess(t *testing.T) {
+	db := setupTestDB(t)
+	userKey, err := createTestUserKey(db, "student-1")
+	require.NoError(t, err)
+	terminal, err := createTestTerminal(db, "student-1", "active", userKey.ID)
+	require.NoError(t, err)
+	group := &groupModels.ClassGroup{Name: "devops-class", DisplayName: "DevOps Class", OwnerUserID: "trainer-1", MaxMembers: 50}
+	require.NoError(t, db.Omit("Metadata").Create(group).Error)
+	member := createTestGroupMember(t, db, group.ID, "student-1", groupModels.GroupMemberRoleMember)
+	require.NoError(t, db.Delete(member).Error)
+
+	hasAccess, err := services.NewTerminalTrainerService(db).HasTerminalAccess(terminal.ID.String(), "trainer-1")
+	assert.NoError(t, err)
+	assert.False(t, hasAccess, "a removed member's terminal is no longer the class owner's to reach")
+}

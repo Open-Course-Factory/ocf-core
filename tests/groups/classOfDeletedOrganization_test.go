@@ -14,6 +14,7 @@ import (
 	"soli/formations/src/entityManagement/hooks"
 	groupHooks "soli/formations/src/groups/hooks"
 	groupModels "soli/formations/src/groups/models"
+	groupServices "soli/formations/src/groups/services"
 	orgHooks "soli/formations/src/organizations/hooks"
 	orgModels "soli/formations/src/organizations/models"
 
@@ -207,4 +208,29 @@ func TestClassOfDeletedOrganization_ManagedByScope_ActiveOwnerRow_ExcludesCreato
 
 	assert.NotContains(t, managedClassIDs(t, env, deletedOrgCreator), group.ID,
 		"a class of a deleted organization is no longer the creator's to manage")
+}
+
+// CanUserManageGroup keeps the creator path ahead of the roster: a creator
+// whose own roster row is inactive still manages a personal class or a class
+// of a live organization.
+func TestCanUserManageGroup_CreatorOfPersonalClass_InactiveRosterRow_Allowed(t *testing.T) {
+	env := setupClassArchiveEnv(t)
+	group := seedClass(t, env.db, "personal", deletedOrgCreator, nil)
+	seedClassMember(t, env.db, group.ID, deletedOrgCreator, groupModels.GroupMemberRoleOwner)
+	require.NoError(t, env.db.Model(&groupModels.GroupMember{}).Where("group_id = ?", group.ID).Update("is_active", false).Error)
+
+	ok, err := groupServices.NewGroupService(env.db).CanUserManageGroup(group.ID, deletedOrgCreator)
+	require.NoError(t, err)
+	assert.True(t, ok)
+}
+
+func TestCanUserManageGroup_CreatorOfLiveOrgClass_InactiveRosterRow_Allowed(t *testing.T) {
+	env := setupClassArchiveEnv(t)
+	_, group := seedOrgClass(t, env)
+	require.NoError(t, env.db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ?", group.ID, deletedOrgCreator).Update("is_active", false).Error)
+
+	ok, err := groupServices.NewGroupService(env.db).CanUserManageGroup(group.ID, deletedOrgCreator)
+	require.NoError(t, err)
+	assert.True(t, ok)
 }
