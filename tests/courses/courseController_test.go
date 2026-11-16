@@ -950,3 +950,91 @@ func TestCreateCourseFromSource_GitSource_ReachesLoader(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), "Impossible de récupérer le cours", w.Body.String())
 }
+
+// A soft-deleted course is treated as missing, even for its owner.
+func TestGenerationCreate_SoftDeletedCourse_Refused(t *testing.T) {
+	_, db := setupTestRouter(t)
+	course, _, _, _ := createTestData(t, db)
+	require.NoError(t, db.Delete(course).Error)
+	owner := setupGenerationCreateAs(t, db, "test-user-1", "member")
+
+	w := serveGenerationBody(owner, "POST", "/api/v1/generations", createGenerationBody(course.ID))
+	missing := serveGenerationBody(owner, "POST", "/api/v1/generations", createGenerationBody(uuid.New()))
+	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Equal(t, missing.Body.String(), w.Body.String())
+	assert.Zero(t, countGenerationsForCourse(t, db, course.ID))
+}
+
+// Every owner of a shared course can create a generation for it; a non-owner cannot.
+func TestGenerationCreate_SeveralCourseOwners_EachAllowed(t *testing.T) {
+	_, db := setupTestRouter(t)
+	course, _, _, _ := createTestData(t, db)
+	require.NoError(t, db.Model(course).Update("owner_ids", entityManagementModels.BaseModel{OwnerIDs: []string{"member-a", "member-c"}}.OwnerIDs).Error)
+
+	for _, owner := range []string{"member-a", "member-c"} {
+		w := serveGenerationBody(setupGenerationCreateAs(t, db, owner, "member"), "POST", "/api/v1/generations", createGenerationBody(course.ID))
+		assert.Equal(t, http.StatusCreated, w.Code, owner+": "+w.Body.String())
+	}
+	w := serveGenerationBody(setupGenerationCreateAs(t, db, "member-b", "member"), "POST", "/api/v1/generations", createGenerationBody(course.ID))
+	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.Equal(t, int64(2), countGenerationsForCourse(t, db, course.ID))
+}
+
+// A client-supplied owner in the create body is ignored: the generation's only owner is the caller.
+func TestGenerationCreate_ClientSuppliedOwner_Ignored(t *testing.T) {
+	_, db := setupTestRouter(t)
+	course, _, _, _ := createTestData(t, db) // owned by test-user-1
+	router := setupGenerationCreateAs(t, db, "test-user-1", "member")
+
+	body := `{"name":"g","format":1,"courses":"` + course.ID.String() + `","OwnerID":"victim-user"}`
+	w := serveGenerationBody(router, "POST", "/api/v1/generations", body)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	var stored models.Generation
+	require.NoError(t, db.First(&stored, "course_id = ?", course.ID).Error)
+	assert.Equal(t, []string{"test-user-1"}, []string(stored.OwnerIDs))
+	assert.NotContains(t, w.Body.String(), "victim-user")
+}
+
+// legacyForeignGeneration stores a generation owned by member-b that points at a
+// course owned by test-user-1, as a row created before course ownership was checked.
+func legacyForeignGeneration(t *testing.T, db *gorm.DB, status string) *models.Generation {
+	course, theme, schedule, _ := createTestData(t, db)
+	generation := &models.Generation{
+		BaseModel:  entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: []string{"member-b"}},
+		Name:       "Legacy Generation",
+		Status:     status,
+		CourseID:   course.ID,
+		ThemeID:    theme.ID,
+		ScheduleID: schedule.ID,
+		Format:     &[]int{1}[0],
+	}
+	require.NoError(t, db.Create(generation).Error)
+	return generation
+}
+
+// Owning a generation does not give access to a course the caller does not own:
+// generate submits nothing to the worker.
+func TestGenerateCourse_OwnedGenerationForeignCourse_NothingSubmitted(t *testing.T) {
+	_, db := setupTestRouter(t)
+	router, worker := setupGenerationRouterWithWorkerAs(t, db, "member-b", "member")
+	gen := legacyForeignGeneration(t, db, models.StatusPending)
+
+	w := serveGenerationBody(router, "POST", "/api/v1/courses/generate", generateBody(gen.ID))
+	assert.GreaterOrEqual(t, w.Code, 400, w.Body.String())
+	assert.Empty(t, worker.GetAllJobs(), "someone else's course must not be sent to the worker")
+	after, err := reloadGeneration(t, db, gen.ID)
+	require.NoError(t, err)
+	assert.Nil(t, after.WorkerJobID)
+}
+
+// Download of a completed generation whose course the caller does not own returns no results.
+func TestDownloadGeneration_OwnedGenerationForeignCourse_NoResults(t *testing.T) {
+	_, db := setupTestRouter(t)
+	router := setupGenerationRouterAs(t, db, "member-b", "member")
+	gen := legacyForeignGeneration(t, db, models.StatusCompleted)
+
+	w := serveGeneration(router, "GET", "/api/v1/generations/"+gen.ID.String()+"/download")
+	assert.GreaterOrEqual(t, w.Code, 400, w.Body.String())
+	assert.NotEqual(t, "application/zip", w.Header().Get("Content-Type"))
+}
