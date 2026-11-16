@@ -144,3 +144,27 @@ func TestTerminalReadScope_ListAsAdmin_ReturnsAllTerminals(t *testing.T) {
 	assert.True(t, ids[tb.ID.String()], "admin must see B's terminal (AdminBypass)")
 	assert.Equal(t, int64(2), resp.Total, "admin Total must count all terminals")
 }
+
+// --- Generic GET reports network_disabled (issue #589) ----------------------
+
+func TestTerminalReadScope_GetByIdNetworkDisabled_ReportsTrue(t *testing.T) {
+	registerTerminalForReadScope(t)
+	db := freshTestDB(t)
+
+	ta, err := createTestTerminal(db, "user-A", "running", nil)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(ta).Update("network_disabled", true).Error)
+
+	r := terminalReadScopeRouter(db, "user-A", []string{"member"})
+	req := httptest.NewRequest("GET", "/api/v1/terminals/"+ta.ID.String(), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "owner get should succeed; body=%s", w.Body.String())
+
+	var resp struct {
+		NetworkDisabled bool `json:"network_disabled"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.True(t, resp.NetworkDisabled,
+		"generic GET /terminals/:id must report network_disabled=true; body=%s", w.Body.String())
+}
