@@ -1,6 +1,7 @@
 package paymentController
 
 import (
+	goerrors "errors"
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
@@ -53,6 +54,10 @@ func (bac *BillingAddressController) SetDefaultBillingAddress(ctx *gin.Context) 
 	}
 
 	err := bac.subscriptionService.SetDefaultBillingAddress(userId, parsedID)
+	if goerrors.Is(err, gorm.ErrRecordNotFound) {
+		errors.Respond(ctx, http.StatusNotFound, "Billing address not found")
+		return
+	}
 	if err != nil {
 		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return

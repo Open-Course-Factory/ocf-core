@@ -357,18 +357,29 @@ func (r *paymentRepository) UpdatePaymentMethod(pm *models.PaymentMethod) error 
 }
 
 func (r *paymentRepository) SetDefaultPaymentMethod(userID string, pmID uuid.UUID) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		// Désactiver tous les moyens de paiement par défaut pour cet utilisateur
-		if err := tx.Model(&models.PaymentMethod{}).
+	return setDefaultForUser[models.PaymentMethod](r.db, userID, pmID)
+}
+
+// setDefaultForUser makes the user's row id the only default; a row the user does not own
+// returns gorm.ErrRecordNotFound and rolls back, so the previous default stays.
+func setDefaultForUser[T any](db *gorm.DB, userID string, id uuid.UUID) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(new(T)).
 			Where("user_id = ?", userID).
 			Update("is_default", false).Error; err != nil {
 			return err
 		}
 
-		// Activer le nouveau moyen de paiement par défaut
-		return tx.Model(&models.PaymentMethod{}).
-			Where("id = ? AND user_id = ?", pmID, userID).
-			Update("is_default", true).Error
+		res := tx.Model(new(T)).
+			Where("id = ? AND user_id = ?", id, userID).
+			Update("is_default", true)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
 	})
 }
 
@@ -403,19 +414,7 @@ func (r *paymentRepository) UpdateBillingAddress(address *models.BillingAddress)
 }
 
 func (r *paymentRepository) SetDefaultBillingAddress(userID string, addressID uuid.UUID) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		// Désactiver toutes les adresses par défaut
-		if err := tx.Model(&models.BillingAddress{}).
-			Where("user_id = ?", userID).
-			Update("is_default", false).Error; err != nil {
-			return err
-		}
-
-		// Activer la nouvelle adresse par défaut
-		return tx.Model(&models.BillingAddress{}).
-			Where("id = ? AND user_id = ?", addressID, userID).
-			Update("is_default", true).Error
-	})
+	return setDefaultForUser[models.BillingAddress](r.db, userID, addressID)
 }
 
 // UsageMetrics operations

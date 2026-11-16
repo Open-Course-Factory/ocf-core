@@ -2,6 +2,7 @@
 package paymentController
 
 import (
+	goerrors "errors"
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
@@ -39,6 +40,7 @@ func NewPaymentMethodController(db *gorm.DB) *PaymentMethodController {
 //	@Success		200	{object}	string
 //	@Failure		404	{object}	errors.APIError	"Payment method not found"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/payment-methods/{id}/set-default [post]
 func (pmc *PaymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
@@ -50,6 +52,10 @@ func (pmc *PaymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 	}
 
 	err := pmc.subscriptionService.SetDefaultPaymentMethod(userId, parsedID)
+	if goerrors.Is(err, gorm.ErrRecordNotFound) {
+		errors.Respond(ctx, http.StatusNotFound, "Payment method not found")
+		return
+	}
 	if err != nil {
 		errors.Respond(ctx, http.StatusInternalServerError, err.Error())
 		return
