@@ -192,3 +192,41 @@ func TestGroupCreateScenario_BadRequest_InvalidGroupID(t *testing.T) {
 	// the controller can return 400 — so 403 is returned.
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
+
+// The org and group create handlers build the model by hand; they must keep
+// the locale fields the generic converter keeps (#592).
+func TestScopedCreateScenario_WithLocales_PersistsLocales(t *testing.T) {
+	for _, scope := range []string{"organization", "group"} {
+		t.Run(scope, func(t *testing.T) {
+			db := freshTestDB(t)
+			ownerID := "locale-owner-" + scope
+			orgID := createTestOrg(t, db, ownerID)
+			addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
+			url := "/api/v1/organizations/" + orgID.String() + "/scenarios"
+			if scope == "group" {
+				groupID := createTestGroupInOrg(t, db, orgID, ownerID)
+				addGroupMember(t, db, groupID, ownerID, groupModels.GroupMemberRoleOwner)
+				url = "/api/v1/groups/" + groupID.String() + "/scenarios"
+			}
+			router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
+
+			body, _ := json.Marshal(map[string]any{
+				"name":           "locale-" + scope,
+				"title":          "Locale " + scope,
+				"instance_type":  "ubuntu:22.04",
+				"default_locale": "fr",
+				"locales":        `["fr","en"]`,
+			})
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body.String())
+
+			var saved models.Scenario
+			require.NoError(t, db.Where("name = ?", "locale-"+scope).First(&saved).Error)
+			assert.Equal(t, "fr", saved.DefaultLocale)
+			assert.Equal(t, `["fr","en"]`, saved.Locales)
+		})
+	}
+}
