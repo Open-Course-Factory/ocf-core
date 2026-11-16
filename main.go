@@ -114,6 +114,12 @@ func main() {
 	// leaves the hardcoded fallback active so ocf-core still boots.
 	initialization.HydrateSizeCatalog(sqldb.DB)
 
+	// Parse CLI flags for course generation. A one-shot CLI run exits here,
+	// before any background worker, cron job or ticker starts.
+	if cli.ParseFlags(sqldb.DB, casdoor.Enforcer) {
+		os.Exit(0)
+	}
+
 	// Start the StripeSyncWorker: a single goroutine that polls the queue and
 	// drains pending rows to Stripe. Survives ocf-core restarts via the queue.
 	stripeSyncWorker := paymentServices.NewStripeSyncWorker(stripeSyncQueue, paymentServices.NewStripeService(sqldb.DB))
@@ -210,11 +216,6 @@ func main() {
 			}
 		}
 	}()
-
-	// Parse CLI flags for course generation
-	if cli.ParseFlags(sqldb.DB, casdoor.Enforcer) {
-		os.Exit(0)
-	}
 
 	// Set default slide engine
 	generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
