@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
@@ -484,7 +485,8 @@ func importedUsername(user dto.UserImportRow) string {
 // addRolesToUser adds roles to a user in Casbin
 func (s *importService) addRolesToUser(userID string, primaryRole string) {
 	rolesToAdd := []string{}
-	if primaryRole != "" {
+	// An import must not assign platform roles, whatever the parser let through.
+	if primaryRole != "" && !access.IsAdmin([]string{primaryRole}) {
 		rolesToAdd = append(rolesToAdd, primaryRole)
 	}
 

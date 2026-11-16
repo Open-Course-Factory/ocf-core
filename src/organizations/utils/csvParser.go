@@ -422,13 +422,13 @@ func validateUserRow(user *dto.UserImportRow, rowNum int, rowContent string) ([]
 	}
 
 	// Validate role only when provided (non-empty)
-	validRoles := map[string]bool{"member": true, "supervisor": true, "admin": true, "trainer": true}
+	validRoles := map[string]bool{"member": true, "supervisor": true, "trainer": true}
 	if user.Role != "" && !validRoles[strings.ToLower(user.Role)] {
 		errors = append(errors, dto.ImportError{
 			Row:     rowNum,
 			File:    "users",
 			Field:   "role",
-			Message: fmt.Sprintf("Invalid role '%s'. Must be one of: member, supervisor, admin, trainer", user.Role),
+			Message: fmt.Sprintf("Invalid role '%s'. Must be one of: member, supervisor, trainer", user.Role),
 			Code:    dto.ErrCodeInvalidRole,
 		})
 	}

@@ -13,7 +13,7 @@ Import users into the organization.
 - `first_name` (required) - User's first name
 - `last_name` (required) - User's last name
 - `password` (required) - Temporary password
-- `role` (required) - User role: `member`, `supervisor`, `admin`, or `trainer`
+- `role` (required) - User role: `member`, `supervisor`, or `trainer`
 - `external_id` (optional) - Reference ID from external system (e.g., student ID)
 - `force_reset` (optional) - "true" or "false" - Force password reset on first login
 - `update_existing` (optional) - "true" or "false" - Update existing user if found
