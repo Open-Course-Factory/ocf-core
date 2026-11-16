@@ -334,6 +334,7 @@ func TestCourseController_DownloadGenerationResults(t *testing.T) {
 // TestCourseController_DownloadGenerationResults_NotCompleted teste le cas génération non terminée
 func TestCourseController_DownloadGenerationResults_NotCompleted(t *testing.T) {
 	router, db := setupTestRouter(t)
+	course, _, _, _ := createTestData(t, db)
 
 	// Créer une génération en cours
 	generation := &models.Generation{
@@ -343,7 +344,7 @@ func TestCourseController_DownloadGenerationResults_NotCompleted(t *testing.T) {
 		},
 		Name:       "Test Generation",
 		Status:     models.StatusProcessing,
-		CourseID:   uuid.New(),
+		CourseID:   course.ID,
 		ThemeID:    uuid.New(),
 		ScheduleID: uuid.New(),
 		Format:     &[]int{1}[0],
@@ -612,11 +613,13 @@ func setupGenerationRouterWithWorkerAs(t *testing.T, db *gorm.DB, userID string,
 // createOwnedGeneration stores a generation owned by ownerID; CourseID points at no
 // course so a retry that gets past the lookup fails before reaching Casdoor.
 func createOwnedGeneration(t *testing.T, db *gorm.DB, ownerID string, status string) *models.Generation {
+	course := &models.Course{BaseModel: entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: []string{ownerID}}, Name: "Owned Course"}
+	require.NoError(t, db.Create(course).Error)
 	generation := &models.Generation{
 		BaseModel:  entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: []string{ownerID}},
 		Name:       "Owned Generation",
 		Status:     status,
-		CourseID:   uuid.New(),
+		CourseID:   course.ID,
 		ThemeID:    uuid.New(),
 		ScheduleID: uuid.New(),
 		Format:     &[]int{1}[0],
@@ -746,7 +749,8 @@ func TestGenerateCourse_OwnerAndAdmin_PassOwnerCheck(t *testing.T) {
 			gen := createOwnedGeneration(t, db, "member-a", models.StatusPending)
 			w := serveGenerationBody(router, "POST", "/api/v1/courses/generate", generateBody(gen.ID))
 			assert.NotContains(t, w.Body.String(), "failed to get generation")
-			assert.Contains(t, w.Body.String(), "failed to get course", w.Body.String())
+			assert.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
+			assert.Contains(t, w.Body.String(), "Generation submitted successfully", w.Body.String())
 		})
 	}
 }
@@ -808,8 +812,12 @@ func TestGenerationRoutes_EmptyUserID_Refused(t *testing.T) {
 // Every owner of a shared generation reaches it.
 func TestGenerationRoutes_SeveralOwners_EachAllowed(t *testing.T) {
 	_, db := setupTestRouter(t)
+	course, _, _, _ := createTestData(t, db)
+	owners := entityManagementModels.BaseModel{OwnerIDs: []string{"member-a", "member-c"}}.OwnerIDs
+	require.NoError(t, db.Model(course).Update("owner_ids", owners).Error)
 	gen := &models.Generation{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: []string{"member-a", "member-c"}},
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: owners},
+		CourseID:  course.ID,
 		Name:      "Shared Generation",
 		Status:    models.StatusCompleted,
 		Format:    &[]int{1}[0],

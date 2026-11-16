@@ -1,10 +1,8 @@
 package courseHooks
 
 import (
-	"errors"
-	"slices"
-
 	"soli/formations/src/courses/models"
+	"soli/formations/src/courses/services"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 
@@ -44,14 +42,11 @@ func (h *GenerationCourseRequiredHook) Execute(ctx *hooks.HookContext) error {
 	if generation.CourseID == uuid.Nil {
 		return refused
 	}
-	var course models.Course
-	if err := h.db.Select("id", "owner_ids").First(&course, "id = ?", generation.CourseID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return refused
-		}
+	owns, err := services.CallerOwnsCourse(h.db, generation.CourseID, ctx.UserID, ctx.UserRoles)
+	if err != nil {
 		return err
 	}
-	if !ctx.IsAdmin() && (ctx.UserID == "" || !slices.Contains(course.OwnerIDs, ctx.UserID)) {
+	if !owns {
 		return refused
 	}
 	return nil
