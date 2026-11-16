@@ -22,6 +22,7 @@ import (
 	courseHooks "soli/formations/src/courses/hooks"
 	"soli/formations/src/courses/models"
 	courseRoutes "soli/formations/src/courses/routes/courseRoutes"
+	generationRoutes "soli/formations/src/courses/routes/generationRoutes"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
@@ -579,5 +580,123 @@ func TestCourseController_GenerationRoutes_NonCanonicalID_FindsGeneration(t *tes
 				assert.Equal(t, tt.want, w.Code, w.Body.String())
 			})
 		}
+	}
+}
+
+// setupGenerationRouterAs mounts the four generation item routes with the caller
+// identity a real AuthManagement() would set, reusing setupTestRouter's DB.
+func setupGenerationRouterAs(t *testing.T, db *gorm.DB, userID string, roles ...string) *gin.Engine {
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", roles)
+		c.Next()
+	})
+	mockCasdoor := authMocks.NewMockCasdoorService()
+	controller := courseRoutes.NewCourseControllerWithDependencies(db, workerServices.NewMockWorkerService(), mockCasdoor,
+		workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor), genericService.NewGenericService(db, nil))
+	generations := router.Group("/api/v1/generations")
+	generations.GET("/:id/status", controller.GetGenerationStatus)
+	generations.GET("/:id/download", controller.DownloadGenerationResults)
+	generations.POST("/:id/retry", controller.RetryGeneration)
+	generations.DELETE("/:id", generationRoutes.NewGenerationController(db).DeleteGeneration)
+	return router
+}
+
+// createOwnedGeneration stores a generation owned by ownerID; CourseID points at no
+// course so a retry that gets past the lookup fails before reaching Casdoor.
+func createOwnedGeneration(t *testing.T, db *gorm.DB, ownerID string, status string) *models.Generation {
+	generation := &models.Generation{
+		BaseModel:  entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: []string{ownerID}},
+		Name:       "Owned Generation",
+		Status:     status,
+		CourseID:   uuid.New(),
+		ThemeID:    uuid.New(),
+		ScheduleID: uuid.New(),
+		Format:     &[]int{1}[0],
+	}
+	require.NoError(t, db.Create(generation).Error)
+	return generation
+}
+
+func serveGeneration(router *gin.Engine, method, path string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func reloadGeneration(t *testing.T, db *gorm.DB, id uuid.UUID) (*models.Generation, error) {
+	var generation models.Generation
+	err := db.First(&generation, "id = ?", id).Error
+	return &generation, err
+}
+
+// A generation is only reachable by its owner: another member gets the same 404
+// as a missing generation and nothing happens.
+func TestGenerationRoutes_OtherMember_NotFoundAndNoEffect(t *testing.T) {
+	_, db := setupTestRouter(t)
+	other := setupGenerationRouterAs(t, db, "member-b", "member")
+
+	t.Run("status", func(t *testing.T) {
+		gen := createOwnedGeneration(t, db, "member-a", models.StatusCompleted)
+		w := serveGeneration(other, "GET", "/api/v1/generations/"+gen.ID.String()+"/status")
+		assert.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+		assert.NotContains(t, w.Body.String(), "Owned Generation")
+	})
+
+	t.Run("download", func(t *testing.T) {
+		gen := createOwnedGeneration(t, db, "member-a", models.StatusCompleted)
+		w := serveGeneration(other, "GET", "/api/v1/generations/"+gen.ID.String()+"/download")
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.NotEqual(t, "application/zip", w.Header().Get("Content-Type"))
+	})
+
+	t.Run("retry", func(t *testing.T) {
+		gen := createOwnedGeneration(t, db, "member-a", models.StatusFailed)
+		w := serveGeneration(other, "POST", "/api/v1/generations/"+gen.ID.String()+"/retry")
+		assert.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+		after, err := reloadGeneration(t, db, gen.ID)
+		require.NoError(t, err)
+		assert.Equal(t, models.StatusFailed, after.Status, "generation must not be reset for a retry")
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		gen := createOwnedGeneration(t, db, "member-a", models.StatusCompleted)
+		w := serveGeneration(other, "DELETE", "/api/v1/generations/"+gen.ID.String())
+		assert.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+		_, err := reloadGeneration(t, db, gen.ID)
+		assert.NoError(t, err, "generation must still exist")
+	})
+}
+
+// The owner and a platform administrator keep today's behaviour on all four routes.
+func TestGenerationRoutes_OwnerAndAdmin_Allowed(t *testing.T) {
+	_, db := setupTestRouter(t)
+	callers := map[string]*gin.Engine{
+		"owner": setupGenerationRouterAs(t, db, "member-a", "member"),
+		"admin": setupGenerationRouterAs(t, db, "platform-admin", "administrator"),
+	}
+
+	for name, router := range callers {
+		t.Run(name, func(t *testing.T) {
+			gen := createOwnedGeneration(t, db, "member-a", models.StatusCompleted)
+			w := serveGeneration(router, "GET", "/api/v1/generations/"+gen.ID.String()+"/status")
+			assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+			w = serveGeneration(router, "GET", "/api/v1/generations/"+gen.ID.String()+"/download")
+			assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			assert.Equal(t, "application/zip", w.Header().Get("Content-Type"))
+
+			// A processing generation reaches the business rule (409), proving access was granted.
+			processing := createOwnedGeneration(t, db, "member-a", models.StatusProcessing)
+			w = serveGeneration(router, "POST", "/api/v1/generations/"+processing.ID.String()+"/retry")
+			assert.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+
+			w = serveGeneration(router, "DELETE", "/api/v1/generations/"+gen.ID.String())
+			assert.Equal(t, http.StatusNoContent, w.Code, w.Body.String())
+			_, err := reloadGeneration(t, db, gen.ID)
+			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+		})
 	}
 }
