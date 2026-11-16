@@ -70,12 +70,6 @@ func (h *ownershipHook) handleBeforeCreate(ctx *HookContext) error {
 		return fmt.Errorf("NewEntity is nil for %s ownership hook", h.entityName)
 	}
 
-	// Admin bypass: admin can create for another user
-	if h.config.AdminBypass && ctx.IsAdmin() {
-		return nil
-	}
-
-	// Force the ownership field to the authenticated user's ID
 	v := reflect.ValueOf(ctx.NewEntity).Elem()
 	field := v.FieldByName(h.config.OwnerField)
 	if !field.IsValid() || !field.CanSet() {
@@ -84,6 +78,13 @@ func (h *ownershipHook) handleBeforeCreate(ctx *HookContext) error {
 	if field.Kind() != reflect.String {
 		return fmt.Errorf("ownership field %s on %s is not a string type", h.config.OwnerField, h.entityName)
 	}
+
+	// Admin bypass: an admin may create for another user, but an unnamed owner defaults to the admin
+	if h.config.AdminBypass && ctx.IsAdmin() && field.String() != "" {
+		return nil
+	}
+
+	// Force the ownership field to the authenticated user's ID
 	field.SetString(ctx.UserID)
 
 	return nil
