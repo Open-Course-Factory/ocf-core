@@ -237,20 +237,26 @@ func (s *memberOffboardingService) Reinstate(orgID uuid.UUID, userID string, act
 
 // reactivate is the one place a membership comes back to life: the row is
 // active with both offboarding stamps cleared, and the account block is lifted
-// only when this membership's offboarding set it.
+// only when an offboarding set it — this membership's or another
+// organization's, whose block stood because the account belonged to it alone,
+// which it no longer does. The other row stays offboarded; only its stamp goes.
 // The Casdoor call runs inside the transaction so a failure leaves the member
 // offboarded rather than active-but-locked-out.
 func (s *memberOffboardingService) reactivate(tx *gorm.DB, member *organizationModels.OrganizationMember) error {
-	liftBlock := member.AccountForbiddenByOffboarding
 	if err := tx.Model(member).Updates(map[string]any{
-		"is_active":                        true,
-		"left_at":                          nil,
-		"scheduled_erasure_at":             nil,
-		"account_forbidden_by_offboarding": false,
+		"is_active":            true,
+		"left_at":              nil,
+		"scheduled_erasure_at": nil,
 	}).Error; err != nil {
 		return fmt.Errorf("failed to reinstate member %s: %w", member.UserID, err)
 	}
-	if !liftBlock {
+	cleared := tx.Model(&organizationModels.OrganizationMember{}).
+		Where("user_id = ? AND account_forbidden_by_offboarding = ?", member.UserID, true).
+		Update("account_forbidden_by_offboarding", false)
+	if cleared.Error != nil {
+		return fmt.Errorf("failed to clear the offboarding block of %s: %w", member.UserID, cleared.Error)
+	}
+	if cleared.RowsAffected == 0 {
 		return nil
 	}
 	if err := s.accounts.SetForbidden(member.UserID, false); err != nil {

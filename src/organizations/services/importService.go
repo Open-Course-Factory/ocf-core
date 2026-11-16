@@ -139,6 +139,21 @@ func (s *importService) ImportOrganizationData(
 		return response, fmt.Errorf("organization limits exceeded")
 	}
 
+	// Built once: the importer's rank does not change between rows.
+	var checkRank func(targetID string) (*organizationModels.OrganizationMember, error)
+	if updateExisting && !dryRun {
+		var err error
+		if checkRank, err = newRankCheck(s.db, s.alone, &org, ownerUserID); err != nil {
+			response.Errors = append(response.Errors, dto.ImportError{
+				Row:     0,
+				File:    "users",
+				Message: fmt.Sprintf("Could not resolve the importer's rank: %v", err),
+				Code:    dto.ErrCodeValidation,
+			})
+			return response, err
+		}
+	}
+
 	// 4. Start transaction (or dry-run simulation)
 	tx := s.db.Begin()
 	if tx.Error != nil {
@@ -177,7 +192,17 @@ func (s *importService) ImportOrganizationData(
 		// processUser. Generating one here for every row reset the password of
 		// every account that already existed, and handed the teacher a list of
 		// credentials that did not work.
-		userID, err := s.processUser(user, &org, ownerUserID, updateExisting, dryRun, verifyEmails)
+		userID, created, err := s.processUser(user, org.ID, checkRank, updateExisting, dryRun, verifyEmails)
+		if isRankSkip(err) {
+			// The other rows were written: a row out of the importer's reach is a skip.
+			response.Warnings = append(response.Warnings, dto.ImportWarning{
+				Row:     i + 2,
+				File:    "users",
+				Message: fmt.Sprintf("User %s not updated: %v", user.Email, err),
+			})
+			response.Summary.UsersSkipped++
+			continue
+		}
 		if err != nil {
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 2, // +2 for header and 0-index
@@ -190,10 +215,10 @@ func (s *importService) ImportOrganizationData(
 
 		if userID != "" {
 			emailToUserID[user.Email] = userID
-			if strings.ToLower(user.UpdateIfExists) == "true" || updateExisting {
-				response.Summary.UsersUpdated++
-			} else {
+			if created {
 				response.Summary.UsersCreated++
+			} else {
+				response.Summary.UsersUpdated++
 			}
 
 			// Collect generated credentials (skip during dry-run — passwords would differ on real import)
@@ -356,14 +381,24 @@ func (s *importService) ImportOrganizationData(
 	return response, nil
 }
 
-// processUser creates or updates a user in Casdoor. With verifyEmails the
-// address is marked verified as if the person had clicked the link: the
-// organization holds the class list and vouches for it.
-func (s *importService) processUser(user *dto.UserImportRow, org *organizationModels.Organization, importerID string, updateExisting bool, dryRun bool, verifyEmails bool) (string, error) {
-	orgID := org.ID
+// errNotAMember skips an existing account the organization does not hold.
+var errNotAMember = errors.New("not a member of this organization; skipped")
+
+// isRankSkip reports the refusals of the importer's rank check: a skipped row, not a failure.
+func isRankSkip(err error) bool {
+	return errors.Is(err, errNotAMember) || errors.Is(err, errOutranksActor) || errors.Is(err, errBelongsElsewhere)
+}
+
+// processUser creates or updates a user in Casdoor and reports whether it
+// created the account. checkRank is the importer's rank check, set whenever
+// updateExisting is. With verifyEmails the address is marked verified as if the
+// person had clicked the link: the organization holds the class list and
+// vouches for it.
+func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, checkRank func(targetID string) (*organizationModels.OrganizationMember, error), updateExisting bool, dryRun bool, verifyEmails bool) (string, bool, error) {
 	if dryRun {
 		utils.Debug("[DRY-RUN] Would create/update user: %s", user.Email)
-		return "dry-run-user-id", nil
+		// A dry run looks no account up: it counts the rows as the flag announces them.
+		return "dry-run-user-id", !updateExisting, nil
 	}
 
 	// Check if user already exists
@@ -372,32 +407,28 @@ func (s *importService) processUser(user *dto.UserImportRow, org *organizationMo
 		// User exists
 		if !updateExisting {
 			utils.Debug("User %s already exists, skipping", user.Email)
-			return "", nil
+			return "", false, nil
 		}
 
 		// An import may only update accounts already attached to this organization (active or offboarded).
-		checkRank, err := newRankCheck(s.db, s.alone, org, importerID)
-		if err != nil {
-			return "", err
-		}
 		// An offboarded member is accepted: re-enrolling by email reinstates them.
 		if _, err := checkRank(existingUser.Id); err != nil {
 			if errors.Is(err, ErrMemberNotFound) {
-				return "", errors.New("not a member of this organization; skipped")
+				return "", false, errNotAMember
 			}
-			return "", err
+			return "", false, err
 		}
 
 		if err := s.updateExistingUser(existingUser, *user, verifyEmails); err != nil {
-			return "", err
+			return "", false, err
 		}
 
 		// Re-enrolling by email: an offboarded member is reinstated here.
 		if err := s.members.Enrol(orgID, existingUser.Id); err != nil {
-			return "", err
+			return "", false, err
 		}
 
-		return existingUser.Id, nil
+		return existingUser.Id, false, nil
 	}
 
 	// Create new user
@@ -441,20 +472,20 @@ func (s *importService) processUser(user *dto.UserImportRow, org *organizationMo
 	}
 
 	if err := s.identity.AddUser(&newUser); err != nil {
-		return "", fmt.Errorf("failed to create user in Casdoor: %w", err)
+		return "", false, fmt.Errorf("failed to create user in Casdoor: %w", err)
 	}
 
 	// Get the created user to get the actual ID
 	createdUser, err := s.identity.GetUserByEmail(user.Email)
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve created user: %w", err)
+		return "", false, fmt.Errorf("failed to retrieve created user: %w", err)
 	}
 
 	// Add default roles
 	s.addRolesToUser(createdUser.Id)
 
 	if err := s.members.Enrol(orgID, createdUser.Id); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	// Personal organization (same as normal registration). An imported learner
@@ -477,7 +508,7 @@ func (s *importService) processUser(user *dto.UserImportRow, org *organizationMo
 		utils.Warn("Could not create terminal trainer key for imported user %s: %v", createdUser.Id, err)
 	}
 
-	return createdUser.Id, nil
+	return createdUser.Id, true, nil
 }
 
 // importedUsername derives the Casdoor username of an imported account.
