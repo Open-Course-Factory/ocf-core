@@ -40,3 +40,18 @@ func (u UserSettings) GetBaseModel() entityManagementModels.BaseModel {
 func (u UserSettings) GetReferenceObject() string {
 	return "UserSetting"
 }
+
+// DefaultUserSettings is the one definition of a new user's settings, for signup and lazy creation alike.
+func DefaultUserSettings(userID string) UserSettings {
+	return UserSettings{
+		UserID:               userID,
+		DefaultLandingPage:   "/terminal-creation",
+		PreferredLanguage:    "fr",
+		Timezone:             "UTC",
+		Theme:                "light",
+		CompactMode:          false,
+		EmailNotifications:   true,
+		DesktopNotifications: false,
+		TwoFactorEnabled:     false,
+	}
+}

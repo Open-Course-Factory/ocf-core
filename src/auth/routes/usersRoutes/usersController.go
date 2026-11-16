@@ -3,6 +3,7 @@ package userController
 import (
 	"net/http"
 	"soli/formations/src/auth/dto"
+	registration "soli/formations/src/auth/entityRegistration"
 	authMiddleware "soli/formations/src/auth/middleware"
 	services "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
@@ -72,20 +73,7 @@ func (uc *UserController) GetMySettings(ctx *gin.Context) {
 		return
 	}
 
-	ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps("UserSetting")
-	if !ok {
-		utils.Error("UserSetting entity is not registered")
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve settings"})
-		return
-	}
-	output, err := ops.ConvertModelToDto(settings)
-	if err != nil {
-		utils.Error("Failed to convert settings to output: %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve settings"})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, output)
+	ctx.JSON(http.StatusOK, registration.UserSettingsToOutput(settings))
 }
 
 // UpdateMySettings updates the current user's settings

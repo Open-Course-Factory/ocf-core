@@ -137,18 +137,7 @@ func GetCurrentUser(ctx *gin.Context) {
 // getOrCreateUserSettings loads the user's settings, creating the default row on first use.
 func getOrCreateUserSettings(db *gorm.DB, userID string) (*models.UserSettings, error) {
 	var settings models.UserSettings
-	defaults := models.UserSettings{
-		UserID:               userID,
-		DefaultLandingPage:   "/dashboard",
-		PreferredLanguage:    "en",
-		Timezone:             "UTC",
-		Theme:                "light",
-		CompactMode:          false,
-		EmailNotifications:   true,
-		DesktopNotifications: false,
-		TwoFactorEnabled:     false,
-	}
-	if err := db.Where("user_id = ?", userID).Attrs(defaults).FirstOrCreate(&settings).Error; err != nil {
+	if err := db.Where("user_id = ?", userID).Attrs(models.DefaultUserSettings(userID)).FirstOrCreate(&settings).Error; err != nil {
 		return nil, err
 	}
 	return &settings, nil

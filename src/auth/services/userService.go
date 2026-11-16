@@ -393,19 +393,7 @@ func createDefaultUserSettings(db *gorm.DB, userID string) error {
 		return nil // Settings already exist
 	}
 
-	// Create default settings
-	defaultSettings := models.UserSettings{
-		UserID:               userID,
-		DefaultLandingPage:   "/terminal-creation",
-		PreferredLanguage:    "fr",
-		Timezone:             "UTC",
-		Theme:                "light",
-		CompactMode:          false,
-		EmailNotifications:   true,
-		DesktopNotifications: false,
-		TwoFactorEnabled:     false,
-	}
-
+	defaultSettings := models.DefaultUserSettings(userID)
 	return db.Create(&defaultSettings).Error
 }
 
