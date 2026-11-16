@@ -529,3 +529,38 @@ func TestArchivedScenario_AssignmentViaGenericCreate_Answers409StateConflict(t *
 		Where("scenario_id = ?", scenario.ID).Count(&count).Error)
 	assert.Zero(t, count, "a refused assignment must not be persisted")
 }
+
+// The generic DELETE /scenarios/:id (used by the scenario editor) must clean up
+// like DELETE /organizations/:id/scenarios/:scenarioId: abandon open runs and
+// drop assignments, so no learner keeps a run or a class card on a deleted lab.
+func TestDeleteScenario_ViaGenericRoute_AbandonsOpenRunsAndDropsAssignments(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := createTestOrg(t, db, "org-owner")
+	addOrgMember(t, db, orgID, "org-manager", orgModels.OrgRoleManager)
+	scenario := createTestScenarioForOrg(t, db, orgID, "generic-delete")
+	groupID := createTestGroupInOrg(t, db, orgID, "org-owner")
+	createScenarioAssignment(t, db, scenario.ID, &groupID, &orgID, "group")
+	running := &models.ScenarioSession{
+		BaseModel:  entityManagementModels.BaseModel{ID: uuid.New()},
+		ScenarioID: scenario.ID,
+		UserID:     "learner-running",
+		Status:     "active",
+		StartedAt:  time.Now(),
+	}
+	require.NoError(t, db.Create(running).Error)
+
+	router := setupArchiveRouter(t, db, "org-manager", []string{"member"})
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/scenarios/"+scenario.ID.String(), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNoContent, w.Code, "body: %s", w.Body.String())
+
+	var reloaded models.ScenarioSession
+	require.NoError(t, db.First(&reloaded, "id = ?", running.ID).Error)
+	assert.Equal(t, "abandoned", reloaded.Status, "an open run on a deleted scenario must be abandoned")
+
+	var assignments int64
+	require.NoError(t, db.Model(&models.ScenarioAssignment{}).
+		Where("scenario_id = ?", scenario.ID).Count(&assignments).Error)
+	assert.Zero(t, assignments, "assignments of a deleted scenario must be removed")
+}
