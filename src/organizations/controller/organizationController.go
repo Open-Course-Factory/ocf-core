@@ -287,9 +287,14 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 		return
 	}
 
-	// Manager-or-above is enforced by Layer 2 (routes/permissions.go); this only keeps the 404 for admins.
+	// Manager-or-above is enforced by Layer 2 (routes/permissions.go); this lookup gives admins a 404 for a missing organization.
 	org, err := oc.service.GetOrganization(orgID, false)
-	if errors.HandleError(http.StatusInternalServerError, err, ctx) {
+	if err != nil {
+		if goerrors.Is(err, gorm.ErrRecordNotFound) {
+			errors.Respond(ctx, http.StatusNotFound, "Organization not found")
+			return
+		}
+		errors.HandleError(http.StatusInternalServerError, err, ctx)
 		return
 	}
 	if org == nil {
