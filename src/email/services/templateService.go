@@ -16,10 +16,6 @@ import (
 
 type TemplateService interface {
 	GetTemplate(name string) (*models.EmailTemplate, error)
-	GetAllTemplates() ([]models.EmailTemplate, error)
-	CreateTemplate(tmpl *models.EmailTemplate) error
-	UpdateTemplate(tmpl *models.EmailTemplate) error
-	DeleteTemplate(id uuid.UUID) error
 	RenderTemplate(name string, variables map[string]any) (subject string, body string, err error)
 	TestTemplate(id uuid.UUID, testEmail string) error
 }
@@ -43,64 +39,6 @@ func (s *templateService) GetTemplate(name string) (*models.EmailTemplate, error
 		return nil, fmt.Errorf("template not found: %w", err)
 	}
 	return &tmpl, nil
-}
-
-// GetAllTemplates retrieves all templates
-func (s *templateService) GetAllTemplates() ([]models.EmailTemplate, error) {
-	var templates []models.EmailTemplate
-	if err := s.db.Order("created_at DESC").Find(&templates).Error; err != nil {
-		return nil, fmt.Errorf("failed to fetch templates: %w", err)
-	}
-	return templates, nil
-}
-
-// CreateTemplate creates a new email template
-func (s *templateService) CreateTemplate(tmpl *models.EmailTemplate) error {
-	// Validate template can be rendered
-	if _, _, err := RenderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]any{}); err != nil {
-		return fmt.Errorf("invalid template syntax: %w", err)
-	}
-
-	if err := s.db.Create(tmpl).Error; err != nil {
-		return fmt.Errorf("failed to create template: %w", err)
-	}
-	return nil
-}
-
-// UpdateTemplate updates an existing template
-func (s *templateService) UpdateTemplate(tmpl *models.EmailTemplate) error {
-	// Check if template is system template
-	var existing models.EmailTemplate
-	if err := s.db.First(&existing, tmpl.ID).Error; err != nil {
-		return fmt.Errorf("template not found: %w", err)
-	}
-
-	// Validate template can be rendered
-	if _, _, err := RenderTemplateContent(tmpl.Subject, tmpl.HTMLBody, map[string]any{}); err != nil {
-		return fmt.Errorf("invalid template syntax: %w", err)
-	}
-
-	if err := s.db.Save(tmpl).Error; err != nil {
-		return fmt.Errorf("failed to update template: %w", err)
-	}
-	return nil
-}
-
-// DeleteTemplate deletes a template (soft delete)
-func (s *templateService) DeleteTemplate(id uuid.UUID) error {
-	var tmpl models.EmailTemplate
-	if err := s.db.Where("id = ?", id).First(&tmpl).Error; err != nil {
-		return fmt.Errorf("template not found: %w", err)
-	}
-
-	if tmpl.IsSystem {
-		return fmt.Errorf("cannot delete system template")
-	}
-
-	if err := s.db.Delete(&tmpl).Error; err != nil {
-		return fmt.Errorf("failed to delete template: %w", err)
-	}
-	return nil
 }
 
 // RenderTemplate renders a template with the provided variables
