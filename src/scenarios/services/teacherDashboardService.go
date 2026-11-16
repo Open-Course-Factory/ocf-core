@@ -1038,6 +1038,10 @@ func (s *TeacherDashboardService) loadSessionsForBulkDetails(sessionIDs []uuid.U
 			}
 		}
 	}
+	// Forgets any run's link to another user's terminal before it reaches the client.
+	if _, err := terminalsForSessions(s.db, sessions); err != nil {
+		return nil, err
+	}
 	return sessions, nil
 }
 
@@ -1362,6 +1366,7 @@ func (s *TeacherDashboardService) GetSessionCommands(groupID, sessionID uuid.UUI
 		return nil, "", ErrSessionNotInGroup
 	}
 
+	DropForeignTerminal(s.db, &session)
 	if session.TerminalSessionID == nil || *session.TerminalSessionID == "" {
 		return nil, "", ErrSessionHasNoTerminal
 	}

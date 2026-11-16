@@ -137,6 +137,7 @@ func (b *scenarioControllerBase) loadSession(ctx *gin.Context) (*models.Scenario
 		errors.Respond(ctx, http.StatusNotFound, "Session not found")
 		return nil, err
 	}
+	services.DropForeignTerminal(b.db, &session)
 	return &session, nil
 }
 

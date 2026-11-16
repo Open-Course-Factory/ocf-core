@@ -14,11 +14,11 @@ type CreateScenarioSessionInput struct {
 }
 
 // EditScenarioSessionInput - DTO for editing a scenario session (partial updates)
+// A run's terminal is set by the launch routes only, never by an edit.
 type EditScenarioSessionInput struct {
-	TerminalSessionID *string    `json:"terminal_session_id,omitempty" mapstructure:"terminal_session_id"`
-	CurrentStep       *int       `json:"current_step,omitempty" mapstructure:"current_step"`
-	Status            *string    `json:"status,omitempty" mapstructure:"status" binding:"omitempty,oneof=active completed abandoned"`
-	CompletedAt       *time.Time `json:"completed_at,omitempty" mapstructure:"completed_at"`
+	CurrentStep *int       `json:"current_step,omitempty" mapstructure:"current_step"`
+	Status      *string    `json:"status,omitempty" mapstructure:"status" binding:"omitempty,oneof=active completed abandoned"`
+	CompletedAt *time.Time `json:"completed_at,omitempty" mapstructure:"completed_at"`
 }
 
 // ScenarioSessionOutput - DTO for scenario session responses

@@ -82,9 +82,6 @@ func RegisterScenarioSession(service *ems.EntityRegistrationService) {
 				},
 				DtoToMap: func(input dto.EditScenarioSessionInput) map[string]any {
 					updates := make(map[string]any)
-					if input.TerminalSessionID != nil {
-						updates["terminal_session_id"] = *input.TerminalSessionID
-					}
 					if input.CurrentStep != nil {
 						updates["current_step"] = *input.CurrentStep
 					}

@@ -1333,7 +1333,8 @@ func (s *ScenarioSessionService) loadReprovisionableSession(sessionID uuid.UUID)
 	if !slices.Contains(reprovisionableStatuses, session.Status) {
 		return nil, fmt.Errorf("session status %q cannot be reprovisioned", session.Status)
 	}
-	if session.TerminalSessionID == nil || TerminalOfAnotherUser(s.db, &session) {
+	DropForeignTerminal(s.db, &session)
+	if session.TerminalSessionID == nil {
 		return nil, fmt.Errorf("no terminal session attached")
 	}
 	return &session, nil
@@ -1624,7 +1625,8 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, err
 	}
 
-	if session.TerminalSessionID == nil || TerminalOfAnotherUser(s.db, &session) {
+	DropForeignTerminal(s.db, &session)
+	if session.TerminalSessionID == nil {
 		return nil, fmt.Errorf("no terminal session attached")
 	}
 
@@ -1733,7 +1735,8 @@ func (s *ScenarioSessionService) SkipToStep(sessionID uuid.UUID, targetOrder int
 	if err := requireActiveSession(&session); err != nil {
 		return nil, err
 	}
-	if session.TerminalSessionID == nil || TerminalOfAnotherUser(s.db, &session) {
+	DropForeignTerminal(s.db, &session)
+	if session.TerminalSessionID == nil {
 		return nil, fmt.Errorf("no terminal session attached")
 	}
 	if FindStepByOrder(session.Scenario.Steps, targetOrder) == nil {
@@ -1863,6 +1866,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 	}).Preload("StepProgress").Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	DropForeignTerminal(s.db, &session)
 
 	if err := requireActiveSession(&session); err != nil {
 		return nil, err
@@ -2058,6 +2062,7 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 	}).Preload("StepProgress").Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	DropForeignTerminal(s.db, &session)
 
 	if err := requireActiveSession(&session); err != nil {
 		return nil, err
@@ -2302,6 +2307,16 @@ func TerminalOfAnotherUser(db *gorm.DB, run *models.ScenarioSession) bool {
 	return false
 }
 
+// DropForeignTerminal forgets, on this loaded copy only, a terminal id that
+// names another user's terminal: everything after the load then treats the
+// run as one with no terminal attached. Every load of a run that acts on its
+// terminal (exec, console, start, history, handing the id back) calls it.
+func DropForeignTerminal(db *gorm.DB, run *models.ScenarioSession) {
+	if TerminalOfAnotherUser(db, run) {
+		run.TerminalSessionID = nil
+	}
+}
+
 // AbandonSession marks a session as abandoned. Which statuses qualify is
 // owned by models.OpenSessionStatuses; see there for why each one is in.
 //
@@ -2332,7 +2347,9 @@ func (s *ScenarioSessionService) AbandonSession(sessionID uuid.UUID) error {
 // must never disagree about which run a reused terminal belongs to.
 func (s *ScenarioSessionService) FindSessionByTerminal(terminalSessionID string) (*models.ScenarioSession, error) {
 	var session models.ScenarioSession
+	// A run whose user is not the terminal's owner never shadows the owner's run.
 	err := s.db.Where("terminal_session_id = ?", terminalSessionID).
+		Where("NOT EXISTS (SELECT 1 FROM terminals t WHERE t.session_id = ? AND t.deleted_at IS NULL AND t.user_id <> scenario_sessions.user_id)", terminalSessionID).
 		Order("created_at DESC").
 		First(&session).Error
 	if err != nil {
@@ -2864,6 +2881,7 @@ func resumeModeOf(db *gorm.DB, session *models.ScenarioSession) (ResumeMode, err
 // resumeModeGiven is resumeModeOf for a caller that already holds the
 // scenario's crash-traps flag: it loads only the run's terminal.
 func resumeModeGiven(db *gorm.DB, session *models.ScenarioSession, crashTraps bool) ResumeMode {
+	DropForeignTerminal(db, session)
 	var terminal *terminalModels.Terminal
 	if session.TerminalSessionID != nil {
 		var t terminalModels.Terminal
@@ -2898,6 +2916,13 @@ func terminalsForSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[s
 	}
 	for i := range terminals {
 		byID[terminals[i].SessionID] = &terminals[i]
+	}
+	// As DropForeignTerminal, from the rows already loaded: a run never
+	// carries another user's terminal past this point.
+	for i := range sessions {
+		if id := sessions[i].TerminalSessionID; id != nil && byID[*id] != nil && byID[*id].UserID != sessions[i].UserID {
+			sessions[i].TerminalSessionID = nil
+		}
 	}
 	return byID, nil
 }
