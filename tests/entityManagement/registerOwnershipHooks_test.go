@@ -195,7 +195,7 @@ func TestRegisterOwnershipHooks_RealEntities_WireExpectedWriteHooks(t *testing.T
 	// entityName → the exact set of write hooks it must have after the pass.
 	expected := map[string][]hooks.HookType{
 		"Terminal":         {hooks.BeforeCreate},
-		"ScenarioSession":  {hooks.BeforeCreate},
+		"ScenarioSession":  {}, // read-only for members: runs are created by the launch routes
 		"UserSetting":      {hooks.BeforeUpdate},
 		"BillingAddress":   {hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
 		"PaymentMethod":    {hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
