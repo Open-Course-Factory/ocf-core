@@ -16,7 +16,7 @@ import (
 
 // OffboardMembers godoc
 // @Summary Offboard organization members
-// @Description Deactivates the memberships, blocks sign-in, terminates running terminals, releases assigned seats and schedules erasure after the organization's retention period. Class rosters are untouched.
+// @Description Deactivates the memberships, blocks sign-in and terminates all running terminals of accounts that belong to this organization alone (only this organization's terminals otherwise), releases assigned seats and schedules erasure after the organization's retention period. Class rosters are untouched.
 // @Tags organizations
 // @Accept json
 // @Produce json
@@ -24,6 +24,7 @@ import (
 // @Param input body dto.OffboardMembersInput true "Members to offboard"
 // @Success 204
 // @Failure 400 {object} errors.APIError "Invalid organization ID or empty selection"
+// @Failure 403 {object} errors.APIError "A selected member outranks the caller"
 // @Failure 404 {object} errors.APIError "Member not found"
 // @Failure 409 {object} errors.APIError "The organization owner cannot be offboarded"
 // @Failure 500 {object} errors.APIError "Internal server error"

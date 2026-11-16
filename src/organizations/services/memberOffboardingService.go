@@ -103,7 +103,7 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 	var forbidden []string
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		for _, userID := range userIDs {
-			if err := s.offboardOne(tx, &org, userID, now, erasureAt); err != nil {
+			if err := s.offboardOne(tx, &org, userID, now, erasureAt, forbid[userID]); err != nil {
 				return err
 			}
 			if !forbid[userID] {
@@ -130,8 +130,9 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 }
 
 // offboardOne stamps a single membership and terminates the member's running
-// terminals on the caller's transaction.
-func (s *memberOffboardingService) offboardOne(tx *gorm.DB, org *organizationModels.Organization, userID string, now, erasureAt time.Time) error {
+// terminals on the caller's transaction: all of them when the account is
+// forbidden, only this organization's otherwise.
+func (s *memberOffboardingService) offboardOne(tx *gorm.DB, org *organizationModels.Organization, userID string, now, erasureAt time.Time, forbidden bool) error {
 	member, err := findMembership(tx, org.ID, userID)
 	if err != nil {
 		return err
@@ -146,7 +147,11 @@ func (s *memberOffboardingService) offboardOne(tx *gorm.DB, org *organizationMod
 	}).Error; err != nil {
 		return fmt.Errorf("failed to offboard member %s: %w", userID, err)
 	}
-	if err := paymentServices.TerminateUserTerminals(tx, userID, nil); err != nil {
+	scope := &org.ID
+	if forbidden {
+		scope = nil
+	}
+	if err := paymentServices.TerminateUserTerminals(tx, userID, scope); err != nil {
 		return fmt.Errorf("failed to terminate terminals of %s: %w", userID, err)
 	}
 	return nil
