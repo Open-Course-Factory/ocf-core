@@ -287,18 +287,13 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 		return
 	}
 
-	// Check if user can manage this organization
+	// Manager-or-above is enforced by Layer 2 (routes/permissions.go); this only keeps the 404 for admins.
 	org, err := oc.service.GetOrganization(orgID, false)
 	if errors.HandleError(http.StatusInternalServerError, err, ctx) {
 		return
 	}
 	if org == nil {
 		errors.Respond(ctx, http.StatusNotFound, "Organization not found")
-		return
-	}
-
-	if !org.CanUserManageOrganization(userID.(string)) {
-		errors.Respond(ctx, http.StatusForbidden, "You are not authorized to import data into this organization")
 		return
 	}
 

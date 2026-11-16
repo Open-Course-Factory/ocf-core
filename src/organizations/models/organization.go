@@ -137,28 +137,6 @@ func (o *Organization) IsOwner(userID string) bool {
 	return o.OwnerUserID == userID
 }
 
-// GetMemberRole returns the role of a user in the organization (if member)
-func (o *Organization) GetMemberRole(userID string) OrganizationMemberRole {
-	for _, member := range o.Members {
-		if member.UserID == userID && member.IsActive {
-			return member.Role
-		}
-	}
-	return ""
-}
-
-// CanUserManageOrganization checks if a user can manage this organization
-func (o *Organization) CanUserManageOrganization(userID string) bool {
-	// Owner can always manage
-	if o.IsOwner(userID) {
-		return true
-	}
-
-	// Check if user is a manager
-	role := o.GetMemberRole(userID)
-	return role == OrgRoleOwner || role == OrgRoleManager
-}
-
 // EffectiveRetentionDays is the single owner of "how long after leaving is a
 // member erased": the organization's own figure, else the platform default.
 func (o *Organization) EffectiveRetentionDays() int {
