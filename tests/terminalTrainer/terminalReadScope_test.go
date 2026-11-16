@@ -168,3 +168,28 @@ func TestTerminalReadScope_GetByIdNetworkDisabled_ReportsTrue(t *testing.T) {
 	assert.True(t, resp.NetworkDisabled,
 		"generic GET /terminals/:id must report network_disabled=true; body=%s", w.Body.String())
 }
+
+func TestTerminalReadScope_ListNetworkDisabled_ReportsTrue(t *testing.T) {
+	registerTerminalForReadScope(t)
+	db := freshTestDB(t)
+
+	ta, err := createTestTerminal(db, "user-A", "running", nil)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(ta).Update("network_disabled", true).Error)
+
+	r := terminalReadScopeRouter(db, "user-A", []string{"member"})
+	req := httptest.NewRequest("GET", "/api/v1/terminals/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "owner list should succeed; body=%s", w.Body.String())
+
+	var resp struct {
+		Data []struct {
+			NetworkDisabled bool `json:"network_disabled"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Data, 1)
+	assert.True(t, resp.Data[0].NetworkDisabled,
+		"generic GET /terminals must report network_disabled=true; body=%s", w.Body.String())
+}
