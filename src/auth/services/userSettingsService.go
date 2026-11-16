@@ -64,14 +64,7 @@ func (s *UserSettingsService) ChangePassword(userID string, input dto.ChangePass
 		return errors.New("failed to update password")
 	}
 
-	// Update password last changed timestamp in user settings
-	var userSettings models.UserSettings
-	result := sqldb.DB.Where("user_id = ?", userID).First(&userSettings)
-	if result.Error == nil {
-		now := time.Now()
-		userSettings.PasswordLastChanged = &now
-		sqldb.DB.Save(&userSettings)
-	}
+	stampPasswordLastChanged(userID)
 
 	utils.Info("Password changed successfully for user %s", userID)
 
@@ -125,14 +118,7 @@ func (s *UserSettingsService) ForceChangePassword(userID string, input dto.Force
 		utils.Warn("Failed to clear force_password_reset flag for user %s: %v", userID, err)
 	}
 
-	// Update password last changed timestamp in user settings
-	var userSettings models.UserSettings
-	result := sqldb.DB.Where("user_id = ?", userID).First(&userSettings)
-	if result.Error == nil {
-		now := time.Now()
-		userSettings.PasswordLastChanged = &now
-		sqldb.DB.Save(&userSettings)
-	}
+	stampPasswordLastChanged(userID)
 
 	utils.Info("Force password change completed for user %s", userID)
 
@@ -147,6 +133,17 @@ func (s *UserSettingsService) ForceChangePassword(userID string, input dto.Force
 	}
 
 	return nil
+}
+
+// stampPasswordLastChanged records the change time; a failure is logged only, since the password has already changed.
+func stampPasswordLastChanged(userID string) {
+	settings, err := GetOrCreateUserSettings(sqldb.DB, userID)
+	if err == nil {
+		err = sqldb.DB.Model(settings).Update("password_last_changed", time.Now()).Error
+	}
+	if err != nil {
+		utils.Warn("Failed to record password change time for user %s: %v", userID, err)
+	}
 }
 
 // invalidateToken adds the JWT token to a blacklist
