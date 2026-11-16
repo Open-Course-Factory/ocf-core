@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,9 +19,11 @@ import (
 	authMocks "soli/formations/src/auth/mocks"
 	"soli/formations/src/courses/dto"
 	courseRegistration "soli/formations/src/courses/entityRegistration"
+	courseHooks "soli/formations/src/courses/hooks"
 	"soli/formations/src/courses/models"
 	courseRoutes "soli/formations/src/courses/routes/courseRoutes"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	genericService "soli/formations/src/entityManagement/services"
 	workerServices "soli/formations/src/worker/services"
@@ -515,6 +518,9 @@ func TestCourseController_GenerationRoutes_MalformedID_Returns400(t *testing.T) 
 func TestGenerationCreate_MalformedCourseID_ReturnsError(t *testing.T) {
 	_, db := setupTestRouter(t) // registers the Generation entity on the test DB
 	svc := genericService.NewGenericService(db, nil)
+	hook := courseHooks.NewGenerationCourseRequiredHook()
+	require.NoError(t, hooks.GlobalHookRegistry.RegisterHook(hook))
+	t.Cleanup(func() { _ = hooks.GlobalHookRegistry.UnregisterHook(hook.GetName()) })
 
 	for _, courseID := range []string{"not-a-uuid", ""} {
 		t.Run("courseId="+courseID, func(t *testing.T) {
@@ -523,6 +529,50 @@ func TestGenerationCreate_MalformedCourseID_ReturnsError(t *testing.T) {
 				_, err = svc.CreateEntityWithUser(dto.GenerationInput{Name: "g", CourseId: courseID}, "Generation", "test-user-1")
 			})
 			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "ENT004") // validation error from generation_course_required
 		})
+	}
+
+	t.Run("valid course id", func(t *testing.T) {
+		course, _, _, _ := createTestData(t, db)
+		_, err := svc.CreateEntityWithUser(dto.GenerationInput{Name: "g", CourseId: course.ID.String()}, "Generation", "test-user-1")
+		assert.NoError(t, err)
+	})
+}
+
+// uuid.Parse also accepts uppercase and braced ids; they must find the generation, not 400 or 500.
+func TestCourseController_GenerationRoutes_NonCanonicalID_FindsGeneration(t *testing.T) {
+	router, db := setupTestRouter(t)
+	course, theme, schedule, _ := createTestData(t, db)
+	generation := &models.Generation{
+		BaseModel:  entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: []string{"test-user-1"}},
+		Name:       "Test Generation",
+		Status:     models.StatusProcessing,
+		CourseID:   course.ID,
+		ThemeID:    theme.ID,
+		ScheduleID: schedule.ID,
+		Format:     &[]int{1}[0],
+	}
+	require.NoError(t, db.Create(generation).Error)
+	id := generation.ID.String()
+
+	tests := []struct {
+		method, path string
+		want         int
+	}{
+		{"GET", "/status", http.StatusOK},
+		{"GET", "/download", http.StatusConflict}, // not completed
+		{"POST", "/retry", http.StatusConflict},   // in progress
+	}
+	for _, form := range []string{strings.ToUpper(id), "{" + id + "}"} {
+		for _, tt := range tests {
+			t.Run(form+tt.path, func(t *testing.T) {
+				req, err := http.NewRequest(tt.method, "/api/v1/generations/"+form+tt.path, nil)
+				require.NoError(t, err)
+				w := httptest.NewRecorder()
+				require.NotPanics(t, func() { router.ServeHTTP(w, req) })
+				assert.Equal(t, tt.want, w.Code, w.Body.String())
+			})
+		}
 	}
 }
