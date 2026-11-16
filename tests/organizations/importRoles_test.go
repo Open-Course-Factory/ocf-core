@@ -15,7 +15,7 @@ import (
 	orgUtils "soli/formations/src/organizations/utils"
 )
 
-var platformRoleSpellings = []string{"admin", "Admin", "ADMIN", "administrator", "Administrator"}
+var platformRoleSpellings = []string{"admin", "Admin", "ADMIN", "administrator", "Administrator", " admin ", "\tAdministrator", `"  admin  "`}
 
 func TestParseUsersCSV_PlatformRole_IsRejected(t *testing.T) {
 	for _, role := range platformRoleSpellings {
