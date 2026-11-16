@@ -20,6 +20,7 @@ import (
 	registration "soli/formations/src/email/entityRegistration"
 	emailHooks "soli/formations/src/email/hooks"
 	emailModels "soli/formations/src/email/models"
+	emailServices "soli/formations/src/email/services"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
@@ -169,4 +170,65 @@ func TestEmailTemplateGeneric_DeleteNonSystemTemplate_Deleted(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), countTemplates(t, "id = ?", id))
+}
+
+func TestEmailTemplateGeneric_UpdateWithoutSubjectOrBody_Persisted(t *testing.T) {
+	for name, patch := range map[string]map[string]any{
+		"description": {"description": "new description"},
+		"is_active":   {"is_active": false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := setupEmailTemplateEntity(t)
+			id := seedEmailTemplate(t, "meta_"+name, false)
+
+			err := svc.EditEntityWithUser(id, "EmailTemplate", &emailModels.EmailTemplate{}, patch, "admin-1", "administrator")
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+// A legacy row stored before the rules existed must stay editable on the
+// fields the patch does not touch: its broken body is not this patch's fault.
+func TestEmailTemplateGeneric_UpdateLegacyInvalidRowWithoutTouchingBody_Persisted(t *testing.T) {
+	svc := setupEmailTemplateEntity(t)
+	id := seedEmailTemplate(t, "legacy_broken", false)
+	require.NoError(t, sharedTestDB.Model(&emailModels.EmailTemplate{}).Where("id = ?", id).
+		Update("html_body", invalidTemplate).Error)
+
+	err := svc.EditEntityWithUser(id, "EmailTemplate", &emailModels.EmailTemplate{},
+		map[string]any{"description": "still editable"}, "admin-1", "administrator")
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), countTemplates(t, "id = ? AND description = ?", id, "still editable"))
+}
+
+// The system templates shipped by InitDefaultTemplates must pass the rules
+// unchanged, and a template using nested fields, conditionals and ranges must
+// not be refused for lacking data: the check is about syntax.
+func TestEmailTemplateGeneric_RealTemplatesResaved_Persisted(t *testing.T) {
+	svc := setupEmailTemplateEntity(t)
+	emailServices.InitDefaultTemplates(sharedTestDB)
+	var defaults []emailModels.EmailTemplate
+	require.NoError(t, sharedTestDB.Where("name IN ?", []string{"password_reset", "welcome", "email_verification"}).Find(&defaults).Error)
+	require.Len(t, defaults, 3)
+	for _, tmpl := range defaults {
+		err := svc.EditEntityWithUser(tmpl.ID, "EmailTemplate", &emailModels.EmailTemplate{},
+			map[string]any{"subject": tmpl.Subject, "html_body": tmpl.HTMLBody}, "admin-1", "administrator")
+		assert.NoError(t, err, tmpl.Name)
+	}
+
+	in := validCreateInput("rich_one")
+	in.HTMLBody = `<p>Hi {{.User.Name}}</p>{{if .Admin}}<b>admin</b>{{end}}<ul>{{range .Items}}<li>{{.}}</li>{{end}}</ul>`
+	_, err := svc.CreateEntityWithUser(in, "EmailTemplate", "admin-1", "administrator")
+	assert.NoError(t, err, "nested field access must not fail on an empty data map")
+}
+
+func TestEmailTemplateGeneric_DeleteSystemTemplate_Conflict409(t *testing.T) {
+	svc := setupEmailTemplateEntity(t)
+	id := seedEmailTemplate(t, "email_verification", true)
+
+	err := svc.DeleteEntityWithUser(id, &emailModels.EmailTemplate{}, true, "admin-1", "administrator")
+
+	requireClientError(t, err, 409)
 }
