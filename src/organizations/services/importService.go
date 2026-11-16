@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
@@ -175,7 +176,7 @@ func (s *importService) ImportOrganizationData(
 		// processUser. Generating one here for every row reset the password of
 		// every account that already existed, and handed the teacher a list of
 		// credentials that did not work.
-		userID, err := s.processUser(user, orgID, updateExisting, dryRun, verifyEmails)
+		userID, err := s.processUser(user, &org, ownerUserID, updateExisting, dryRun, verifyEmails)
 		if err != nil {
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 2, // +2 for header and 0-index
@@ -354,10 +355,44 @@ func (s *importService) ImportOrganizationData(
 	return response, nil
 }
 
+// checkImporterRank applies the role cap of the membership hooks: an importer
+// may update only members at or below their own rank. The owner and platform
+// administrators are not capped; the owner outranks every other importer.
+func (s *importService) checkImporterRank(org *organizationModels.Organization, importerID, targetID string, targetRole organizationModels.OrganizationMemberRole) error {
+	if importerID == org.OwnerUserID || isPlatformAdmin(importerID) {
+		return nil
+	}
+	outranks := errors.New("outranks the importer; skipped")
+	if targetID == org.OwnerUserID {
+		return outranks
+	}
+	importer, err := findMembership(s.db, org.ID, importerID)
+	if errors.Is(err, ErrMemberNotFound) {
+		return outranks
+	}
+	if err != nil {
+		return err
+	}
+	if !access.IsRoleAtLeast(string(importer.Role), string(targetRole)) {
+		return outranks
+	}
+	return nil
+}
+
+// isPlatformAdmin resolves the caller's platform roles the way the JWT resolver does.
+func isPlatformAdmin(userID string) bool {
+	if casdoor.Enforcer == nil {
+		return false
+	}
+	roles, err := casdoor.Enforcer.GetRolesForUser(userID)
+	return err == nil && access.IsAdmin(roles)
+}
+
 // processUser creates or updates a user in Casdoor. With verifyEmails the
 // address is marked verified as if the person had clicked the link: the
 // organization holds the class list and vouches for it.
-func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, updateExisting bool, dryRun bool, verifyEmails bool) (string, error) {
+func (s *importService) processUser(user *dto.UserImportRow, org *organizationModels.Organization, importerID string, updateExisting bool, dryRun bool, verifyEmails bool) (string, error) {
+	orgID := org.ID
 	if dryRun {
 		utils.Debug("[DRY-RUN] Would create/update user: %s", user.Email)
 		return "dry-run-user-id", nil
@@ -373,10 +408,14 @@ func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, up
 		}
 
 		// An import may only update accounts already attached to this organization (active or offboarded).
-		if _, err := findMembership(s.db, orgID, existingUser.Id); err != nil {
+		target, err := findMembership(s.db, orgID, existingUser.Id)
+		if err != nil {
 			if errors.Is(err, ErrMemberNotFound) {
 				return "", errors.New("not a member of this organization; skipped")
 			}
+			return "", err
+		}
+		if err := s.checkImporterRank(org, importerID, existingUser.Id, target.Role); err != nil {
 			return "", err
 		}
 
