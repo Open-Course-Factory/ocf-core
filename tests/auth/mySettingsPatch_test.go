@@ -31,7 +31,6 @@ import (
 	authServices "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
 	ems "soli/formations/src/entityManagement/entityManagementService"
-	controller "soli/formations/src/entityManagement/routes"
 )
 
 // defaultSettingKeys are the fields every settings-creation path fills with defaults.
@@ -243,38 +242,20 @@ func TestMySettings_SoftDeletedRow_GetAndPatchStillWork(t *testing.T) {
 	assert.Equal(t, "dark", body["theme"], "the PATCH must persist")
 }
 
-// A settings row created through the generic administrator POST must carry the
-// same defaults as every other creation path, unless that route is not offered.
-func TestUserSettings_GenericCreate_UnmountedOrUsesDefaultSettings(t *testing.T) {
+// Settings rows are only created by GetOrCreateUserSettings, so the generic
+// entity offers no create route and no role is granted POST.
+func TestUserSettings_Registration_HasNoGenericCreate(t *testing.T) {
 	registerUserSettingsForReadScope(t)
+
 	cfg := ems.GlobalEntityRegistrationService.GetSwaggerConfig("UserSetting")
-	adminMethods := ems.GlobalEntityRegistrationService.GetAllEntityRoles()["UserSetting"].Roles[string(authModels.Admin)]
-	if cfg == nil || cfg.Create == nil || !strings.Contains(adminMethods, http.MethodPost) {
-		return // no generic create route is offered, so no other defaults can be written
+	require.NotNil(t, cfg, "UserSetting must keep its generic routes")
+	assert.Nil(t, cfg.Create, "no generic POST /user-settings")
+
+	roles := ems.GlobalEntityRegistrationService.GetAllEntityRoles()["UserSetting"].Roles
+	require.NotEmpty(t, roles)
+	for role, methods := range roles {
+		assert.NotContains(t, methods, http.MethodPost, "role %s", role)
 	}
-
-	db := setupUserSettingsReadScopeDB(t)
-	gc := controller.NewGenericController(db, mocks.NewMockEnforcer())
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set("userId", "admin-user")
-		c.Set("userRoles", []string{string(authModels.Admin)})
-	})
-	r.POST("/api/v1/user-settings/", func(c *gin.Context) { gc.AddEntity(c) })
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/user-settings/", strings.NewReader(`{"user_id":"admin-created"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body.String())
-
-	var gotMap map[string]any
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &gotMap))
-	want := authModels.DefaultUserSettings("admin-created")
-	raw, err := json.Marshal(registration.UserSettingsToOutput(&want))
-	require.NoError(t, err)
-	var wantMap map[string]any
-	require.NoError(t, json.Unmarshal(raw, &wantMap))
-	assert.Equal(t, pickDefaults(wantMap), pickDefaults(gotMap))
 }
 
 // Signup over a leftover soft-deleted row must leave the user with a live settings row.
