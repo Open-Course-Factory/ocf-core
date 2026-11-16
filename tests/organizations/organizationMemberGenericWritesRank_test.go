@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"soli/formations/src/auth/access"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
 	controller "soli/formations/src/entityManagement/routes"
@@ -29,8 +30,8 @@ import (
 )
 
 // seedGenericWritesOrg seeds owner-1 (owner), manager-1 and manager-2
-// (managers), student-1 (member) and admin-1 (a member who is a platform
-// administrator), with the real organization hooks registered.
+// (managers), teacher-1 (teacher), student-1 (member) and admin-1 (a member who
+// is a platform administrator), with the real organization hooks registered.
 func seedGenericWritesOrg(t *testing.T) (*gorm.DB, uuid.UUID) {
 	t.Helper()
 	installMockEnforcer(t).GetRolesForUserFunc = adminRoleFor("admin-1")
@@ -39,6 +40,7 @@ func seedGenericWritesOrg(t *testing.T) (*gorm.DB, uuid.UUID) {
 		"owner-1":   models.OrgRoleOwner,
 		"manager-1": models.OrgRoleManager,
 		"manager-2": models.OrgRoleManager,
+		"teacher-1": models.OrganizationMemberRole(access.RoleTeacher),
 		"student-1": models.OrgRoleMember,
 		"admin-1":   models.OrgRoleMember,
 	})
@@ -127,6 +129,7 @@ func TestOrgMemberGenericPatch_RoleChange_FollowsTheRankRule(t *testing.T) {
 		{"manager promotes a member who is a platform administrator", "manager-1", "admin-1", models.OrgRoleManager, false},
 		{"owner demotes a manager", "owner-1", "manager-2", models.OrgRoleMember, true},
 		{"manager promotes a plain member", "manager-1", "student-1", models.OrgRoleManager, true},
+		{"manager demotes a teacher", "manager-1", "teacher-1", models.OrgRoleMember, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			db, orgID := seedGenericWritesOrg(t)
@@ -163,6 +166,7 @@ func TestOrgMemberGenericDelete_FollowsTheRankRule(t *testing.T) {
 		{"manager removes a member who is a platform administrator", "manager-1", "admin-1", false},
 		{"owner removes a manager", "owner-1", "manager-2", true},
 		{"manager removes a plain member", "manager-1", "student-1", true},
+		{"manager removes a teacher", "manager-1", "teacher-1", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			db, orgID := seedGenericWritesOrg(t)
@@ -259,6 +263,11 @@ func TestOrgMemberGenericRoutes_ActorKinds_StatusAndRow(t *testing.T) {
 		{"manager demotes self", "manager-1", platformMember, http.MethodPatch, "manager-1", `{"role":"member"}`, false, http.StatusForbidden, true},
 		{"manager removes self", "manager-1", platformMember, http.MethodDelete, "manager-1", ``, false, http.StatusForbidden, true},
 		{"plain member removes self", "student-1", platformMember, http.MethodDelete, "student-1", ``, false, http.StatusForbidden, true},
+		{"manager demotes a teacher", "manager-1", platformMember, http.MethodPatch, "teacher-1", `{"role":"member"}`, false, http.StatusNoContent, true},
+		{"manager removes a teacher", "manager-1", platformMember, http.MethodDelete, "teacher-1", ``, false, http.StatusNoContent, false},
+		{"teacher patches a plain member", "teacher-1", platformMember, http.MethodPatch, "student-1", `{"metadata":{"a":"b"}}`, false, http.StatusForbidden, true},
+		{"teacher removes a plain member", "teacher-1", platformMember, http.MethodDelete, "student-1", ``, false, http.StatusForbidden, true},
+		{"non-manager removes an offboarded member", "teacher-1", platformMember, http.MethodDelete, "student-1", ``, true, http.StatusForbidden, true},
 		{"platform administrator demotes a manager", "platform-admin", platformAdministrator, http.MethodPatch, "manager-2", `{"role":"member"}`, false, http.StatusNoContent, true},
 		{"platform administrator promotes a platform administrator member", "platform-admin", platformAdministrator, http.MethodPatch, "admin-1", `{"role":"manager"}`, false, http.StatusNoContent, true},
 		{"platform administrator removes a manager", "platform-admin", platformAdministrator, http.MethodDelete, "manager-2", ``, false, http.StatusNoContent, false},

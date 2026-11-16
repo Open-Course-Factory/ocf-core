@@ -435,15 +435,15 @@ func authorizeMemberWrite(ctx *hooks.HookContext, orgSvc services.OrganizationSe
 	return nil
 }
 
-// authorizeMemberRank applies the offboarding rank rule to the target row: the
-// caller must outrank the member. The hook's own answer on platform
+// authorizeMemberRank applies the shared rank rule to the target row: the
+// caller must strictly outrank the member's current role. The hook's own answer on platform
 // administrator is the actor's, so this check and authorizeMemberWrite agree.
 func authorizeMemberRank(ctx *hooks.HookContext, db *gorm.DB, member *models.OrganizationMember, action string) error {
 	var org models.Organization
 	if err := db.First(&org, "id = ?", member.OrganizationID).Error; err != nil {
 		return fmt.Errorf("organization not found: %w", err)
 	}
-	err := services.CheckActorOutranksMember(db, &org, ctx.UserID, ctx.IsAdmin(), member.UserID)
+	err := services.CheckActorOutranksMember(db, &org, ctx.UserID, ctx.IsAdmin(), member.UserID, services.ReachLowerRoles)
 	if errors.Is(err, services.ErrOutranksCaller) {
 		return utils.PermissionDeniedError(action, "organization")
 	}
@@ -671,15 +671,18 @@ func (h *OrganizationMemberDeletionHook) Execute(ctx *hooks.HookContext) error {
 		return utils.ErrCannotRemoveOwner("organization")
 	}
 
+	// 2. Check if requesting user can manage this organization; first, so a caller who
+	// cannot learns nothing about the row's state.
+	if err := authorizeMemberWrite(ctx, h.organizationService, member.OrganizationID, "remove members from"); err != nil {
+		return err
+	}
+
 	// The offboarding owns this row: reinstate or erase it, for everyone.
 	if member.IsOffboarded() {
 		return entityErrors.NewConflictError("an offboarded member is reinstated or erased, not removed")
 	}
 
-	// 2. Check if requesting user can manage this organization, and outranks the member.
-	if err := authorizeMemberWrite(ctx, h.organizationService, member.OrganizationID, "remove members from"); err != nil {
-		return err
-	}
+	// The caller must outrank the member.
 	if err := authorizeMemberRank(ctx, h.db, member, "remove members from"); err != nil {
 		return err
 	}

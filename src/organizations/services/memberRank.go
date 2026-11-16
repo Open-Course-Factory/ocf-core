@@ -50,19 +50,32 @@ func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organization
 // have a membership row in the organization (ErrMemberNotFound otherwise).
 // Platform administrators may act on any member. Any other actor may not act on
 // a platform administrator; the owner may act on any other member, other actors
-// only on plain members.
+// only on plain members (ReachPlainMembers).
 func newRankOnlyCheck(db *gorm.DB, org *organizationModels.Organization, actorID string) (func(targetID string) (*organizationModels.OrganizationMember, error), bool, error) {
 	actorIsAdmin, _ := isPlatformAdmin(actorID)
-	check, err := rankCheckAs(db, org, actorID, actorIsAdmin)
+	// Offboarding, reinstating, password regeneration and import change an account's
+	// access or credentials: they keep the narrow reach until the product widens it.
+	check, err := rankCheckAs(db, org, actorID, actorIsAdmin, ReachPlainMembers)
 	return check, actorIsAdmin, err
 }
 
-// CheckActorOutranksMember applies the rank rule of newRankOnlyCheck to one
-// target for a caller whose platform-administrator status the request already
-// resolved (the generic member hooks pass their HookContext's answer). Returns
-// ErrOutranksCaller when the target is out of the actor's reach.
-func CheckActorOutranksMember(db *gorm.DB, org *organizationModels.Organization, actorID string, actorIsAdmin bool, targetID string) error {
-	check, err := rankCheckAs(db, org, actorID, actorIsAdmin)
+// MemberReach is how far below the actor the rank rule lets a non-owner act.
+type MemberReach int
+
+const (
+	// ReachPlainMembers: a non-owner acts only on members holding the plain member role.
+	ReachPlainMembers MemberReach = iota
+	// ReachLowerRoles: a non-owner acts on any member whose role they strictly outrank.
+	ReachLowerRoles
+)
+
+// CheckActorOutranksMember applies the rank rule of newRankOnlyCheck, with the
+// given reach, to one target for a caller whose platform-administrator status
+// the request already resolved (the generic member hooks pass their
+// HookContext's answer). Returns ErrOutranksCaller when the target is out of
+// the actor's reach.
+func CheckActorOutranksMember(db *gorm.DB, org *organizationModels.Organization, actorID string, actorIsAdmin bool, targetID string, reach MemberReach) error {
+	check, err := rankCheckAs(db, org, actorID, actorIsAdmin, reach)
 	if err != nil {
 		return err
 	}
@@ -75,7 +88,7 @@ func CheckActorOutranksMember(db *gorm.DB, org *organizationModels.Organization,
 	return nil
 }
 
-func rankCheckAs(db *gorm.DB, org *organizationModels.Organization, actorID string, actorIsAdmin bool) (func(targetID string) (*organizationModels.OrganizationMember, error), error) {
+func rankCheckAs(db *gorm.DB, org *organizationModels.Organization, actorID string, actorIsAdmin bool, reach MemberReach) (func(targetID string) (*organizationModels.OrganizationMember, error), error) {
 	actorIsOwner := actorID == org.OwnerUserID
 	var actorRole organizationModels.OrganizationMemberRole
 	if !actorIsAdmin && !actorIsOwner {
@@ -100,11 +113,24 @@ func rankCheckAs(db *gorm.DB, org *organizationModels.Organization, actorID stri
 		if targetIsAdmin, err := isPlatformAdmin(targetID); err != nil || targetIsAdmin {
 			return target, errOutranksActor
 		}
-		if !actorIsOwner && (actorRole == "" || target.Role != organizationModels.OrgRoleMember) {
+		if !actorIsOwner && !withinReach(actorRole, target.Role, reach) {
 			return target, errOutranksActor
 		}
 		return target, nil
 	}, nil
+}
+
+// withinReach reports whether a non-owner holding actorRole may act on a member
+// holding targetRole; no membership (empty role) and unknown roles reach no one.
+func withinReach(actorRole, targetRole organizationModels.OrganizationMemberRole, reach MemberReach) bool {
+	if actorRole == "" {
+		return false
+	}
+	if reach == ReachPlainMembers {
+		return targetRole == organizationModels.OrgRoleMember
+	}
+	return access.IsKnownRole(string(targetRole)) &&
+		access.RolePriority(string(actorRole)) > access.RolePriority(string(targetRole))
 }
 
 // belongsToOrganizationAlone reports whether nothing outside orgID holds the
