@@ -64,10 +64,8 @@ stages:
 
 .test_job_base:
   stage: test
-  image:
-    name: golang:${GO_VERSION}
-    # The runner defaults to `always`, which re-pulls the image (~1 min) on every job.
-    pull_policy: [if-not-present]
+  # pull_policy if-not-present is refused by the runner (allowed_pull_policies: [always]).
+  image: golang:${GO_VERSION}
   variables:
     GOPATH: $CI_PROJECT_DIR/.go
     GOCACHE: $CI_PROJECT_DIR/.go/cache
