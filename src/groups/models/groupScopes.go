@@ -37,6 +37,11 @@ var LearnerRoles = []GroupMemberRole{
 	GroupMemberRoleMember,
 }
 
+// OrgLearnerRoles is LearnerRoles at organization level (organization_members
+// roles): a plain member only. Teacher, manager and owner are staff, as owner
+// and manager are in a class; kept here so both lines are drawn side by side.
+var OrgLearnerRoles = []string{access.RoleMember}
+
 // LearnerRoleScope narrows a query that already reads group_members under
 // `alias` to learner-role memberships, so no call site spells the role list out.
 // Raw-SQL callers, which no Scope can reach, bind LearnerRoles to their own
@@ -95,5 +100,13 @@ func ManagedByScope(callerUserID string) func(*gorm.DB) *gorm.DB {
 			// (access.GormMembershipChecker.ManagesGroupViaOrg).
 			callerUserID, true, access.RolesAtLeast(access.RoleManager),
 		)
+	}
+}
+
+// OrgLearnerRoleScope is LearnerRoleScope for a query reading
+// organization_members under `alias`.
+func OrgLearnerRoleScope(alias string) func(*gorm.DB) *gorm.DB {
+	return func(tx *gorm.DB) *gorm.DB {
+		return tx.Where(alias+".role IN ?", OrgLearnerRoles)
 	}
 }

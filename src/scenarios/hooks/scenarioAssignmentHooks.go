@@ -234,19 +234,26 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 		return nil
 	}
 
-	if assignment.GroupID == nil {
+	// Learners only, as ResetGroupScenarioSessions: a staff member's own run
+	// was not given by this assignment. A class assignment also names its
+	// organization, so the class is checked first.
+	var learners *gorm.DB
+	switch {
+	case assignment.GroupID != nil:
+		learners = h.db.Model(&groupModels.GroupMember{}).
+			Where("group_id = ? AND is_active = ?", *assignment.GroupID, true).
+			Scopes(groupModels.LearnerRoleScope("group_members"))
+	case assignment.OrganizationID != nil:
+		learners = h.db.Model(&orgModels.OrganizationMember{}).
+			Where("organization_id = ? AND is_active = ?", *assignment.OrganizationID, true).
+			Scopes(groupModels.OrgLearnerRoleScope("organization_members"))
+	default:
 		return nil
 	}
-
-	// Learners only, as ResetGroupScenarioSessions: a manager's or owner's own
-	// run was not given by this assignment.
 	var learnerIDs []string
-	if err := h.db.Model(&groupModels.GroupMember{}).
-		Where("group_id = ? AND is_active = ?", *assignment.GroupID, true).
-		Scopes(groupModels.LearnerRoleScope("group_members")).
-		Pluck("user_id", &learnerIDs).Error; err != nil {
-		slog.Warn("AfterDelete: failed to load group members",
-			"group_id", assignment.GroupID,
+	if err := learners.Pluck("user_id", &learnerIDs).Error; err != nil {
+		slog.Warn("AfterDelete: failed to load the assignment's learners",
+			"assignment_id", assignment.ID,
 			"error", err)
 		return nil
 	}
@@ -279,7 +286,7 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 		memberUserIDs, assignment.ScenarioID, false)
 	if err != nil {
 		slog.Warn("AfterDelete: failed to abandon sessions",
-			"group_id", assignment.GroupID,
+			"assignment_id", assignment.ID,
 			"scenario_id", assignment.ScenarioID,
 			"error", err)
 		return nil
@@ -288,7 +295,7 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 
 	if len(runs) > 0 {
 		slog.Info("AfterDelete: abandoned active sessions after assignment removal",
-			"group_id", assignment.GroupID,
+			"assignment_id", assignment.ID,
 			"scenario_id", assignment.ScenarioID,
 			"sessions_abandoned", len(runs))
 	}
