@@ -9,18 +9,23 @@ package organizations_tests
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
 
 	groupModels "soli/formations/src/groups/models"
+	orgController "soli/formations/src/organizations/controller"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -113,7 +118,7 @@ func TestCsvImport_UpdateExisting_AccountOutsideTheOrganizationIsUntouched(t *te
 	assert.False(t, identity.users["outsider"].EmailVerified)
 	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "outsider"), "the account is not enrolled")
 	assert.Equal(t, 0, resp.Summary.UsersUpdated)
-	assert.NotEmpty(t, resp.Errors, "the row is reported")
+	assert.NotEmpty(t, resp.Warnings, "the row is reported as skipped")
 }
 
 func TestCsvImport_UpdateExisting_ActiveMemberIsStillUpdated(t *testing.T) {
@@ -159,7 +164,7 @@ func TestCsvImport_UpdateExisting_MemberOfAnotherOrganizationIsUntouched(t *test
 	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "elsewhere"), "the account is not enrolled")
 	assert.Equal(t, int64(1), countMemberRows(t, db, otherOrgID, "elsewhere"))
 	assert.Equal(t, 0, resp.Summary.UsersUpdated)
-	assert.NotEmpty(t, resp.Errors)
+	assert.NotEmpty(t, resp.Warnings)
 }
 
 func TestCsvImport_UpdateExisting_DryRunWritesNothing(t *testing.T) {
@@ -205,7 +210,7 @@ func importAsUpdate(t *testing.T, importer string, importerRole models.Organizat
 		usersCSVWithColumns(t, "email,first_name,last_name,role,password", target+"@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
 		nil, nil, false, true, "", true)
 	require.NoError(t, err)
-	return identity, resp.Summary.UsersUpdated, len(resp.Errors)
+	return identity, resp.Summary.UsersUpdated, len(resp.Warnings) // a refused row is a skip
 }
 
 func TestCsvImport_UpdateExisting_MemberOutrankingTheImporterIsUntouched(t *testing.T) {
@@ -443,7 +448,7 @@ func TestCsvImport_UpdateExisting_PlatformAdministratorImporterLeavesAnAccountOu
 	assert.Empty(t, identity.columns)
 	assert.Equal(t, "Original", identity.users["outsider"].FirstName)
 	assert.Equal(t, 0, resp.Summary.UsersUpdated)
-	assert.NotEmpty(t, resp.Errors)
+	assert.NotEmpty(t, resp.Warnings)
 }
 
 // importOverMember runs an update_existing import by importer (owner-1,
@@ -482,8 +487,8 @@ func assertImportRefused(t *testing.T, identity *fakeIdentity, resp *dto.ImportO
 	assert.Empty(t, identity.columns)
 	assert.Equal(t, "Original", identity.users[target].FirstName)
 	assert.Equal(t, 0, resp.Summary.UsersUpdated)
-	assert.True(t, slices.ContainsFunc(resp.Errors, func(e dto.ImportError) bool { return strings.Contains(e.Message, reason) }),
-		"the row is reported with %q, errors=%+v", reason, resp.Errors)
+	assert.True(t, slices.ContainsFunc(resp.Warnings, func(w dto.ImportWarning) bool { return strings.Contains(w.Message, reason) }),
+		"the row is reported as skipped with %q, warnings=%+v", reason, resp.Warnings)
 }
 
 func TestCsvImport_UpdateExisting_ManagerImporterLeavesAnotherManagerUntouched(t *testing.T) {
@@ -522,4 +527,60 @@ func TestCsvImport_UpdateExisting_WithoutTheAloneCheckOwnerImporterUpdatesNoMemb
 	identity, resp := importOverMember(t, "owner-1", "student-a", models.OrgRoleMember, nil, nil)
 
 	assertImportRefused(t, identity, resp, "student-a", "elsewhere")
+}
+
+// A row refused on rank is a skip: the other rows were written and their
+// credentials generated, so the answer is not a 400 and the refusal is a warning.
+func TestImportController_UpdateExistingWithOneRowRefused_OKAndRefusalIsAWarning(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("manager-1", "manager-2")
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	seedMember(t, db, orgID, "manager-1", models.OrgRoleManager)
+	seedMember(t, db, orgID, "manager-2", models.OrgRoleManager)
+	importer := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity))
+	ctrl := orgController.NewOrganizationController(services.NewOrganizationService(db), importer, nil, nil, db)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("userId", "manager-1"); c.Next() })
+	router.POST("/organizations/:id/import", ctrl.ImportOrganizationData)
+
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	part, err := w.CreateFormFile("users", "users.csv")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("email,first_name,last_name,role\nnew-learner@example.com,Ada,Lovelace,member\nmanager-2@example.com,Grace,Hopper,member\n"))
+	require.NoError(t, err)
+	require.NoError(t, w.WriteField("update_existing", "true"))
+	require.NoError(t, w.Close())
+	req := httptest.NewRequest(http.MethodPost, "/organizations/"+orgID.String()+"/import", &body)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp dto.ImportOrganizationDataResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Empty(t, resp.Errors)
+	assert.True(t, slices.ContainsFunc(resp.Warnings, func(w dto.ImportWarning) bool {
+		return strings.Contains(w.Message, "manager-2@example.com") && strings.Contains(w.Message, "outranks")
+	}), "the refused row is reported as a warning, warnings=%+v", resp.Warnings)
+	require.Len(t, resp.Credentials, 1, "the created account's credentials reach the teacher")
+	assert.Equal(t, "new-learner@example.com", resp.Credentials[0].Email)
+	assert.Empty(t, identity.columns, "the refused account is not written")
+}
+
+func TestCsvImport_UpdateExisting_CreatedAccountCountsAsCreatedNotUpdated(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("student-a")
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+
+	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity)).ImportOrganizationData(orgID, "owner-1",
+		usersCSV(t, "new-learner@example.com,Ada,Lovelace,member\nstudent-a@example.com,Grace,Hopper,member\n"),
+		nil, nil, false, true, "", true)
+	require.NoError(t, err, "errors=%+v", resp.Errors)
+
+	assert.Equal(t, 1, resp.Summary.UsersCreated)
+	assert.Equal(t, 1, resp.Summary.UsersUpdated)
 }

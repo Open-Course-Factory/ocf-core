@@ -196,11 +196,10 @@ func TestOrgMemberUpdateAuth_ChangingOwnerRole_Denied(t *testing.T) {
 		"changing the role of an organization owner must be denied, mirroring the cannot-remove-owner guard")
 }
 
-// runMemberStatusPatchAuth drives a BeforeUpdate whose patch touches only is_active (no
+// runMemberStatusPatchAuth drives a BeforeUpdate whose patch touches only metadata (no
 // "role" key) through the registry and returns the error the update path would surface. This
-// is the role-absent path where the manage check is the SOLE barrier: the role cap and the
-// owner guard both sit behind a role-change check and never run, so nothing else stands
-// between a plain member and deactivating an arbitrary member.
+// is the role-absent path: the role cap and the owner guard never run. is_active is not
+// patchable here (offboard / reinstate own it).
 func runMemberStatusPatchAuth(
 	t *testing.T,
 	orgID uuid.UUID,
@@ -220,7 +219,7 @@ func runMemberStatusPatchAuth(
 			UserID:         targetUserID,
 			Role:           oldRole,
 		},
-		NewEntity: map[string]any{"is_active": false}, // no "role" key: role-absent patch
+		NewEntity: map[string]any{"metadata": map[string]any{"note": "x"}}, // no "role" key: role-absent patch
 		UserID:    actorID,
 		UserRoles: actorPlatformRoles,
 	}
@@ -228,10 +227,8 @@ func runMemberStatusPatchAuth(
 }
 
 // TestOrgMemberUpdateAuth_PlainMemberActor_RoleAbsentPatch_Denied — a plain org member must
-// not be able to change another member's status (is_active) via a role-absent patch. This
-// isolates the manage check: on the role-absent path the role cap and owner guard do not run,
-// so the manage check is the only barrier. Without it, any member could deactivate any other
-// member. Green against current production; the manage-check mutation must flip it red.
+// not be able to patch another member via a role-absent patch, where the role cap and the
+// owner guard do not run.
 func TestOrgMemberUpdateAuth_PlainMemberActor_RoleAbsentPatch_Denied(t *testing.T) {
 	const ownerID, actorID, targetID = "org-owner-account", "plain-member-actor", "target-member"
 
@@ -246,12 +243,12 @@ func TestOrgMemberUpdateAuth_PlainMemberActor_RoleAbsentPatch_Denied(t *testing.
 
 	err := runMemberStatusPatchAuth(t, orgID, targetID, models.OrgRoleMember, actorID, platformMember)
 	require.Error(t, err,
-		"a plain org member must not be able to deactivate another member via a role-absent patch; the manage check is the sole barrier on this path")
+		"a plain org member must not be able to patch another member via a role-absent patch")
 }
 
-// TestOrgMemberUpdateAuth_ManagerActor_RoleAbsentPatch_Allowed — a manager may change a
-// member's status via a role-absent patch. Pins the early-return path (manage check passes,
-// no role change to cap). Green now and must stay green.
+// TestOrgMemberUpdateAuth_ManagerActor_RoleAbsentPatch_Allowed — a manager may patch a plain
+// member's metadata via a role-absent patch (the manager outranks the target, no role change
+// to cap).
 func TestOrgMemberUpdateAuth_ManagerActor_RoleAbsentPatch_Allowed(t *testing.T) {
 	const ownerID, actorID, targetID = "org-owner-account", "manager-actor", "target-member"
 
@@ -266,7 +263,7 @@ func TestOrgMemberUpdateAuth_ManagerActor_RoleAbsentPatch_Allowed(t *testing.T) 
 
 	err := runMemberStatusPatchAuth(t, orgID, targetID, models.OrgRoleMember, actorID, platformMember)
 	require.NoError(t, err,
-		"an org manager must be allowed to change a member's status via a role-absent patch")
+		"an org manager must be allowed to patch a plain member's metadata via a role-absent patch")
 }
 
 // TestOrgMemberRegistration_MemberRoleIncludesPatch — Layer-1 pin asserted against the REAL

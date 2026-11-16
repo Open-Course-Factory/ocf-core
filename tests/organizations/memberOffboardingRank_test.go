@@ -609,3 +609,27 @@ func TestReinstate_AdministratorUnblocksThenBlocksAfterOffboarding_AccountStillB
 	assert.True(t, loadMember(t, db, orgID, "student-1").IsActive)
 	assert.True(t, identity.forbidden["student-1"], "the administrator's block is not the organization's to lift")
 }
+
+func TestReinstate_OffboardedByTwoOrganizations_ReinstatingTheFirstLiftsTheSecondsBlock(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("owner-1", "owner-2", "student-1")
+	orgA := seedTeamOrg(t, db, "owner-1", new(10))
+	orgB := seedTeamOrg(t, db, "owner-2", new(10))
+	seedMember(t, db, orgA, "student-1", models.OrgRoleMember)
+	seedMember(t, db, orgB, "student-1", models.OrgRoleMember)
+	svc := newOffboardingService(db, identity)
+
+	require.NoError(t, svc.Offboard(orgA, []string{"student-1"}, "owner-1"))
+	require.False(t, identity.forbidden["student-1"], "still active in B: A does not block")
+	require.NoError(t, svc.Offboard(orgB, []string{"student-1"}, "owner-2"))
+	require.True(t, identity.forbidden["student-1"], "B is now the only organization: B blocks")
+	require.True(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding)
+
+	require.NoError(t, svc.Reinstate(orgA, "student-1", "owner-1"))
+
+	assert.True(t, loadMember(t, db, orgA, "student-1").IsActive)
+	assert.False(t, identity.forbidden["student-1"], "the account belongs to A again: B's offboarding block no longer stands")
+	assert.False(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding, "B's stamp no longer describes the account's block")
+	assert.NotNil(t, loadMember(t, db, orgB, "student-1").LeftAt, "B's membership stays offboarded")
+}
