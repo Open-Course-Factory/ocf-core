@@ -73,12 +73,15 @@ func (c *GormMembershipChecker) CreatorKeepsAuthority(orgID *uuid.UUID) (bool, e
 }
 
 // CheckOrgRole verifies whether a user has at least the given role in an organization.
-// Returns false (not an error) if the user is not a member or is inactive.
+// Returns false (not an error) if the user is not a member, is inactive or was
+// removed, or if the organization is deleted or missing.
 func (c *GormMembershipChecker) CheckOrgRole(orgID string, userID string, minRole string) (bool, error) {
 	var role string
-	result := c.db.Table("organization_members").
-		Select("role").
-		Where("organization_id = ? AND user_id = ? AND is_active = ? AND deleted_at IS NULL", orgID, userID, true).
+	// A deleted or missing organization grants no role (as in ManagesGroupViaOrg).
+	result := c.db.Table("organization_members om").
+		Select("om.role").
+		Joins("JOIN organizations o ON o.id = om.organization_id AND o.deleted_at IS NULL").
+		Where("om.organization_id = ? AND om.user_id = ? AND om.is_active = ? AND om.deleted_at IS NULL", orgID, userID, true).
 		Scan(&role)
 
 	if result.Error != nil {

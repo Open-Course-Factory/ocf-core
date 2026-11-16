@@ -183,7 +183,7 @@ func (s *quotaService) GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 	var currentCourses int64
 	s.db.Table("courses").
 		Joins("JOIN organization_members ON organization_members.user_id = courses.owner_user_id").
-		Where("organization_members.organization_id = ? AND courses.deleted_at IS NULL", orgID).
+		Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL AND courses.deleted_at IS NULL", orgID).
 		Count(&currentCourses)
 
 	return &OrganizationLimits{

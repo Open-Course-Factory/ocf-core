@@ -38,7 +38,7 @@ func BuildUserListings(users []*casdoorsdk.User, db *gorm.DB, isAdminFn func(str
 		if err := db.Table("organization_members AS om").
 			Select("om.organization_id AS org_id, o.name AS name, om.role AS role, om.id AS member_id").
 			Joins("JOIN organizations o ON o.id = om.organization_id").
-			Where("om.user_id = ? AND om.is_active = ?", u.Id, true).
+			Where("om.user_id = ? AND om.is_active = ? AND om.deleted_at IS NULL", u.Id, true).
 			Scan(&orgRows).Error; err != nil {
 			return nil, err
 		}
@@ -61,7 +61,7 @@ func BuildUserListings(users []*casdoorsdk.User, db *gorm.DB, isAdminFn func(str
 		if err := db.Table("group_members AS gm").
 			Select("gm.group_id AS group_id, cg.name AS name, gm.role AS role, gm.id AS member_id").
 			Joins("JOIN class_groups cg ON cg.id = gm.group_id").
-			Where("gm.user_id = ? AND gm.is_active = ?", u.Id, true).
+			Where("gm.user_id = ? AND gm.is_active = ? AND gm.deleted_at IS NULL", u.Id, true).
 			Scan(&groupRows).Error; err != nil {
 			return nil, err
 		}

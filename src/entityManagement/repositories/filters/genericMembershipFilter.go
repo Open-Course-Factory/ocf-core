@@ -104,6 +104,7 @@ func (f *GenericMembershipFilter) Apply(
 		}
 		rolesPlaceholder := strings.Join(placeholders, ", ")
 
+		// Only a live organization's managers see its entities (as ManagesGroupViaOrg).
 		// Resolve organization_id either directly on the entity table or via
 		// a parent table (for entities like group_members that inherit org
 		// scoping from a parent class_groups row).
@@ -113,6 +114,7 @@ func (f *GenericMembershipFilter) Apply(
 			orgAccessCondition = fmt.Sprintf(`
 				EXISTS (
 					SELECT 1 FROM organization_members om
+					JOIN organizations o ON o.id = om.organization_id AND o.deleted_at IS NULL
 					JOIN %s p ON p.%s = %s.%s
 					WHERE om.organization_id = p.%s
 					AND p.deleted_at IS NULL
@@ -130,6 +132,7 @@ func (f *GenericMembershipFilter) Apply(
 			orgAccessCondition = fmt.Sprintf(`
 				EXISTS (
 					SELECT 1 FROM organization_members om
+					JOIN organizations o ON o.id = om.organization_id AND o.deleted_at IS NULL
 					WHERE om.organization_id = %s.organization_id
 					AND om.user_id = ?
 					AND om.is_active = true

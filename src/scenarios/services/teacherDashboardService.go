@@ -211,7 +211,7 @@ func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UU
 	countErr := s.db.Raw(`
 		SELECT COUNT(*)
 		FROM scenario_sessions ss
-		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
+		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true AND gm.deleted_at IS NULL
 		WHERE ss.scenario_id = ? AND ss.is_preview = false
 	`, groupID, scenarioID).Scan(&total).Error
 	if countErr != nil {
@@ -225,7 +225,7 @@ func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UU
 		       (SELECT COUNT(*) FROM scenario_step_progress WHERE session_id = ss.id AND status = 'completed') as completed_steps,
 		       ` + sessionHintsUsedExpr + ` as total_hints_used
 		FROM scenario_sessions ss
-		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
+		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true AND gm.deleted_at IS NULL
 		WHERE ss.scenario_id = ? AND ss.is_preview = false
 		ORDER BY ss.started_at DESC
 	`

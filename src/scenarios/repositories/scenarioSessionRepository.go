@@ -41,7 +41,7 @@ func (r *ScenarioSessionRepository) GetSessionAggregatesForGroupScenario(groupID
 		Select("scenario_sessions.status", "scenario_sessions.grade",
 			"scenario_sessions.started_at", "scenario_sessions.completed_at").
 		Joins("JOIN group_members ON group_members.user_id = scenario_sessions.user_id"+
-			" AND group_members.group_id = ? AND group_members.is_active = ?", groupID, true).
+			" AND group_members.group_id = ? AND group_members.is_active = ? AND group_members.deleted_at IS NULL", groupID, true).
 		Where("scenario_sessions.scenario_id = ?", scenarioID).
 		Where("scenario_sessions.is_preview = ?", false).
 		Scan(&rows).Error
