@@ -21,9 +21,12 @@ func RegisterGeneration(service *ems.EntityRegistrationService) {
 				},
 				DtoToModel: func(input dto.GenerationInput) *models.Generation {
 					gen := &models.Generation{
-						Format:   input.Format,
-						Name:     input.Name,
-						CourseID: uuid.MustParse(input.CourseId),
+						Format: input.Format,
+						Name:   input.Name,
+					}
+					// A malformed id leaves CourseID nil; generation_course_required rejects it.
+					if courseId, err := uuid.Parse(input.CourseId); err == nil {
+						gen.CourseID = courseId
 					}
 					themeId, errTheme := uuid.Parse(input.ThemeId)
 					if errTheme == nil {

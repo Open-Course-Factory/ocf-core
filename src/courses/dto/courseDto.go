@@ -9,7 +9,7 @@ type GenerateCourseOutput struct {
 }
 
 type GenerateCourseInput struct {
-	GenerationId string `binding:"required" json:"generationId"`
+	GenerationId string `binding:"required,uuid" json:"generationId"`
 	// CourseId     string `binding:"required" json:"courseId"`
 	// ThemeId      string `binding:"required" json:"themeId"`
 	Format      *int   `binding:"required" json:"format"`

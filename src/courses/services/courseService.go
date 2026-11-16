@@ -91,14 +91,18 @@ func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCo
 	ctx := context.Background()
 
 	// 1. Récupérer la génération
-	generationEntity, err := c.genericService.GetEntity(uuid.MustParse(generateCourseInputDto.GenerationId), models.Generation{}, "Generation", nil)
+	generationUUID, err := uuid.Parse(generateCourseInputDto.GenerationId)
+	if err != nil {
+		return nil, fmt.Errorf("invalid generation id: %w", err)
+	}
+	generationEntity, err := c.genericService.GetEntity(generationUUID, models.Generation{}, "Generation", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get generation: %w", err)
 	}
 	generation := generationEntity.(*models.Generation)
 
 	// 2. Récupérer le cours
-	courseEntity, err := c.genericService.GetEntity(uuid.MustParse(generation.CourseID.String()), models.Course{}, "Course", nil)
+	courseEntity, err := c.genericService.GetEntity(generation.CourseID, models.Course{}, "Course", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get course: %w", err)
 	}
@@ -149,13 +153,17 @@ func (c courseService) CheckGenerationStatus(generationID string) (*dto.Generati
 	ctx := context.Background()
 
 	// 1. Récupérer la génération
-	generationEntity, err := c.genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation", nil)
+	generationUUID, err := uuid.Parse(generationID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid generation id: %w", err)
+	}
+	generationEntity, err := c.genericService.GetEntity(generationUUID, models.Generation{}, "Generation", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get generation: %w", err)
 	}
 	generation := generationEntity.(*models.Generation)
 
-	if generation.ID != uuid.MustParse(generationID) {
+	if generation.ID != generationUUID {
 		return nil, fmt.Errorf("failed to get generation: id not found")
 	}
 
@@ -210,7 +218,11 @@ func (c courseService) DownloadGenerationResults(generationID string) ([]byte, e
 	ctx := context.Background()
 
 	// 1. Récupérer la génération
-	generationEntity, err := c.genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation", nil)
+	generationUUID, err := uuid.Parse(generationID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid generation id: %w", err)
+	}
+	generationEntity, err := c.genericService.GetEntity(generationUUID, models.Generation{}, "Generation", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get generation: %w", err)
 	}
@@ -228,7 +240,11 @@ func (c courseService) DownloadGenerationResults(generationID string) ([]byte, e
 // RetryGeneration relance une génération échouée
 func (c courseService) RetryGeneration(generationID string) (*dto.AsyncGenerationOutput, error) {
 	// 1. Récupérer la génération
-	generationEntity, err := c.genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation", nil)
+	generationUUID, err := uuid.Parse(generationID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid generation id: %w", err)
+	}
+	generationEntity, err := c.genericService.GetEntity(generationUUID, models.Generation{}, "Generation", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get generation: %w", err)
 	}

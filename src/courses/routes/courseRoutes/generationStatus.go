@@ -7,6 +7,7 @@ import (
 	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // GetGenerationStatus godoc
@@ -28,8 +29,8 @@ import (
 func (c courseController) GetGenerationStatus(ctx *gin.Context) {
 	generationID := ctx.Param("id")
 
-	if generationID == "" {
-		errors.Respond(ctx, http.StatusBadRequest, "ID de génération requis")
+	if _, err := uuid.Parse(generationID); err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, "ID de génération invalide")
 		return
 	}
 
@@ -62,8 +63,8 @@ func (c courseController) GetGenerationStatus(ctx *gin.Context) {
 func (c courseController) DownloadGenerationResults(ctx *gin.Context) {
 	generationID := ctx.Param("id")
 
-	if generationID == "" {
-		errors.Respond(ctx, http.StatusBadRequest, "ID de génération requis")
+	if _, err := uuid.Parse(generationID); err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, "ID de génération invalide")
 		return
 	}
 
@@ -115,8 +116,8 @@ func (c courseController) DownloadGenerationResults(ctx *gin.Context) {
 func (c courseController) RetryGeneration(ctx *gin.Context) {
 	generationID := ctx.Param("id")
 
-	if generationID == "" {
-		errors.Respond(ctx, http.StatusBadRequest, "ID de génération requis")
+	if _, err := uuid.Parse(generationID); err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, "ID de génération invalide")
 		return
 	}
 
