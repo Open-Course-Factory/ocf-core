@@ -123,7 +123,9 @@ func TestTerminalRename_OtherMember_CannotRename(t *testing.T) {
 
 	w := patchTerminalAs(r, "intruder-1", term.ID.String(), `{"name":"pwned"}`)
 
-	assert.Contains(t, []int{http.StatusForbidden, http.StatusNotFound}, w.Code, "body=%s", w.Body.String())
+	// 403 here vs 404 for a missing id: the refusal reveals that the id exists
+	// (low value, ids are random UUIDs).
+	assert.Equal(t, http.StatusForbidden, w.Code, "body=%s", w.Body.String())
 	assert.Equal(t, "Test Terminal", reloadTerminal(t, db, term.ID.String()).Name)
 }
 
@@ -261,4 +263,10 @@ func TestTerminalRename_MemberPostRoutes_StillAllowedAtLayer1(t *testing.T) {
 	ok, err := casdoor.Enforcer.Enforce(string(authModels.Member), "/api/v1/terminals", http.MethodPost)
 	require.NoError(t, err)
 	assert.False(t, ok, "the generic create stays closed to members: sessions start through start-composed-session")
+
+	// An upgraded database keeps the old member (GET|POST) policy row, so what
+	// actually closes the generic create is that no POST route is mounted.
+	cfg := ems.GlobalEntityRegistrationService.GetSwaggerConfig("Terminal")
+	require.NotNil(t, cfg)
+	assert.Nil(t, cfg.Create, "Terminal must not mount a generic POST /terminals")
 }
