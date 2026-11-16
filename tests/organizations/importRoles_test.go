@@ -51,3 +51,32 @@ func TestCsvImport_PlatformRole_NeverGrantedOnEnforcer(t *testing.T) {
 		})
 	}
 }
+
+// Control: an accepted csv role creates the account, which gets only the default roles.
+func TestCsvImport_AcceptedRole_AddsOnlyDefaultGroupings(t *testing.T) {
+	for _, role := range []string{"trainer", "supervisor"} {
+		t.Run(role, func(t *testing.T) {
+			enforcer := installMockEnforcer(t)
+			db := newOffboardingDB(t)
+			identity := newFakeIdentity()
+			orgID := seedTeamOrg(t, db, "owner-1", new(10))
+			seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
+
+			importer := services.NewImportService(db, identity, newOffboardingService(db, identity))
+			resp, err := importer.ImportOrganizationData(orgID, "owner-1",
+				usersCSV(t, "ada@example.com,Ada,Lovelace,"+role+"\n"), nil, nil, false, false, "", true)
+			require.NoError(t, err)
+			require.Equal(t, 1, resp.Summary.UsersCreated)
+
+			require.NotEmpty(t, enforcer.AddGroupingPolicyCalls)
+			granted := map[string]bool{}
+			for _, call := range enforcer.AddGroupingPolicyCalls {
+				r, _ := call[1].(string)
+				granted[r] = true
+			}
+			assert.True(t, granted["student"], "default role student, got %v", enforcer.AddGroupingPolicyCalls)
+			assert.True(t, granted["member"], "default role member, got %v", enforcer.AddGroupingPolicyCalls)
+			assert.False(t, granted[role], "the csv role must not be granted, got %v", enforcer.AddGroupingPolicyCalls)
+		})
+	}
+}
