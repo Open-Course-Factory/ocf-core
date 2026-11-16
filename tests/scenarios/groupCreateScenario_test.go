@@ -193,8 +193,7 @@ func TestGroupCreateScenario_BadRequest_InvalidGroupID(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
-// The org and group create handlers build the model by hand; they must keep
-// the locale fields the generic converter keeps (#592).
+// Org and group create must keep the locale fields (#592).
 func TestScopedCreateScenario_WithLocales_PersistsLocales(t *testing.T) {
 	for _, scope := range []string{"organization", "group"} {
 		t.Run(scope, func(t *testing.T) {
