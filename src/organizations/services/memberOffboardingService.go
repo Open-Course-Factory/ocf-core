@@ -19,6 +19,7 @@ var (
 	ErrNoMembersSelected   = errors.New("no members selected")
 	ErrMemberNotFound      = errors.New("organization member not found")
 	ErrCannotOffboardOwner = errors.New("the organization owner cannot be offboarded")
+	ErrOutranksCaller      = errors.New("a member who outranks the caller cannot be offboarded")
 	ErrMemberNotOffboarded = errors.New("member is not offboarded; erasure is the end of offboarding")
 )
 
@@ -46,8 +47,9 @@ type LicenceRevoker interface {
 // IS reinstating, so both must share one helper.
 type MemberOffboardingService interface {
 	// Offboard deactivates the memberships, stamps left_at / scheduled_erasure_at
-	// from the organization's retention, forbids the accounts, terminates their
-	// running terminals and releases their assigned seats.
+	// from the organization's retention, forbids the accounts that belong to this
+	// organization alone, terminates their running terminals and releases their
+	// assigned seats. A target who outranks actorID refuses the whole call.
 	Offboard(orgID uuid.UUID, userIDs []string, actorID string) error
 	// Reinstate reverses Offboard: the row is active again with both stamps
 	// cleared and the account may sign in.
@@ -64,10 +66,11 @@ type memberOffboardingService struct {
 	accounts AccountForbidder
 	licences LicenceRevoker
 	eraser   DepartedMemberEraser
+	alone    OrganizationAloneChecker
 }
 
-func NewMemberOffboardingService(db *gorm.DB, accounts AccountForbidder, licences LicenceRevoker, eraser DepartedMemberEraser) MemberOffboardingService {
-	return &memberOffboardingService{db: db, accounts: accounts, licences: licences, eraser: eraser}
+func NewMemberOffboardingService(db *gorm.DB, accounts AccountForbidder, licences LicenceRevoker, eraser DepartedMemberEraser, alone OrganizationAloneChecker) MemberOffboardingService {
+	return &memberOffboardingService{db: db, accounts: accounts, licences: licences, eraser: eraser, alone: alone}
 }
 
 func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, actorID string) error {
@@ -79,13 +82,32 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 		return fmt.Errorf("organization not found: %w", err)
 	}
 
+	checkRank, _, err := newRankOnlyCheck(s.db, &org, actorID)
+	if err != nil {
+		return err
+	}
+	forbid := make(map[string]bool, len(userIDs))
+	for _, userID := range userIDs {
+		if _, err := checkRank(userID); err != nil {
+			if errors.Is(err, errOutranksActor) {
+				return fmt.Errorf("%w: %s", ErrOutranksCaller, userID)
+			}
+			return err
+		}
+		// An unknown answer does not forbid: blocking a whole account is the harmful direction.
+		forbid[userID] = belongsToOrganizationAlone(s.alone, org.ID, userID)
+	}
+
 	now := time.Now()
 	erasureAt := now.AddDate(0, 0, org.EffectiveRetentionDays())
 	var forbidden []string
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		for _, userID := range userIDs {
 			if err := s.offboardOne(tx, &org, userID, now, erasureAt); err != nil {
 				return err
+			}
+			if !forbid[userID] {
+				continue
 			}
 			if err := s.accounts.SetForbidden(userID, true); err != nil {
 				return fmt.Errorf("failed to forbid account %s: %w", userID, err)

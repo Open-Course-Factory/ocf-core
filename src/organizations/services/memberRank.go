@@ -24,20 +24,40 @@ type OrganizationAloneChecker interface {
 }
 
 // newRankCheck resolves the actor once and returns the check for one target,
-// with the target's membership when it has one: the target must have a
-// membership row in the organization (ErrMemberNotFound otherwise). Platform
-// administrators may act on any member. Any other actor may not act on a
-// platform administrator nor on an account that also belongs elsewhere (a nil
-// alone check refuses); the owner may act on any other member, other actors
-// only on plain members.
+// with the target's membership when it has one: the rank rule of
+// newRankOnlyCheck, then, for an actor who is not a platform administrator, the
+// target must belong to this organization alone (errBelongsElsewhere otherwise).
 func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organizationModels.Organization, actorID string) (func(targetID string) (*organizationModels.OrganizationMember, error), error) {
+	checkRank, actorIsAdmin, err := newRankOnlyCheck(db, org, actorID)
+	if err != nil {
+		return nil, err
+	}
+	return func(targetID string) (*organizationModels.OrganizationMember, error) {
+		target, err := checkRank(targetID)
+		if err != nil || actorIsAdmin {
+			return target, err
+		}
+		if !belongsToOrganizationAlone(alone, org.ID, targetID) {
+			return target, errBelongsElsewhere
+		}
+		return target, nil
+	}, nil
+}
+
+// newRankOnlyCheck resolves the actor once and returns the rank check for one
+// target, and whether the actor is a platform administrator: the target must
+// have a membership row in the organization (ErrMemberNotFound otherwise).
+// Platform administrators may act on any member. Any other actor may not act on
+// a platform administrator; the owner may act on any other member, other actors
+// only on plain members.
+func newRankOnlyCheck(db *gorm.DB, org *organizationModels.Organization, actorID string) (func(targetID string) (*organizationModels.OrganizationMember, error), bool, error) {
 	actorIsAdmin, _ := isPlatformAdmin(actorID)
 	actorIsOwner := actorID == org.OwnerUserID
 	var actorRole organizationModels.OrganizationMemberRole
 	if !actorIsAdmin && !actorIsOwner {
 		actor, err := findMembership(db, org.ID, actorID)
 		if err != nil && !errors.Is(err, ErrMemberNotFound) {
-			return nil, err
+			return nil, false, err
 		}
 		if actor != nil {
 			actorRole = actor.Role
@@ -59,17 +79,23 @@ func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organization
 		if !actorIsOwner && (actorRole == "" || target.Role != organizationModels.OrgRoleMember) {
 			return target, errOutranksActor
 		}
-		if alone == nil {
-			utils.Warn("No organization-alone check wired; refusing user %s in %s", targetID, org.ID)
-			return target, errBelongsElsewhere
-		}
-		// The cause stays in the log: it describes another person's account.
-		if err := alone.CheckBelongsToOrganizationAlone(org.ID, targetID); err != nil {
-			utils.Debug("User %s refused in %s: %v", targetID, org.ID, err)
-			return target, errBelongsElsewhere
-		}
 		return target, nil
-	}, nil
+	}, actorIsAdmin, nil
+}
+
+// belongsToOrganizationAlone reports whether nothing outside orgID holds the
+// account; an unknown (nil check or failed lookup) reports false.
+func belongsToOrganizationAlone(alone OrganizationAloneChecker, orgID uuid.UUID, userID string) bool {
+	if alone == nil {
+		utils.Warn("No organization-alone check wired; treating user %s in %s as belonging elsewhere", userID, orgID)
+		return false
+	}
+	// The cause stays in the log: it describes another person's account.
+	if err := alone.CheckBelongsToOrganizationAlone(orgID, userID); err != nil {
+		utils.Debug("User %s belongs elsewhere than %s: %v", userID, orgID, err)
+		return false
+	}
+	return true
 }
 
 // isPlatformAdmin resolves the caller's platform roles the way the JWT resolver does.

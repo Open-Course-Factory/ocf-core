@@ -130,6 +130,8 @@ func offboardingErrorResponse(err error) (int, string) {
 		return http.StatusBadRequest, err.Error()
 	case goerrors.Is(err, services.ErrMemberNotFound):
 		return http.StatusNotFound, "Organization member not found"
+	case goerrors.Is(err, services.ErrOutranksCaller):
+		return http.StatusForbidden, err.Error()
 	case goerrors.Is(err, services.ErrCannotOffboardOwner), goerrors.Is(err, services.ErrMemberNotOffboarded):
 		return http.StatusConflict, err.Error()
 	default:

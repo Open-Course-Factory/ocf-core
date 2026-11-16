@@ -321,7 +321,7 @@ func newDeletionService(db *gorm.DB, identity *fakeIdentity) authServices.UserDe
 }
 
 func newOffboardingService(db *gorm.DB, identity *fakeIdentity) services.MemberOffboardingService {
-	return services.NewMemberOffboardingService(db, identity, paymentServices.NewBulkLicenseService(db), newDeletionService(db, identity))
+	return services.NewMemberOffboardingService(db, identity, paymentServices.NewBulkLicenseService(db), newDeletionService(db, identity), newDeletionService(db, identity))
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +329,7 @@ func newOffboardingService(db *gorm.DB, identity *fakeIdentity) services.MemberO
 // ---------------------------------------------------------------------------
 
 func TestOffboardMembers_SetsLeftAtInactiveAndScheduledErasureFromOrgRetention(t *testing.T) {
+	installMockEnforcer(t)
 	t.Setenv("OCF_DEFAULT_RETENTION_DAYS", "")
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a", "student-b")
@@ -359,6 +360,7 @@ func TestOffboardMembers_SetsLeftAtInactiveAndScheduledErasureFromOrgRetention(t
 }
 
 func TestOffboardMembers_ForbidsTheCasdoorAccount_WithColumnList(t *testing.T) {
+	installMockEnforcer(t)
 	db := newOffboardingDB(t)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
@@ -389,7 +391,7 @@ func TestOffboardMembers_ForbidsTheCasdoorAccount_WithColumnList(t *testing.T) {
 	t.Cleanup(authServices.SwapCasdoorTokenRevoker(func(*casdoorsdk.User) error { return nil }))
 
 	realClient := authServices.NewCasdoorUserClient()
-	svc := services.NewMemberOffboardingService(db, realClient, paymentServices.NewBulkLicenseService(db), nil)
+	svc := services.NewMemberOffboardingService(db, realClient, paymentServices.NewBulkLicenseService(db), nil, newDeletionService(db, newFakeIdentity()))
 
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
 	require.NotNil(t, writtenUser)
@@ -412,6 +414,7 @@ func TestOffboardMembers_ForbidsTheCasdoorAccount_WithColumnList(t *testing.T) {
 }
 
 func TestOffboardedMember_GetsNoEffectivePlanFromTheOrg(t *testing.T) {
+	installMockEnforcer(t)
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
@@ -433,6 +436,7 @@ func TestOffboardedMember_GetsNoEffectivePlanFromTheOrg(t *testing.T) {
 }
 
 func TestOffboardedMember_TerminalsAreTerminated_AndLicenceReleased(t *testing.T) {
+	installMockEnforcer(t)
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
@@ -459,6 +463,7 @@ func TestOffboardedMember_TerminalsAreTerminated_AndLicenceReleased(t *testing.T
 }
 
 func TestOffboardedMember_GroupRosterRowsAreUntouched(t *testing.T) {
+	installMockEnforcer(t)
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
@@ -478,6 +483,7 @@ func TestOffboardedMember_GroupRosterRowsAreUntouched(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestReinstate_ClearsBothFieldsAndUnforbidsTheAccount(t *testing.T) {
+	installMockEnforcer(t)
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
@@ -716,6 +722,7 @@ func TestEraseDepartedMember_WaitsWhenTheArchiveCannotBeSaved(t *testing.T) {
 }
 
 func TestEraseNow_RunsTheSharedCascade(t *testing.T) {
+	installMockEnforcer(t)
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
@@ -756,6 +763,7 @@ func TestEraseNow_RunsTheSharedCascade(t *testing.T) {
 }
 
 func TestEraseNow_RefusedWhileActiveElsewhere_AndListedAsBlocked(t *testing.T) {
+	installMockEnforcer(t)
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("student-a")
 	svc := newOffboardingService(db, identity)
@@ -775,6 +783,7 @@ func TestEraseNow_RefusedWhileActiveElsewhere_AndListedAsBlocked(t *testing.T) {
 }
 
 func TestOffboard_EmptySelectionAndOwner_AreRefused(t *testing.T) {
+	installMockEnforcer(t)
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("owner-1", "student-a")
 	svc := newOffboardingService(db, identity)
