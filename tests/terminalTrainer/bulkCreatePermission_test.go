@@ -9,6 +9,7 @@ import (
 	"time"
 
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 	terminalController "soli/formations/src/terminalTrainer/routes"
@@ -224,4 +225,27 @@ func TestBulkCreate_NoSubscription_Returns403(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code, "Should return 403 when no subscription")
+}
+
+// The creator's authority over a class of a deleted organization ended with
+// the organization. Reproduces the cascade's observable result (organization
+// soft-deleted, roster inactive); the route's GroupRole gate is not mounted here.
+func TestBulkCreate_CreatorOfClassOfDeletedOrganization_Denied(t *testing.T) {
+	db := setupBulkCreateTestDB(t)
+	ownerID := "owner-user-id"
+	org := orgModels.Organization{Name: "gone", DisplayName: "Gone", OwnerUserID: "org-owner", OrganizationType: orgModels.OrgTypeTeam, IsActive: true}
+	require.NoError(t, db.Omit("Metadata", "AllowedBackends", "Members", "Groups").Create(&org).Error)
+	group := createTestGroup(t, db, ownerID)
+	require.NoError(t, db.Exec(`UPDATE class_groups SET organization_id = ? WHERE id = ?`, org.ID.String(), group.ID.String()).Error)
+	addGroupMember(t, db, group.ID, ownerID, groupModels.GroupMemberRoleOwner)
+	require.NoError(t, db.Delete(&orgModels.Organization{}, "id = ?", org.ID).Error)
+	plan := createTestPlanAndSubscription(t, db, ownerID)
+
+	router := setupBulkCreateRouter(db, ownerID, []string{"member"}, plan)
+	req := httptest.NewRequest("POST", "/class-groups/"+group.ID.String()+"/bulk-create-terminals", strings.NewReader(`{"terms": "accepted"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
 }
