@@ -391,3 +391,35 @@ func TestSetDefaultPaymentMethodHandler_EmptyCustomerID_LocalOnly(t *testing.T) 
 	assert.Empty(t, fake.updates())
 	assert.Equal(t, []uuid.UUID{other.ID}, defaultPaymentMethodIDs(t, db, "caller"))
 }
+
+// assignLicence turns the caller's subscription into a batch licence bought by purchaser; the
+// licence keeps the purchaser's Stripe customer (bulkLicenseService creates it that way).
+func assignLicence(t *testing.T, db *gorm.DB, userID, purchaser string) {
+	t.Helper()
+	require.NoError(t, db.Model(&models.UserSubscription{}).Where("user_id = ?", userID).
+		Updates(map[string]any{"purchaser_user_id": purchaser, "subscription_type": "assigned"}).Error)
+}
+
+func TestSetDefaultPaymentMethodHandler_LicenceFromAnotherPurchaser_LocalOnly(t *testing.T) {
+	db := freshTestDB(t)
+	_, other, fake := setupStripeCustomerWithDefault(t, db, "caller")
+	assignLicence(t, db, "caller", "purchaser")
+	r := setDefaultRouter(db, "caller")
+
+	assert.Equal(t, http.StatusOK, postSetDefault(r, "/payment-methods/"+other.ID.String()+"/set-default"))
+
+	assert.Empty(t, fake.updates(), "a licence holder must not change the purchaser's Stripe customer default")
+	assert.Equal(t, []uuid.UUID{other.ID}, defaultPaymentMethodIDs(t, db, "caller"))
+}
+
+func TestSetDefaultPaymentMethodHandler_SelfPurchased_SetsStripeDefault(t *testing.T) {
+	db := freshTestDB(t)
+	_, other, fake := setupStripeCustomerWithDefault(t, db, "caller")
+	assignLicence(t, db, "caller", "caller")
+	r := setDefaultRouter(db, "caller")
+
+	assert.Equal(t, http.StatusOK, postSetDefault(r, "/payment-methods/"+other.ID.String()+"/set-default"))
+
+	assert.Equal(t, []string{other.StripePaymentMethodID}, fake.updates())
+	assert.Equal(t, []uuid.UUID{other.ID}, defaultPaymentMethodIDs(t, db, "caller"))
+}
