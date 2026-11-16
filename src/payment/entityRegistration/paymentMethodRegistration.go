@@ -11,12 +11,14 @@ import (
 	"soli/formations/src/payment/models"
 )
 
+// RegisterPaymentMethod mounts no generic create or update: rows come from the Stripe sync and
+// webhooks only, since a client-supplied stripe_payment_method_id is never verified.
 func RegisterPaymentMethod(service *ems.EntityRegistrationService) {
-	ems.RegisterTypedEntity[models.PaymentMethod, dto.CreatePaymentMethodInput, dto.CreatePaymentMethodInput, dto.PaymentMethodOutput](
+	ems.RegisterTypedEntity[models.PaymentMethod, struct{}, struct{}, dto.PaymentMethodOutput](
 		service,
 		"PaymentMethod",
-		entityManagementInterfaces.TypedEntityRegistration[models.PaymentMethod, dto.CreatePaymentMethodInput, dto.CreatePaymentMethodInput, dto.PaymentMethodOutput]{
-			Converters: entityManagementInterfaces.TypedEntityConverters[models.PaymentMethod, dto.CreatePaymentMethodInput, dto.CreatePaymentMethodInput, dto.PaymentMethodOutput]{
+		entityManagementInterfaces.TypedEntityRegistration[models.PaymentMethod, struct{}, struct{}, dto.PaymentMethodOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[models.PaymentMethod, struct{}, struct{}, dto.PaymentMethodOutput]{
 				ModelToDto: func(pm *models.PaymentMethod) (dto.PaymentMethodOutput, error) {
 					return dto.PaymentMethodOutput{
 						ID:                    pm.ID,
@@ -32,24 +34,16 @@ func RegisterPaymentMethod(service *ems.EntityRegistrationService) {
 						CreatedAt:             pm.CreatedAt,
 					}, nil
 				},
-				DtoToModel: func(input dto.CreatePaymentMethodInput) *models.PaymentMethod {
-					return &models.PaymentMethod{
-						StripePaymentMethodID: input.StripePaymentMethodID,
-						IsDefault:             input.SetAsDefault,
-						IsActive:              true,
-					}
-				},
-				DtoToMap: nil,
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
+					string(authModels.Member): "(" + http.MethodDelete + ")",
 					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 				},
 			},
 			OwnershipConfig: &access.OwnershipConfig{
 				OwnerField:  "UserID",
-				Operations:  []string{"create", "update", "delete"},
+				Operations:  []string{"update", "delete"},
 				AdminBypass: true,
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
@@ -64,12 +58,6 @@ func RegisterPaymentMethod(service *ems.EntityRegistrationService) {
 				GetOne: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Récupérer un moyen de paiement",
 					Description: "Retourne les détails complets d'un moyen de paiement spécifique",
-					Tags:        []string{"payment-methods"},
-					Security:    true,
-				},
-				Create: &entityManagementInterfaces.SwaggerOperation{
-					Summary:     "Créer un moyen de paiement",
-					Description: "Crée un nouveau moyens de paiement",
 					Tags:        []string{"payment-methods"},
 					Security:    true,
 				},

@@ -198,7 +198,7 @@ func TestRegisterOwnershipHooks_RealEntities_WireExpectedWriteHooks(t *testing.T
 		"ScenarioSession":  {}, // read-only for members: runs are created by the launch routes
 		"UserSetting":      {hooks.BeforeUpdate},
 		"BillingAddress":   {hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
-		"PaymentMethod":    {hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
+		"PaymentMethod":    {hooks.BeforeUpdate, hooks.BeforeDelete}, // no generic create route
 		"UserSubscription": {hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete},
 	}
 

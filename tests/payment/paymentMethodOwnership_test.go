@@ -15,7 +15,7 @@ import (
 )
 
 var paymentMethodOwnershipConfig = access.OwnershipConfig{
-	OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
+	OwnerField: "UserID", Operations: []string{"update", "delete"}, AdminBypass: true,
 }
 
 // createTestPaymentMethod inserts a PaymentMethod owned by the given userID
@@ -34,58 +34,6 @@ func createTestPaymentMethod(t *testing.T, userID string) *models.PaymentMethod 
 	err := sharedTestDB.Create(pm).Error
 	require.NoError(t, err)
 	return pm
-}
-
-// ============================================================================
-// PaymentMethod Ownership Hook — BeforeCreate Tests
-// ============================================================================
-
-func TestPaymentMethodOwnership_BeforeCreate_SetsUserID(t *testing.T) {
-	_ = freshTestDB(t)
-	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
-
-	userID := "user-creator-123"
-	pm := &models.PaymentMethod{
-		StripePaymentMethodID: "pm_test_abc",
-		Type:                  "card",
-	}
-
-	ctx := &hooks.HookContext{
-		EntityName: "PaymentMethod",
-		HookType:   hooks.BeforeCreate,
-		NewEntity:  pm,
-		UserID:     userID,
-		UserRoles:  []string{"Member"},
-	}
-
-	err := hook.Execute(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, userID, pm.UserID, "BeforeCreate should set UserID from authenticated user")
-}
-
-func TestPaymentMethodOwnership_BeforeCreate_AdminCanSetAnyUserID(t *testing.T) {
-	_ = freshTestDB(t)
-	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
-
-	adminID := "admin-user-789"
-	targetUserID := "target-user-456"
-	pm := &models.PaymentMethod{
-		UserID:                targetUserID,
-		StripePaymentMethodID: "pm_test_abc",
-		Type:                  "card",
-	}
-
-	ctx := &hooks.HookContext{
-		EntityName: "PaymentMethod",
-		HookType:   hooks.BeforeCreate,
-		NewEntity:  pm,
-		UserID:     adminID,
-		UserRoles:  []string{"Administrator"},
-	}
-
-	err := hook.Execute(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, targetUserID, pm.UserID, "Admin should be able to set any UserID")
 }
 
 // ============================================================================

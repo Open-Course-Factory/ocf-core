@@ -201,8 +201,8 @@ func organizationsEntityRoles() []entityRoleDefinition {
 // the most varied:
 //   - BillingAddress: members have full CRUD, with reads scoped to the
 //     owner by its OwnershipConfig "read" operation.
-//   - PaymentMethod: this fixture over-grants GET compared with its
-//     registration, which gives members mutate only (POST|DELETE|PATCH).
+//   - PaymentMethod: members delete only; rows come from the Stripe sync
+//     and webhooks, so there is no generic create or update.
 //   - Invoice / UsageMetrics / SubscriptionPlan / PlanFeature: members read
 //     only; admins have full CRUD.
 //   - UserSubscription: admin-only at the role layer; members use dedicated
@@ -212,10 +212,14 @@ func paymentEntityRoles() []entityRoleDefinition {
 		memberRoles(): methodRegex(http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodPatch),
 		adminRoles():  methodRegex(http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodPatch),
 	}}
+	memberDeleteOnly := entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+		memberRoles(): methodRegex(http.MethodDelete),
+		adminRoles():  methodRegex(http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodPatch),
+	}}
 	return []entityRoleDefinition{
 		{entityName: "BillingAddress", routeName: "billing-addresses", roles: memberMutateOnly},
 		{entityName: "Invoice", routeName: "invoices", roles: rolesForReadOnlyMember()},
-		{entityName: "PaymentMethod", routeName: "payment-methods", roles: memberMutateOnly},
+		{entityName: "PaymentMethod", routeName: "payment-methods", roles: memberDeleteOnly},
 		{entityName: "SubscriptionPlan", routeName: "subscription-plans", roles: rolesForReadOnlyMember()},
 		{entityName: "UsageMetrics", routeName: "usage-metrics", roles: rolesForReadOnlyMember()},
 		{entityName: "UserSubscription", routeName: "user-subscriptions", roles: rolesForAdminOnly()},

@@ -224,11 +224,6 @@ type InvoiceOutput struct {
 }
 
 // PaymentMethod DTOs
-type CreatePaymentMethodInput struct {
-	StripePaymentMethodID string `binding:"required" json:"stripe_payment_method_id"`
-	SetAsDefault          bool   `json:"set_as_default"`
-}
-
 type PaymentMethodOutput struct {
 	ID                    uuid.UUID `json:"id"`
 	UserID                string    `json:"user_id"`
