@@ -172,9 +172,9 @@ test:unit:
     - go test -v -short -coverprofile=coverage.out -timeout=120s ./tests/... ./src/... > tests.log 2>&1 || TEST_RC=$?
     # Job log: package results, the full output of failing packages, compile errors.
     - |
-      awk '/^(ok|FAIL|\?)[ \t]/ { if ($1 == "FAIL") printf "%s", buf; print; buf = ""; next }
+      awk '/^(ok|FAIL|\?)[ \t]/ { if ($1 == "FAIL") for (i = 0; i < n; i++) print buf[i]; print; n = 0; next }
            /\.go:[0-9]+:[0-9]+: / { print; next }
-           { buf = buf $0 "\n" }' tests.log
+           { buf[n++] = $0 }' tests.log
     - go-junit-report -in tests.log -set-exit-code > report.xml || TEST_RC=${TEST_RC:-1}
     - go tool cover -func=coverage.out | tail -1 || true
     - exit ${TEST_RC:-0}
