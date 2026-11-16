@@ -395,3 +395,62 @@ func TestGroupMember_Visibility_OrgOwnerOfDifferentOrgSeesNothing(t *testing.T) 
 			"userA (owner of unrelated org) should see no group members, got %d", len(members))
 	})
 }
+
+// The generic DELETE soft-deletes a membership row and leaves is_active true:
+// an organization manager removed from the organization no longer sees its
+// classes' rosters.
+func TestGroupMember_Visibility_RemovedOrgManagerSeesNothing(t *testing.T) {
+	withFreshRegistration(func() {
+		db := setupGroupMemberVisibilityDB(t)
+		orgOneID, _, _ := seedFixture(t, db)
+		addOrgMember(t, db, orgOneID, "userA", orgModels.OrgRoleManager)
+		require.NoError(t, db.Where("user_id = ?", "userA").Delete(&orgModels.OrganizationMember{}).Error)
+
+		registerGroupMemberMembershipConfig()
+		_, total, err := repositories.NewGenericRepository(db).GetAllEntities(
+			groupModels.GroupMember{}, 1, 100, map[string]any{"user_member_id": "userA"}, nil,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), total, "a removed organization manager must not see the class roster")
+	})
+}
+
+// A student removed from a class (soft-deleted row) no longer sees its peers.
+func TestGroupMember_Visibility_RemovedGroupMemberSeesNothing(t *testing.T) {
+	withFreshRegistration(func() {
+		db := setupGroupMemberVisibilityDB(t)
+		seedFixture(t, db)
+		require.NoError(t, db.Where("user_id = ?", "userStudent1").Delete(&groupModels.GroupMember{}).Error)
+
+		registerGroupMemberMembershipConfig()
+		_, total, err := repositories.NewGenericRepository(db).GetAllEntities(
+			groupModels.GroupMember{}, 1, 100, map[string]any{"user_member_id": "userStudent1"}, nil,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), total, "a removed member must not see the class roster")
+	})
+}
+
+// Same rule on the class list, whose organization condition reads
+// class_groups.organization_id directly.
+func TestClassGroup_Visibility_RemovedOrgManagerSeesNothing(t *testing.T) {
+	withFreshRegistration(func() {
+		db := setupGroupMemberVisibilityDB(t)
+		orgOneID, _, _ := seedFixture(t, db)
+		addOrgMember(t, db, orgOneID, "userA", orgModels.OrgRoleManager)
+		require.NoError(t, db.Where("user_id = ?", "userA").Delete(&orgModels.OrganizationMember{}).Error)
+
+		ems.GlobalEntityRegistrationService.RegisterMembershipConfig("ClassGroup",
+			&entityManagementInterfaces.MembershipConfig{
+				MemberTable: "group_members", EntityIDColumn: "group_id", UserIDColumn: "user_id",
+				RoleColumn: "role", IsActiveColumn: "is_active",
+				OrgAccessEnabled: true, ManagerRoles: []string{"owner", "manager"},
+			},
+		)
+		_, total, err := repositories.NewGenericRepository(db).GetAllEntities(
+			groupModels.ClassGroup{}, 1, 100, map[string]any{"user_member_id": "userA"}, nil,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), total, "a removed organization manager must not see the organization's classes")
+	})
+}

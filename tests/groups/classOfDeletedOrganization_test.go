@@ -195,3 +195,16 @@ func TestClassOfMissingOrganization_CreatorRefused(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
 	assert.NotContains(t, managedClassIDs(t, env, deletedOrgCreator), group.ID)
 }
+
+// The creator's owner seat on the roster does not outlive the organization
+// either: reactivating it grants nothing back.
+func TestClassOfDeletedOrganization_ManagedByScope_ActiveOwnerRow_ExcludesCreator(t *testing.T) {
+	env := setupClassArchiveEnv(t)
+	org, group := seedOrgClass(t, env)
+	deleteOrg(t, env, org)
+	require.NoError(t, env.db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ?", group.ID, deletedOrgCreator).Update("is_active", true).Error)
+
+	assert.NotContains(t, managedClassIDs(t, env, deletedOrgCreator), group.ID,
+		"a class of a deleted organization is no longer the creator's to manage")
+}

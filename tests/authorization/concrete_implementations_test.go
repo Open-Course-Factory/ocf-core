@@ -32,12 +32,13 @@ func (TestEntity) TableName() string {
 // testGroupMember is a SQLite-compatible version of groups.GroupMember.
 // The real model uses jsonb Metadata which is unsupported by SQLite.
 type testGroupMember struct {
-	ID       uuid.UUID `gorm:"type:uuid;primaryKey"`
-	GroupID  uuid.UUID `gorm:"type:uuid;not null"`
-	UserID   string    `gorm:"type:varchar(255);not null"`
-	Role     string    `gorm:"type:varchar(50);default:'member'"`
-	JoinedAt time.Time `gorm:"not null"`
-	IsActive bool      `gorm:"default:true"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
+	GroupID   uuid.UUID `gorm:"type:uuid;not null"`
+	UserID    string    `gorm:"type:varchar(255);not null"`
+	Role      string    `gorm:"type:varchar(50);default:'member'"`
+	JoinedAt  time.Time `gorm:"not null"`
+	IsActive  bool      `gorm:"default:true"`
+	DeletedAt gorm.DeletedAt
 }
 
 func (testGroupMember) TableName() string {
@@ -307,4 +308,30 @@ func TestGormMembershipChecker_CheckGroupRole_ManagerOfDeletedOrgRefused(t *test
 	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "org-manager", "manager")
 	assert.NoError(t, err)
 	assert.False(t, allowed, "a deleted organization grants nothing")
+}
+
+// The generic DELETE soft-deletes a membership row and leaves is_active true:
+// a removed member holds no role any more.
+func TestGormMembershipChecker_CheckOrgRole_SoftDeletedManagerRefused(t *testing.T) {
+	db := setupMembershipDB(t)
+	orgID := uuid.New()
+	member := testOrgMember{ID: uuid.New(), OrganizationID: orgID, UserID: "removed-manager", Role: "manager", JoinedAt: time.Now(), IsActive: true}
+	require.NoError(t, db.Create(&member).Error)
+	require.NoError(t, db.Delete(&member).Error)
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckOrgRole(orgID.String(), "removed-manager", "manager")
+	assert.NoError(t, err)
+	assert.False(t, allowed, "a removed organization manager must not pass the role check")
+}
+
+func TestGormMembershipChecker_CheckGroupRole_SoftDeletedRosterManagerRefused(t *testing.T) {
+	db := setupMembershipDB(t)
+	groupID := uuid.New()
+	member := testGroupMember{ID: uuid.New(), GroupID: groupID, UserID: "removed-manager", Role: "manager", JoinedAt: time.Now(), IsActive: true}
+	require.NoError(t, db.Create(&member).Error)
+	require.NoError(t, db.Delete(&member).Error)
+
+	allowed, err := access.NewGormMembershipChecker(db).CheckGroupRole(groupID.String(), "removed-manager", "manager")
+	assert.NoError(t, err)
+	assert.False(t, allowed, "a removed class manager must not pass the role check")
 }

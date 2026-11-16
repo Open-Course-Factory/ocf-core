@@ -239,3 +239,23 @@ func TestOrganization_MemberVisibility_OwnerSeesOrg(t *testing.T) {
 	assert.Equal(t, orgID, orgs[0].ID,
 		"userA should see OrgOne (id=%s), got id=%s", orgID, orgs[0].ID)
 }
+
+// The generic DELETE soft-deletes the membership row and leaves is_active
+// true: a removed member must no longer see the organization.
+func TestOrganization_MemberVisibility_RemovedMemberSeesNothing(t *testing.T) {
+	db := setupMemberVisibilityDB(t)
+
+	original := ems.GlobalEntityRegistrationService
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	defer func() { ems.GlobalEntityRegistrationService = original }()
+
+	registerOrgMembershipConfig()
+	seedMemberVisibilityData(t, db)
+	require.NoError(t, db.Where("user_id = ?", "userB").Delete(&models.OrganizationMember{}).Error)
+
+	_, total, err := repositories.NewGenericRepository(db).GetAllEntities(
+		models.Organization{}, 1, 100, map[string]any{"user_member_id": "userB"}, nil,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total, "a removed member must not see the organization")
+}

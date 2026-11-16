@@ -249,3 +249,41 @@ func TestBulkCreate_CreatorOfClassOfDeletedOrganization_Denied(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
 }
+
+// bulkCreateAsOrgClassCreator seeds a class of an organization created by
+// ownerID, with ownerID's OWNER roster row active, optionally deletes the
+// organization, and runs the bulk create as ownerID.
+func bulkCreateAsOrgClassCreator(t *testing.T, deleteOrg bool) *httptest.ResponseRecorder {
+	t.Helper()
+	db := setupBulkCreateTestDB(t)
+	ownerID := "owner-user-id"
+	org := orgModels.Organization{Name: "org", DisplayName: "Org", OwnerUserID: "org-owner", OrganizationType: orgModels.OrgTypeTeam, IsActive: true}
+	require.NoError(t, db.Omit("Metadata", "AllowedBackends", "Members", "Groups").Create(&org).Error)
+	group := createTestGroup(t, db, ownerID)
+	require.NoError(t, db.Exec(`UPDATE class_groups SET organization_id = ? WHERE id = ?`, org.ID.String(), group.ID.String()).Error)
+	addGroupMember(t, db, group.ID, ownerID, groupModels.GroupMemberRoleOwner)
+	require.NoError(t, db.Exec(`UPDATE group_members SET is_active = ? WHERE user_id = ?`, true, ownerID).Error)
+	if deleteOrg {
+		require.NoError(t, db.Delete(&orgModels.Organization{}, "id = ?", org.ID).Error)
+	}
+	plan := createTestPlanAndSubscription(t, db, ownerID)
+
+	router := setupBulkCreateRouter(db, ownerID, []string{"member"}, plan)
+	req := httptest.NewRequest("POST", "/class-groups/"+group.ID.String()+"/bulk-create-terminals", strings.NewReader(`{"terms": "accepted"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+// The creator's owner seat on the roster does not outlive the organization:
+// a class of a deleted organization is managed by administrators only.
+func TestBulkCreate_CreatorOfClassOfDeletedOrganization_ActiveOwnerRow_Denied(t *testing.T) {
+	w := bulkCreateAsOrgClassCreator(t, true)
+	assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+}
+
+func TestBulkCreate_CreatorOfClassOfLiveOrganization_ActiveOwnerRow_Allowed(t *testing.T) {
+	w := bulkCreateAsOrgClassCreator(t, false)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
