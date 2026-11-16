@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -66,4 +67,16 @@ func TestImportController_NonOwnerManager_Allowed(t *testing.T) {
 
 	rec := postImport(t, router, orgID, nil)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+// A platform administrator passes Layer 2 for any org id, so a missing org must be a 404, not a 500.
+func TestImportController_MissingOrganization_NotFound(t *testing.T) {
+	db := newOffboardingDB(t)
+	ctrl := orgController.NewOrganizationController(services.NewOrganizationService(db), &recordingImportService{}, nil, nil, db)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("userId", "admin-1"); c.Next() })
+	router.POST("/organizations/:id/import", ctrl.ImportOrganizationData)
+
+	rec := postImport(t, router, uuid.New(), nil)
+	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
 }
