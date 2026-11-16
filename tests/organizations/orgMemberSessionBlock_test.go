@@ -360,3 +360,33 @@ func TestRemoveMemberFromOrganization_DeletesThatOrgSessionBlock(t *testing.T) {
 	require.NoError(t, organizationServices.NewOrganizationService(f.db).RemoveMemberFromOrganization(f.orgID, obManager, obLearner))
 	assertOnlyThatOrgBlockRemoved(t, f)
 }
+
+// A platform administrator who is a plain member of the organization is out of
+// a manager's and the owner's reach, as under the shared member rank rule.
+func TestOrgMemberSessionBlock_PlatformAdministratorTarget_403(t *testing.T) {
+	for _, caller := range []string{obManager, obOwner} {
+		t.Run(caller, func(t *testing.T) {
+			f := newOBFixture(t)
+			installMockEnforcer(t).GetRolesForUserFunc = adminRoleFor("ob-platform-admin")
+			obMember(t, f.db, f.orgID, "ob-platform-admin", models.OrgRoleMember)
+
+			w := obPut(t, f, caller, memberRoles, f.orgID, "ob-platform-admin", map[string]any{"blocked": true, "reason": "r"})
+
+			assert.Equal(t, http.StatusForbidden, w.Code, "body=%s", w.Body.String())
+			assert.Empty(t, obOrgBlocks(t, f.db, "ob-platform-admin", f.orgID))
+		})
+	}
+}
+
+// Pins the inline rule's reach today: below manager is in reach, so a manager
+// blocks a teacher; the owner blocking a manager is refused (Refusals_403).
+func TestOrgMemberSessionBlock_ManagerBlocksTeacher_200(t *testing.T) {
+	f := newOBFixture(t)
+	installMockEnforcer(t)
+	obMember(t, f.db, f.orgID, "ob-teacher", models.OrganizationMemberRole(access.RoleTeacher))
+
+	w := obPut(t, f, obManager, memberRoles, f.orgID, "ob-teacher", map[string]any{"blocked": true, "reason": "r"})
+
+	assert.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	assert.Len(t, obOrgBlocks(t, f.db, "ob-teacher", f.orgID), 1)
+}

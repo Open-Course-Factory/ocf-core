@@ -20,6 +20,7 @@ import (
 	controller "soli/formations/src/entityManagement/routes"
 	orgRegistration "soli/formations/src/organizations/entityRegistration"
 	"soli/formations/src/organizations/models"
+	"soli/formations/src/organizations/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -236,8 +237,9 @@ func TestOrgMemberGenericPatchRoute_OnlyIsActive_NoContentAndRowUnchanged(t *tes
 	markOffboarded(t, db, orgID, "student-1")
 	patch := genericMemberRoute(t, db, "manager-1", platformMember)
 
+	// An offboarded row refuses any patch (see ..._OffboardedRow_Conflict); it stays offboarded.
 	rec := patch(http.MethodPatch, memberRowID(t, db, orgID, "student-1"), `{"is_active":true}`)
-	assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	assert.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
 	assert.False(t, loadMember(t, db, orgID, "student-1").IsActive)
 	assert.NotNil(t, loadMember(t, db, orgID, "student-1").LeftAt)
 
@@ -287,6 +289,74 @@ func TestOrgMemberGenericRoutes_ActorKinds_StatusAndRow(t *testing.T) {
 				want = 1
 			}
 			assert.Equal(t, want, countMemberRows(t, db, orgID, c.target))
+		})
+	}
+}
+
+// An offboarded row belongs to its offboarding: a patch is refused like a
+// delete, for everyone who passes the manage check, so a departed account
+// gains no role (and no manager grant from the AfterUpdate hook).
+func TestOrgMemberGenericPatchRoute_OffboardedRow_Conflict(t *testing.T) {
+	for _, c := range []struct {
+		name, actor string
+		roles       []string
+		body        string
+		status      int
+	}{
+		{"manager promotes to manager", "manager-1", platformMember, `{"role":"manager"}`, http.StatusConflict},
+		{"manager patches metadata", "manager-1", platformMember, `{"metadata":{"a":"b"}}`, http.StatusConflict},
+		{"owner promotes to manager", "owner-1", platformMember, `{"role":"manager"}`, http.StatusConflict},
+		{"platform administrator promotes to manager", "platform-admin", platformAdministrator, `{"role":"manager"}`, http.StatusConflict},
+		{"non-manager is refused by the manage check first", "teacher-1", platformMember, `{"role":"manager"}`, http.StatusForbidden},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			db, orgID := seedGenericWritesOrg(t)
+			markOffboarded(t, db, orgID, "student-1")
+
+			rec := genericMemberRoute(t, db, c.actor, c.roles)(http.MethodPatch, memberRowID(t, db, orgID, "student-1"), c.body)
+
+			assert.Equal(t, c.status, rec.Code, rec.Body.String())
+			assert.Equal(t, models.OrgRoleMember, loadMember(t, db, orgID, "student-1").Role)
+		})
+	}
+}
+
+// The narrow reach (offboard, reinstate, import, password regeneration) is the
+// owner's, or an active manager's on plain members: holding just any row is not enough.
+func TestCheckActorOutranksMember_NarrowReach_OnlyActiveManagersAndOwner(t *testing.T) {
+	for _, c := range []struct {
+		name, actor string
+		role        models.OrganizationMemberRole
+		inactive    bool
+		reaches     bool
+	}{
+		{"plain member", "actor-member", models.OrgRoleMember, false, false},
+		{"teacher", "actor-teacher", models.OrganizationMemberRole(access.RoleTeacher), false, false},
+		{"unknown role", "actor-unknown", "not-a-role", false, false},
+		{"inactive manager", "actor-inactive-manager", models.OrgRoleManager, true, false},
+		{"manager", "actor-manager", models.OrgRoleManager, false, true},
+		{"owner", "owner-1", models.OrgRoleOwner, false, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			installMockEnforcer(t)
+			db := newOrgRoleCapDB(t)
+			orgID := seedOrgWithMembers(t, db, "owner-1", map[string]models.OrganizationMemberRole{
+				"owner-1": models.OrgRoleOwner, c.actor: c.role, "target-member": models.OrgRoleMember,
+			})
+			if c.inactive {
+				require.NoError(t, db.Model(&models.OrganizationMember{}).
+					Where("organization_id = ? AND user_id = ?", orgID, c.actor).Update("is_active", false).Error)
+			}
+			var org models.Organization
+			require.NoError(t, db.First(&org, "id = ?", orgID).Error)
+
+			err := services.CheckActorOutranksMember(db, &org, c.actor, false, "target-member", services.ReachPlainMembers)
+
+			if c.reaches {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorIs(t, err, services.ErrOutranksCaller)
+			}
 		})
 	}
 }
