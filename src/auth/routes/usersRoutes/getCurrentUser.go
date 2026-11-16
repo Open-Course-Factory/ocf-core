@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"soli/formations/src/auth/dto"
+	registration "soli/formations/src/auth/entityRegistration"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/auth/models"
 	sqldb "soli/formations/src/db"
@@ -105,7 +106,7 @@ func GetCurrentUser(ctx *gin.Context) {
 
 	// Include user settings (reduces separate /users/me/settings call)
 	if sqldb.DB != nil {
-		settings, err := fetchUserSettings(sqldb.DB, userID)
+		settings, err := FetchUserSettings(sqldb.DB, userID)
 		if err != nil {
 			utils.Warn("Failed to fetch settings for user %s in /auth/me: %v", userID, err)
 		} else {
@@ -133,9 +134,8 @@ func GetCurrentUser(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
-// fetchUserSettings loads or creates default user settings and converts to output DTO.
-// Exported as FetchUserSettings for testing.
-func fetchUserSettings(db *gorm.DB, userID string) (*dto.UserSettingsOutput, error) {
+// getOrCreateUserSettings loads the user's settings, creating the default row on first use.
+func getOrCreateUserSettings(db *gorm.DB, userID string) (*models.UserSettings, error) {
 	var settings models.UserSettings
 	defaults := models.UserSettings{
 		UserID:               userID,
@@ -148,30 +148,18 @@ func fetchUserSettings(db *gorm.DB, userID string) (*dto.UserSettingsOutput, err
 		DesktopNotifications: false,
 		TwoFactorEnabled:     false,
 	}
-
-	result := db.Where("user_id = ?", userID).Attrs(defaults).FirstOrCreate(&settings)
-	if result.Error != nil {
-		return nil, result.Error
+	if err := db.Where("user_id = ?", userID).Attrs(defaults).FirstOrCreate(&settings).Error; err != nil {
+		return nil, err
 	}
-
-	return &dto.UserSettingsOutput{
-		ID:                   settings.ID,
-		UserID:               settings.UserID,
-		DefaultLandingPage:   settings.DefaultLandingPage,
-		PreferredLanguage:    settings.PreferredLanguage,
-		Timezone:             settings.Timezone,
-		Theme:                settings.Theme,
-		CompactMode:          settings.CompactMode,
-		EmailNotifications:   settings.EmailNotifications,
-		DesktopNotifications: settings.DesktopNotifications,
-		PasswordLastChanged:  settings.PasswordLastChanged,
-		TwoFactorEnabled:     settings.TwoFactorEnabled,
-		CreatedAt:            settings.CreatedAt,
-		UpdatedAt:            settings.UpdatedAt,
-	}, nil
+	return &settings, nil
 }
 
-// FetchUserSettings is the exported version for testing.
+// FetchUserSettings loads or creates the user's settings for the /auth/me payload.
 func FetchUserSettings(db *gorm.DB, userID string) (*dto.UserSettingsOutput, error) {
-	return fetchUserSettings(db, userID)
+	settings, err := getOrCreateUserSettings(db, userID)
+	if err != nil {
+		return nil, err
+	}
+	output := registration.UserSettingsToOutput(settings)
+	return &output, nil
 }

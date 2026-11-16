@@ -17,22 +17,7 @@ func RegisterUserSettings(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[authModels.UserSettings, dto.UserSettingsInput, dto.EditUserSettingsInput, dto.UserSettingsOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[authModels.UserSettings, dto.UserSettingsInput, dto.EditUserSettingsInput, dto.UserSettingsOutput]{
 				ModelToDto: func(model *authModels.UserSettings) (dto.UserSettingsOutput, error) {
-					return dto.UserSettingsOutput{
-						ID:                   model.ID,
-						UserID:               model.UserID,
-						DefaultLandingPage:   model.DefaultLandingPage,
-						PreferredLanguage:    model.PreferredLanguage,
-						Timezone:             model.Timezone,
-						Theme:                model.Theme,
-						CompactMode:          model.CompactMode,
-						EmailNotifications:   model.EmailNotifications,
-						DesktopNotifications: model.DesktopNotifications,
-						PasswordLastChanged:     model.PasswordLastChanged,
-						TwoFactorEnabled:        model.TwoFactorEnabled,
-						RecordingAcknowledgedAt: model.RecordingAcknowledgedAt,
-						CreatedAt:               model.CreatedAt,
-						UpdatedAt:               model.UpdatedAt,
-					}, nil
+					return UserSettingsToOutput(model), nil
 				},
 				DtoToModel: func(input dto.UserSettingsInput) *authModels.UserSettings {
 					settings := &authModels.UserSettings{
@@ -133,4 +118,24 @@ func RegisterUserSettings(service *ems.EntityRegistrationService) {
 			},
 		},
 	)
+}
+
+// UserSettingsToOutput is the one settings model-to-output mapping, shared with /auth/me.
+func UserSettingsToOutput(model *authModels.UserSettings) dto.UserSettingsOutput {
+	return dto.UserSettingsOutput{
+		ID:                      model.ID,
+		UserID:                  model.UserID,
+		DefaultLandingPage:      model.DefaultLandingPage,
+		PreferredLanguage:       model.PreferredLanguage,
+		Timezone:                model.Timezone,
+		Theme:                   model.Theme,
+		CompactMode:             model.CompactMode,
+		EmailNotifications:      model.EmailNotifications,
+		DesktopNotifications:    model.DesktopNotifications,
+		PasswordLastChanged:     model.PasswordLastChanged,
+		TwoFactorEnabled:        model.TwoFactorEnabled,
+		RecordingAcknowledgedAt: model.RecordingAcknowledgedAt,
+		CreatedAt:               model.CreatedAt,
+		UpdatedAt:               model.UpdatedAt,
+	}
 }

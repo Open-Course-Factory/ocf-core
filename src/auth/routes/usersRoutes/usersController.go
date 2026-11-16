@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"soli/formations/src/auth/dto"
 	authMiddleware "soli/formations/src/auth/middleware"
-	"soli/formations/src/auth/models"
 	services "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -56,7 +55,6 @@ func NewUserControllerWithServices(
 // @Accept json
 // @Produce json
 // @Success 200 {object} dto.UserSettingsOutput
-// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /users/me/settings [get]
 // @Security Bearer
@@ -67,29 +65,20 @@ func (uc *UserController) GetMySettings(ctx *gin.Context) {
 		return
 	}
 
-	var settings models.UserSettings
-	defaults := models.UserSettings{
-		UserID:               userID,
-		DefaultLandingPage:   "/dashboard",
-		PreferredLanguage:    "en",
-		Timezone:             "UTC",
-		Theme:                "light",
-		CompactMode:          false,
-		EmailNotifications:   true,
-		DesktopNotifications: false,
-		TwoFactorEnabled:     false,
-	}
-
-	result := sqldb.DB.Where("user_id = ?", userID).Attrs(defaults).FirstOrCreate(&settings)
-	if result.Error != nil {
-		utils.Error("Failed to get or create settings for user %s: %v", userID, result.Error)
+	settings, err := getOrCreateUserSettings(sqldb.DB, userID)
+	if err != nil {
+		utils.Error("Failed to get or create settings for user %s: %v", userID, err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create settings"})
 		return
 	}
 
-	// Convert to output DTO
-	ops, _ := ems.GlobalEntityRegistrationService.GetEntityOps("UserSetting")
-	output, err := ops.ConvertModelToDto(&settings)
+	ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps("UserSetting")
+	if !ok {
+		utils.Error("UserSetting entity is not registered")
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve settings"})
+		return
+	}
+	output, err := ops.ConvertModelToDto(settings)
 	if err != nil {
 		utils.Error("Failed to convert settings to output: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve settings"})
@@ -108,7 +97,6 @@ func (uc *UserController) GetMySettings(ctx *gin.Context) {
 // @Param settings body dto.EditUserSettingsInput true "Settings to update"
 // @Success 200 {object} dto.UserSettingsOutput
 // @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /users/me/settings [patch]
 // @Security Bearer
@@ -125,32 +113,40 @@ func (uc *UserController) UpdateMySettings(ctx *gin.Context) {
 		return
 	}
 
-	// Find the user's settings
-	var settings models.UserSettings
-	result := sqldb.DB.Where("user_id = ?", userID).First(&settings)
-	if result.Error != nil {
-		utils.Warn("Settings not found for user %s: %v", userID, result.Error)
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "Settings not found"})
+	settings, err := getOrCreateUserSettings(sqldb.DB, userID)
+	if err != nil {
+		utils.Error("Failed to get or create settings for user %s: %v", userID, err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})
 		return
 	}
 
-	// Convert DTO to update map
-	ops, _ := ems.GlobalEntityRegistrationService.GetEntityOps("UserSetting")
-	updateMap, _ := ops.ConvertEditDtoToMap(editInput)
+	ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps("UserSetting")
+	if !ok {
+		utils.Error("UserSetting entity is not registered")
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})
+		return
+	}
+	updateMap, err := ops.ConvertEditDtoToMap(editInput)
+	if err != nil {
+		utils.Error("Failed to convert settings update: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})
+		return
+	}
 
-	// Update the settings
-	updateResult := sqldb.DB.Model(&settings).Updates(updateMap)
-	if updateResult.Error != nil {
-		utils.Error("Failed to update settings: %v", updateResult.Error)
+	if err := sqldb.DB.Model(settings).Updates(updateMap).Error; err != nil {
+		utils.Error("Failed to update settings: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})
 		return
 	}
 
 	// Reload to get updated values
-	sqldb.DB.First(&settings, settings.ID)
+	if err := sqldb.DB.First(settings, settings.ID).Error; err != nil {
+		utils.Error("Failed to reload settings: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})
+		return
+	}
 
-	// Convert to output DTO
-	output, err := ops.ConvertModelToDto(&settings)
+	output, err := ops.ConvertModelToDto(settings)
 	if err != nil {
 		utils.Error("Failed to convert settings to output: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})
