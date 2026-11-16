@@ -69,18 +69,12 @@ stages:
   variables:
     GOPATH: $CI_PROJECT_DIR/.go
     GOCACHE: $CI_PROJECT_DIR/.go/cache
-  # Module cache, build cache and tool binaries survive across pipelines (runner-local cache).
-  cache:
-    key:
-      files: [go.sum]
-    paths:
-      - .go/pkg/mod
-      - .go/cache
-      - .go/bin
+  # No `cache:` here: the runner keeps its local cache per runner and per concurrent slot,
+  # so 0 of 4 jobs hit it while archiving cost 47-62 s each (#601).
   before_script:
     - export PATH=$PATH:$GOPATH/bin
     - go mod download
-    # Pinned versions: a cached binary stays valid; a warm build cache makes these near-instant.
+    # Pinned so a rerun installs the same tools.
     - go install github.com/jstemmer/go-junit-report/v2@v2.1.0
     - go install github.com/swaggo/swag/cmd/swag@v1.16.6
     - swag init --parseDependency --parseInternal --quiet
