@@ -38,27 +38,24 @@ func (h *EmailTemplateHook) Execute(ctx *hooks.HookContext) error {
 		return nil
 	}
 
-	var subject, body string
+	fields := map[string]string{}
 	switch v := ctx.NewEntity.(type) {
 	case *models.EmailTemplate:
-		subject, body = v.Subject, v.HTMLBody
+		fields["subject"], fields["html_body"] = v.Subject, v.HTMLBody
 	case map[string]any:
-		// A patch carries only the sent fields; the stored half completes the pair.
-		if old, ok := ctx.OldEntity.(*models.EmailTemplate); ok {
-			subject, body = old.Subject, old.HTMLBody
+		// A patch is checked on the fields it sends only, so a stored legacy
+		// row stays editable on its other fields.
+		for _, key := range []string{"subject", "html_body"} {
+			if s, ok := v[key].(string); ok {
+				fields[key] = s
+			}
 		}
-		if s, ok := v["subject"].(string); ok {
-			subject = s
-		}
-		if b, ok := v["html_body"].(string); ok {
-			body = b
-		}
-	default:
-		return nil
 	}
 
-	if _, _, err := services.RenderTemplateContent(subject, body, map[string]any{}); err != nil {
-		return entityErrors.NewValidationError("template", err.Error())
+	for field, tmpl := range fields {
+		if err := services.ValidateTemplateSyntax(tmpl); err != nil {
+			return entityErrors.NewValidationError(field, err.Error())
+		}
 	}
 	return nil
 }

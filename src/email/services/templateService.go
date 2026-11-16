@@ -48,12 +48,18 @@ func (s *templateService) RenderTemplate(name string, variables map[string]any) 
 		return "", "", err
 	}
 
-	return RenderTemplateContent(tmpl.Subject, tmpl.HTMLBody, variables)
+	return s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, variables)
 }
 
-// RenderTemplateContent renders subject and body with variables; with an empty
-// map it doubles as the syntax check the EmailTemplate hook runs on writes.
-func RenderTemplateContent(subjectTmpl, bodyTmpl string, variables map[string]any) (subject string, body string, err error) {
+// ValidateTemplateSyntax parses one template field the way the renderer does;
+// parse-only, since execution errors depend on the variables of each send.
+func ValidateTemplateSyntax(tmpl string) error {
+	_, err := template.New("").Parse(tmpl)
+	return err
+}
+
+// renderTemplateContent renders subject and body with variables
+func (s *templateService) renderTemplateContent(subjectTmpl, bodyTmpl string, variables map[string]any) (subject string, body string, err error) {
 	// Render subject
 	subjectTemplate, err := template.New("subject").Parse(subjectTmpl)
 	if err != nil {
@@ -103,7 +109,7 @@ func (s *templateService) TestTemplate(id uuid.UUID, testEmail string) error {
 	}
 
 	// Render template
-	subject, body, err := RenderTemplateContent(tmpl.Subject, tmpl.HTMLBody, exampleData)
+	subject, body, err := s.renderTemplateContent(tmpl.Subject, tmpl.HTMLBody, exampleData)
 	if err != nil {
 		return fmt.Errorf("failed to render template: %w", err)
 	}
