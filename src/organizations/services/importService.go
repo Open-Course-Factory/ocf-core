@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"slices"
@@ -369,6 +370,14 @@ func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, up
 		if !updateExisting {
 			utils.Debug("User %s already exists, skipping", user.Email)
 			return "", nil
+		}
+
+		// An import may only update accounts already attached to this organization (active or offboarded).
+		if _, err := findMembership(s.db, orgID, existingUser.Id); err != nil {
+			if errors.Is(err, ErrMemberNotFound) {
+				return "", errors.New("not a member of this organization; skipped")
+			}
+			return "", err
 		}
 
 		if err := s.updateExistingUser(existingUser, *user, verifyEmails); err != nil {

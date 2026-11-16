@@ -31,6 +31,7 @@ func TestCsvImport_ReimportLeavesAnExistingPasswordAlone(t *testing.T) {
 	offboarding := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
+	seedMember(t, db, orgID, "existing-1", models.OrgRoleMember)
 
 	importer := services.NewImportService(db, identity, offboarding)
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
@@ -51,6 +52,7 @@ func TestCsvImport_ExplicitPasswordOnExistingAccountGoesThroughSetPassword(t *te
 	offboarding := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
+	seedMember(t, db, orgID, "existing-1", models.OrgRoleMember)
 
 	importer := services.NewImportService(db, identity, offboarding)
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
