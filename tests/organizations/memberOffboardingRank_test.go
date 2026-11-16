@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	authModels "soli/formations/src/auth/models"
 	orgController "soli/formations/src/organizations/controller"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
@@ -288,4 +289,104 @@ func TestOffboard_MemberOfThisOrganizationAlone_AllTerminalsTerminated(t *testin
 	for _, s := range sessions {
 		assert.NotEqual(t, terminalModels.StateRunning, terminalState(t, db, s), "a forbidden account keeps no running terminal")
 	}
+}
+
+// reinstateAs posts the reinstate route for target as actor, through the real controller.
+func reinstateAs(t *testing.T, db *gorm.DB, identity *fakeIdentity, orgID uuid.UUID, actor, target string) *httptest.ResponseRecorder {
+	t.Helper()
+	ctrl := orgController.NewOrganizationController(nil, nil, newOffboardingService(db, identity), nil, db)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("userId", actor); c.Next() })
+	router.POST("/organizations/:id/members/:userId/reinstate", ctrl.ReinstateMember)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/organizations/"+orgID.String()+"/members/"+target+"/reinstate", nil))
+	return rec
+}
+
+// blockAccount blocks userID the way the administrator action does: the
+// identity provider's flag and the local mirror the auth middleware reads.
+func blockAccount(t *testing.T, db *gorm.DB, identity *fakeIdentity, userID string) {
+	t.Helper()
+	identity.forbidden[userID] = true
+	require.NoError(t, authModels.SetAccountBlocked(db, userID, true))
+}
+
+func TestReinstateHandler_ActiveMember_ConflictAndAccountUntouched(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	blockAccount(t, db, identity, "student-1")
+
+	rec := reinstateAs(t, db, identity, orgID, "manager-1", "student-1")
+
+	assert.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), services.ErrMemberNotOffboarded.Error())
+	assert.True(t, loadMember(t, db, orgID, "student-1").IsActive)
+	assert.True(t, identity.forbidden["student-1"], "a member who was not offboarded keeps the account's state")
+}
+
+func TestReinstateHandler_ManagerTargetsOffboardedManager_ForbiddenAndNothingChanged(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"manager-2"}, "owner-1"))
+	require.True(t, identity.forbidden["manager-2"])
+
+	rec := reinstateAs(t, db, identity, orgID, "manager-1", "manager-2")
+
+	assert.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	assertOffboarded(t, db, orgID, "manager-2")
+	assert.True(t, identity.forbidden["manager-2"])
+}
+
+func TestReinstateHandler_AccountBlockedBeforeOffboarding_MembershipActiveAccountStillBlocked(t *testing.T) {
+	for _, actor := range []string{"manager-1", "owner-1"} {
+		t.Run(actor, func(t *testing.T) {
+			db := newOffboardingDB(t)
+			orgID, _, identity := seedRankedClass(t, db)
+			blockAccount(t, db, identity, "student-1")
+			require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"student-1"}, actor))
+
+			rec := reinstateAs(t, db, identity, orgID, actor, "student-1")
+
+			assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+			m := loadMember(t, db, orgID, "student-1")
+			assert.True(t, m.IsActive)
+			assert.Nil(t, m.LeftAt)
+			assert.True(t, identity.forbidden["student-1"], "a block this organization did not set is not its to lift")
+		})
+	}
+}
+
+func TestReinstateHandler_AccountForbiddenByThisOffboarding_ReinstatedAndUnforbidden(t *testing.T) {
+	for _, actor := range []string{"manager-1", "owner-1"} {
+		t.Run(actor, func(t *testing.T) {
+			db := newOffboardingDB(t)
+			orgID, _, identity := seedRankedClass(t, db)
+			require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"student-1"}, "manager-1"))
+			require.True(t, identity.forbidden["student-1"])
+
+			rec := reinstateAs(t, db, identity, orgID, actor, "student-1")
+
+			assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+			assertStillActiveMember(t, db, identity, orgID, "student-1")
+		})
+	}
+}
+
+func TestCsvImport_ReenrolsMemberBlockedBeforeOffboarding_AccountStillBlocked(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("student-a")
+	offboarding := newOffboardingService(db, identity)
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	blockAccount(t, db, identity, "student-a")
+	require.NoError(t, offboarding.Offboard(orgID, []string{"student-a"}, "owner-1"))
+
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
+	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
+		usersCSV(t, "student-a@example.com,Ada,Lovelace,member\n"), nil, nil, false, true, "", true)
+	require.NoError(t, err, "errors=%+v", resp.Errors)
+
+	assert.True(t, loadMember(t, db, orgID, "student-a").IsActive, "re-importing still reinstates the membership")
+	assert.True(t, identity.forbidden["student-a"], "a block this organization did not set is not its to lift")
 }
