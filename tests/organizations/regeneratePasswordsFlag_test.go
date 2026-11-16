@@ -37,7 +37,7 @@ func TestRegeneratePasswords_SetsForcePasswordResetThroughAnExplicitColumnList(t
 	identity := newFakeIdentity()
 	orgID, classID := seedClassForPasswordRegeneration(t, db, identity)
 
-	resp, err := services.NewOrganizationServiceWithIdentity(db, identity).
+	resp, err := services.NewOrganizationServiceWithIdentity(db, identity, newDeletionService(db, identity)).
 		RegenerateGroupMemberPasswords(orgID, classID, "owner-1", []string{"student-1"})
 	require.NoError(t, err)
 	require.Empty(t, resp.Errors, "errors=%+v", resp.Errors)
@@ -59,7 +59,7 @@ func TestRegeneratePasswords_ReportsAFlagWriteCasdoorDidNotPersist(t *testing.T)
 	identity.affected = false
 	orgID, classID := seedClassForPasswordRegeneration(t, db, identity)
 
-	resp, err := services.NewOrganizationServiceWithIdentity(db, identity).
+	resp, err := services.NewOrganizationServiceWithIdentity(db, identity, newDeletionService(db, identity)).
 		RegenerateGroupMemberPasswords(orgID, classID, "owner-1", []string{"student-1"})
 	require.NoError(t, err)
 

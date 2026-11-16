@@ -48,6 +48,11 @@ type UserDeletionService interface {
 	// would, without erasing. The members list uses it to report why an
 	// erasure is blocked — one owner for the rule and its explanation.
 	CheckDepartedMemberErasable(orgID uuid.UUID, userID string) error
+	// CheckBelongsToOrganizationAlone refuses, with the erasure errors, a user
+	// still tied to anything outside orgID: an active membership in another team
+	// organization, a paid personal subscription, or an organization or group
+	// owned outside orgID.
+	CheckBelongsToOrganizationAlone(orgID uuid.UUID, userID string) error
 }
 
 // TerminalKeyRevoker is the one call erasure needs from the terminal service:
@@ -101,7 +106,7 @@ func (s *userDeletionService) DeleteMyAccount(userID string) error {
 //     memberships, delete the personal org, anonymize authorship and audit logs,
 //     and delete auth tokens / settings / SSH keys.
 func (s *userDeletionService) EraseUser(userID string) error {
-	if err := s.assertNoOwnedOrgsOrGroups(userID); err != nil {
+	if err := s.assertNoOwnedOrgsOrGroups(userID, uuid.Nil); err != nil {
 		return err
 	}
 
@@ -149,7 +154,14 @@ func (s *userDeletionService) CheckDepartedMemberErasable(orgID uuid.UUID, userI
 	if err := s.assertNotActiveElsewhere(orgID, userID); err != nil {
 		return err
 	}
-	return s.assertNoOwnedOrgsOrGroups(userID)
+	return s.assertNoOwnedOrgsOrGroups(userID, uuid.Nil)
+}
+
+func (s *userDeletionService) CheckBelongsToOrganizationAlone(orgID uuid.UUID, userID string) error {
+	if err := s.assertNotActiveElsewhere(orgID, userID); err != nil {
+		return err
+	}
+	return s.assertNoOwnedOrgsOrGroups(userID, orgID)
 }
 
 // assertNotActiveElsewhere refuses when the user holds an active membership in
@@ -184,12 +196,19 @@ func (s *userDeletionService) assertNotActiveElsewhere(orgID uuid.UUID, userID s
 
 // assertNoOwnedOrgsOrGroups blocks deletion while the user still owns shared
 // resources others depend on (a non-personal org or a group). The personal org
-// is excluded — it is deleted as part of the cascade.
-func (s *userDeletionService) assertNoOwnedOrgsOrGroups(userID string) error {
+// is excluded — it is deleted as part of the cascade. A non-nil exceptOrgID
+// also leaves out that organization and its groups.
+func (s *userDeletionService) assertNoOwnedOrgsOrGroups(userID string, exceptOrgID uuid.UUID) error {
+	orgs := s.db.Model(&organizationModels.Organization{}).
+		Where("owner_user_id = ? AND organization_type != ?", userID, organizationModels.OrgTypePersonal)
+	groups := s.db.Model(&groupModels.ClassGroup{}).Where("owner_user_id = ?", userID)
+	if exceptOrgID != uuid.Nil {
+		orgs = orgs.Where("id <> ?", exceptOrgID)
+		groups = groups.Where("(organization_id IS NULL OR organization_id <> ?)", exceptOrgID)
+	}
+
 	var ownedOrgCount int64
-	if err := s.db.Model(&organizationModels.Organization{}).
-		Where("owner_user_id = ? AND organization_type != ?", userID, organizationModels.OrgTypePersonal).
-		Count(&ownedOrgCount).Error; err != nil {
+	if err := orgs.Count(&ownedOrgCount).Error; err != nil {
 		return fmt.Errorf("%w: failed to check org ownership: %v", ErrDeletionFailed, err)
 	}
 	if ownedOrgCount > 0 {
@@ -197,9 +216,7 @@ func (s *userDeletionService) assertNoOwnedOrgsOrGroups(userID string) error {
 	}
 
 	var ownedGroupCount int64
-	if err := s.db.Model(&groupModels.ClassGroup{}).
-		Where("owner_user_id = ?", userID).
-		Count(&ownedGroupCount).Error; err != nil {
+	if err := groups.Count(&ownedGroupCount).Error; err != nil {
 		return fmt.Errorf("%w: failed to check group ownership: %v", ErrDeletionFailed, err)
 	}
 	if ownedGroupCount > 0 {

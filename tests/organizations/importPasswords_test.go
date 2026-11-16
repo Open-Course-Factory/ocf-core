@@ -40,7 +40,7 @@ func TestCsvImport_ReimportLeavesAnExistingPasswordAlone(t *testing.T) {
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 	seedMember(t, db, orgID, "existing-1", models.OrgRoleMember)
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSV(t, "ada@example.com,Ada,Lovelace,member\n"), nil, nil, false, true, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
@@ -61,7 +61,7 @@ func TestCsvImport_ExplicitPasswordOnExistingAccountGoesThroughSetPassword(t *te
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 	seedMember(t, db, orgID, "existing-1", models.OrgRoleMember)
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSVWithColumns(t, "email,first_name,last_name,role,password", "ada@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"), nil, nil, false, true, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
@@ -78,7 +78,7 @@ func TestCsvImport_CreatedAccountGetsAGeneratedPasswordAndACredential(t *testing
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSV(t, "new@example.com,Grace,Hopper,member\n"), nil, nil, false, false, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
@@ -101,7 +101,7 @@ func TestCsvImport_UpdateExisting_AccountOutsideTheOrganizationIsUntouched(t *te
 	offboarding := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSVWithColumns(t, "email,first_name,last_name,role,password,force_reset", "outsider@example.com,Ada,Lovelace,member,Str0ng-Pass!,true\n"),
 		nil, nil, false, true, "", true)
@@ -124,7 +124,7 @@ func TestCsvImport_UpdateExisting_ActiveMemberIsStillUpdated(t *testing.T) {
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSVWithColumns(t, "email,first_name,last_name,role,password", "student-a@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
 		nil, nil, false, true, "", true)
@@ -147,7 +147,7 @@ func TestCsvImport_UpdateExisting_MemberOfAnotherOrganizationIsUntouched(t *test
 	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
 	seedMember(t, db, otherOrgID, "elsewhere", models.OrgRoleMember)
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSVWithColumns(t, "email,first_name,last_name,role", "elsewhere@example.com,Ada,Lovelace,member\n"),
 		nil, nil, false, true, "", true)
@@ -169,7 +169,7 @@ func TestCsvImport_UpdateExisting_DryRunWritesNothing(t *testing.T) {
 	offboarding := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	_, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSVWithColumns(t, "email,first_name,last_name,role,password", "outsider@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
 		nil, nil, true, true, "", true)
@@ -201,7 +201,7 @@ func importAsUpdate(t *testing.T, importer string, importerRole models.Organizat
 		}
 	}
 
-	resp, err := services.NewImportService(db, identity, offboarding).ImportOrganizationData(orgID, importer,
+	resp, err := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity)).ImportOrganizationData(orgID, importer,
 		usersCSVWithColumns(t, "email,first_name,last_name,role,password", target+"@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
 		nil, nil, false, true, "", true)
 	require.NoError(t, err)
@@ -319,7 +319,7 @@ func TestCsvImport_UpdateExisting_NewAccountsAreCreatedWhateverTheImporterRank(t
 				seedMember(t, db, orgID, c.importer, c.importerRole)
 			}
 
-			resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity)).ImportOrganizationData(orgID, c.importer,
+			resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity)).ImportOrganizationData(orgID, c.importer,
 				usersCSV(t, "new@example.com,Grace,Hopper,member\n"), nil, nil, false, true, "", true)
 			require.NoError(t, err, "errors=%+v", resp.Errors)
 
@@ -413,7 +413,7 @@ func TestCsvImport_UpdateExisting_RefusedAccountJoinsNoGroup(t *testing.T) {
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 
-	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity)).ImportOrganizationData(orgID, "owner-1",
+	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity)).ImportOrganizationData(orgID, "owner-1",
 		usersCSV(t, "outsider@example.com,Ada,Lovelace,member\nstudent-a@example.com,Grace,Hopper,member\n"),
 		csvFile(t, "groups", "group_name,display_name\nclass-b,Class B\n"),
 		csvFile(t, "memberships", "user_email,group_name,role\noutsider@example.com,class-b,member\nstudent-a@example.com,class-b,member\n"),
@@ -434,7 +434,7 @@ func TestCsvImport_UpdateExisting_PlatformAdministratorImporterLeavesAnAccountOu
 	identity.users["outsider"].FirstName = "Original"
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 
-	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity)).ImportOrganizationData(orgID, "admin-1",
+	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity)).ImportOrganizationData(orgID, "admin-1",
 		usersCSVWithColumns(t, "email,first_name,last_name,role,password,force_reset", "outsider@example.com,Ada,Lovelace,member,Str0ng-Pass!,true\n"),
 		nil, nil, false, true, "", true)
 	require.NoError(t, err)
@@ -462,7 +462,7 @@ func importOverMember(t *testing.T, target string, targetRole models.Organizatio
 		seed(db)
 	}
 
-	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity)).ImportOrganizationData(orgID, "manager-1",
+	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity)).ImportOrganizationData(orgID, "manager-1",
 		usersCSVWithColumns(t, "email,first_name,last_name,role,password", target+"@example.com,Ada,Lovelace,member,Str0ng-Pass!\n"),
 		nil, nil, false, true, "", true)
 	require.NoError(t, err)

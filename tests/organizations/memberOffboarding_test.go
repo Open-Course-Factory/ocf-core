@@ -524,7 +524,7 @@ func TestCsvImport_ReenrolsAnOffboardedStudentByEmail(t *testing.T) {
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 	require.NoError(t, offboarding.Offboard(orgID, []string{"student-a"}, "owner-1"))
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSV(t, "student-a@example.com,Ada,Lovelace,member\n"), nil, nil, false, true, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)

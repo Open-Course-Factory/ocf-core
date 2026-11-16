@@ -431,7 +431,7 @@ func orgBackendsRouter(db *gorm.DB, userID string, roles []string) (*gin.Engine,
 
 	orgService := orgServices.NewOrganizationService(db)
 	// The backend routes under test use neither the import nor the offboarding service.
-	importService := orgServices.NewImportService(db, nil, nil)
+	importService := orgServices.NewImportService(db, nil, nil, nil)
 	ctrl := orgController.NewOrganizationController(orgService, importService, nil, nil, db)
 
 	router := gin.New()

@@ -16,11 +16,11 @@ import (
 func OrganizationRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// Initialize services
 	casdoorClient := authServices.NewCasdoorUserClient()
-	orgService := services.NewOrganizationServiceWithIdentity(db, casdoorClient)
 	userService := authServices.NewUserService(casdoorClient, paymentServices.NewPaymentDeletionHelper(db))
 	deletionService := authServices.NewUserDeletionService(db, userService, authServices.NewTerminalTrainerService(db), scenarioServices.NewTTBackendParticipationArchiver(db))
+	orgService := services.NewOrganizationServiceWithIdentity(db, casdoorClient, deletionService)
 	offboardingService := services.NewMemberOffboardingService(db, casdoorClient, paymentServices.NewBulkLicenseService(db), deletionService)
-	importService := services.NewImportService(db, casdoorClient, offboardingService)
+	importService := services.NewImportService(db, casdoorClient, offboardingService, deletionService)
 
 	orgController := controller.NewOrganizationController(orgService, importService, offboardingService, deletionService, db)
 

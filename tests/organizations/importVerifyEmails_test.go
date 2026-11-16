@@ -44,7 +44,7 @@ func TestCsvImport_VerifyEmails_CreatedAccountIsVerified(t *testing.T) {
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSV(t, "ada@example.com,Ada,Lovelace,member\n"), nil, nil, false, false, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
@@ -64,7 +64,7 @@ func TestCsvImport_VerifyEmails_UpdatedAccountIsVerifiedAndKeepsItsProperties(t 
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSVWithColumns(t, "email,first_name,last_name,role,force_reset", "student-a@example.com,Ada,Lovelace,member,true\n"), nil, nil, false, true, "", true)
 	require.NoError(t, err, "errors=%+v", resp.Errors)
@@ -89,7 +89,7 @@ func TestCsvImport_VerifyEmailsOff_LeavesVerificationUntouched(t *testing.T) {
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
 		usersCSV(t, "student-a@example.com,Ada,Lovelace,member\nnew@example.com,Grace,Hopper,member\n"),
 		nil, nil, false, true, "", false)

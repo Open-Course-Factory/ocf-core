@@ -65,7 +65,10 @@ type organizationService struct {
 	repository repositories.OrganizationRepository
 	db         *gorm.DB
 	identity   PasswordRegenerationIdentity
+	alone      OrganizationAloneChecker
 }
+
+var errOffboarded = errors.New("offboarded")
 
 // PasswordRegenerationIdentity is the slice of the identity provider password
 // regeneration needs. auth/services' CasdoorUserClient satisfies it; this
@@ -108,16 +111,17 @@ func (os *organizationService) classroomEntitlement() paymentServices.EffectiveP
 }
 
 func NewOrganizationService(db *gorm.DB) OrganizationService {
-	return NewOrganizationServiceWithIdentity(db, casdoorPasswordIdentity{})
+	return NewOrganizationServiceWithIdentity(db, casdoorPasswordIdentity{}, nil)
 }
 
 // NewOrganizationServiceWithIdentity builds the service on an explicit identity
 // provider, so password regeneration can be exercised against a fake.
-func NewOrganizationServiceWithIdentity(db *gorm.DB, identity PasswordRegenerationIdentity) OrganizationService {
+func NewOrganizationServiceWithIdentity(db *gorm.DB, identity PasswordRegenerationIdentity, alone OrganizationAloneChecker) OrganizationService {
 	return &organizationService{
 		repository: repositories.NewOrganizationRepository(db),
 		db:         db,
 		identity:   identity,
+		alone:      alone,
 	}
 }
 
@@ -572,7 +576,7 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 	if err != nil {
 		return nil, err
 	}
-	checkRank, err := newRankCheck(os.db, org, requestingUserID)
+	checkRank, err := newRankCheck(os.db, os.alone, org, requestingUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -609,12 +613,21 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 		}
 
 		// A caller must not reset the password of a member who outranks them.
-		if err := checkRank(userID); err != nil {
-			message := fmt.Sprintf("user %s outranks the caller; skipped", userID)
-			if errors.Is(err, ErrMemberNotFound) {
+		target, err := checkRank(userID)
+		if err == nil && !target.IsActive {
+			err = errOffboarded
+		}
+		if err != nil {
+			message := fmt.Sprintf("could not check the rank of user %s: %v", userID, err)
+			switch {
+			case errors.Is(err, ErrMemberNotFound):
 				message = fmt.Sprintf("user %s is not a member of this organization", userID)
-			} else if !errors.Is(err, errOutranksActor) {
-				message = fmt.Sprintf("could not check the rank of user %s: %v", userID, err)
+			case errors.Is(err, errOffboarded):
+				message = fmt.Sprintf("user %s is offboarded from this organization; skipped", userID)
+			case errors.Is(err, errOutranksActor):
+				message = fmt.Sprintf("user %s outranks the caller; skipped", userID)
+			case errors.Is(err, errBelongsElsewhere):
+				message = fmt.Sprintf("user %s also belongs elsewhere; skipped", userID)
 			}
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 1,

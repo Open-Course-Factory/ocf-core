@@ -25,7 +25,7 @@ func TestCsvImport_DerivesUsernamesCasdoorAccepts(t *testing.T) {
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 
-	importer := services.NewImportService(db, identity, offboarding)
+	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1", usersCSV(t,
 		"ma_ben-abdallah@orsysformation.fr,Ma,Ben-Abdallah,member\n"+
 			"eloise@example.com,Éloïse,D'Angelo,member\n"+

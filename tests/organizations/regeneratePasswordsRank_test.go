@@ -64,7 +64,7 @@ func seedRankedClass(t *testing.T, db *gorm.DB) (orgID, classID uuid.UUID, ident
 
 func regenerate(t *testing.T, db *gorm.DB, identity *fakeIdentity, orgID, classID uuid.UUID, caller string, targets ...string) *dto.RegeneratePasswordsResponse {
 	t.Helper()
-	resp, err := services.NewOrganizationServiceWithIdentity(db, identity).
+	resp, err := services.NewOrganizationServiceWithIdentity(db, identity, newDeletionService(db, identity)).
 		RegenerateGroupMemberPasswords(orgID, classID, caller, targets)
 	require.NoError(t, err)
 	return resp

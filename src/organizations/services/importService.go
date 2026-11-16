@@ -55,15 +55,17 @@ type importService struct {
 	db              *gorm.DB
 	identity        ImportIdentityClient
 	members         MemberOffboardingService
+	alone           OrganizationAloneChecker
 	terminalService ttServices.TerminalTrainerService
 	groupService    groupServices.GroupService
 }
 
-func NewImportService(db *gorm.DB, identity ImportIdentityClient, members MemberOffboardingService) ImportService {
+func NewImportService(db *gorm.DB, identity ImportIdentityClient, members MemberOffboardingService, alone OrganizationAloneChecker) ImportService {
 	return &importService{
 		db:              db,
 		identity:        identity,
 		members:         members,
+		alone:           alone,
 		terminalService: ttServices.NewTerminalTrainerService(db),
 		groupService:    groupServices.NewGroupService(db),
 	}
@@ -374,11 +376,12 @@ func (s *importService) processUser(user *dto.UserImportRow, org *organizationMo
 		}
 
 		// An import may only update accounts already attached to this organization (active or offboarded).
-		checkRank, err := newRankCheck(s.db, org, importerID)
+		checkRank, err := newRankCheck(s.db, s.alone, org, importerID)
 		if err != nil {
 			return "", err
 		}
-		if err := checkRank(existingUser.Id); err != nil {
+		// An offboarded member is accepted: re-enrolling by email reinstates them.
+		if _, err := checkRank(existingUser.Id); err != nil {
 			if errors.Is(err, ErrMemberNotFound) {
 				return "", errors.New("not a member of this organization; skipped")
 			}
