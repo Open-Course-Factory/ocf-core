@@ -480,3 +480,49 @@ func TestCourseController_RetryGeneration_InProgress(t *testing.T) {
 // 		router.ServeHTTP(w, req)
 // 	}
 // }
+
+// A malformed generation id in the path or body must be refused with a 400, not panic into a 500.
+func TestCourseController_GenerationRoutes_MalformedID_Returns400(t *testing.T) {
+	router, _ := setupTestRouter(t)
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{"generate", "POST", "/api/v1/courses/generate", `{"generationId":"not-a-uuid","format":0,"authorEmail":"test@example.com"}`},
+		{"status", "GET", "/api/v1/generations/not-a-uuid/status", ""},
+		{"download", "GET", "/api/v1/generations/not-a-uuid/download", ""},
+		{"retry", "POST", "/api/v1/generations/not-a-uuid/retry", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
+
+			w := httptest.NewRecorder()
+			require.NotPanics(t, func() { router.ServeHTTP(w, req) })
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+		})
+	}
+}
+
+// The generic create path (POST /api/v1/generations) runs the registered converter on the
+// request body; a malformed course id must come back as an error, not a panic.
+func TestGenerationCreate_MalformedCourseID_ReturnsError(t *testing.T) {
+	_, db := setupTestRouter(t) // registers the Generation entity on the test DB
+	svc := genericService.NewGenericService(db, nil)
+
+	for _, courseID := range []string{"not-a-uuid", ""} {
+		t.Run("courseId="+courseID, func(t *testing.T) {
+			var err error
+			require.NotPanics(t, func() {
+				_, err = svc.CreateEntityWithUser(dto.GenerationInput{Name: "g", CourseId: courseID}, "Generation", "test-user-1")
+			})
+			assert.Error(t, err)
+		})
+	}
+}
