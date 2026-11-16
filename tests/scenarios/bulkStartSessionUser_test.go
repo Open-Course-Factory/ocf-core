@@ -59,3 +59,24 @@ func TestBulkStartScenario_AppliesTheScenarioNetworkCut(t *testing.T) {
 	assert.True(t, ttMock.capturedInputs[0].NetworkDisabled,
 		"bulk-start must start the learner without internet when a cut reaches them through the scenario")
 }
+
+// The builder is shared; what only one path knows stays its own. The solo
+// launch sets no expiry, so the composer clamps it to the plan's maximum
+// (seedPersistencePlan: 60 minutes)...
+func TestLaunchScenario_SetsNoExpiry_PlanMaximumApplies(t *testing.T) {
+	body := launchWithSessionUser(t, nil)
+	assert.EqualValues(t, 60*60, body["expiry"], "body=%v", body)
+}
+
+// ...while bulk-start keeps the duration the trainer chose, and its own host.
+func TestBulkStartScenario_KeepsItsOwnExpiryAndBackend(t *testing.T) {
+	dashSvc, ttMock, scenario, groupID := bulkStartFixture(t, "bulkexpiry", map[string][]string{
+		"member": {"bulkexpiry-learner"},
+	})
+
+	_, err := dashSvc.BulkStartScenario(groupID, scenario.ID, services.ScenarioProvisioning{Backend: "class-host", Distribution: "Debian", Size: "xs"}, 90, "trainer")
+	require.NoError(t, err)
+	require.Len(t, ttMock.capturedInputs, 1)
+	assert.Equal(t, 90*60, ttMock.capturedInputs[0].Expiry)
+	assert.Equal(t, "class-host", ttMock.capturedInputs[0].Backend)
+}
