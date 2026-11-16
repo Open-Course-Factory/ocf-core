@@ -921,6 +921,7 @@ func setupCourseSourceRouterAs(t *testing.T, db *gorm.DB, userID string, roles .
 	controller := courseRoutes.NewCourseControllerWithDependencies(db, workerServices.NewMockWorkerService(), mockCasdoor,
 		workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor), genericService.NewGenericService(db, nil))
 	router.POST("/api/v1/courses/source", controller.CreateCourseFromSource)
+	router.POST("/api/v1/courses/git", controller.CreateCourseFromGit)
 	return router
 }
 
@@ -947,16 +948,74 @@ func TestCreateCourseFromSource_LocalSource_Refused(t *testing.T) {
 	}
 }
 
-// A git source still reaches the course loader; it stops on the SSH key lookup, so nothing is cloned.
-func TestCreateCourseFromSource_GitSource_ReachesLoader(t *testing.T) {
+// setupGitLoaderRouter points the git loader's global DB at the test DB, which has no
+// SSH key table: a request that reaches the loader stops there, so nothing is cloned.
+func setupGitLoaderRouter(t *testing.T) *gin.Engine {
 	_, db := setupTestRouter(t)
 	prevDB := sqldb.DB
-	sqldb.DB = db // the git loader reads SSH keys from the global DB
+	sqldb.DB = db
 	t.Cleanup(func() { sqldb.DB = prevDB })
-	router := setupCourseSourceRouterAs(t, db, uuid.NewString(), "member") // the git cache keys on a uuid user id
-	w := serveGenerationBody(router, "POST", "/api/v1/courses/source", courseSourceBody("git", "file:///nonexistent-ocf-test-repo"))
-	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
-	assert.Contains(t, w.Body.String(), "Impossible de récupérer le cours", w.Body.String())
+	return setupCourseSourceRouterAs(t, db, uuid.NewString(), "member") // the git cache keys on a uuid user id
+}
+
+func courseGitBody(url string) string {
+	b, _ := json.Marshal(map[string]string{"Url": url, "Name": "c"})
+	return string(b)
+}
+
+// serveGitURL posts the url to both git import routes.
+func serveGitURL(router *gin.Engine, url string) map[string]*httptest.ResponseRecorder {
+	return map[string]*httptest.ResponseRecorder{
+		"source": serveGenerationBody(router, "POST", "/api/v1/courses/source", courseSourceBody("git", url)),
+		"git":    serveGenerationBody(router, "POST", "/api/v1/courses/git", courseGitBody(url)),
+	}
+}
+
+// https and git@host:path URLs still reach the course loader on both routes.
+func TestCreateCourseFromGit_HTTPSOrSSHURL_ReachesLoader(t *testing.T) {
+	router := setupGitLoaderRouter(t)
+	for _, url := range []string{"https://example.org/x.git", "git@example.org:x.git"} {
+		for route, w := range serveGitURL(router, url) {
+			assert.Equal(t, http.StatusBadRequest, w.Code, route+" "+url+": "+w.Body.String())
+			assert.Contains(t, w.Body.String(), "Impossible de récupérer le cours", route+" "+url)
+		}
+	}
+}
+
+// Any other repository URL (local file, server path, plain http, ssh:// to an internal
+// host) is refused with 400 before the loader, without echoing it back.
+func TestCreateCourseFromGit_NonHTTPSOrSSHURL_RefusedBeforeLoader(t *testing.T) {
+	router := setupGitLoaderRouter(t)
+	for _, url := range []string{"file:///etc", "/srv/repos/x", "http://10.0.0.1/x.git", "ssh://internal/x"} {
+		for route, w := range serveGitURL(router, url) {
+			assert.Equal(t, http.StatusBadRequest, w.Code, route+" "+url+": "+w.Body.String())
+			assert.NotContains(t, w.Body.String(), "Impossible de récupérer le cours", route+" "+url+" must not reach the loader")
+			assert.NotContains(t, w.Body.String(), url, route+" must not echo the url")
+		}
+	}
+}
+
+// A database failure while checking the generation's course is a server error, not a
+// "not found", and its text is not returned.
+func TestGenerationRoutes_CourseLookupDBError_Returns500(t *testing.T) {
+	_, db := setupTestRouter(t)
+	router := setupGenerationRouterAs(t, db, "test-user-1", "member")
+	course, _, _, _ := createTestData(t, db) // owned by test-user-1
+	gen := createOwnedGeneration(t, db, "test-user-1", models.StatusCompleted)
+	require.NoError(t, db.Model(gen).Update("course_id", course.ID).Error)
+	require.NoError(t, db.Migrator().DropTable(&models.Course{}))
+
+	path := "/api/v1/generations/" + gen.ID.String()
+	responses := map[string]*httptest.ResponseRecorder{
+		"generate": serveGenerationBody(router, "POST", "/api/v1/courses/generate", generateBody(gen.ID)),
+		"status":   serveGeneration(router, "GET", path+"/status"),
+		"download": serveGeneration(router, "GET", path+"/download"),
+		"retry":    serveGeneration(router, "POST", path+"/retry"),
+	}
+	for route, w := range responses {
+		assert.Equal(t, http.StatusInternalServerError, w.Code, route+": "+w.Body.String())
+		assert.NotContains(t, w.Body.String(), "no such table", route)
+	}
 }
 
 // A soft-deleted course is treated as missing, even for its owner.
