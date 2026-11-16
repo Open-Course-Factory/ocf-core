@@ -133,10 +133,11 @@ func (gr *groupRepository) AddGroupMember(member *models.GroupMember) error {
 	return gr.db.Omit("Metadata").Create(member).Error
 }
 
-// GetGroupMember retrieves a specific group member
+// GetGroupMember retrieves a specific active group member; a deactivated row
+// confers no role, like CheckGroupRole on the Layer 2 side.
 func (gr *groupRepository) GetGroupMember(groupID uuid.UUID, userID string) (*models.GroupMember, error) {
 	var member models.GroupMember
-	err := gr.db.Where("group_id = ? AND user_id = ?", groupID, userID).First(&member).Error
+	err := gr.db.Where("group_id = ? AND user_id = ? AND is_active = ?", groupID, userID, true).First(&member).Error
 	if err != nil {
 		return nil, err
 	}
