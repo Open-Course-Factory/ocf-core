@@ -162,6 +162,7 @@ func (m *MockEnforcer) Reset() {
 	m.GetRolesForUserCalls = make([][]any, 0)
 	m.AddGroupingPolicyCalls = make([][]any, 0)
 	m.RemoveGroupingPolicyCalls = make([][]any, 0)
+	m.RemoveFilteredGroupingPolicyCalls = nil
 	m.GetImplicitPermissionsForUserCalls = make([][]any, 0)
 	m.GetFilteredPolicyCalls = make([][]any, 0)
 	m.GetPolicyCalls = 0

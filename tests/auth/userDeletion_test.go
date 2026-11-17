@@ -582,10 +582,6 @@ func TestDeleteUser_BillingPseudonymizationFailure_DoesNotAbort(t *testing.T) {
 	assert.Less(t, cancelIdx, casdoorIdx)
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 // A real enforcer: the mock cannot tell whether a role left memory.
 func TestDeleteUser_UserHoldsRole_RoleDroppedWithoutPolicyReload(t *testing.T) {
 	userID := "user-del-role"
@@ -606,6 +602,10 @@ func TestDeleteUser_UserHoldsRole_RoleDroppedWithoutPolicyReload(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, allowed, "a deleted user must lose their role straight away")
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 func indexOf(slice []string, target string) int {
 	for i, v := range slice {
