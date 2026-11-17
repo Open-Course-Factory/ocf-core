@@ -50,7 +50,9 @@ func AddPolicy(enforcer interfaces.EnforcerInterface, subject, route, methods st
 	return nil
 }
 
-// RemovePolicy removes a permission policy
+// RemovePolicy removes a permission policy. With empty methods it removes every
+// policy of the subject on the route; with an empty route too, every policy of
+// the subject.
 //
 // Example:
 //
@@ -62,7 +64,15 @@ func RemovePolicy(enforcer interfaces.EnforcerInterface, subject, route, methods
 		}
 	}
 
-	_, err := enforcer.RemovePolicy(subject, route, methods)
+	var err error
+	if methods == "" {
+		// An exact removal with no methods matches no rule in memory, so the
+		// rule would stay enforced until the next reload: remove by subject
+		// (and route, when given) whatever the methods.
+		_, err = enforcer.RemoveFilteredPolicy(0, subject, route)
+	} else {
+		_, err = enforcer.RemovePolicy(subject, route, methods)
+	}
 	if err != nil {
 		if opts.WarnOnError {
 			Warn("Failed to remove policy [%s, %s, %s]: %v", subject, route, methods, err)

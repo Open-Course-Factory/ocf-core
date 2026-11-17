@@ -424,3 +424,31 @@ func TestAccessesEndpoint_FullAttackChain_SelfEscalateAndDelete(t *testing.T) {
 	t.Log("  Step 2: Member now passes Casbin authorization check for DELETE on the target group")
 	t.Log("  Result: Any member can delete any group in the system via this two-step attack")
 }
+
+// ============================================================================
+// Revocation takes effect in the running enforcer, with no policy reload
+// ============================================================================
+
+// newAccessesAdminRouter returns a router whose caller is a platform administrator.
+func newAccessesAdminRouter(t *testing.T, suite *accessesTestSuite, adminID string) *gin.Engine {
+	t.Helper()
+	err := utils.AddGroupingPolicy(casdoor.Enforcer, adminID, string(authModels.Administrator), utils.DefaultPermissionOptions())
+	require.NoError(t, err)
+	return suite.createRouterForUser(adminID)
+}
+
+func TestAccessesEndpoint_RevokeAccess_DeniedWithoutPolicyReload(t *testing.T) {
+	suite := setupAccessesTest(t)
+	router := newAccessesAdminRouter(t, suite, "revoke-admin-001")
+	subject, route := "revoke-subject-001", "/api/v1/class-groups/revoke-group-001"
+
+	err := utils.AddPolicy(casdoor.Enforcer, subject, route, "(GET)", utils.DefaultPermissionOptions())
+	require.NoError(t, err)
+
+	w := deleteAccessRequest(router, dto.DeleteEntityAccessInput{GroupName: subject, Route: route})
+	require.Equal(t, http.StatusNoContent, w.Code)
+
+	allowed, err := casdoor.Enforcer.Enforce(subject, route, "GET")
+	require.NoError(t, err)
+	assert.False(t, allowed, "a revoked access must be denied straight after the 204")
+}

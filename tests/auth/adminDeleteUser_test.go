@@ -105,8 +105,8 @@ func TestAdminDeleteUser_RunsTheOcfCascade(t *testing.T) {
 	assert.Equal(t, int64(0), personalOrgCount, "the personal organization must be deleted by the admin path")
 	assert.Equal(t, int64(1), teamOrgCount, "an organization the user merely belonged to must survive")
 
-	require.Len(t, enforcer.RemovePolicyCalls, 1, "the admin path must still remove the user's Casbin policies")
-	assert.Equal(t, userID, enforcer.RemovePolicyCalls[0][0])
+	require.Len(t, enforcer.RemoveFilteredPolicyCalls, 1, "the admin path must still remove the user's Casbin policies")
+	assert.Equal(t, []any{0, userID, ""}, enforcer.RemoveFilteredPolicyCalls[0])
 }
 
 func TestAdminDeleteUser_RefusesWhenUserOwnsAnOrganization(t *testing.T) {
