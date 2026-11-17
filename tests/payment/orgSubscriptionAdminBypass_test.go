@@ -42,6 +42,8 @@ func setupOrgAndPlan(t *testing.T) (orgID uuid.UUID, planID uuid.UUID) {
 		Currency:        "eur",
 		BillingInterval: "month",
 		IsActive:        true,
+		// An organization only accepts a plan that grants group management.
+		GroupManagementEnabled: true,
 	}
 	require.NoError(t, db.Create(plan).Error, "Failed to create test plan")
 
@@ -104,23 +106,41 @@ func setupOrgSubscriptionRouter(t *testing.T, db *gorm.DB, userID string, roles 
 	return r
 }
 
+// nonMemberAdminID is a platform administrator who belongs to no organization.
+const nonMemberAdminID = "admin-outside-every-org"
+
+// asAdminNonMember sends one request as nonMemberAdminID through Layer 2 and the
+// real handler.
+func asAdminNonMember(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	router := setupOrgSubscriptionRouter(t, sharedTestDB, nonMemberAdminID, []string{"administrator"})
+	jsonBytes, err := json.Marshal(body)
+	require.NoError(t, err)
+	req := httptest.NewRequest(method, "/api/v1"+path, bytes.NewBuffer(jsonBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+// setupSubscribedOrg creates an org holding an active subscription, so the
+// read and cancel routes have something to answer with.
+func setupSubscribedOrg(t *testing.T) (orgID uuid.UUID) {
+	t.Helper()
+	orgID, planID := setupOrgAndPlan(t)
+	w := asAdminNonMember(t, "POST", "/organizations/"+orgID.String()+"/subscribe",
+		map[string]any{"subscription_plan_id": planID.String()})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	return orgID
+}
+
 func TestCreateOrgSubscription_AdminNonMember_Succeeds(t *testing.T) {
 	orgID, planID := setupOrgAndPlan(t)
-	controller := paymentController.NewOrganizationSubscriptionController(sharedTestDB)
 
-	adminUserID := uuid.New().String() // Not a member of the org
+	w := asAdminNonMember(t, "POST", "/organizations/"+orgID.String()+"/subscribe",
+		map[string]any{"subscription_plan_id": planID.String(), "quantity": 15})
 
-	body := map[string]any{
-		"subscription_plan_id": planID.String(),
-		"quantity":             15,
-	}
-	ctx, w := newTestContext("POST", "/organizations/"+orgID.String()+"/subscribe", body, adminUserID, []string{"administrator"})
-	ctx.Params = gin.Params{{Key: "id", Value: orgID.String()}}
-
-	controller.CreateOrganizationSubscription(ctx)
-
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"Admin should NOT get 403 Forbidden when creating org subscription, got %d: %s", w.Code, w.Body.String())
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 func TestCreateOrgSubscription_NonMemberNonAdmin_Forbidden(t *testing.T) {
@@ -146,18 +166,11 @@ func TestCreateOrgSubscription_NonMemberNonAdmin_Forbidden(t *testing.T) {
 }
 
 func TestGetOrgSubscription_AdminNonMember_NotForbidden(t *testing.T) {
-	orgID, _ := setupOrgAndPlan(t)
-	controller := paymentController.NewOrganizationSubscriptionController(sharedTestDB)
+	orgID := setupSubscribedOrg(t)
 
-	adminUserID := uuid.New().String()
-	ctx, w := newTestContext("GET", "/organizations/"+orgID.String()+"/subscription", nil, adminUserID, []string{"administrator"})
-	ctx.Params = gin.Params{{Key: "id", Value: orgID.String()}}
+	w := asAdminNonMember(t, "GET", "/organizations/"+orgID.String()+"/subscription", nil)
 
-	controller.GetOrganizationSubscription(ctx)
-
-	// Should get 404 (no subscription yet) but NOT 403 (forbidden)
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"Admin should NOT get 403 Forbidden when viewing org subscription")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 func TestGetOrgFeatures_AdminNonMember_NotForbidden(t *testing.T) {
@@ -175,32 +188,18 @@ func TestGetOrgFeatures_AdminNonMember_NotForbidden(t *testing.T) {
 }
 
 func TestGetOrgUsageLimits_AdminNonMember_NotForbidden(t *testing.T) {
-	orgID, _ := setupOrgAndPlan(t)
-	controller := paymentController.NewOrganizationSubscriptionController(sharedTestDB)
+	orgID := setupSubscribedOrg(t)
 
-	adminUserID := uuid.New().String()
-	ctx, w := newTestContext("GET", "/organizations/"+orgID.String()+"/usage-limits", nil, adminUserID, []string{"administrator"})
-	ctx.Params = gin.Params{{Key: "id", Value: orgID.String()}}
+	w := asAdminNonMember(t, "GET", "/organizations/"+orgID.String()+"/usage-limits", nil)
 
-	controller.GetOrganizationUsageLimits(ctx)
-
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"Admin should NOT get 403 Forbidden when viewing org usage limits")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 func TestCancelOrgSubscription_AdminNonMember_NotForbidden(t *testing.T) {
-	orgID, _ := setupOrgAndPlan(t)
-	controller := paymentController.NewOrganizationSubscriptionController(sharedTestDB)
+	orgID := setupSubscribedOrg(t)
 
-	adminUserID := uuid.New().String()
-	body := map[string]any{
-		"cancel_at_period_end": true,
-	}
-	ctx, w := newTestContext("DELETE", "/organizations/"+orgID.String()+"/subscription", body, adminUserID, []string{"administrator"})
-	ctx.Params = gin.Params{{Key: "id", Value: orgID.String()}}
+	w := asAdminNonMember(t, "DELETE", "/organizations/"+orgID.String()+"/subscription",
+		map[string]any{"cancel_at_period_end": true})
 
-	controller.CancelOrganizationSubscription(ctx)
-
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"Admin should NOT get 403 Forbidden when cancelling org subscription")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
