@@ -554,6 +554,21 @@ func TestSetupUserManagementPermissions_MemberRoutes(t *testing.T) {
 	assert.False(t, ps.has("member", "/api/v1/ssh", "GET"), "member must not be granted the removed web SSH proxy")
 }
 
+// TestAccessesRoutes_AreAdminOnlyOnLayer2 pins the Layer 2 half of the
+// /accesses declaration; the Casbin half is pinned by the test below.
+func TestAccessesRoutes_AreAdminOnlyOnLayer2(t *testing.T) {
+	access.RouteRegistry.Reset()
+	defer access.RouteRegistry.Reset()
+	userController.RegisterUserPermissions(mocks.NewMockEnforcer())
+
+	for _, method := range []string{"POST", "DELETE"} {
+		permission, found := access.RouteRegistry.Lookup(method, "/api/v1/accesses")
+		assert.True(t, found, method)
+		assert.Equal(t, access.AdminOnly, permission.Access.Type, method)
+		assert.Equal(t, access.RoleAdministrator, permission.Role, method)
+	}
+}
+
 func TestSetupUserManagementPermissions_AdminRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
 	userController.RegisterUserPermissions(mock)
