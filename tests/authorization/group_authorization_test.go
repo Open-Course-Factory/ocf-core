@@ -115,49 +115,10 @@ func createDeleteRouter(userID string, ctrl controller.GenericController) *gin.E
 }
 
 // ============================================================================
-// Vulnerability Documentation Tests
+// Write authorization hook
 // ============================================================================
 
-// Test 10: Prove DeleteEntity in repository does NOT check membership
-// VULNERABILITY: DeleteEntity does not apply GenericMembershipFilter unlike GetEntities
-func TestGroupAuthorization_DeleteBypassesMembershipFilter(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-010"
-	group := createGroup(t, db, genericService, ownerID)
-
-	// Verify the group exists
-	var count int64
-	db.Model(&groupModels.ClassGroup{}).Where("id = ?", group.ID).Count(&count)
-	require.Equal(t, int64(1), count, "Group should exist before delete")
-
-	// Execute BeforeDelete hook (simulating the cleanup hook)
-	beforeCtx := &hooks.HookContext{
-		EntityName: "ClassGroup",
-		HookType:   hooks.BeforeDelete,
-		NewEntity:  group,
-		EntityID:   group.ID,
-		UserID:     ownerID,
-	}
-	err := hooks.GlobalHookRegistry.ExecuteHooks(beforeCtx)
-	require.NoError(t, err)
-
-	// VULNERABILITY: DeleteEntity does not apply GenericMembershipFilter unlike GetEntities.
-	// The repository's DeleteEntity method uses a direct db.Delete without any
-	// user-scoped filtering. If a user somehow passes the Casbin middleware check
-	// (e.g., via admin role), they can delete any group regardless of membership.
-	// This is "by design" since Casbin is the authorization boundary, but it means
-	// there's no defense-in-depth ownership check at the data layer.
-	err = db.Delete(group).Error
-	require.NoError(t, err, "DeleteEntity should succeed without any membership check")
-
-	// Verify deletion
-	db.Model(&groupModels.ClassGroup{}).Where("id = ?", group.ID).Count(&count)
-	assert.Equal(t, int64(0), count, "Group should be deleted - no membership filter was applied")
-}
-
-// Test 11: Prove GroupCleanupHook BeforeDelete only does cleanup, no ownership check
-// VULNERABILITY: No BeforeDelete hook validates that the requesting user owns the group
+// A user who cannot manage the group is refused by the BeforeDelete hook.
 func TestGroupAuthorization_BeforeDeleteRejectsUsersWhoCannotManageTheGroup(t *testing.T) {
 	db, genericService := setupGroupTestEnvironment(t)
 
