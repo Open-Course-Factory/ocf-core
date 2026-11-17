@@ -63,11 +63,12 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	author := flag.String(AUTHOR_FLAG, "cli", "author trigramme for loading author_XXX.md file")
 	courseJsonFilename := flag.String(COURSE_JSON_FILENAME_FLAG, "course.json", "filename of the course JSON file in the repository")
 	skipDB := flag.Bool(SKIP_DB_FLAG, false, "skip database operations (load and generate course without saving to DB)")
-	backfillProvenance := flag.Bool(BACKFILL_ACCOUNT_PROVENANCE_FLAG, false, "mark the memberships whose organization created the account, print the report and exit; with --dry-run, write nothing")
+	backfillProvenance := flag.Bool(BACKFILL_ACCOUNT_PROVENANCE_FLAG, false, "mark the memberships whose organization created the account, print the report and exit; requires --created-before; with --dry-run, write nothing")
+	createdBefore := flag.String(CREATED_BEFORE_FLAG, "", "backfill-account-provenance: RFC3339 deploy time of the release that records provenance; only memberships created before it are read")
 	flag.Parse()
 
 	if *backfillProvenance {
-		RunAccountProvenanceBackfill(db, *config.DRY_RUN)
+		RunAccountProvenanceBackfill(db, *createdBefore, *config.DRY_RUN)
 		return true
 	}
 
