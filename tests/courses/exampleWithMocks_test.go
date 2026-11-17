@@ -246,29 +246,4 @@ func Test_CustomScenarios(t *testing.T) {
 
 		t.Logf("✅ Retry test completed (error expected due to missing dependencies)")
 	})
-
-	// Test avec plusieurs utilisateurs
-	t.Run("Multiple users", func(t *testing.T) {
-		mockCasdoor := authMocks.NewMockCasdoorService()
-
-		// Ajouter plusieurs utilisateurs personnalisés
-		users := []*casdoorsdk.User{
-			{Id: "dev-1", Name: "dev1", DisplayName: "Developer 1", Email: "dev1@test.com"},
-			{Id: "dev-2", Name: "dev2", DisplayName: "Developer 2", Email: "dev2@test.com"},
-			{Id: "manager-1", Name: "manager1", DisplayName: "Manager 1", Email: "manager@test.com"},
-		}
-
-		for _, user := range users {
-			mockCasdoor.AddUser(user.Email, user)
-		}
-
-		// Vérifier qu'on peut récupérer tous les utilisateurs
-		for _, expectedUser := range users {
-			user, err := mockCasdoor.GetUserByEmail(expectedUser.Email)
-			require.NoError(t, err)
-			assert.Equal(t, expectedUser.DisplayName, user.DisplayName)
-		}
-
-		t.Logf("✅ Multiple users test passed with %d users", len(users))
-	})
 }

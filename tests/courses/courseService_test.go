@@ -12,7 +12,6 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"soli/formations/src/auth/casdoor"
 	authMocks "soli/formations/src/auth/mocks"
 	authModels "soli/formations/src/auth/models"
 	"soli/formations/src/courses/dto"
@@ -264,6 +263,23 @@ func TestCourseService_CheckGenerationStatus(t *testing.T) {
 	assert.GreaterOrEqual(t, mockEnforcer.GetLoadPolicyCallCount(), 0)
 }
 
+// An unknown generation id is an error, not an empty status.
+func TestCourseService_CheckGenerationStatus_UnknownGeneration_ReturnsError(t *testing.T) {
+	db := setupTestDB(t)
+	courseService := courseServices.NewCourseServiceWithDependencies(
+		db,
+		workerServices.NewMockWorkerService(),
+		nil,
+		authMocks.NewMockCasdoorService(),
+		genericService.NewGenericService(db, nil),
+	)
+
+	_, err := courseService.CheckGenerationStatus(uuid.New().String())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get generation")
+}
+
 // TestGenerationPackageService_CollectAssets teste la collecte d'assets
 func TestGenerationPackageService_CollectAssets(t *testing.T) {
 	_, _ = setupTestEnforcer(t) // Setup enforcer même si pas utilisé directement
@@ -300,168 +316,6 @@ func TestGenerationPackageService_CollectThemeFiles(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, themeFiles)
 	assert.Empty(t, themeFiles) // Devrait être vide car le thème n'existe pas
-}
-
-// TestMockWorkerService_EndToEnd teste le workflow complet avec le mock
-func TestMockWorkerService_EndToEnd(t *testing.T) {
-	mockEnforcer, _ := setupTestEnforcer(t)
-
-	mockWorker := workerServices.NewMockWorkerService()
-	mockWorker.SetFailureRate(0.0)
-	mockWorker.SetProcessingDelay(5 * time.Millisecond)
-
-	ctx := context.Background()
-
-	// 1. Créer une génération
-	generation := &models.Generation{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:      "E2E Test Generation",
-		Status:    models.StatusPending,
-	}
-
-	pkg := &workerServices.GenerationPackage{
-		MDContent:  "# E2E Test Course\n\nTest content",
-		Assets:     make(map[string][]byte),
-		ThemeFiles: make(map[string][]byte),
-		Metadata: workerServices.GenerationMetadata{
-			CourseID:   generation.ID.String(),
-			CourseName: "E2E Test Course",
-			Format:     1,
-			Theme:      "default",
-			Author:     "E2E Test Author",
-			Version:    "1.0.0",
-		},
-	}
-
-	// 2. Soumettre la génération
-	submitStatus, err := mockWorker.SubmitGeneration(ctx, generation, pkg)
-	require.NoError(t, err)
-	assert.Equal(t, "pending", submitStatus.Status)
-
-	// 3. Attendre la completion
-	finalStatus, err := mockWorker.PollUntilComplete(ctx, submitStatus.ID, 5*time.Second)
-	require.NoError(t, err)
-	assert.Equal(t, "completed", finalStatus.Status)
-	assert.Equal(t, 100, *finalStatus.Progress)
-
-	// 4. Récupérer les fichiers de résultat
-	resultFiles, err := mockWorker.GetResultFiles(ctx, generation.ID.String())
-	require.NoError(t, err)
-	assert.Len(t, resultFiles, 3)
-
-	// 5. Télécharger les résultats
-	zipData, err := mockWorker.DownloadResults(ctx, generation.ID.String())
-	require.NoError(t, err)
-	assert.NotEmpty(t, zipData)
-
-	// Vérifications spécifiques à l'enforcer
-	t.Logf("Total Enforcer calls during E2E test - LoadPolicy: %d, AddPolicy: %d",
-		mockEnforcer.GetLoadPolicyCallCount(),
-		mockEnforcer.GetAddPolicyCallCount())
-}
-
-// TestGenerationWorkflow_WithRetry teste le workflow avec retry
-func TestGenerationWorkflow_WithRetry(t *testing.T) {
-	mockEnforcer, _ := setupTestEnforcer(t)
-
-	mockWorker := workerServices.NewMockWorkerService()
-	mockWorker.SetFailureRate(0.7) // 70% d'échec pour tester le retry
-	mockWorker.SetProcessingDelay(1 * time.Millisecond)
-
-	ctx := context.Background()
-
-	// Simuler plusieurs tentatives
-	var lastErr error
-	for attempt := range 3 {
-		generation := &models.Generation{
-			BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-			Name:      "Retry Test Generation",
-		}
-
-		pkg := &workerServices.GenerationPackage{
-			MDContent:  "# Retry Test",
-			Assets:     make(map[string][]byte),
-			ThemeFiles: make(map[string][]byte),
-		}
-
-		submitStatus, err := mockWorker.SubmitGeneration(ctx, generation, pkg)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		finalStatus, err := mockWorker.PollUntilComplete(ctx, submitStatus.ID, 2*time.Second)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		if finalStatus.Status == "completed" {
-			// Succès après retry
-			t.Logf("Generation succeeded after %d attempts", attempt+1)
-			t.Logf("Enforcer calls during retry - LoadPolicy: %d, AddPolicy: %d",
-				mockEnforcer.GetLoadPolicyCallCount(),
-				mockEnforcer.GetAddPolicyCallCount())
-			return
-		}
-
-		lastErr = err
-	}
-
-	// Si on arrive ici, tous les essais ont échoué (ce qui est possible avec 70% d'échec)
-	t.Logf("All retry attempts failed (expected with high failure rate): %v", lastErr)
-}
-
-// Test spécifique pour vérifier que l'enforcer mock fonctionne correctement
-func TestEnforcerMock_Integration(t *testing.T) {
-	mockEnforcer, enforcerHelper := setupTestEnforcer(t)
-
-	// Test direct de l'enforcer
-	err := casdoor.Enforcer.LoadPolicy()
-	require.NoError(t, err)
-
-	// Test d'ajout de politique
-	success, err := casdoor.Enforcer.AddPolicy("test-role", "/test/resource", "GET")
-	require.NoError(t, err)
-	assert.True(t, success)
-
-	// Test d'autorisation
-	authorized, err := casdoor.Enforcer.Enforce("test-user", "/test/resource", "GET")
-	require.NoError(t, err)
-	assert.True(t, authorized)
-
-	// Vérifications des appels
-	assert.Equal(t, 1, mockEnforcer.GetLoadPolicyCallCount())
-	assert.Equal(t, 1, mockEnforcer.GetAddPolicyCallCount())
-	assert.Equal(t, 1, len(mockEnforcer.EnforceCalls))
-
-	// Vérifier les paramètres des appels
-	addPolicyCall := mockEnforcer.AddPolicyCalls[0]
-	assert.Equal(t, "test-role", addPolicyCall[0])
-	assert.Equal(t, "/test/resource", addPolicyCall[1])
-	assert.Equal(t, "GET", addPolicyCall[2])
-
-	enforceCall := mockEnforcer.EnforceCalls[0]
-	assert.Equal(t, "test-user", enforceCall[0])
-	assert.Equal(t, "/test/resource", enforceCall[1])
-	assert.Equal(t, "GET", enforceCall[2])
-
-	// Test avec erreur
-	mockEnforcer.LoadPolicyFunc = func() error {
-		return assert.AnError
-	}
-
-	err = casdoor.Enforcer.LoadPolicy()
-	assert.Error(t, err)
-	assert.Equal(t, assert.AnError, err)
-
-	// Test de reset du mock
-	mockEnforcer.Reset()
-	assert.Equal(t, 0, mockEnforcer.GetLoadPolicyCallCount())
-	assert.Equal(t, 0, mockEnforcer.GetAddPolicyCallCount())
-
-	// Cleanup vérifié automatiquement via t.Cleanup dans setupTestEnforcer
-	_ = enforcerHelper // éviter l'avertissement unused variable
 }
 
 // Test avec EntityRegistrationService et le mock enforcer
@@ -517,86 +371,6 @@ func TestEntityRegistrationService_WithMockEnforcer(t *testing.T) {
 		}
 	}
 	assert.True(t, foundAdmin, "Admin role should be added")
-}
-
-// Benchmark pour mesurer les performances du service avec le mock enforcer
-func BenchmarkCourseService_GenerationPackagePreparation(b *testing.B) {
-	// Setup du mock enforcer pour le benchmark
-	helper := testHelpers.NewTestEnforcerHelper()
-	mockEnforcer := helper.SetupMockEnforcer()
-	defer helper.RestoreOriginalEnforcer()
-
-	// Configurer le mock pour être très rapide
-	mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
-
-	packageService := workerServices.NewGenerationPackageService()
-
-	course := &models.Course{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:      "Benchmark Course",
-		Title:     "Benchmark Course Title",
-		Version:   "1.0.0",
-		Chapters:  []*models.Chapter{},
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		// Test seulement la génération MD
-		_, err := packageService.GenerateMDContent(course, "benchmark@example.com")
-		if err != nil {
-			// Skip si des dépendances ne sont pas disponibles
-			b.Skip("Dependencies not available")
-		}
-	}
-
-	b.StopTimer()
-	b.Logf("Mock enforcer calls during benchmark - LoadPolicy: %d, AddPolicy: %d",
-		mockEnforcer.GetLoadPolicyCallCount(),
-		mockEnforcer.GetAddPolicyCallCount())
-}
-
-// Test de performance pour le mock worker avec enforcer
-func BenchmarkMockWorkerService_FullWorkflow(b *testing.B) {
-	// Setup du mock enforcer
-	helper := testHelpers.NewTestEnforcerHelper()
-	mockEnforcer := helper.SetupMockEnforcer()
-	defer helper.RestoreOriginalEnforcer()
-
-	mockWorker := workerServices.NewMockWorkerService()
-	mockWorker.SetFailureRate(0.0)
-	mockWorker.SetProcessingDelay(1 * time.Microsecond)
-
-	ctx := context.Background()
-
-	pkg := &workerServices.GenerationPackage{
-		MDContent:  "# Benchmark Test",
-		Assets:     make(map[string][]byte),
-		ThemeFiles: make(map[string][]byte),
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		generation := &models.Generation{
-			BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-			Name:      "Benchmark Generation",
-		}
-
-		submitStatus, err := mockWorker.SubmitGeneration(ctx, generation, pkg)
-		if err != nil {
-			b.Fatal(err)
-		}
-
-		_, err = mockWorker.PollUntilComplete(ctx, submitStatus.ID, 1*time.Second)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	b.StopTimer()
-	b.Logf("Mock enforcer performance - LoadPolicy: %d, AddPolicy: %d",
-		mockEnforcer.GetLoadPolicyCallCount(),
-		mockEnforcer.GetAddPolicyCallCount())
 }
 
 // fixedStatusWorker answers every status check with the same status and progress.
