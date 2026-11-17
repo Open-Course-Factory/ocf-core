@@ -70,9 +70,6 @@ test-verbose:
 test-registration:
 	go test -v ./tests/entityManagement/entityRegistrationService_test.go -race
 
-test-service:
-	go test -v ./tests/entityManagement/genericService_test.go -race
-
 test-repository:
 	go test -v ./tests/entityManagement/genericRepository_test.go -race
 
