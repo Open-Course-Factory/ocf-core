@@ -82,8 +82,28 @@ func createTestOrgMember(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID stri
 	return member
 }
 
+// stubHistoryBackend points the terminal service at a tt-backend that holds no
+// command history, so a caller who passes the access check gets a real answer.
+// Call it before building the controller, which reads the URL once.
+func stubHistoryBackend(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodDelete {
+			_, _ = w.Write([]byte(`{"sessions_cleared":0}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"commands":[],"total":0}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("TERMINAL_TRAINER_URL", srv.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+}
+
 // makeHistoryRequest creates a gin router and sends a GET request for session history
 func makeHistoryRequest(t *testing.T, db *gorm.DB, sessionID string, userID string, userRoles []string) *httptest.ResponseRecorder {
+	stubHistoryBackend(t)
 	controller := terminalController.NewTerminalController(db)
 
 	gin.SetMode(gin.TestMode)
@@ -108,9 +128,6 @@ func makeHistoryRequest(t *testing.T, db *gorm.DB, sessionID string, userID stri
 // TestIsSessionOwnerOrOrgManager_OrgOwnerCanAccessStudentHistory verifies that an
 // organization owner can access the command history of a terminal session belonging
 // to a student in their organization.
-//
-// Currently this test FAILS (red phase) because isSessionOwnerOrAdmin only checks
-// for session owner or admin role, not organization ownership.
 func TestIsSessionOwnerOrOrgManager_OrgOwnerCanAccessStudentHistory(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
@@ -129,30 +146,12 @@ func TestIsSessionOwnerOrOrgManager_OrgOwnerCanAccessStudentHistory(t *testing.T
 	// trainer1 (org owner, non-admin role) requests student1's command history
 	w := makeHistoryRequest(t, db, terminal.SessionID, "trainer1", []string{"user"})
 
-	// Org owner should NOT get a 403 Forbidden - they should be allowed access.
-	// The request may fail with 500 (because there's no real TT backend to call),
-	// but it must NOT be 403.
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"Org owner should be able to access student's command history (got 403 Forbidden)")
-
-	// If we get a 403, let's verify it's the specific "Only session owner or admin"
-	// message to confirm it's the access check that blocked us.
-	if w.Code == http.StatusForbidden {
-		var response map[string]any
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		t.Logf("Response body: %s", w.Body.String())
-		assert.NotContains(t, response["error_message"], "Only session owner or admin",
-			"Access check should have been expanded to include org owners")
-	}
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // TestIsSessionOwnerOrOrgManager_OrgManagerCanAccessStudentHistory verifies that an
 // organization manager can access the command history of a terminal session belonging
 // to a student in their organization.
-//
-// Currently this test FAILS (red phase) because isSessionOwnerOrAdmin only checks
-// for session owner or admin role, not organization manager status.
 func TestIsSessionOwnerOrOrgManager_OrgManagerCanAccessStudentHistory(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
@@ -171,18 +170,7 @@ func TestIsSessionOwnerOrOrgManager_OrgManagerCanAccessStudentHistory(t *testing
 	// trainer1 (org manager, non-admin role) requests student1's command history
 	w := makeHistoryRequest(t, db, terminal.SessionID, "trainer1", []string{"user"})
 
-	// Org manager should NOT get a 403 Forbidden - they should be allowed access.
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"Org manager should be able to access student's command history (got 403 Forbidden)")
-
-	if w.Code == http.StatusForbidden {
-		var response map[string]any
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		t.Logf("Response body: %s", w.Body.String())
-		assert.NotContains(t, response["error_message"], "Only session owner or admin",
-			"Access check should have been expanded to include org managers")
-	}
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // TestIsSessionOwnerOrOrgManager_OrgMemberCannotAccessStudentHistory verifies that a
@@ -277,10 +265,7 @@ func TestHistoryAccess_AdminSameOrg_Allowed(t *testing.T) {
 	// admin1 (administrator role, member of the same org) requests student1's command history
 	w := makeHistoryRequest(t, db, terminal.SessionID, "admin1", []string{"administrator"})
 
-	// Admin from the same org should be ALLOWED access (not 403).
-	// May get 500 due to no real TT backend, but must NOT be 403.
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"Administrator from the same organization should be able to access session history")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // TestHistoryAccess_AdminSessionWithoutOrg_Denied verifies that an administrator

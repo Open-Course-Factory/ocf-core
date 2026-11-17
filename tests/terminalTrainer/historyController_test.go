@@ -16,6 +16,7 @@ import (
 
 // makeDeleteHistoryRequest creates a gin router and sends a DELETE request for session history
 func makeDeleteHistoryRequest(t *testing.T, db *gorm.DB, sessionID string, userID string, userRoles []string) *httptest.ResponseRecorder {
+	stubHistoryBackend(t)
 	controller := terminalController.NewTerminalController(db)
 
 	gin.SetMode(gin.TestMode)
@@ -38,6 +39,7 @@ func makeDeleteHistoryRequest(t *testing.T, db *gorm.DB, sessionID string, userI
 
 // makeDeleteAllHistoryRequest creates a gin router and sends a DELETE request for all user history
 func makeDeleteAllHistoryRequest(t *testing.T, db *gorm.DB, userID string, userRoles []string) *httptest.ResponseRecorder {
+	stubHistoryBackend(t)
 	controller := terminalController.NewTerminalController(db)
 
 	gin.SetMode(gin.TestMode)
@@ -96,8 +98,7 @@ func TestGetSessionHistory_Unauthorized_Returns403(t *testing.T) {
 }
 
 // TestGetSessionHistory_OwnerPassesAccessCheck verifies that the session owner
-// passes the access check. The request will fail at the service level (no TT
-// backend configured), but it must NOT return 403 or 404.
+// reads their own history.
 func TestGetSessionHistory_OwnerPassesAccessCheck(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -106,12 +107,7 @@ func TestGetSessionHistory_OwnerPassesAccessCheck(t *testing.T) {
 
 	w := makeHistoryRequest(t, db, terminal.SessionID, "owner-user", []string{"user"})
 
-	// Should NOT be 403 (access denied) or 404 (not found)
-	// Will be 500 because there's no real TT backend to proxy to, which is fine
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"Owner should pass the access check")
-	assert.NotEqual(t, http.StatusNotFound, w.Code,
-		"Session should be found")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // TestGetSessionHistory_QueryParams verifies that query parameters (since, format,
@@ -122,6 +118,7 @@ func TestGetSessionHistory_QueryParams(t *testing.T) {
 	terminal, err := createTestTerminal(db, "owner-user", "stopped", nil)
 	require.NoError(t, err)
 
+	stubHistoryBackend(t)
 	controller := terminalController.NewTerminalController(db)
 
 	gin.SetMode(gin.TestMode)
@@ -138,11 +135,7 @@ func TestGetSessionHistory_QueryParams(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// Should NOT be 403 or 404 - params should be parsed without error
-	assert.NotEqual(t, http.StatusForbidden, w.Code)
-	assert.NotEqual(t, http.StatusNotFound, w.Code)
-	assert.NotEqual(t, http.StatusBadRequest, w.Code,
-		"Valid query parameters should not cause a 400 error")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // --- DeleteSessionHistory controller tests ---
@@ -190,11 +183,7 @@ func TestDeleteSessionHistory_OwnerPassesAccessCheck(t *testing.T) {
 
 	w := makeDeleteHistoryRequest(t, db, terminal.SessionID, "owner-user", []string{"user"})
 
-	// Should NOT be 403 or 404
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"Owner should pass the access check")
-	assert.NotEqual(t, http.StatusNotFound, w.Code,
-		"Session should be found")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // --- DeleteAllUserHistory controller tests ---
@@ -215,10 +204,8 @@ func TestDeleteAllUserHistory_NoApiKey_Returns500(t *testing.T) {
 	assert.Equal(t, "Failed to get user API key", response["error_message"])
 }
 
-// TestDeleteAllUserHistory_WithApiKey_PassesKeyLookup verifies that when a user
-// has an API key, the controller successfully retrieves it and proceeds to the
-// service call (which will fail without a real TT backend, but must NOT fail at
-// the key lookup stage).
+// TestDeleteAllUserHistory_WithApiKey_PassesKeyLookup verifies that a user who
+// has an API key gets all of their history deleted.
 func TestDeleteAllUserHistory_WithApiKey_PassesKeyLookup(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -228,14 +215,5 @@ func TestDeleteAllUserHistory_WithApiKey_PassesKeyLookup(t *testing.T) {
 
 	w := makeDeleteAllHistoryRequest(t, db, "keyed-user", []string{"user"})
 
-	// Should NOT return the "Failed to get user API key" error
-	assert.NotEqual(t, http.StatusNotFound, w.Code)
-
-	if w.Code == http.StatusInternalServerError {
-		var response map[string]any
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.NotEqual(t, "Failed to get user API key", response["error_message"],
-			"Should have passed the API key lookup stage")
-	}
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
