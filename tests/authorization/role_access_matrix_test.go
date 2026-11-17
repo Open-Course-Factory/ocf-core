@@ -427,19 +427,44 @@ func platformRows() []accessRow {
 	policy := func(matrixWorld) any {
 		return map[string]any{"GroupName": mxLearner, "Route": granted, "AuthorizedMethods": "(GET)"}
 	}
+	inForce := func() (bool, bool) {
+		ok, err := casdoor.Enforcer.Enforce(mxLearner, granted, http.MethodGet)
+		return ok, err == nil
+	}
 	// Allowed means the policy is in force afterwards, not only a 2xx answer.
 	policyInForce := func(w matrixWorld, code int, body string) (bool, bool) {
-		allowed, decided := defaultVerdict(w, code, body)
-		if !allowed {
+		if allowed, decided := defaultVerdict(w, code, body); !allowed {
 			return false, decided
 		}
-		inForce, err := casdoor.Enforcer.Enforce(mxLearner, granted, http.MethodGet)
-		return inForce, err == nil
+		return inForce()
+	}
+	// The revoke row starts from a world where the policy exists, and allowed
+	// means it is gone afterwards. The handler removes the stored rule but not
+	// the one in the running enforcer, so the policy is read again first, as
+	// the next policy reload does in production.
+	revokeSeeded := func(w matrixWorld) matrixRequest {
+		opts := utils.DefaultPermissionOptions()
+		opts.LoadPolicyFirst = false
+		if err := utils.AddPolicy(casdoor.Enforcer, mxLearner, granted, "(GET)", opts); err != nil {
+			panic(err)
+		}
+		return send(http.MethodDelete, accesses, policy)(w)
+	}
+	policyGone := func(w matrixWorld, code int, body string) (bool, bool) {
+		if allowed, decided := defaultVerdict(w, code, body); !allowed {
+			return false, decided
+		}
+		if err := casdoor.Enforcer.LoadPolicy(); err != nil {
+			return false, false
+		}
+		still, decided := inForce()
+		return !still, decided
 	}
 	return []accessRow{
 		{action: "platform: grant a Casbin policy", request: send(http.MethodPost, accesses, policy),
 			allowed: allow(mxAdmin), verdict: policyInForce},
-		{action: "platform: revoke a Casbin policy", request: send(http.MethodDelete, accesses, policy), allowed: allow(mxAdmin)},
+		{action: "platform: revoke a Casbin policy", request: revokeSeeded,
+			allowed: allow(mxAdmin), verdict: policyGone},
 	}
 }
 
