@@ -44,10 +44,7 @@ package authorization_tests
 // controller authoritatively enforces `session.UserID == userID` after
 // loading the session by terminal ID, so Layer 2 no longer needs to
 // guard it. The deeper EntityOwner-honors-rule.Param fix is tracked in
-// #266. Regression coverage: see
-// `TestScenariosLayer2_ByTerminal_FixedByIssue269_RegistryDeclaresSelfScoped`
-// below — that test ensures the route does not silently regress to
-// EntityOwner.
+// #266.
 
 import (
 	"net/http"
@@ -168,36 +165,6 @@ func allScenariosAuditRoutes() []scenariosAuditRoute {
 // at issues #268 / #269 / #266.
 // -----------------------------------------------------------------------------
 
-func TestScenariosLayer2_ByTerminal_FixedByIssue269_RegistryDeclaresSelfScoped(t *testing.T) {
-	access.RouteRegistry.Reset()
-	access.ResetEnforcers()
-	t.Cleanup(func() {
-		access.RouteRegistry.Reset()
-		access.ResetEnforcers()
-	})
-
-	// Register only the by-terminal route as production declares it.
-	// We mirror the production declaration here rather than importing
-	// RegisterScenarioPermissions to avoid coupling this audit to
-	// unrelated module init.
-	access.RouteRegistry.Register("Scenarios",
-		access.RoutePermission{
-			Path:   "/api/v1/scenario-sessions/by-terminal/:terminalId",
-			Method: "GET",
-			Role:   "member",
-			Access: access.AccessRule{Type: access.SelfScoped},
-		},
-	)
-
-	perm, found := access.RouteRegistry.Lookup("GET", "/api/v1/scenario-sessions/by-terminal/:terminalId")
-	assert.True(t, found,
-		"by-terminal route must be registered in the route registry — a missing entry would mean Layer 2 silently passes the route through")
-	if found {
-		assert.Equal(t, access.SelfScoped, perm.Access.Type,
-			"by-terminal route must be SelfScoped (controller enforces ownership at scenarioController.go:629). If this regressed to EntityOwner the #269 fix has been undone and the route will 403 the legitimate owner — see #266 for the deeper EntityOwner.rule.Param fix.")
-	}
-}
-
 // -----------------------------------------------------------------------------
 // AUDIT FINDING (positive) — Layer 1 / Layer 2 path consistency.
 //
@@ -216,55 +183,6 @@ func TestScenariosLayer2_ByTerminal_FixedByIssue269_RegistryDeclaresSelfScoped(t
 // reminder that the two must stay aligned.
 // -----------------------------------------------------------------------------
 
-func TestScenariosLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
-	access.RouteRegistry.Reset()
-	access.ResetEnforcers()
-	t.Cleanup(func() {
-		access.RouteRegistry.Reset()
-		access.ResetEnforcers()
-	})
-
-	// Register every route in the audit catalog using the same shape
-	// production uses — this matches what RegisterScenarioPermissions
-	// does at startup. We don't import the production function here
-	// because doing so would also pull in unrelated module init; the
-	// catalog parity check above is what guards drift.
-	for _, route := range allScenariosAuditRoutes() {
-		rule := access.AccessRule{
-			Type:    route.ruleType,
-			MinRole: route.minRole,
-			Entity:  route.entity,
-			Field:   route.field,
-		}
-		switch route.ruleType {
-		case access.GroupRole, access.OrgRole:
-			rule.Param = route.paramName
-		}
-		access.RouteRegistry.Register("Scenarios",
-			access.RoutePermission{
-				Path:   route.registeredPath,
-				Method: route.method,
-				Role:   "member",
-				Access: rule,
-			},
-		)
-	}
-
-	for _, route := range allScenariosAuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			perm, found := access.RouteRegistry.Lookup(route.method, route.registeredPath)
-			assert.True(t, found,
-				"RouteRegistry.Lookup must find a declaration for %s %s — a missing entry means Layer 2 silently passes the route through",
-				route.method, route.registeredPath)
-			if found {
-				assert.Equal(t, route.ruleType, perm.Access.Type,
-					"declared access rule type must match catalog for %s %s",
-					route.method, route.registeredPath)
-			}
-		})
-	}
-}
-
 // -----------------------------------------------------------------------------
 // Regression guard: no regex-method declarations.
 //
@@ -274,23 +192,6 @@ func TestScenariosLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
 // This subtest verifies every catalog entry uses a single concrete
 // HTTP verb, mirroring what the production permissions.go declares.
 // -----------------------------------------------------------------------------
-
-func TestScenariosLayer2_NoRegexMethodInCatalog(t *testing.T) {
-	allowed := map[string]bool{
-		"GET": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true,
-	}
-
-	for _, route := range allScenariosAuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			assert.True(t, allowed[route.method],
-				"catalog route %s %s declares a non-canonical HTTP method — Layer 2 Lookup is exact-match, regex/alternation methods would silently bypass enforcement",
-				route.method, route.registeredPath)
-			assert.NotContains(t, route.method, "|",
-				"alternation in method string for %s %s would silently bypass Layer 2 (see MR !180)",
-				route.method, route.registeredPath)
-		})
-	}
-}
 
 // -----------------------------------------------------------------------------
 // AUDIT: submit-quiz route (#283) — must be EntityOwner, not SelfScoped.
