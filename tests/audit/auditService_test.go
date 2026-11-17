@@ -17,10 +17,6 @@ import (
 // --- Log ---
 
 func TestAuditService_Log_CreatesEntry(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 
@@ -72,10 +68,6 @@ func TestAuditService_Log_CreatesEntry(t *testing.T) {
 }
 
 func TestAuditService_Log_EmptyMetadataDefaultsToEmptyJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 
@@ -98,10 +90,6 @@ func TestAuditService_Log_EmptyMetadataDefaultsToEmptyJSON(t *testing.T) {
 }
 
 func TestAuditService_Log_NilOptionalFields(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 
@@ -126,10 +114,6 @@ func TestAuditService_Log_NilOptionalFields(t *testing.T) {
 }
 
 func TestAuditService_Log_BillingFieldsPersisted(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 
@@ -155,10 +139,6 @@ func TestAuditService_Log_BillingFieldsPersisted(t *testing.T) {
 }
 
 func TestAuditService_Log_WithOrganizationID(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 
@@ -197,10 +177,6 @@ func TestAuditService_Log_WithOrganizationID(t *testing.T) {
 // Inserts an AuditLog row directly via gorm with OnBehalfOfID set, reads it
 // back, and verifies the value round-trips. Proves the column exists.
 func TestAuditLog_OnBehalfOfID_Column_Migrates(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	onBehalfID := uuid.New()
@@ -228,10 +204,6 @@ func TestAuditLog_OnBehalfOfID_Column_Migrates(t *testing.T) {
 // Test 2 — without an impersonation context, the entry is left unchanged:
 // ActorID stays as whatever the caller provided, OnBehalfOfID stays nil.
 func TestAuditService_Log_NoImpersonationContext_LeavesEntryUnchanged(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 
@@ -270,10 +242,6 @@ func TestAuditService_Log_NoImpersonationContext_LeavesEntryUnchanged(t *testing
 // middleware (out of scope here) is assumed to have already set ctx.userId to
 // the target — so callers passing &targetID is the realistic flow.
 func TestAuditService_Log_WithImpersonationContext_SwapsActorAndOnBehalfOf(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 
@@ -311,10 +279,6 @@ func TestAuditService_Log_WithImpersonationContext_SwapsActorAndOnBehalfOf(t *te
 // The log call still succeeds; the entry behaves as if no impersonation
 // context existed.
 func TestAuditService_Log_WithImpersonationContext_DoesNotPanicOnInvalidImpersonatorID(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 
@@ -347,10 +311,6 @@ func TestAuditService_Log_WithImpersonationContext_DoesNotPanicOnInvalidImperson
 // Test 5 — the three new event-type constants exist and persist with the
 // correct string values. This is a smoke test for the constants block.
 func TestAuditService_Log_NewImpersonationEventTypes_AreAccepted(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 
@@ -396,10 +356,6 @@ func TestAuditService_Log_NewImpersonationEventTypes_AreAccepted(t *testing.T) {
 // This protects against silent data loss if the auto-populate ever fired
 // unconditionally.
 func TestAuditService_Log_WithImpersonationContext_PreservesExplicitOnBehalfOf(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 

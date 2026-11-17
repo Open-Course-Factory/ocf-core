@@ -79,10 +79,6 @@ func runSupervisionStopped(t *testing.T, actorUUID, groupUUID uuid.UUID) auditMo
 // reads back with the same value, proving the dedicated column exists and
 // persists independently of any supervision mapping.
 func TestAuditLog_GroupID_Column_RoundTrips(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	groupID := uuid.New()
@@ -113,10 +109,6 @@ func TestAuditLog_GroupID_Column_RoundTrips(t *testing.T) {
 // Currently RED: buildSupervisionAudit puts the group id on OrganizationID and
 // never populates GroupID.
 func TestSupervisionAudit_StoppedEvent_CarriesManagingGroupInGroupField(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	actorID := uuid.New()
 	groupID := uuid.New()
 
@@ -134,10 +126,6 @@ func TestSupervisionAudit_StoppedEvent_CarriesManagingGroupInGroupField(t *testi
 // real org id, OrganizationID must be nil on supervision events. Currently RED:
 // buildSupervisionAudit sets OrganizationID = the group id.
 func TestSupervisionAudit_StoppedEvent_DoesNotOverloadOrganizationID(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	actorID := uuid.New()
 	groupID := uuid.New()
 
@@ -155,10 +143,6 @@ func TestSupervisionAudit_StoppedEvent_DoesNotOverloadOrganizationID(t *testing.
 // case: a non-supervision event that supplies no group leaves GroupID nil (the
 // column is nullable / absent). Mirrors TestAuditService_Log_NilOptionalFields.
 func TestAuditLog_GroupID_NilForNonSupervisionEvent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewAuditService(db)
 

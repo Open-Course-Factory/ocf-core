@@ -11,10 +11,6 @@ import (
 )
 
 func TestInitDefaultTemplates_CreatesExpectedTemplates(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	services.InitDefaultTemplates(db)
@@ -37,10 +33,6 @@ func TestInitDefaultTemplates_CreatesExpectedTemplates(t *testing.T) {
 }
 
 func TestInitDefaultTemplates_Idempotent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	// Call twice
@@ -56,10 +48,6 @@ func TestInitDefaultTemplates_Idempotent(t *testing.T) {
 }
 
 func TestInitDefaultTemplates_RequiredFields(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	services.InitDefaultTemplates(db)
@@ -80,10 +68,6 @@ func TestInitDefaultTemplates_RequiredFields(t *testing.T) {
 }
 
 func TestInitDefaultTemplates_SystemTemplateFlags(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	services.InitDefaultTemplates(db)
