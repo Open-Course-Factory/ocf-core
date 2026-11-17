@@ -42,9 +42,6 @@ func columnExists(t *testing.T, table, column string) bool {
 // expose a step_type column so the dev agent can record which kind of step a
 // progress row represents (terminal/flag/info/quiz).
 func TestScenarioStepProgress_HasStepTypeColumn(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	assert.True(t, columnExists(t, "scenario_step_progress", "step_type"),
 		"scenario_step_progress must have a step_type column for step-type-aware progress tracking")
 }
@@ -52,9 +49,6 @@ func TestScenarioStepProgress_HasStepTypeColumn(t *testing.T) {
 // TestScenarioStepProgress_HasQuizScoreColumn — quiz_score column must exist
 // so quiz attempts can be scored and surfaced on the teacher dashboard.
 func TestScenarioStepProgress_HasQuizScoreColumn(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	assert.True(t, columnExists(t, "scenario_step_progress", "quiz_score"),
 		"scenario_step_progress must have a quiz_score column to record quiz scoring (nullable float in [0,1])")
 }
@@ -62,9 +56,6 @@ func TestScenarioStepProgress_HasQuizScoreColumn(t *testing.T) {
 // TestScenarioStepProgress_HasQuizAnswersColumn — quiz_answers column must
 // exist to store the JSON-encoded answers payload submitted by the student.
 func TestScenarioStepProgress_HasQuizAnswersColumn(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	assert.True(t, columnExists(t, "scenario_step_progress", "quiz_answers"),
 		"scenario_step_progress must have a quiz_answers column to store the submitted answers JSON")
 }

@@ -985,9 +985,6 @@ func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testi
 // --- Unique active session index tests ---
 
 func TestScenarioSession_DuplicateActiveSession_ReturnsError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenarioID := uuid.New()
@@ -1012,9 +1009,6 @@ func TestScenarioSession_DuplicateActiveSession_ReturnsError(t *testing.T) {
 }
 
 func TestScenarioSession_DuplicateProvisioningSession_ReturnsError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenarioID := uuid.New()
@@ -1039,9 +1033,6 @@ func TestScenarioSession_DuplicateProvisioningSession_ReturnsError(t *testing.T)
 }
 
 func TestScenarioSession_DifferentUsers_ActiveSessions_Allowed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenarioID := uuid.New()
@@ -1065,9 +1056,6 @@ func TestScenarioSession_DifferentUsers_ActiveSessions_Allowed(t *testing.T) {
 }
 
 func TestScenarioSession_CompletedAndActive_Allowed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenarioID := uuid.New()

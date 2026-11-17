@@ -19,9 +19,6 @@ import (
 // and the staleness report would then confirm it, which is worse than not
 // having one.
 func TestTranslationStamp_CreateIgnoresClientHash(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, _, steps := coverageScenario(t, `["en","fr"]`)
 	hook := scenarioHooks.NewScenarioStepTranslationStampHook(db)
 
@@ -44,9 +41,6 @@ func TestTranslationStamp_CreateIgnoresClientHash(t *testing.T) {
 // Re-saving a translation re-stamps it, which is what marks a step caught up
 // again after its source changed.
 func TestTranslationStamp_UpdateRestamps(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, _, steps := coverageScenario(t, `["en","fr"]`)
 	hook := scenarioHooks.NewScenarioStepTranslationStampHook(db)
 
@@ -80,9 +74,6 @@ func TestTranslationStamp_UpdateRestamps(t *testing.T) {
 // stamped with nothing: an empty hash reads as "never checked" everywhere else,
 // and would quietly become a permanently stale row.
 func TestTranslationStamp_UnknownStep_IsRefused(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, _, _ := coverageScenario(t, `["en","fr"]`)
 	hook := scenarioHooks.NewScenarioStepTranslationStampHook(db)
 
@@ -98,9 +89,6 @@ func TestTranslationStamp_UnknownStep_IsRefused(t *testing.T) {
 // Stamping is what makes a freshly written translation count as current, so the
 // coverage report and the editor agree without either recomputing the rule.
 func TestTranslationStamp_StampedTranslation_ReadsAsCurrent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	hook := scenarioHooks.NewScenarioStepTranslationStampHook(db)
 
@@ -140,9 +128,6 @@ func TestTranslationStamp_StampedTranslation_ReadsAsCurrent(t *testing.T) {
 // launcher card, with the French text sitting correct and current in the
 // database.
 func TestTranslationStamp_PatchRestampsTheStoredRow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	hook := scenarioHooks.NewScenarioStepTranslationStampHook(db)
 

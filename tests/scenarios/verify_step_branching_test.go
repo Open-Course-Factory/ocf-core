@@ -31,9 +31,6 @@ import (
 // advances on success. This guards against the dev agent breaking the happy
 // path while adding branching.
 func TestVerifyStep_TerminalStep_CallsVerifyScript(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -84,9 +81,6 @@ func TestVerifyStep_TerminalStep_CallsVerifyScript(t *testing.T) {
 // /submit-flag instead. Today this happens implicitly via step.HasFlag, but
 // once step_type is the source of truth the dispatch must key off it.
 func TestVerifyStep_FlagStep_RejectsVerifyAndPointsToSubmitFlag(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -129,9 +123,6 @@ func TestVerifyStep_FlagStep_RejectsVerifyAndPointsToSubmitFlag(t *testing.T) {
 // step must auto-mark it completed and advance to the next step. Info steps
 // have no verification script — clicking "next" is the verify equivalent.
 func TestVerifyStep_InfoStep_AutoCompletesAndAdvances(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -185,9 +176,6 @@ func TestVerifyStep_InfoStep_AutoCompletesAndAdvances(t *testing.T) {
 // TestVerifyStep_QuizStep_RejectsVerifyAndPointsToSubmitQuiz — calling verify
 // on a step_type=quiz step must error out and direct the caller to /submit-quiz.
 func TestVerifyStep_QuizStep_RejectsVerifyAndPointsToSubmitQuiz(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -229,9 +217,6 @@ func TestVerifyStep_QuizStep_RejectsVerifyAndPointsToSubmitQuiz(t *testing.T) {
 // A survey is submitted through /submit-quiz like a quiz (#568); /verify on it
 // must point there instead of auto-passing it as a script-less terminal step.
 func TestVerifyCurrentStep_SurveyStep_ReturnsErrVerifyQuizStep(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{

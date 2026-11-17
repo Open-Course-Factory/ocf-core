@@ -29,9 +29,6 @@ func setupScenarioRegistrationService(t *testing.T) *ems.EntityRegistrationServi
 // converter copies StepType into ScenarioStepOutput. Without this, every step
 // reloaded by the editor looks like a terminal step.
 func TestScenarioOutput_WithIncludeSteps_PreservesStepType(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -68,9 +65,6 @@ func TestScenarioOutput_WithIncludeSteps_PreservesStepType(t *testing.T) {
 // the ModelToDto converter. This is the round-trip the trainer experiences
 // when saving a quiz step and reloading the scenario.
 func TestScenarioOutput_WithIncludeStepsQuestions_PreloadsQuestions(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -145,9 +139,6 @@ func TestScenarioOutput_WithIncludeStepsQuestions_PreloadsQuestions(t *testing.T
 // The DefaultIncludes:["Questions"] on ScenarioStep registration ensures GORM
 // preloads the relation so the converter has data to serialize.
 func TestScenarioStepOutput_GetSingle_IncludesQuestions(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -216,9 +207,6 @@ func TestScenarioStepOutput_GetSingle_IncludesQuestions(t *testing.T) {
 // The flag defaults to false (exam-safe) and trainers opt in to learning mode.
 // The frontend player needs this through both code paths to choose its UI mode.
 func TestScenarioStepOutput_PreservesShowImmediateFeedback(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{

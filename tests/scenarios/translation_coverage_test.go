@@ -70,9 +70,6 @@ func coverageFor(t *testing.T, db *gorm.DB, scenarioID uuid.UUID, locale string)
 
 // A locale nothing has been written for is entirely missing, and not complete.
 func TestTranslationCoverage_NothingTranslated(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, _ := coverageScenario(t, `["fr"]`)
 
 	coverage := coverageFor(t, db, scenario.ID, "fr")
@@ -85,9 +82,6 @@ func TestTranslationCoverage_NothingTranslated(t *testing.T) {
 
 // Every step translated against its current source is complete.
 func TestTranslationCoverage_FullyTranslated_IsComplete(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["fr"]`)
 	for _, step := range steps {
 		translateStep(t, db, step, services.StepSourceHash(step))
@@ -105,9 +99,6 @@ func TestTranslationCoverage_FullyTranslated_IsComplete(t *testing.T) {
 // whole reason SourceHash exists: without it the French reads fine and quietly
 // describes something that has changed.
 func TestTranslationCoverage_SourceEditedAfterTranslating_IsStale(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["fr"]`)
 	for _, step := range steps {
 		translateStep(t, db, step, services.StepSourceHash(step))
@@ -125,9 +116,6 @@ func TestTranslationCoverage_SourceEditedAfterTranslating_IsStale(t *testing.T) 
 // Reporting it as stale is the safe direction: the alternative is telling a
 // trainer a translation is up to date when nothing checked whether it is.
 func TestTranslationCoverage_TranslationWithoutSourceHash_CountsAsStale(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["fr"]`)
 	translateStep(t, db, steps[0], "")
 
@@ -140,9 +128,6 @@ func TestTranslationCoverage_TranslationWithoutSourceHash_CountsAsStale(t *testi
 // The default locale is the content itself, so it is always complete and is
 // never reported as needing translation.
 func TestTranslationCoverage_DefaultLocale_IsAlwaysComplete(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, _ := coverageScenario(t, `["en","fr"]`)
 
 	coverage := coverageFor(t, db, scenario.ID, "en")
@@ -155,9 +140,6 @@ func TestTranslationCoverage_DefaultLocale_IsAlwaysComplete(t *testing.T) {
 // A scenario declaring no locales reports none: nothing to translate, and no
 // invented rows for languages nobody asked for.
 func TestTranslationCoverage_NoLocalesDeclared_ReportsNothing(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, _ := coverageScenario(t, "")
 
 	all, err := services.TranslationCoverage(db, scenario.ID)
@@ -173,9 +155,6 @@ func TestTranslationCoverage_NoLocalesDeclared_ReportsNothing(t *testing.T) {
 // hash, and a client that recomputed it would be a second implementation of the
 // one rule that says whether a translation still matches its source.
 func TestTranslationCoverage_ReportsStatePerStep(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	translateStep(t, db, steps[0], services.StepSourceHash(steps[0])) // current
 	translateStep(t, db, steps[1], "written-against-something-else")  // stale
@@ -196,9 +175,6 @@ func TestTranslationCoverage_ReportsStatePerStep(t *testing.T) {
 // The default locale needs no per-step detail: it is the content itself, and
 // every step is trivially current.
 func TestTranslationCoverage_DefaultLocale_ReportsEveryStepTranslated(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, _ := coverageScenario(t, `["en","fr"]`)
 
 	coverage := coverageFor(t, db, scenario.ID, "en")
@@ -217,9 +193,6 @@ func TestTranslationCoverage_DefaultLocale_ReportsEveryStepTranslated(t *testing
 // worse than an honest gap, because nothing reports it and the learner meets it
 // mid-run.
 func TestTranslationCoverage_TitleOnlyTranslation_IsNotComplete(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	for _, step := range steps {
 		require.NoError(t, db.Create(&models.ScenarioStepTranslation{
@@ -240,9 +213,6 @@ func TestTranslationCoverage_TitleOnlyTranslation_IsNotComplete(t *testing.T) {
 
 // Filling everything the source fills is what counts.
 func TestTranslationCoverage_EveryFilledFieldTranslated_IsComplete(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	for _, step := range steps {
 		require.NoError(t, db.Create(&models.ScenarioStepTranslation{
@@ -261,9 +231,6 @@ func TestTranslationCoverage_EveryFilledFieldTranslated_IsComplete(t *testing.T)
 // A field the source leaves empty is not something to translate, so a step with
 // no hint is not held back for want of a translated hint.
 func TestTranslationCoverage_SourceWithNoHint_NeedsNoTranslatedHint(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	for _, step := range steps {
 		require.NoError(t, db.Model(&step).Update("hint_content", "").Error)

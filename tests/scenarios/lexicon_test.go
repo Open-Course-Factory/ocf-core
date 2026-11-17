@@ -3,7 +3,6 @@ package scenarios_test
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,9 +53,6 @@ func lexiconScenario(t *testing.T) (*gorm.DB, models.Scenario) {
 // follows. Naming paths instead would let the French cellar sit somewhere the
 // English one does not.
 func TestLexicon_ComposesPathsFromTheTree(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	en, err := services.GenerateLexicon(db, scenario.ID, "en")
@@ -73,9 +69,6 @@ func TestLexicon_ComposesPathsFromTheTree(t *testing.T) {
 // Text tokens are read out of files, not typed as paths, so they get a name and
 // no path at all.
 func TestLexicon_TokensHaveNoPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	fr, err := services.GenerateLexicon(db, scenario.ID, "fr")
@@ -88,9 +81,6 @@ func TestLexicon_TokensHaveNoPath(t *testing.T) {
 // The generated file declares its own locale, so a script that has sourced it
 // can tell which world it is standing in.
 func TestLexicon_DeclaresItsLocale(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	fr, err := services.GenerateLexicon(db, scenario.ID, "fr")
@@ -102,9 +92,6 @@ func TestLexicon_DeclaresItsLocale(t *testing.T) {
 // A parent must be emitted before the children that compose from it, or the
 // child's path expands against nothing and silently becomes a shorter one.
 func TestLexicon_EmitsParentsBeforeChildren(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	en, err := services.GenerateLexicon(db, scenario.ID, "en")
@@ -118,9 +105,6 @@ func TestLexicon_EmitsParentsBeforeChildren(t *testing.T) {
 // Prose falls back and reads as untranslated; a path that falls back points at
 // somewhere this learner's disk does not have.
 func TestLexicon_MissingName_IsRefused(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 	require.NoError(t, db.Where("locale = ?", "fr").Delete(&models.ScenarioLexiconName{}).Error)
 
@@ -133,9 +117,6 @@ func TestLexicon_MissingName_IsRefused(t *testing.T) {
 // Validation reports everything wrong at once, because an editor showing one
 // problem at a time turns fixing a lexicon into a guessing game.
 func TestLexiconValidate_CleanLexicon_HasNoProblems(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	problems, err := services.ValidateLexicon(db, scenario.ID)
@@ -147,9 +128,6 @@ func TestLexiconValidate_CleanLexicon_HasNoProblems(t *testing.T) {
 // A place is typed into a shell by someone who has not met quoting yet, and the
 // lab image generates no UTF-8 locale. Accents and spaces belong in prose.
 func TestLexiconValidate_AccentedPlace_IsReported(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 	require.NoError(t, db.Model(&models.ScenarioLexiconName{}).
 		Where("locale = ? AND name = ?", "fr", "Cave").Update("name", "Cave à vin").Error)
@@ -164,9 +142,6 @@ func TestLexiconValidate_AccentedPlace_IsReported(t *testing.T) {
 // A text token is read out of a file, never typed as a path, so accents are
 // fine there — reporting them would train people to ignore the checker.
 func TestLexiconValidate_AccentedToken_IsAllowed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 	require.NoError(t, db.Model(&models.ScenarioLexiconName{}).
 		Where("locale = ? AND name = ?", "fr", "Roi").Update("name", "Le Roi déchu").Error)
@@ -180,9 +155,6 @@ func TestLexiconValidate_AccentedToken_IsAllowed(t *testing.T) {
 // Two siblings sharing a name are one directory, and the world quietly loses a
 // room rather than failing to build.
 func TestLexiconValidate_SiblingsSharingAName_AreReported(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 	twin := models.ScenarioLexiconEntry{
 		ScenarioID: scenario.ID, Key: "DUNGEON", ParentKey: "CASTLE", Kind: "place", Position: 9,
@@ -200,9 +172,6 @@ func TestLexiconValidate_SiblingsSharingAName_AreReported(t *testing.T) {
 
 // A language that has named nothing is reported once per gap, not once.
 func TestLexiconValidate_MissingNames_AreReported(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 	require.NoError(t, db.Where("locale = ?", "fr").Delete(&models.ScenarioLexiconName{}).Error)
 
@@ -254,8 +223,10 @@ func TestLexicon_ProvisioningInstallsTheSessionsLanguage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
-	require.Eventually(t, func() bool { return len(verifySvc.execCalls) > 0 }, 3*time.Second, 20*time.Millisecond,
-		"the setup script never ran")
+	// Wait on the session status, not on the fake: the launch goroutine is still
+	// writing to it.
+	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
+	require.NotEmpty(t, verifySvc.execCalls, "the setup script never ran")
 
 	// The script travels as the command tt-backend is asked to run.
 	setup := strings.Join(verifySvc.execCalls[0].command, " ")
@@ -273,9 +244,6 @@ func TestLexicon_ProvisioningInstallsTheSessionsLanguage(t *testing.T) {
 // the world cannot be built at all: the setup script fails, and the learner
 // gets a container with nothing in it.
 func TestLaunchableLocales_IncompleteLexicon_IsNotOffered(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	step := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "First", StepType: "info"}
@@ -308,9 +276,6 @@ func TestLaunchableLocales_IncompleteLexicon_IsNotOffered(t *testing.T) {
 // it would be moving something that does not arrive. So a key may repeat under
 // different parents: one name, one W_, and a P_ per place it can be.
 func TestLexicon_OneObjectInTwoPlaces_KeepsOneName(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	require.NoError(t, services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
@@ -333,9 +298,6 @@ func TestLexicon_OneObjectInTwoPlaces_KeepsOneName(t *testing.T) {
 // The same key in the same place twice is still a mistake: it would be one
 // entry claiming to be two.
 func TestLexiconDocument_SameKeySamePlace_IsRefused(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	err := services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
@@ -353,9 +315,6 @@ func TestLexiconDocument_SameKeySamePlace_IsRefused(t *testing.T) {
 // world — but a different audience, and that difference is worth keeping in the
 // data: a token is grepped for inside a file, a message is read by a person.
 func TestLexicon_MessagesAreNamedButHaveNoPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	entry := models.ScenarioLexiconEntry{
@@ -381,9 +340,6 @@ func TestLexicon_MessagesAreNamedButHaveNoPath(t *testing.T) {
 // A message is prose: it carries accents, apostrophes and punctuation, and none
 // of that is the shell-safety problem a path name would be.
 func TestLexiconValidate_AccentedMessage_IsAllowed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	entry := models.ScenarioLexiconEntry{
@@ -408,9 +364,6 @@ func TestLexiconValidate_AccentedMessage_IsAllowed(t *testing.T) {
 // A language missing a message cannot be offered: a learner would fail a step
 // and be told why in a language they did not choose.
 func TestLaunchableLocales_UntranslatedMessage_IsNotOffered(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	step := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "First", StepType: "info"}

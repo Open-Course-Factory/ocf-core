@@ -11,9 +11,6 @@ import (
 )
 
 func TestStepType_DefaultTerminal(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -33,9 +30,6 @@ func TestStepType_DefaultTerminal(t *testing.T) {
 }
 
 func TestStepType_Quiz(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -54,9 +48,6 @@ func TestStepType_Quiz(t *testing.T) {
 }
 
 func TestStepType_UpdateViaPatch(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -86,9 +77,6 @@ func TestStepType_UpdateViaPatch(t *testing.T) {
 }
 
 func TestStepType_OutputDto(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{

@@ -12,9 +12,6 @@ import (
 // A scenario that declares no locales offers no choice: it is single-language,
 // and a launcher must show no picker rather than one with a single entry.
 func TestLaunchableLocales_NoLocalesDeclared_OffersNoChoice(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, _ := coverageScenario(t, "")
 
 	locales, err := services.LaunchableLocales(db, scenario.ID)
@@ -27,9 +24,6 @@ func TestLaunchableLocales_NoLocalesDeclared_OffersNoChoice(t *testing.T) {
 // report exists to serve: a learner sent into a French world who then hits an
 // English step is reading about rooms that are not on their disk.
 func TestLaunchableLocales_IncompleteLocale_IsNotOffered(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	translateStep(t, db, steps[0], services.StepSourceHash(steps[0]))
 
@@ -42,9 +36,6 @@ func TestLaunchableLocales_IncompleteLocale_IsNotOffered(t *testing.T) {
 
 // A fully translated locale is offered alongside the default.
 func TestLaunchableLocales_CompleteLocale_IsOffered(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	for _, step := range steps {
 		translateStep(t, db, step, services.StepSourceHash(step))
@@ -59,9 +50,6 @@ func TestLaunchableLocales_CompleteLocale_IsOffered(t *testing.T) {
 // A locale that went stale stops being offered, without anyone having to
 // remember to withdraw it.
 func TestLaunchableLocales_StaleLocale_StopsBeingOffered(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	for _, step := range steps {
 		translateStep(t, db, step, services.StepSourceHash(step))
@@ -79,9 +67,6 @@ func TestLaunchableLocales_StaleLocale_StopsBeingOffered(t *testing.T) {
 // refused, not silently downgraded to the default. A learner who asked for
 // French and got English would read correct text about the wrong world.
 func TestStartScenario_UnavailableLocale_IsRefused(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, _ := coverageScenario(t, `["en","fr"]`)
 	svc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
 
@@ -93,9 +78,6 @@ func TestStartScenario_UnavailableLocale_IsRefused(t *testing.T) {
 
 // The empty locale is every session that exists today and must keep working.
 func TestStartScenario_NoLocale_IsAlwaysAllowed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, _ := coverageScenario(t, `["en","fr"]`)
 	svc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
 

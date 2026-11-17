@@ -94,9 +94,6 @@ func quizFixture(t *testing.T, withFollowingStep bool) (uuid.UUID, []uuid.UUID) 
 // correct_answer, the response must report score=1.0, correct_count==total,
 // and a populated next_step.
 func TestSubmitQuiz_AllCorrect_ReturnsFullScore(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, true /* withFollowingStep */)
 
 	input := dto.SubmitQuizInput{
@@ -122,9 +119,6 @@ func TestSubmitQuiz_AllCorrect_ReturnsFullScore(t *testing.T) {
 // TestSubmitQuiz_AllWrong_ReturnsZeroScore — when no answer matches, score=0
 // but the session still advances (quiz is graded, not gated).
 func TestSubmitQuiz_AllWrong_ReturnsZeroScore(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, true /* withFollowingStep */)
 
 	input := dto.SubmitQuizInput{
@@ -150,9 +144,6 @@ func TestSubmitQuiz_AllWrong_ReturnsZeroScore(t *testing.T) {
 // TestSubmitQuiz_PartialCorrect_ReturnsPartialScore — 2 of 3 correct → score
 // ≈ 0.67. Score is correct_count / total.
 func TestSubmitQuiz_PartialCorrect_ReturnsPartialScore(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, true)
 
 	input := dto.SubmitQuizInput{
@@ -178,9 +169,6 @@ func TestSubmitQuiz_PartialCorrect_ReturnsPartialScore(t *testing.T) {
 // The spec allows correct_answer to be exposed post-submission (no longer
 // secret); we assert the correctness signal regardless.
 func TestSubmitQuiz_PerQuestionResults_IncludesCorrectness(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, true)
 
 	input := dto.SubmitQuizInput{
@@ -219,9 +207,6 @@ func TestSubmitQuiz_PerQuestionResults_IncludesCorrectness(t *testing.T) {
 // JSON-encoded QuizAnswers. This lets the teacher dashboard see scored quiz
 // attempts.
 func TestSubmitQuiz_StoresProgress(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, true)
 
 	input := dto.SubmitQuizInput{
@@ -258,9 +243,6 @@ func TestSubmitQuiz_StoresProgress(t *testing.T) {
 // is not step_type=quiz must error out (400/422 at the controller; service
 // returns error).
 func TestSubmitQuiz_NonQuizStep_ReturnsError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -294,9 +276,6 @@ func TestSubmitQuiz_NonQuizStep_ReturnsError(t *testing.T) {
 // TestSubmitQuiz_MissingAnswers_ReturnsError — request body without an answers
 // map (nil/empty) must error so the controller can return 400.
 func TestSubmitQuiz_MissingAnswers_ReturnsError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, _ := quizFixture(t, true)
 
 	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
@@ -317,9 +296,6 @@ func TestSubmitQuiz_MissingAnswers_ReturnsError(t *testing.T) {
 // TestSubmitQuiz_WrongQuestionIds_ReturnsError — answers referencing question
 // IDs that don't belong to the current step must error (422 territory).
 func TestSubmitQuiz_WrongQuestionIds_ReturnsError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, _ := quizFixture(t, true)
 
 	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
@@ -339,9 +315,6 @@ func TestSubmitQuiz_WrongQuestionIds_ReturnsError(t *testing.T) {
 // correct answers to the learner's browser where devtools can read them,
 // making "exam mode" purely cosmetic (§7.5).
 func TestSubmitQuiz_ExamMode_OmitsPerQuestionResults(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, true)
 
 	// Flip the fixture's quiz step to exam mode.
@@ -392,9 +365,6 @@ func TestSubmitQuiz_ExamMode_OmitsPerQuestionResults(t *testing.T) {
 // the author testing their own quiz, so exam mode must not hide anything
 // from them: they need the score and every correct answer to check it.
 func TestSubmitQuiz_ExamModePreview_RevealsFullCorrection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, true)
 	require.NoError(t, sharedTestDB.Model(&models.ScenarioStep{}).
 		Where("step_type = ?", "quiz").
@@ -421,9 +391,6 @@ func TestSubmitQuiz_ExamModePreview_RevealsFullCorrection(t *testing.T) {
 // gives credit per right tick, reports each question's points, and stores the
 // same score on the progress row.
 func TestSubmitQuiz_PartialMode_ScoresTicksAndPersists(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, true)
 	var step models.ScenarioStep
 	require.NoError(t, sharedTestDB.Where("step_type = ?", "quiz").First(&step).Error)
@@ -459,9 +426,6 @@ func TestSubmitQuiz_PartialMode_ScoresTicksAndPersists(t *testing.T) {
 // show_immediate_feedback=true the breakdown is the point: correct answers
 // and explanations are deliberately revealed after submission.
 func TestSubmitQuiz_LearningMode_ExposesCorrectAnswers(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, true)
 
 	input := dto.SubmitQuizInput{
@@ -559,9 +523,6 @@ func assertNoCorrection(t *testing.T, result *dto.SubmitQuizResponse) {
 
 // Every survey question is optional: sending nothing at all still moves on.
 func TestSubmitQuiz_SurveyEmptyAnswers_AdvancesWithoutScore(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, _ := surveyFixture(t)
 
 	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
@@ -572,9 +533,6 @@ func TestSubmitQuiz_SurveyEmptyAnswers_AdvancesWithoutScore(t *testing.T) {
 }
 
 func TestSubmitQuiz_SurveyStoresAnswersWithoutScore(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := surveyFixture(t)
 	answers := map[uuid.UUID]string{qIDs[0]: "1", qIDs[1]: "More time on pipes"}
 
@@ -597,9 +555,6 @@ func TestSubmitQuiz_SurveyStoresAnswersWithoutScore(t *testing.T) {
 
 // A preview reveals a quiz's correction to its author; a survey has none.
 func TestSubmitQuiz_SurveyPreview_ReturnsNoCorrection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := surveyFixture(t)
 	require.NoError(t, sharedTestDB.Model(&models.ScenarioSession{}).
 		Where("id = ?", sessionID).Update("is_preview", true).Error)
@@ -614,9 +569,6 @@ func TestSubmitQuiz_SurveyPreview_ReturnsNoCorrection(t *testing.T) {
 }
 
 func TestSubmitQuiz_SurveyUnknownQuestion_IsRejected(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := surveyFixture(t)
 
 	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
@@ -632,9 +584,6 @@ func TestSubmitQuiz_SurveyUnknownQuestion_IsRejected(t *testing.T) {
 
 // Regression: only surveys may be submitted empty — a quiz still needs answers.
 func TestSubmitQuiz_QuizEmptyAnswers_StillRejected(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, _ := quizFixture(t, true)
 
 	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
@@ -668,9 +617,6 @@ func submitSurvey(t *testing.T, sessionID uuid.UUID, answers map[uuid.UUID]strin
 // A free-text survey answer is capped at 4000 characters — characters, not
 // bytes, so a French answer gets the same room as an English one.
 func TestSubmitQuiz_SurveyFreeTextOverLimit_IsRejected(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := surveyFixture(t)
 
 	err := submitSurvey(t, sessionID, map[uuid.UUID]string{qIDs[1]: strings.Repeat("é", 4001)})
@@ -680,9 +626,6 @@ func TestSubmitQuiz_SurveyFreeTextOverLimit_IsRejected(t *testing.T) {
 }
 
 func TestSubmitQuiz_SurveyFreeTextAtLimit_IsAccepted(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := surveyFixture(t)
 
 	// 4000 runes, 8000 bytes: a byte count would refuse it.
@@ -692,9 +635,6 @@ func TestSubmitQuiz_SurveyFreeTextAtLimit_IsAccepted(t *testing.T) {
 // Every survey question is optional, but an answer that is given must be one
 // the question could have produced.
 func TestSubmitQuiz_SurveyChoiceAnswers_AreValidated(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	cases := []struct {
 		name     string
 		multi    bool
@@ -738,9 +678,6 @@ func TestSubmitQuiz_SurveyChoiceAnswers_AreValidated(t *testing.T) {
 // The body is capped before it is parsed, like test-verify's script: an
 // oversized submission never reaches the service.
 func TestSubmitQuizRoute_BodyOver64KiB_IsRejected(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := surveyFixture(t)
 	require.NoError(t, sharedTestDB.Model(&models.ScenarioSession{}).
 		Where("id = ?", sessionID).Update("user_id", "survey-owner").Error)

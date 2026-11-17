@@ -21,9 +21,6 @@ import (
 // which is the window in which a broken one reaches a learner.
 
 func TestLexiconDocument_ReplacesTheWholeThing(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	err := services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
@@ -42,9 +39,6 @@ func TestLexiconDocument_ReplacesTheWholeThing(t *testing.T) {
 
 // Order is kept as sent, so a generated file and the editor's table agree.
 func TestLexiconDocument_KeepsTheOrderItWasGiven(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	require.NoError(t, services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
@@ -65,9 +59,6 @@ func TestLexiconDocument_KeepsTheOrderItWasGiven(t *testing.T) {
 // of one being written, and refusing to store it would mean losing the work
 // every time a translator stops halfway.
 func TestLexiconDocument_UnfinishedWork_SavesAndReports(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	err := services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
@@ -88,9 +79,6 @@ func TestLexiconDocument_UnfinishedWork_SavesAndReports(t *testing.T) {
 // inside itself resolvable, and storing it would break generation for a locale
 // that was previously fine.
 func TestLexiconDocument_UnknownParent_IsRefusedAndChangesNothing(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	err := services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
@@ -106,9 +94,6 @@ func TestLexiconDocument_UnknownParent_IsRefusedAndChangesNothing(t *testing.T) 
 }
 
 func TestLexiconDocument_CycleIsRefused(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	err := services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
@@ -121,9 +106,6 @@ func TestLexiconDocument_CycleIsRefused(t *testing.T) {
 
 // Two entries under one key would make $P_CELLAR mean two things.
 func TestLexiconDocument_DuplicateKey_IsRefused(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	err := services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
@@ -141,9 +123,6 @@ func TestLexiconDocument_DuplicateKey_IsRefused(t *testing.T) {
 // language exists that the script sends that learner somewhere their disk does
 // not have, by which point the scenario looks broken rather than untranslated.
 func TestLexiconDocument_ScriptNamingARoom_IsReported(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	require.NoError(t, db.Create(&models.ScenarioStep{
@@ -161,9 +140,6 @@ func TestLexiconDocument_ScriptNamingARoom_IsReported(t *testing.T) {
 // A script that composes from the vocabulary is what this is asking for, and
 // must not be nagged about.
 func TestLexiconDocument_ScriptUsingTheVocabulary_IsQuiet(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	require.NoError(t, db.Create(&models.ScenarioStep{
@@ -180,9 +156,6 @@ func TestLexiconDocument_ScriptUsingTheVocabulary_IsQuiet(t *testing.T) {
 // Machinery keeps its own name. /etc and /opt are the same in every language,
 // and flagging them would train an author to ignore the list.
 func TestLexiconDocument_MachineryPaths_AreNotReported(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	require.NoError(t, db.Create(&models.ScenarioStep{
@@ -199,9 +172,6 @@ func TestLexiconDocument_MachineryPaths_AreNotReported(t *testing.T) {
 // A scenario with no vocabulary is not told its scripts are wrong: there is
 // nothing yet to say what its world is called.
 func TestLexiconDocument_NoVocabulary_ReportsNoLiterals(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, _, steps := coverageScenario(t, `["en","fr"]`)
 	require.NoError(t, db.Model(&steps[0]).Update("verify_script", `[ -d /World/Castle ]`).Error)
 
@@ -218,9 +188,6 @@ func TestLexiconDocument_NoVocabulary_ReportsNoLiterals(t *testing.T) {
 // advice — it would put a shell variable into the text rather than expand it.
 // That is translation work, and it belongs to the content pass.
 func TestLexiconDocument_NamesInsideHeredocs_AreNotReported(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	require.NoError(t, db.Create(&models.ScenarioStep{
@@ -237,9 +204,6 @@ func TestLexiconDocument_NamesInsideHeredocs_AreNotReported(t *testing.T) {
 // Code after a heredoc closes is code again, and a room named there is still a
 // room named there.
 func TestLexiconDocument_CodeAfterAHeredoc_IsStillChecked(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	require.NoError(t, db.Create(&models.ScenarioStep{
@@ -258,9 +222,6 @@ func TestLexiconDocument_CodeAfterAHeredoc_IsStillChecked(t *testing.T) {
 // "$P_CHEST" in an explanation, or in the sentence a learner reads when a check
 // refuses, would put a variable name where a sentence belongs.
 func TestLexiconDocument_CommentsAndMessages_AreNotReported(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario := lexiconScenario(t)
 
 	require.NoError(t, db.Create(&models.ScenarioStep{
