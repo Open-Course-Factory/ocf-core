@@ -367,57 +367,6 @@ func TestCourseController_DownloadGenerationResults_NotCompleted(t *testing.T) {
 	assert.Contains(t, errorResponse["error_message"], "n'est pas terminée")
 }
 
-// TestCourseController_RetryGeneration teste le retry
-// NOTE: Skipped because RetryGeneration uses global casdoorsdk.GetUserByUserId() which requires real Casdoor
-func TestCourseController_RetryGeneration(t *testing.T) {
-	t.Skip("RetryGeneration requires real Casdoor integration - needs refactoring to use injected casdoorService")
-	router, db := setupTestRouter(t)
-
-	course, theme, schedule, _ := createTestData(t, db)
-
-	// Créer une génération échouée
-	generation := &models.Generation{
-		BaseModel: entityManagementModels.BaseModel{
-			ID:       uuid.New(),
-			OwnerIDs: []string{"test-user-1"},
-		},
-		Name:         "Test Generation",
-		Status:       models.StatusFailed,
-		CourseID:     course.ID,
-		ThemeID:      theme.ID,
-		ScheduleID:   schedule.ID,
-		Format:       &[]int{1}[0],
-		ErrorMessage: &[]string{"Previous error"}[0],
-	}
-	require.NoError(t, db.Create(generation).Error)
-
-	// Faire la requête
-	req, err := http.NewRequest("POST",
-		"/api/v1/generations/"+generation.ID.String()+"/retry", nil)
-	require.NoError(t, err)
-
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	t.Logf("Response status: %d", w.Code)
-	t.Logf("Response body: %s", w.Body.String())
-
-	// Le retry va probablement échouer sans les dépendances complètes
-	// mais on peut tester la structure
-	if w.Code == http.StatusAccepted {
-		var response dto.AsyncGenerationOutput
-		err = json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-		assert.NotEmpty(t, response.GenerationID)
-	} else {
-		// Erreur attendue - vérifier la structure
-		var errorResponse map[string]any
-		err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
-		require.NoError(t, err)
-		assert.Contains(t, errorResponse, "error_message")
-	}
-}
-
 // TestCourseController_RetryGeneration_InProgress teste le retry sur une génération en cours
 func TestCourseController_RetryGeneration_InProgress(t *testing.T) {
 	router, db := setupTestRouter(t)
