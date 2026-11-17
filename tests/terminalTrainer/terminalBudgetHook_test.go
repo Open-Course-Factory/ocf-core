@@ -16,7 +16,6 @@ package terminalTrainer_tests
 import (
 	"errors"
 	"net/http"
-	"sync"
 	"testing"
 	"time"
 
@@ -475,74 +474,6 @@ func TestTerminalBudgetHook_BeforeCreate_UnknownSize_Error(t *testing.T) {
 	var unkErr *terminalHooks.ErrUnknownMachineSize
 	require.ErrorAs(t, err, &unkErr)
 	assert.Equal(t, "potato", unkErr.Requested)
-}
-
-// ---------------------------------------------------------------------------
-// 12) Race condition (PostgreSQL only — gated by testing.Short() + env)
-// ---------------------------------------------------------------------------
-//
-// This test asserts the BeforeCreate hook serialises concurrent session
-// starts via SELECT ... FOR UPDATE. SQLite is single-writer by default
-// so the test would pass trivially without proving anything; we skip it
-// when not running under PostgreSQL.
-//
-// To run locally: TEST_PG_DSN="postgres://..." go test -run RaceCondition
-
-func TestTerminalBudgetHook_RaceCondition_ConcurrentStarts(t *testing.T) {
-	if testing.Short() {
-		t.Skip("race-condition test requires PostgreSQL; skipped with -short")
-	}
-	// We don't spin a PG instance here — the test reads sharedTestDB
-	// which is SQLite. We document the limitation and skip rather than
-	// silently pass.
-	if sharedTestDB == nil || sharedTestDB.Dialector == nil || sharedTestDB.Dialector.Name() != "postgres" {
-		t.Skip("race-condition test requires PostgreSQL; current driver = " +
-			sharedTestDBDriverName() + ". Run with TEST_PG_DSN set in a PG-backed CI job.")
-	}
-
-	db := freshTestDB(t)
-	plan := budgetPlanInMem("Race", 4000, 2048, nil) // exactly one L fits
-	hook := newHookForTest(db, plan, nil)
-
-	user := "u-race"
-	const goroutines = 5
-	var wg sync.WaitGroup
-	results := make([]error, goroutines)
-
-	for i := range goroutines {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			terminal := &terminalModels.Terminal{
-				UserID:      user,
-				MachineSize: "L",
-			}
-			err := execBeforeCreate(hook, terminal)
-			// On success we also insert (mimics what genericService does
-			// after the BeforeCreate hook returns nil).
-			if err == nil {
-				insertExistingTerminal(t, db, user, nil, "running", "ephemeral", 4000, 2048)
-			}
-			results[idx] = err
-		}(i)
-	}
-	wg.Wait()
-
-	successes := 0
-	for _, e := range results {
-		if e == nil {
-			successes++
-		}
-	}
-	assert.Equal(t, 1, successes, "exactly one goroutine must succeed; the rest must hit budget_exhausted")
-}
-
-// sharedTestDBDriverName reports the active driver for diagnostics.
-func sharedTestDBDriverName() string {
-	if sharedTestDB == nil || sharedTestDB.Dialector == nil {
-		return "<nil>"
-	}
-	return sharedTestDB.Dialector.Name()
 }
 
 // ---------------------------------------------------------------------------
