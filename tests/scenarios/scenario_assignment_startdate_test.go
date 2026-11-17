@@ -39,9 +39,6 @@ func setupMemberRouter(db *gorm.DB, userID string) *gin.Engine {
 }
 
 func TestScenarioAssignment_StartDate_BeforeStartDate_NotAvailable(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 
 	db := freshTestDB(t)
 	userID := "student-start-date-1"
@@ -98,9 +95,6 @@ func TestScenarioAssignment_StartDate_BeforeStartDate_NotAvailable(t *testing.T)
 }
 
 func TestScenarioAssignment_StartDate_AfterStartDate_Available(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 
 	db := freshTestDB(t)
 	userID := "student-start-date-2"
@@ -161,9 +155,6 @@ func TestScenarioAssignment_StartDate_AfterStartDate_Available(t *testing.T) {
 }
 
 func TestScenarioAssignment_StartDate_Nil_Available(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 
 	db := freshTestDB(t)
 	userID := "student-start-date-3"

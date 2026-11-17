@@ -87,9 +87,6 @@ type dtoCurrentStep struct{ Title, Text, Hint string }
 
 // A session pinned to French must read the French step, not the English one.
 func TestGetCurrentStep_SessionLocale_ServesTheTranslation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID := setupTranslatedSession(t, "fr", frenchStep)
 
 	step := currentStep(t, sessionID)
@@ -102,9 +99,6 @@ func TestGetCurrentStep_SessionLocale_ServesTheTranslation(t *testing.T) {
 // A session with no locale is every session that exists today. It must keep
 // reading exactly what it read before.
 func TestGetCurrentStep_NoLocale_ServesTheDefaultContent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID := setupTranslatedSession(t, "", frenchStep)
 
 	step := currentStep(t, sessionID)
@@ -116,9 +110,6 @@ func TestGetCurrentStep_NoLocale_ServesTheDefaultContent(t *testing.T) {
 // A locale with no translation for this step falls back to the default rather
 // than serving an empty step.
 func TestGetCurrentStep_UntranslatedLocale_FallsBackToDefault(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID := setupTranslatedSession(t, "es", frenchStep)
 
 	step := currentStep(t, sessionID)
@@ -130,9 +121,6 @@ func TestGetCurrentStep_UntranslatedLocale_FallsBackToDefault(t *testing.T) {
 // A translation that fills only some fields must not blank the others: an empty
 // column is an untranslated field, not an instruction to serve nothing.
 func TestGetCurrentStep_PartialTranslation_KeepsDefaultForEmptyFields(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID := setupTranslatedSession(t, "fr", func(db *gorm.DB, stepID uuid.UUID) {
 		db.Create(&models.ScenarioStepTranslation{
 			StepID: stepID,
@@ -199,9 +187,6 @@ func TestBackgroundScript_NoLocale_SendsNoEnvAtAll(t *testing.T) {
 // dropdown, and a card that went blank while it asked the server would make
 // choosing a language feel like loading a page.
 func TestScenarioCardText_CarriesEveryOfferedLanguage(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -226,9 +211,6 @@ func TestScenarioCardText_CarriesEveryOfferedLanguage(t *testing.T) {
 // A language that has not been given a card title falls back to the original
 // rather than showing an empty card.
 func TestScenarioCardText_UntranslatedLanguage_KeepsTheOriginal(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -251,9 +233,6 @@ func TestScenarioCardText_UntranslatedLanguage_KeepsTheOriginal(t *testing.T) {
 
 // A single-language scenario carries nothing: there is no choice to preview.
 func TestScenarioCardText_SingleLanguage_CarriesNothing(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -278,9 +257,6 @@ func TestScenarioCardText_SingleLanguage_CarriesNothing(t *testing.T) {
 // and closed with an English farewell, and nothing in the suite looked at
 // either.
 func TestResolveScenarioText_UsesTheSessionsLanguage(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -306,9 +282,6 @@ func TestResolveScenarioText_UsesTheSessionsLanguage(t *testing.T) {
 
 // No locale is every session that existed before this feature.
 func TestResolveScenarioText_NoLocale_IsTheScenarioItself(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -325,9 +298,6 @@ func TestResolveScenarioText_NoLocale_IsTheScenarioItself(t *testing.T) {
 // Prose that falls back is merely untranslated; the alternative is a session
 // that opens on a blank briefing.
 func TestResolveScenarioText_PartialTranslation_KeepsWhatIsMissing(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -352,9 +322,6 @@ func TestResolveScenarioText_PartialTranslation_KeepsWhatIsMissing(t *testing.T)
 // The card and the player must agree about what a translation means. They read
 // the same rows through the same overlay, and this is what says so.
 func TestScenarioCardText_AgreesWithTheSessionResolver(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{

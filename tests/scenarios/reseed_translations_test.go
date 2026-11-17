@@ -34,9 +34,6 @@ func seedTwoSteps(t *testing.T, name, secondText string) *models.Scenario {
 }
 
 func TestReseed_KeepsTranslationsAttached(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	freshTestDB(t)
 
 	scenario := seedTwoSteps(t, "reseed-keeps", "Open the Chest.")
@@ -63,9 +60,6 @@ func TestReseed_KeepsTranslationsAttached(t *testing.T) {
 // would be the harsher failure dressed as the milder one: nothing to fix,
 // because nothing is left to notice.
 func TestReseed_EditedStep_LeavesTheTranslationStale(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	freshTestDB(t)
 
 	scenario := seedTwoSteps(t, "reseed-stale", "Open the Chest.")
@@ -98,9 +92,6 @@ func TestReseed_EditedStep_LeavesTheTranslationStale(t *testing.T) {
 // A step the scenario no longer has goes away, translation and all. Keeping it
 // would leave a language reporting work for a step nobody can reach.
 func TestReseed_RemovedStep_TakesItsTranslationWithIt(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	freshTestDB(t)
 
 	scenario := seedTwoSteps(t, "reseed-shrink", "Open the Chest.")

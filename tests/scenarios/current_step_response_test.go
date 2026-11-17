@@ -73,9 +73,6 @@ func setupSessionWithStepType(t *testing.T, stepType string, mutate func(*models
 // step_type=terminal, the response must include `step_type: "terminal"` so the
 // frontend can pick the correct renderer.
 func TestGetCurrentStep_TerminalStep_IncludesStepType(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, _ := setupSessionWithStepType(t, "terminal", nil)
 
 	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
@@ -91,9 +88,6 @@ func TestGetCurrentStep_TerminalStep_IncludesStepType(t *testing.T) {
 // with an empty step_type is repaired by the startup migration, so the
 // frontend never sees an empty type and readers need no default of their own.
 func TestGetCurrentStep_LegacyStepWithoutType_RepairedToTerminal(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	// Create the step with step_type="terminal" first, then force it to empty
 	// directly via SQL — GORM's default tag would otherwise re-fill it on insert.
 	sessionID, step := setupSessionWithStepType(t, "terminal", nil)
@@ -115,9 +109,6 @@ func TestGetCurrentStep_LegacyStepWithoutType_RepairedToTerminal(t *testing.T) {
 // response must include the full markdown via TextContent (separate from the
 // existing short Text). The frontend renders the full content as a card.
 func TestGetCurrentStep_InfoStep_IncludesTextContent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	const fullMarkdown = "# Welcome\n\nThis is a long-form info card.\n\n- bullet 1\n- bullet 2\n"
 
 	sessionID, _ := setupSessionWithStepType(t, "info", func(step *models.ScenarioStep) {
@@ -139,9 +130,6 @@ func TestGetCurrentStep_InfoStep_IncludesTextContent(t *testing.T) {
 // id, order, question_text, question_type, options — but MUST NEVER include
 // correct_answer or explanation (those would leak the answer to the student).
 func TestGetCurrentStep_QuizStep_IncludesSanitizedQuestions(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -232,9 +220,6 @@ func TestGetCurrentStep_QuizStep_IncludesSanitizedQuestions(t *testing.T) {
 // player can decide whether to reveal correct/explanation after each question.
 // Defaults to false (exam-safe); trainer opts in for learning quizzes.
 func TestGetCurrentStep_QuizStep_IncludesShowImmediateFeedback(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -278,9 +263,6 @@ func TestGetCurrentStep_QuizStep_IncludesShowImmediateFeedback(t *testing.T) {
 // must not include a populated Questions array (keep payload tight + avoid
 // leaking unrelated rows if a quiz happens to share the step).
 func TestGetCurrentStep_TerminalStep_OmitsQuestions(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, _ := setupSessionWithStepType(t, "terminal", nil)
 
 	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
@@ -295,9 +277,6 @@ func TestGetCurrentStep_TerminalStep_OmitsQuestions(t *testing.T) {
 // A survey is answered in the player like a quiz, so its questions travel
 // with the step — sanitized exactly as a quiz's are (#568).
 func TestGetCurrentStep_SurveyStep_ReturnsSanitizedQuestions(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, step := setupSessionWithStepType(t, "survey", nil)
 	q1 := models.ScenarioStepQuestion{
 		StepID: step.ID, Order: 1, QuestionText: "Pace?", QuestionType: "multiple_choice",

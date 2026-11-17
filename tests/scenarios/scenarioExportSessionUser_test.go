@@ -18,9 +18,6 @@ import (
 // copy ran as root, and every permission mission in it went quiet — the exact
 // failure the field exists to prevent, reintroduced by the act of copying.
 func TestExportService_CarriesTheSessionUser(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	learner := 1000
@@ -47,9 +44,6 @@ func TestExportService_CarriesTheSessionUser(t *testing.T) {
 
 // And a scenario that names none must not gain one.
 func TestExportService_OmitsAnAbsentSessionUser(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{

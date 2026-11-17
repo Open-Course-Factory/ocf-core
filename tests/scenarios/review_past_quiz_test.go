@@ -34,9 +34,6 @@ func submitAndReviewQuiz(t *testing.T, examMode bool) (*dto.CurrentStepResponse,
 }
 
 func TestGetStepByOrder_PastLearningQuiz_ReplaysAnswersAndCorrection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	step, qIDs := submitAndReviewQuiz(t, false)
 
 	assert.Equal(t, "false", step.QuizAnswers[qIDs[1]], "the learner's own answer comes back")
@@ -49,9 +46,6 @@ func TestGetStepByOrder_PastLearningQuiz_ReplaysAnswersAndCorrection(t *testing.
 }
 
 func TestGetStepByOrder_PastExamQuiz_WithholdsAnswersAndCorrection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	step, _ := submitAndReviewQuiz(t, true)
 
 	assert.Nil(t, step.QuizAnswers)
@@ -61,9 +55,6 @@ func TestGetStepByOrder_PastExamQuiz_WithholdsAnswersAndCorrection(t *testing.T)
 // A run that ended on its quiz opens in review mode on that step, read through
 // GetCurrentStep: the replay must be there too.
 func TestGetCurrentStep_RunEndedOnLearningQuiz_ReplaysAnswersAndCorrection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	sessionID, qIDs := quizFixture(t, false)
 	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
 	_, err := svc.SubmitQuiz(sessionID, dto.SubmitQuizInput{Answers: map[uuid.UUID]string{qIDs[0]: "ls"}})

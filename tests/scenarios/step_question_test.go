@@ -10,9 +10,6 @@ import (
 )
 
 func TestScenarioStepQuestion_Create(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -51,9 +48,6 @@ func TestScenarioStepQuestion_Create(t *testing.T) {
 }
 
 func TestScenarioStepQuestion_DefaultPoints(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -81,9 +75,6 @@ func TestScenarioStepQuestion_DefaultPoints(t *testing.T) {
 }
 
 func TestScenarioStepQuestion_CascadeDelete(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -116,9 +107,6 @@ func TestScenarioStepQuestion_CascadeDelete(t *testing.T) {
 }
 
 func TestScenarioStepQuestion_StepRelationship(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{
@@ -159,9 +147,6 @@ func TestScenarioStepQuestion_CorrectAnswerHiddenInJSON(t *testing.T) {
 }
 
 func TestScenarioStepQuestion_MultipleTypes(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db := freshTestDB(t)
 
 	scenario := models.Scenario{

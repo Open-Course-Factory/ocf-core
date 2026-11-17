@@ -53,9 +53,6 @@ func seedPositionScenario(t *testing.T, orders []int, currentOrder int) uuid.UUI
 }
 
 func TestGetCurrentStep_PositionOnOneBasedOrders(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	freshTestDB(t)
 	sessionID := seedPositionScenario(t, []int{1, 2}, 2)
 
@@ -71,9 +68,6 @@ func TestGetCurrentStep_PositionOnOneBasedOrders(t *testing.T) {
 }
 
 func TestGetCurrentStep_PositionOnZeroBasedOrders(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	freshTestDB(t)
 	sessionID := seedPositionScenario(t, []int{0, 1}, 0)
 
@@ -87,9 +81,6 @@ func TestGetCurrentStep_PositionOnZeroBasedOrders(t *testing.T) {
 }
 
 func TestGetStepByOrder_CarriesPosition(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	freshTestDB(t)
 	sessionID := seedPositionScenario(t, []int{1, 2}, 2)
 

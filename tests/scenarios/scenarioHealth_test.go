@@ -36,9 +36,6 @@ func findingCodes(health services.ScenarioHealth) []string {
 }
 
 func TestScenarioHealth_HealthyScenarioReportsNothing(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en"]`)
 	for _, step := range steps {
 		require.NoError(t, db.Model(&step).Update("verify_script", "exit 0").Error)
@@ -53,9 +50,6 @@ func TestScenarioHealth_HealthyScenarioReportsNothing(t *testing.T) {
 // The one that cost an afternoon. French was declared, translated, and correct
 // in the database — and not offered, because six steps read as stale.
 func TestScenarioHealth_DeclaredLocaleThatIsNotOffered(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
 	for _, step := range steps {
 		require.NoError(t, db.Model(&step).Update("verify_script", "exit 0").Error)
@@ -78,9 +72,6 @@ func TestScenarioHealth_DeclaredLocaleThatIsNotOffered(t *testing.T) {
 }
 
 func TestScenarioHealth_ScenarioWithNoSteps(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en"]`)
 	for _, step := range steps {
 		require.NoError(t, db.Delete(&step).Error)
@@ -95,9 +86,6 @@ func TestScenarioHealth_ScenarioWithNoSteps(t *testing.T) {
 // A terminal step without a verify script passes on Verify, as KillerCoda's
 // do, so it is reported as a warning: playable, but nothing is checked.
 func TestScenarioHealth_TerminalStepWithoutVerifyIsAWarning(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en"]`)
 	for i, step := range steps {
 		if i == 0 {
@@ -113,9 +101,6 @@ func TestScenarioHealth_TerminalStepWithoutVerifyIsAWarning(t *testing.T) {
 
 // A step that carries a flag needs no check: the flag is the check.
 func TestScenarioHealth_FlagStepIsNotADeadEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en"]`)
 	for i, step := range steps {
 		if i == 0 {
@@ -136,9 +121,6 @@ func TestScenarioHealth_FlagStepIsNotADeadEnd(t *testing.T) {
 // all working, all accused. A report that cries wolf on working content is one
 // people learn to scroll past, which costs more than not having it at all.
 func TestScenarioHealth_QuizStepIsNotADeadEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en"]`)
 	for i, step := range steps {
 		if i == 0 {
@@ -160,9 +142,6 @@ func TestScenarioHealth_QuizStepIsNotADeadEnd(t *testing.T) {
 
 // A quiz with no questions, though, is a dead end wearing a different hat.
 func TestScenarioHealth_QuizWithNoQuestionsIsADeadEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en"]`)
 	for i, step := range steps {
 		if i == 0 {
@@ -189,9 +168,6 @@ func severitiesOf(health services.ScenarioHealth, code string) []string {
 
 // An info step is read, not solved.
 func TestScenarioHealth_InfoStepIsNotADeadEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en"]`)
 	for i, step := range steps {
 		if i == 0 {
@@ -209,9 +185,6 @@ func TestScenarioHealth_InfoStepIsNotADeadEnd(t *testing.T) {
 // A survey is passed by answering it, like a quiz — and, like a quiz, one
 // with no questions leaves the learner nothing to answer (#568).
 func TestScenarioHealth_SurveyWithoutQuestions_ReportsDeadEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
 	db, scenario, steps := coverageScenario(t, `["en"]`)
 	for i, step := range steps {
 		if i == 0 {
