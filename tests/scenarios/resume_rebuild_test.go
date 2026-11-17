@@ -462,14 +462,9 @@ func TestResumeRebuild_KeepsProgressHintsAndScore(t *testing.T) {
 }
 
 // The current step's foreground script is typed when the learner's console
-// first attaches to the rebuilt terminal (MR B !552, PendingForegroundOrder).
-// This branch predates MR B: the test skips itself until the column exists and
-// runs unchanged once the branch is rebased onto it.
+// first attaches to the rebuilt terminal (PendingForegroundOrder).
 func TestResumeRebuild_SetsPendingForegroundForCurrentStep(t *testing.T) {
 	f := seedResumableRun(t, "resume-foreground", resumeSeed{foregroundOnCurrent: true})
-	if !f.db.Migrator().HasColumn(&models.ScenarioSession{}, "pending_foreground_order") {
-		t.Skip("needs MR B !552 (pending_foreground_order); runs once this branch is rebased onto it")
-	}
 	newPreviewTTBackend(t)
 
 	w := resumeRun(t, f)
