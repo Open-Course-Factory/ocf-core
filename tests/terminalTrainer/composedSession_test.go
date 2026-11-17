@@ -455,3 +455,22 @@ func TestStartComposedSession_StoresDistributionPrefixAsInstanceType(t *testing.
 	assert.Equal(t, "ubuntu", terminal.InstanceType)
 	assert.Equal(t, "ubuntu-24.04", terminal.ComposedDistribution)
 }
+
+func TestStartComposedSession_CapsExpiryToPlanMaxDuration(t *testing.T) {
+	cases := []struct {
+		name      string
+		requested int
+		want      float64
+	}{
+		{"above the plan cap is cut down to it", 7200, 3600},
+		{"none requested gets the plan cap", 0, 3600},
+		{"below the plan cap is kept", 1800, 1800},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _, _ := startOneComposedSession(t, makePlan(false), // 60 minutes
+				dto.CreateComposedSessionInput{Expiry: tc.requested})
+			assert.Equal(t, tc.want, body["expiry"])
+		})
+	}
+}
