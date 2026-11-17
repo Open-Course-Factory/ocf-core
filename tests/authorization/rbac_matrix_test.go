@@ -731,10 +731,10 @@ func TestRBAC_ResourceIDDoesNotLeakViaPathTraversal(t *testing.T) {
 func TestRBAC_CasdoorRoleMappingConsistency(t *testing.T) {
 	setupCasbinEnforcer(t)
 
-	// Load policies for a representative entity.
+	// Organization: members really hold GET|POST only in production.
 	groupDef := entityRoleDefinition{
-		entityName: "ClassGroup",
-		routeName:  "class-groups",
+		entityName: "Organization",
+		routeName:  "organizations",
 		roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
 			string(authModels.Member): "(GET|POST)",
 			string(authModels.Admin):  "(GET|POST|PATCH|DELETE)",
@@ -751,24 +751,24 @@ func TestRBAC_CasdoorRoleMappingConsistency(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("casdoor_"+casdoorRole+"_has_member_GET", func(t *testing.T) {
-			allowed, err := casdoor.Enforcer.Enforce(user, "/api/v1/class-groups", "GET")
+			allowed, err := casdoor.Enforcer.Enforce(user, "/api/v1/organizations", "GET")
 			require.NoError(t, err)
 			assert.True(t, allowed,
-				"Casdoor role %q (maps to member) should have GET on class-groups", casdoorRole)
+				"Casdoor role %q (maps to member) should have GET on organizations", casdoorRole)
 		})
 
 		t.Run("casdoor_"+casdoorRole+"_has_member_POST", func(t *testing.T) {
-			allowed, err := casdoor.Enforcer.Enforce(user, "/api/v1/class-groups", "POST")
+			allowed, err := casdoor.Enforcer.Enforce(user, "/api/v1/organizations", "POST")
 			require.NoError(t, err)
 			assert.True(t, allowed,
-				"Casdoor role %q (maps to member) should have POST on class-groups", casdoorRole)
+				"Casdoor role %q (maps to member) should have POST on organizations", casdoorRole)
 		})
 
 		t.Run("casdoor_"+casdoorRole+"_denied_PATCH", func(t *testing.T) {
-			allowed, err := casdoor.Enforcer.Enforce(user, "/api/v1/class-groups", "PATCH")
+			allowed, err := casdoor.Enforcer.Enforce(user, "/api/v1/organizations", "PATCH")
 			require.NoError(t, err)
 			assert.False(t, allowed,
-				"Casdoor role %q (maps to member) should NOT have PATCH on class-groups", casdoorRole)
+				"Casdoor role %q (maps to member) should NOT have PATCH on organizations", casdoorRole)
 		})
 	}
 
@@ -782,10 +782,10 @@ func TestRBAC_CasdoorRoleMappingConsistency(t *testing.T) {
 
 		for _, method := range httpMethods {
 			t.Run(fmt.Sprintf("casdoor_%s_has_admin_%s", casdoorRole, method), func(t *testing.T) {
-				allowed, err := casdoor.Enforcer.Enforce(user, "/api/v1/class-groups", method)
+				allowed, err := casdoor.Enforcer.Enforce(user, "/api/v1/organizations", method)
 				require.NoError(t, err)
 				assert.True(t, allowed,
-					"Casdoor admin role %q should have %s on class-groups", casdoorRole, method)
+					"Casdoor admin role %q should have %s on organizations", casdoorRole, method)
 			})
 		}
 	}
