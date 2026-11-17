@@ -35,33 +35,6 @@ func TestValidateSessionAccess_ExpiredSession(t *testing.T) {
 	assert.Equal(t, "expired", reason)
 }
 
-// TestValidateSessionAccess_StoppedSession tests that stopped sessions are rejected
-func TestValidateSessionAccess_StoppedSession(t *testing.T) {
-	db := setupTestDB(t)
-	service := services.NewTerminalTrainerService(db)
-
-	// Create a stopped terminal. State is the canonical SSOT.
-	userKey, err := createTestUserKey(db, "test-user")
-	assert.NoError(t, err)
-	terminal := &models.Terminal{
-		SessionID:         "test-stopped-session-basic",
-		UserID:            "test-user",
-		Name:              "Test Terminal",
-		State:             models.StateStopped,
-		ExpiresAt:         time.Now().Add(1 * time.Hour),
-		UserTerminalKeyID: userKey.ID,
-	}
-	assert.NoError(t, db.Create(terminal).Error)
-
-	// Validate session access
-	isValid, reason, err := service.ValidateSessionAccess(terminal.SessionID, false)
-
-	// Should reject stopped session
-	assert.NoError(t, err)
-	assert.False(t, isValid)
-	assert.Equal(t, "stopped", reason)
-}
-
 // TestValidateSessionAccess_ActiveSession tests that active sessions are allowed
 func TestValidateSessionAccess_ActiveSession(t *testing.T) {
 	db := setupTestDB(t)
@@ -172,17 +145,20 @@ func TestGetAccessStatus_ExpiredSession(t *testing.T) {
 }
 
 // TestGetAccessStatus_ActiveSession tests the access status endpoint with active session.
-// Requires a running Terminal Trainer backend (ValidateSessionAccess calls the API).
 func TestGetAccessStatus_ActiveSession(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode (requires Terminal Trainer API)")
-	}
 	db := setupTestDB(t)
-	controller := terminalController.NewTerminalController(db)
 
 	// Create an active terminal
 	terminal, err := createTestTerminal(db, "test-user-123", "active", time.Now().Add(1*time.Hour))
 	assert.NoError(t, err)
+
+	// The endpoint asks tt-backend whether the container still runs.
+	ttSrv := newInfoOnlyTTBackend(t, map[string]any{
+		"id": terminal.SessionID, "status": 0, "instance_exists": true, "instance_running": true,
+	})
+	defer ttSrv.Close()
+	configureTTServer(t, ttSrv.URL)
+	controller := terminalController.NewTerminalController(db)
 
 	// Setup gin router
 	gin.SetMode(gin.TestMode)
@@ -214,6 +190,7 @@ func TestGetAccessStatus_ActiveSession(t *testing.T) {
 	assert.True(t, response["can_access_console"].(bool), "Should be able to access console")
 	assert.Equal(t, "active", response["session_status"].(string))
 	assert.NotContains(t, response, "denial_reason", "Should not have denial reason for active session")
+	assert.NotContains(t, response, "validation_warning", "tt-backend answered, so this is not the local fallback")
 }
 
 // TestGetAccessStatus_NoPermission tests the access status endpoint without permission

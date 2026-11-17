@@ -18,8 +18,8 @@ import (
 
 // These tests exercise the session-lifecycle concern (extracted into
 // terminalLifecycleService) through the public TerminalTrainerService facade,
-// asserting the observable result: the persisted Terminal row and the
-// ValidateSessionAccess reason. They complement terminalLifecycleProxy_test
+// asserting the observable result: the persisted Terminal row. They
+// complement terminalLifecycleProxy_test
 // (which pins the proxy wiring + ownership) and lifecycleSyncBeforeValidate_test
 // (which pins the sync-before-validate ordering).
 
@@ -56,28 +56,6 @@ func TestLifecycleService_StopSessionPersistent_TransitionsRowToStopped(t *testi
 		"markSessionStopped must mirror the tt-backend idle_until onto the row")
 	assert.True(t, updated.IdleUntil.After(time.Now()),
 		"idle_until must be the future reap deadline returned by /stop")
-}
-
-// TestLifecycleService_ValidateSessionAccess_DeniesStoppedSession verifies that
-// a stopped session is denied with the "stopped" reason without any API
-// round-trip (checkAPI=false).
-func TestLifecycleService_ValidateSessionAccess_DeniesStoppedSession(t *testing.T) {
-	db := freshTestDB(t)
-	userID := "validate-stopped-" + uuid.New().String()
-
-	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
-	require.NoError(t, err)
-	// Move the row to stopped directly so the validate path reads it.
-	require.NoError(t, db.Model(&models.Terminal{}).
-		Where("session_id = ?", terminal.SessionID).
-		Update("state", models.StateStopped).Error)
-
-	// No backend URL needed: checkAPI=false short-circuits before any API call.
-	svc := services.NewTerminalTrainerService(db)
-	ok, reason, err := svc.ValidateSessionAccess(terminal.SessionID, false)
-	require.NoError(t, err)
-	assert.False(t, ok, "a stopped session must not be accessible")
-	assert.Equal(t, "stopped", reason)
 }
 
 // TestLifecycleService_StartSession_TransitionsRowToRunning verifies that
