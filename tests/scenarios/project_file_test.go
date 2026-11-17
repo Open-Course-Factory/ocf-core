@@ -20,7 +20,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// 1. ProjectFile column defaults
+// ProjectFile column defaults
 // ---------------------------------------------------------------------------
 
 func TestProjectFile_Create_Success(t *testing.T) {
@@ -49,7 +49,7 @@ func TestProjectFile_Create_Success(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Import stores scripts and texts inline only; images stay files
+// Import stores scripts and texts inline only; images stay files
 // ---------------------------------------------------------------------------
 
 func writeInlineOnlyScenario(t *testing.T, dir, version string) {
@@ -120,7 +120,7 @@ func TestImport_Reimport_ReplacesContentAndImages(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. GET /project-files/by-scenario/:scenarioId endpoint
+// GET /project-files/by-scenario/:scenarioId endpoint
 // ---------------------------------------------------------------------------
 
 func TestProjectFileController_GetByScenario_ListsLinkedFiles(t *testing.T) {
