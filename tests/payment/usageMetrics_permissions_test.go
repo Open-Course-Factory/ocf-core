@@ -8,193 +8,103 @@
 package payment_tests
 
 import (
-	"bytes"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/gorm"
 
 	paymentController "soli/formations/src/payment/routes"
-
 )
 
-// setupUsageMetricsDirectRouter creates a router with the real UsageMetricsController
-// methods but with a mock auth middleware instead of AuthManagement().
-// This tests whether the controller itself would allow the operation.
-func setupUsageMetricsDirectRouter(t *testing.T, role string) *gin.Engine {
+const incrementCoursesBody = `{"metric_type":"courses_created","increment":1}`
+
+// setupUsageMetricsRealRouter mounts the real UsageMetricsRoutes behind the
+// real AuthManagement (see installRealGateway) on an empty database.
+func setupUsageMetricsRealRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
-
 	db := freshTestDB(t)
+	installRealGateway(t)
 
 	router := gin.New()
+	paymentController.UsageMetricsRoutes(router.Group("/api/v1"), db)
 
-	mockAuth := func(c *gin.Context) {
-		c.Set("userId", "test-user-id")
-		c.Set("userRoles", []string{role})
-		c.Next()
-	}
-
-	controller := paymentController.NewUsageMetricsController(db)
-
-	routes := router.Group("/api/v1/usage-metrics")
-	routes.GET("/user", mockAuth, controller.GetUserUsageMetrics)
-	routes.POST("/increment", mockAuth, controller.IncrementUsageMetric)
-	routes.POST("/reset", mockAuth, controller.ResetUserUsage)
-
-	return router
+	return router, db
 }
 
-// setupUsageMetricsRealRouter creates a router using the real UsageMetricsRoutes
-// registration (with AuthManagement() middleware). A group-level mock auth
-// middleware sets userId and userRoles before AuthManagement() runs.
-//
-// Since AuthManagement() requires a real JWT, requests without one get 401.
-// This verifies the route registration is correct.
-func setupUsageMetricsRealRouter(t *testing.T, role string) *gin.Engine {
-	t.Helper()
-
-	gin.SetMode(gin.TestMode)
-
-	db := freshTestDB(t)
-
-	router := gin.New()
-	apiGroup := router.Group("/api/v1")
-
-	apiGroup.Use(func(c *gin.Context) {
-		c.Set("userId", "test-user-id")
-		c.Set("userRoles", []string{role})
-		c.Next()
-	})
-
-	paymentController.UsageMetricsRoutes(apiGroup, db)
-
-	return router
-}
-
-// TestUsageMetricsReset_MemberCannotCallReset verifies that the reset endpoint
-// no longer allows regular members. Since the route is admin-only at the
-// middleware level, this test uses the real route registration to confirm
-// the route exists and is guarded by AuthManagement().
+// TestUsageMetricsReset_MemberCannotCallReset verifies that a member is
+// refused by the gateway on the reset endpoint.
 func TestUsageMetricsReset_MemberCannotCallReset(t *testing.T) {
-	// Using real routes: AuthManagement() will return 401 (no JWT).
-	// This proves the route is registered and protected by auth middleware.
-	router := setupUsageMetricsRealRouter(t, "member")
+	router, _ := setupUsageMetricsRealRouter(t)
 
-	req := httptest.NewRequest("POST", "/api/v1/usage-metrics/reset", nil)
-	req.Header.Set("Content-Type", "application/json")
+	w := requestAs(router, gatewayMember, "POST", "/api/v1/usage-metrics/reset", "")
 
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// With real AuthManagement(), no JWT = 401.
-	// The important thing is it's NOT 200 (unprotected).
-	assert.NotEqual(t, http.StatusOK, w.Code,
-		"POST /usage-metrics/reset should NOT return 200 for unauthenticated member requests")
+	assertRefusedByGateway(t, w)
 }
 
-// TestUsageMetricsIncrement_MemberCannotCallIncrement verifies that the
-// increment endpoint is not accessible to regular members.
+// TestUsageMetricsIncrement_MemberCannotCallIncrement verifies that a member
+// is refused by the gateway on the increment endpoint.
 func TestUsageMetricsIncrement_MemberCannotCallIncrement(t *testing.T) {
-	router := setupUsageMetricsRealRouter(t, "member")
+	router, db := setupUsageMetricsRealRouter(t)
+	// With a subscription the handler would answer 200 if the member reached it.
+	createUserSubscription(t, db, gatewayMember, seedAnyPlan(t, db))
 
-	body := `{"metric_type":"courses_created","increment":1}`
-	req := httptest.NewRequest("POST", "/api/v1/usage-metrics/increment",
-		bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	w := requestAs(router, gatewayMember, "POST", "/api/v1/usage-metrics/increment", incrementCoursesBody)
 
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.NotEqual(t, http.StatusOK, w.Code,
-		"POST /usage-metrics/increment should NOT return 200 for unauthenticated member requests")
+	assertRefusedByGateway(t, w)
 }
 
 // TestUsageMetricsReset_AdminCanCallReset verifies that an administrator
-// can reach the reset controller method (it won't return 403).
-// Uses the direct controller router to bypass AuthManagement() JWT check.
+// can reset their own usage.
 func TestUsageMetricsReset_AdminCanCallReset(t *testing.T) {
-	router := setupUsageMetricsDirectRouter(t, "administrator")
+	router, _ := setupUsageMetricsRealRouter(t)
 
-	req := httptest.NewRequest("POST", "/api/v1/usage-metrics/reset", nil)
-	req.Header.Set("Content-Type", "application/json")
+	w := requestAs(router, gatewayAdmin, "POST", "/api/v1/usage-metrics/reset", "")
 
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// Admin should NOT get 403. May get 500 (no real DB data) which is fine —
-	// the point is the admin check does not block them.
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"POST /usage-metrics/reset should NOT return 403 for admin users, got %d: %s",
-		w.Code, w.Body.String())
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // TestUsageMetricsIncrement_AdminCanCallIncrement verifies that an administrator
-// can reach the increment controller method.
+// can increment their own usage.
 func TestUsageMetricsIncrement_AdminCanCallIncrement(t *testing.T) {
-	router := setupUsageMetricsDirectRouter(t, "administrator")
+	router, db := setupUsageMetricsRealRouter(t)
+	createUserSubscription(t, db, gatewayAdmin, seedAnyPlan(t, db))
 
-	body := `{"metric_type":"courses_created","increment":1}`
-	req := httptest.NewRequest("POST", "/api/v1/usage-metrics/increment",
-		bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	w := requestAs(router, gatewayAdmin, "POST", "/api/v1/usage-metrics/increment", incrementCoursesBody)
 
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// Admin should NOT get 403.
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"POST /usage-metrics/increment should NOT return 403 for admin users, got %d: %s",
-		w.Code, w.Body.String())
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // TestUsageMetricsGet_MemberCanReadOwnMetrics verifies that the GET endpoint
 // remains accessible to regular members for their own metrics.
 func TestUsageMetricsGet_MemberCanReadOwnMetrics(t *testing.T) {
-	router := setupUsageMetricsDirectRouter(t, "member")
+	router, _ := setupUsageMetricsRealRouter(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/usage-metrics/user", nil)
+	w := requestAs(router, gatewayMember, "GET", "/api/v1/usage-metrics/user", "")
 
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// Members should NOT get 403 on the read endpoint.
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"GET /usage-metrics/user should NOT return 403 for member users")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // TestUsageMetricsReset_AdminCanTargetSpecificUser verifies that an admin
 // can reset metrics for a specific user via the user_id query parameter.
 func TestUsageMetricsReset_AdminCanTargetSpecificUser(t *testing.T) {
-	router := setupUsageMetricsDirectRouter(t, "administrator")
+	router, _ := setupUsageMetricsRealRouter(t)
 
-	req := httptest.NewRequest("POST", "/api/v1/usage-metrics/reset?user_id=target-user", nil)
-	req.Header.Set("Content-Type", "application/json")
+	w := requestAs(router, gatewayAdmin, "POST", "/api/v1/usage-metrics/reset?user_id=target-user", "")
 
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// Should not be blocked by authorization. May get 500 due to no DB data.
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"POST /usage-metrics/reset?user_id=target-user should NOT return 403 for admin")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 // TestUsageMetricsIncrement_AdminCanTargetSpecificUser verifies that an admin
 // can increment metrics for a specific user via the user_id query parameter.
 func TestUsageMetricsIncrement_AdminCanTargetSpecificUser(t *testing.T) {
-	router := setupUsageMetricsDirectRouter(t, "administrator")
+	router, db := setupUsageMetricsRealRouter(t)
+	createUserSubscription(t, db, "target-user", seedAnyPlan(t, db))
 
-	body := `{"metric_type":"courses_created","increment":1}`
-	req := httptest.NewRequest("POST", "/api/v1/usage-metrics/increment?user_id=target-user",
-		bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	w := requestAs(router, gatewayAdmin, "POST", "/api/v1/usage-metrics/increment?user_id=target-user", incrementCoursesBody)
 
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
-		"POST /usage-metrics/increment?user_id=target-user should NOT return 403 for admin")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }

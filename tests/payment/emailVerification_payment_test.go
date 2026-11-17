@@ -2,36 +2,32 @@ package payment_tests
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
+	authServices "soli/formations/src/auth/services"
 	paymentController "soli/formations/src/payment/routes"
 )
 
-// setupPaymentTestRouter creates a gin router with payment routes and a mock auth middleware
-// that sets userId but does NOT make Casdoor available (simulating an unverified user
-// whose email_verified status cannot be checked by the verification middleware).
+// setupPaymentTestRouter mounts the real UserSubscriptionRoutes behind the real
+// AuthManagement (see installRealGateway). Casdoor knows every caller as an
+// account whose email is not verified.
 func setupPaymentTestRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
 
 	db := freshTestDB(t)
+	installRealGateway(t)
+	t.Cleanup(authServices.SwapCasdoorUserReader(func(userID string) (*casdoorsdk.User, error) {
+		return &casdoorsdk.User{Id: userID, EmailVerified: false}, nil
+	}))
 
 	router := gin.New()
-	apiGroup := router.Group("/api/v1")
-
-	// Mock auth middleware that just sets userId (simulating authenticated user)
-	apiGroup.Use(func(c *gin.Context) {
-		c.Set("userId", "test-user-unverified")
-		c.Set("userRoles", []string{"member"})
-		c.Next()
-	})
-
-	paymentController.UserSubscriptionRoutes(apiGroup, db)
+	paymentController.UserSubscriptionRoutes(router.Group("/api/v1"), db)
 
 	return router
 }
@@ -42,26 +38,22 @@ func TestUnverifiedUser_CanReadSubscriptionInfo(t *testing.T) {
 	router := setupPaymentTestRouter(t)
 
 	readEndpoints := []struct {
-		method string
+		caller string
 		path   string
+		status int
 	}{
-		{"GET", "/api/v1/user-subscriptions/current"},
-		{"GET", "/api/v1/user-subscriptions/all"},
-		{"GET", "/api/v1/user-subscriptions/usage"},
-		{"GET", "/api/v1/user-subscriptions/analytics"},
+		// The caller holds no subscription: the handler answers 404 itself.
+		{gatewayMember, "/api/v1/user-subscriptions/current", http.StatusNotFound},
+		{gatewayMember, "/api/v1/user-subscriptions/all", http.StatusOK},
+		{gatewayMember, "/api/v1/user-subscriptions/usage", http.StatusOK},
+		{gatewayAdmin, "/api/v1/user-subscriptions/analytics", http.StatusOK},
 	}
 
 	for _, ep := range readEndpoints {
-		t.Run(ep.method+" "+ep.path, func(t *testing.T) {
-			req := httptest.NewRequest(ep.method, ep.path, nil)
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+		t.Run("GET "+ep.path, func(t *testing.T) {
+			w := requestAs(router, ep.caller, "GET", ep.path, "")
 
-			// Should NOT get 403 EMAIL_NOT_VERIFIED or 401 from verification middleware.
-			// May get 404 (no subscription) or 500 (DB not migrated) - that's fine,
-			// the point is the email verification middleware did not block the request.
-			assert.NotEqual(t, http.StatusForbidden, w.Code,
-				"Read endpoint %s should not be blocked by email verification", ep.path)
+			assert.Equal(t, ep.status, w.Code, w.Body.String())
 			assert.NotContains(t, w.Body.String(), "EMAIL_NOT_VERIFIED",
 				"Read endpoint %s should not return EMAIL_NOT_VERIFIED", ep.path)
 		})
@@ -73,27 +65,18 @@ func TestUnverifiedUser_CanReadSubscriptionInfo(t *testing.T) {
 func TestUnverifiedUser_BlockedFromPaymentActions(t *testing.T) {
 	router := setupPaymentTestRouter(t)
 
-	paymentEndpoints := []struct {
-		method string
-		path   string
-	}{
-		{"POST", "/api/v1/user-subscriptions/checkout"},
-		{"POST", "/api/v1/user-subscriptions/portal"},
-		{"POST", "/api/v1/user-subscriptions/upgrade"},
+	paymentEndpoints := []string{
+		"/api/v1/user-subscriptions/checkout",
+		"/api/v1/user-subscriptions/portal",
+		"/api/v1/user-subscriptions/upgrade",
 	}
 
-	for _, ep := range paymentEndpoints {
-		t.Run(ep.method+" "+ep.path, func(t *testing.T) {
-			req := httptest.NewRequest(ep.method, ep.path, nil)
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+	for _, path := range paymentEndpoints {
+		t.Run("POST "+path, func(t *testing.T) {
+			w := requestAs(router, gatewayMember, "POST", path, "")
 
-			// The email verification middleware will try to call Casdoor (which is unavailable
-			// in tests), so it returns 401 "User not found". This proves the middleware IS active.
-			// In production with a real unverified user, it would return 403 EMAIL_NOT_VERIFIED.
-			assert.True(t, w.Code == http.StatusUnauthorized || w.Code == http.StatusForbidden,
-				"Payment endpoint %s should be blocked (got %d)", ep.path, w.Code)
+			assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+			assert.Contains(t, w.Body.String(), "EMAIL_NOT_VERIFIED")
 		})
 	}
 }
