@@ -100,6 +100,17 @@ func TestRemovePolicy(t *testing.T) {
 	})
 }
 
+// An empty subject would act as a wildcard and remove every subject's rule.
+func TestRemovePolicy_EmptySubject_ReturnsErrorAndRemovesNothing(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	err := utils.RemovePolicy(mockEnforcer, "", "/api/v1/groups/abc", "", utils.DefaultPermissionOptions())
+
+	assert.Error(t, err)
+	assert.Empty(t, mockEnforcer.RemoveFilteredPolicyCalls)
+	assert.Equal(t, 0, mockEnforcer.GetRemovePolicyCallCount())
+}
+
 // A real enforcer: the mock cannot tell whether a rule left memory.
 func TestRemovePolicy_RealEnforcer(t *testing.T) {
 	const route = "/api/v1/groups/abc"

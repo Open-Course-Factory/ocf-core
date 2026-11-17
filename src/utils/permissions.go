@@ -58,6 +58,11 @@ func AddPolicy(enforcer interfaces.EnforcerInterface, subject, route, methods st
 //
 //	RemovePolicy(enforcer, "userId123", "/api/v1/groups/abc", "GET|POST", opts)
 func RemovePolicy(enforcer interfaces.EnforcerInterface, subject, route, methods string, opts PermissionOptions) error {
+	// An empty subject is a wildcard for the filtered removal below.
+	if subject == "" {
+		return fmt.Errorf("failed to remove policy: empty subject")
+	}
+
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
 			return fmt.Errorf("failed to load policy: %w", err)
