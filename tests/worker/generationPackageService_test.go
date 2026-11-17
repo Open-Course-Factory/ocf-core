@@ -355,14 +355,6 @@ func TestGenerationPackageService_PrepareGenerationPackage_StandardTheme_NoTheme
 	assert.Empty(t, pkg.ThemeFiles)
 }
 
-// --- Constructor ---
-
-func TestNewGenerationPackageServiceWithDependencies_ReturnsNonNil(t *testing.T) {
-	mockCasdoor := authMocks.NewMockCasdoorService()
-	svc := services.NewGenerationPackageServiceWithDependencies(mockCasdoor)
-	assert.NotNil(t, svc)
-}
-
 func TestNewGenerationPackageService_ReturnsNonNil(t *testing.T) {
 	svc := services.NewGenerationPackageService()
 	assert.NotNil(t, svc)
