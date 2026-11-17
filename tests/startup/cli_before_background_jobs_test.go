@@ -2,7 +2,7 @@
 // cli.ParseFlags) must exit before main.go starts any background job, or it
 // also runs member erasure, class auto-archive, Stripe sync, etc. against the
 // configured database. Start-up ordering inside func main cannot be exercised
-// directly, so this reads main.go, like tests/payment/webhook_mark_after_process_test.go.
+// directly, so this reads main.go.
 package startup_tests
 
 import (

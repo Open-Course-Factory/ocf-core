@@ -117,10 +117,9 @@ func seedCatalogPlan(t *testing.T, db *gorm.DB, name string) *models.Subscriptio
 	return seedPlan(t, db, models.SubscriptionPlan{Name: name, PriceAmount: 1200, IsCatalog: true})
 }
 
-// seedHiddenPlan creates an is_catalog=false plan. GORM's Create skips the
-// zero-value bool when the column carries gorm:"default:true", so is_catalog is
-// forced false via a follow-up Update — the same workaround the existing
-// subscriptionPlan_catalog_test.go documents.
+// seedHiddenPlan creates an is_catalog=false plan. The column has carried no
+// gorm default since #447, so the follow-up Update only states is_catalog=false
+// explicitly.
 func seedHiddenPlan(t *testing.T, db *gorm.DB, name string) *models.SubscriptionPlan {
 	t.Helper()
 	p := seedPlan(t, db, models.SubscriptionPlan{Name: name, PriceAmount: 9900})
