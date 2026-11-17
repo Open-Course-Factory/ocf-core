@@ -25,9 +25,9 @@ import (
 // free plans rather than creating a bogus €0/month recurring price product
 // in Stripe.
 //
-// These tests replicate the SyncAllSubscriptionPlansWithStripe handler inline
-// (the real userSubscriptionController struct is unexported and cannot be
-// instantiated from the test package).
+// These tests replicate the SyncAllSubscriptionPlansWithStripe handler inline:
+// NewSubscriptionController builds its own services, so no mock can be
+// injected into the real controller.
 // ============================================================================
 
 // setupSyncPlansRouter builds a gin router wired to the mock subscription +
@@ -231,18 +231,12 @@ func TestSyncAllSubscriptionPlans_FreePlanNotSentToStripe(t *testing.T) {
 // ============================================================================
 // Issue #262 (single-plan path) — POST /subscription-plans/:id/sync-stripe
 //
-// MR !178 guarded the sync-ALL path against free plans, but the single-plan
-// endpoint SyncSubscriptionPlanWithStripe (userSubscriptionController.go) has
-// NO free-plan guard: calling it on a free plan (PriceAmount == 0) currently
-// pushes a bogus €0/month product to Stripe (or returns 200-success leaving
-// StripePriceID nil). The #262 intent applies here too — a free plan must be
-// rejected, NOT silently "synced".
+// The #262 intent applies to the single-plan endpoint
+// SyncSubscriptionPlanWithStripe (userSubscriptionController.go) too — a free
+// plan must be rejected, NOT silently "synced".
 //
-// This router mirrors the CURRENT single-plan handler logic inline (the real
-// controller struct is unexported, same constraint as setupSyncPlansRouter).
-// The handler body intentionally reproduces today's branches — including the
-// MISSING free-plan guard — so the test below fails (RED) until backend-dev
-// adds the guard to both the real handler and this replica.
+// This router mirrors the single-plan handler logic inline (the constructor
+// builds its own services, same constraint as setupSyncPlansRouter).
 //
 // Contract asserted (matches the handler's existing "already has a Stripe
 // price" branch, which returns HTTP 400): a free plan must yield HTTP 400 with
@@ -251,8 +245,7 @@ func TestSyncAllSubscriptionPlans_FreePlanNotSentToStripe(t *testing.T) {
 
 // setupSyncSinglePlanRouter wires the mock subscription + stripe services to a
 // handler installed at POST /api/v1/subscription-plans/:id/sync-stripe. The
-// handler body mirrors userSubscriptionController.SyncSubscriptionPlanWithStripe
-// as it exists today (no free-plan guard).
+// handler body mirrors userSubscriptionController.SyncSubscriptionPlanWithStripe.
 func setupSyncSinglePlanRouter() (*gin.Engine, *SharedMockSubscriptionService, *SharedMockStripeService) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

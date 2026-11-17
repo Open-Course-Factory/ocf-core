@@ -93,9 +93,8 @@ func TestStripeService_CreateCheckoutSession_RejectsNonCatalogPlan(t *testing.T)
 	svc := services.NewStripeService(db)
 
 	plan := seedCheckoutPlan(t, "Custom Unlisted", false)
-	// GORM's Create skips zero-value bools on a field with gorm:"default:true", so
-	// is_catalog persists TRUE at Create; force it false via a follow-up Update
-	// (the pattern subscriptionPlan_catalog_test.go actually uses).
+	// is_catalog has carried no gorm default since #447; the follow-up Update
+	// states is_catalog=false explicitly.
 	require.NoError(t, db.Create(plan).Error)
 	require.NoError(t, db.Model(plan).Update("is_catalog", false).Error)
 

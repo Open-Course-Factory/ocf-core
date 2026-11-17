@@ -50,7 +50,6 @@ tests/
 │   ├── benchmarks_test.go
 │   └── testutils/            # Shared test utilities
 ├── payment/                  # Payment module tests
-│   ├── subscriptionService_test.go
 │   └── integration/
 ├── terminalTrainer/          # Terminal trainer tests
 ├── courses/                  # Course functionality tests
