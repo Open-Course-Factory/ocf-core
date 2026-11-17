@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -104,6 +105,25 @@ func rolesForCreatableByMember() entityManagementInterfaces.EntityRoles {
 	}}
 }
 
+// rolesForMemberFullCRUD returns the pattern where members hold every method
+// at the Casbin layer and a Before hook decides which row they may write.
+func rolesForMemberFullCRUD() entityManagementInterfaces.EntityRoles {
+	return entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+		memberRoles(): adminFullCRUD(),
+		adminRoles():  adminFullCRUD(),
+	}}
+}
+
+// rolesForNoMemberMethod returns the pattern where the registration writes
+// "()" for members: no generic method at all, they go through dedicated
+// routes (/invoices/user, /usage-metrics/user).
+func rolesForNoMemberMethod() entityManagementInterfaces.EntityRoles {
+	return entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+		memberRoles(): "()",
+		adminRoles():  adminFullCRUD(),
+	}}
+}
+
 // rolesForAdminOnly returns the pattern where members have no role-level
 // access at all and admins have full CRUD. Used by entities that expose
 // dedicated routes for member operations (e.g., UserSubscription).
@@ -152,24 +172,15 @@ func configurationEntityRoles() []entityRoleDefinition {
 	}
 }
 
-// groupsEntityRoles covers ClassGroup and GroupMember. Members can create
-// groups (POST); GroupMember writes are admin-only at the Casbin layer
-// (Layer 2 hooks enforce group-role permissions).
+// groupsEntityRoles covers ClassGroup and GroupMember. Members hold every
+// method on both: a trainer renames and deletes their own class (#459) and
+// enrols, promotes and removes its members. Which class and which member is
+// decided by GroupWriteAuthorizationHook and the GroupMember hooks
+// (creation, role change, deletion).
 func groupsEntityRoles() []entityRoleDefinition {
 	return []entityRoleDefinition{
-		{
-			entityName: "ClassGroup",
-			routeName:  "class-groups",
-			roles:      rolesForCreatableByMember(),
-		},
-		{
-			entityName: "GroupMember",
-			routeName:  "group-members",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRoles(): methodRegex(http.MethodGet),
-				adminRoles():  methodRegex(http.MethodGet, http.MethodPost, http.MethodDelete),
-			}},
-		},
+		{entityName: "ClassGroup", routeName: "class-groups", roles: rolesForMemberFullCRUD()},
+		{entityName: "GroupMember", routeName: "group-members", roles: rolesForMemberFullCRUD()},
 	}
 }
 
@@ -189,35 +200,34 @@ func organizationsEntityRoles() []entityRoleDefinition {
 			// Members get full CRUD at the Casbin layer; Layer 2 org-role hooks
 			// (validation on create, authorization on update, deletion guard)
 			// gate who may actually mutate a member.
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRoles(): methodRegex(http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete),
-				adminRoles():  adminFullCRUD(),
-			}},
+			roles: rolesForMemberFullCRUD(),
 		},
 	}
 }
 
-// paymentEntityRoles covers Stripe-related entities. The matrix here is
-// the most varied:
+// paymentEntityRoles covers Stripe-related entities. Members lost the generic
+// GET on PaymentMethod, Invoice and UsageMetrics because it listed every
+// user's rows (IDOR, commit 8f8988df); they read their own through
+// /payment-methods/user, /invoices/user and /usage-metrics/user.
 //   - BillingAddress: members have full CRUD, with reads scoped to the
 //     owner by its OwnershipConfig "read" operation.
-//   - PaymentMethod: this fixture over-grants GET compared with its
-//     registration, which gives members mutate only (POST|DELETE|PATCH).
-//   - Invoice / UsageMetrics / SubscriptionPlan / PlanFeature: members read
-//     only; admins have full CRUD.
+//   - PaymentMethod: members write only (POST|PATCH|DELETE), each write
+//     checked by its OwnershipConfig.
+//   - Invoice / UsageMetrics: no generic method for members.
+//   - SubscriptionPlan: members read only; admins have full CRUD.
 //   - UserSubscription: admin-only at the role layer; members use dedicated
 //     routes (/current, /all, /checkout) instead.
 func paymentEntityRoles() []entityRoleDefinition {
-	memberMutateOnly := entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-		memberRoles(): methodRegex(http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodPatch),
-		adminRoles():  methodRegex(http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodPatch),
+	memberWriteOnly := entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+		memberRoles(): methodRegex(http.MethodPost, http.MethodPatch, http.MethodDelete),
+		adminRoles():  adminFullCRUD(),
 	}}
 	return []entityRoleDefinition{
-		{entityName: "BillingAddress", routeName: "billing-addresses", roles: memberMutateOnly},
-		{entityName: "Invoice", routeName: "invoices", roles: rolesForReadOnlyMember()},
-		{entityName: "PaymentMethod", routeName: "payment-methods", roles: memberMutateOnly},
+		{entityName: "BillingAddress", routeName: "billing-addresses", roles: rolesForMemberFullCRUD()},
+		{entityName: "Invoice", routeName: "invoices", roles: rolesForNoMemberMethod()},
+		{entityName: "PaymentMethod", routeName: "payment-methods", roles: memberWriteOnly},
 		{entityName: "SubscriptionPlan", routeName: "subscription-plans", roles: rolesForReadOnlyMember()},
-		{entityName: "UsageMetrics", routeName: "usage-metrics", roles: rolesForReadOnlyMember()},
+		{entityName: "UsageMetrics", routeName: "usage-metrics", roles: rolesForNoMemberMethod()},
 		{entityName: "UserSubscription", routeName: "user-subscriptions", roles: rolesForAdminOnly()},
 	}
 }
@@ -257,46 +267,20 @@ func emailEntityRoles() []entityRoleDefinition {
 	}
 }
 
-// allEntityRoles returns the complete role matrix used as both the fixture
-// (to seed the in-memory Casbin enforcer) and the oracle (to assert the
-// expected allow/deny per role × method × entity).
+// allEntityRoles is the spec: for each entity, the methods each role may call
+// on its generic routes. TestRBAC_EntityRolesSpec_MatchesProductionRegistration
+// compares it with the production registrations, so a registration that
+// changes its roles fails until the row here is changed too. The other tests
+// load the rows into a Casbin enforcer with the production loader.
 //
-// Matrix structure
-// ----------------
-// Each row is an `entityRoleDefinition` with three fields:
-//   - entityName: PascalCase registration name (must match production registration)
-//   - routeName:  kebab-case pluralized route segment (must match Pluralize +
-//     PascalToKebab — validated by TestRBAC_RouteNameDerivation)
-//   - roles:      map[ocfRole]"(METHOD1|METHOD2|...)" — one entry per OCF role
-//     that has Casbin access. Missing role => no Casbin policy
-//     for that role on that entity.
+// This is Layer 1 only (which methods a role may use). Which row a member may
+// write is decided by hooks and the RouteRegistry, tested elsewhere.
 //
-// Empty `roles.Roles` map means the entity does NOT register Casbin policies
-// at registration time. Access for these entities (Chapter, Course, Page,
-// Section, Session, Theme, Schedule, Generation, EmailTemplate) is governed
-// entirely by entity-ownership hooks and dedicated routes.
+// An empty roles map means the registration declares no role: access to
+// those entities is governed by ownership hooks and dedicated routes.
 //
-// Each subgroup below is sourced from the production registration files in
-// `src/{module}/entityRegistration/*.go`. When production registration roles
-// change, the corresponding subgroup function MUST be updated. See the per-
-// function docstrings for the exact mapping.
-//
-// Tests in this file consume this matrix in two ways:
-//  1. As fixture: seed the Casbin enforcer via `loadEntityPolicies` so the
-//     enforcer behaves as production would for these entities.
-//  2. As oracle: drive `buildMatrixTestCases` which generates one test case
-//     per (entity, method, role) tuple and asserts allow/deny matches the
-//     regex.
-//
-// Two layers of authorization (CRITICAL — see CLAUDE.md):
-//   - Layer 1 (this matrix): Casbin RBAC. Coarse method-on-route gating.
-//   - Layer 2 (NOT here):    Group/org/owner role enforcement via entity
-//     hooks and `RouteRegistry`. Tested elsewhere.
-//
-// Adding a new entity:
-//  1. Add the row to the appropriate per-class function below.
-//  2. Add the route to TestRBAC_RouteNameDerivation's expected map.
-//  3. Verify the row matches the production registration's `Roles:` block.
+// Not every registered entity is in the table (the scenario entities are
+// absent): the comparison covers the rows below, no more.
 func allEntityRoles() []entityRoleDefinition {
 	groups := [][]entityRoleDefinition{
 		authEntityRoles(),
@@ -329,62 +313,38 @@ func loadEntityPolicies(t *testing.T, def entityRoleDefinition) {
 var httpMethods = []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete}
 
 // --------------------------------------------------------------------------
-// 1. Entity Role Matrix (table-driven)
+// 1. The table is a spec, compared with the production registrations
 // --------------------------------------------------------------------------
 
-// rbacTestCase describes a single RBAC assertion.
-type rbacTestCase struct {
-	name       string
-	entity     string // kebab-case route (e.g., "class-groups")
-	method     string // GET, POST, PATCH, DELETE
-	role       string // "member", "administrator"
-	expectAuth bool
+// methodsOf turns "(GET|POST)" into its sorted methods, so that two regexes
+// granting the same methods in a different order compare equal.
+func methodsOf(regex string) []string {
+	return slices.Sorted(strings.SplitSeq(strings.Trim(regex, "()"), "|"))
 }
 
-// buildMatrixTestCases generates test cases for every entity x role x method
-// combination from the registration definitions.
-func buildMatrixTestCases() []rbacTestCase {
-	entities := allEntityRoles()
-	var cases []rbacTestCase
+// TestRBAC_EntityRolesSpec_MatchesProductionRegistration fails when an entity
+// registration grants a role other methods than the table says. Changing who
+// may call an entity route is then a decision written twice: in the
+// registration and here.
+func TestRBAC_EntityRolesSpec_MatchesProductionRegistration(t *testing.T) {
+	bootProductionEntitiesAndHooks(t)
+	registered := ems.GlobalEntityRegistrationService.GetAllEntityRoles()
 
-	for _, ent := range entities {
-		if len(ent.roles.Roles) == 0 {
-			// Entities without explicit role policies: all methods should be denied
-			// for both member and admin (at the role level).
-			for _, method := range httpMethods {
-				cases = append(cases, rbacTestCase{
-					name:       fmt.Sprintf("%s/%s/member/denied_no_policy", ent.routeName, method),
-					entity:     ent.routeName,
-					method:     method,
-					role:       string(authModels.Member),
-					expectAuth: false,
-				})
-				cases = append(cases, rbacTestCase{
-					name:       fmt.Sprintf("%s/%s/admin/denied_no_policy", ent.routeName, method),
-					entity:     ent.routeName,
-					method:     method,
-					role:       string(authModels.Admin),
-					expectAuth: false,
-				})
-			}
-			continue
-		}
+	for _, spec := range allEntityRoles() {
+		t.Run(spec.entityName, func(t *testing.T) {
+			production, ok := registered[spec.entityName]
+			require.True(t, ok, "%s is in the spec but production does not register it", spec.entityName)
 
-		for roleName, methodRegex := range ent.roles.Roles {
-			for _, method := range httpMethods {
-				expect := methodMatchesRegex(method, methodRegex)
-				cases = append(cases, rbacTestCase{
-					name:       fmt.Sprintf("%s/%s/%s/expect_%v", ent.routeName, method, roleName, expect),
-					entity:     ent.routeName,
-					method:     method,
-					role:       roleName,
-					expectAuth: expect,
-				})
+			want, got := map[string][]string{}, map[string][]string{}
+			for role, regex := range spec.roles.Roles {
+				want[role] = methodsOf(regex)
 			}
-		}
+			for role, regex := range production.Roles {
+				got[role] = methodsOf(regex)
+			}
+			assert.Equal(t, want, got, "roles registered for %s differ from the spec", spec.entityName)
+		})
 	}
-
-	return cases
 }
 
 // methodMatchesRegex checks whether a method is in the role's access regex.
@@ -404,54 +364,6 @@ func containsMethod(s, method string) bool {
 		}
 	}
 	return false
-}
-
-// TestRBAC_EntityRoleAuthorizationMatrix verifies every entity's CRUD permissions
-// for each role by loading actual Casbin policies from entity registration definitions.
-func TestRBAC_EntityRoleAuthorizationMatrix(t *testing.T) {
-	setupCasbinEnforcer(t)
-
-	// Load policies for all entities that have role definitions.
-	for _, ent := range allEntityRoles() {
-		if len(ent.roles.Roles) > 0 {
-			loadEntityPolicies(t, ent)
-		}
-	}
-
-	cases := buildMatrixTestCases()
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Create a unique user for this test and assign the role.
-			userID := fmt.Sprintf("matrix-user-%s-%s-%s", tc.entity, tc.method, tc.role)
-			opts := utils.DefaultPermissionOptions()
-
-			err := utils.AddGroupingPolicy(casdoor.Enforcer, userID, tc.role, opts)
-			require.NoError(t, err)
-
-			// Test against the list endpoint.
-			listPath := "/api/v1/" + tc.entity
-			allowedList, err := casdoor.Enforcer.Enforce(userID, listPath, tc.method)
-			require.NoError(t, err)
-
-			// Test against a specific resource endpoint (UUID-like).
-			resourcePath := "/api/v1/" + tc.entity + "/550e8400-e29b-41d4-a716-446655440000"
-			allowedResource, err := casdoor.Enforcer.Enforce(userID, resourcePath, tc.method)
-			require.NoError(t, err)
-
-			if tc.expectAuth {
-				assert.True(t, allowedList,
-					"Role %q should be allowed %s on %s (list endpoint)", tc.role, tc.method, listPath)
-				assert.True(t, allowedResource,
-					"Role %q should be allowed %s on %s (resource endpoint)", tc.role, tc.method, resourcePath)
-			} else {
-				assert.False(t, allowedList,
-					"Role %q should be DENIED %s on %s (list endpoint)", tc.role, tc.method, listPath)
-				assert.False(t, allowedResource,
-					"Role %q should be DENIED %s on %s (resource endpoint)", tc.role, tc.method, resourcePath)
-			}
-		})
-	}
 }
 
 // --------------------------------------------------------------------------
