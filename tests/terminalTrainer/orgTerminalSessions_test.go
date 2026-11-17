@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -67,34 +66,30 @@ func TestOrgTerminalSessions_RouteParamConsistency(t *testing.T) {
 	}
 }
 
-// TestOrgTerminalSessions_ValidOrgID_NotBadRequest verifies that passing a valid
-// UUID as the :id parameter does not result in a "Invalid organization ID" error.
-// This confirms the handler correctly reads the route param.
-func TestOrgTerminalSessions_ValidOrgID_NotBadRequest(t *testing.T) {
+// A plain member of the organization may not list everyone's sessions.
+func TestOrgTerminalSessions_PlainMember_Forbidden(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
-	orgID := uuid.New()
+	org := createTestOrgForHistory(t, db, "trainer1")
+	createTestOrgMember(t, db, org.ID, "trainer1", orgModels.OrgRoleOwner)
+	createTestOrgMember(t, db, org.ID, "student1", orgModels.OrgRoleMember)
+	createTestTerminalWithOrg(t, db, "trainer1", &org.ID)
 
 	controller := terminalController.NewTerminalController(db)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-
 	router.Use(func(c *gin.Context) {
-		c.Set("userId", "some-user")
-		c.Set("userRoles", []string{"administrator"})
+		c.Set("userId", "student1")
+		c.Set("userRoles", []string{"member"})
 		c.Next()
 	})
-
-	// Route uses :id (correct convention)
 	router.GET("/organizations/:id/terminal-sessions", controller.GetOrganizationTerminalSessions)
 
-	req := httptest.NewRequest("GET", "/organizations/"+orgID.String()+"/terminal-sessions", nil)
+	req := httptest.NewRequest("GET", "/organizations/"+org.ID.String()+"/terminal-sessions", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// Should NOT be 400 — the UUID is valid, so param parsing should succeed.
-	// May get 403 (not a member) or 200, but never 400 "Invalid organization ID".
-	assert.NotEqual(t, http.StatusBadRequest, w.Code,
-		"Valid UUID passed as :id should not produce 400 — handler may be reading wrong param name")
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.NotContains(t, w.Body.String(), "sessions")
 }
