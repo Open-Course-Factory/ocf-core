@@ -5,7 +5,6 @@ package auth_tests
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -391,33 +390,4 @@ func BenchmarkLoginJSONParsing(b *testing.B) {
 		var input dto.LoginInput
 		json.Unmarshal([]byte(loginPayload), &input)
 	}
-}
-
-// TestLoginSecurityAlerts tests that security alerts are logged for token mismatches
-func TestLoginSecurityAlerts(t *testing.T) {
-	// This test verifies the security logging functionality
-	// In a production environment, you would capture logs and verify they contain
-	// the expected security alert messages
-
-	t.Run("verify_security_logging_on_token_mismatch", func(t *testing.T) {
-		// This is a documentation test to ensure developers know
-		// that security alerts should be monitored
-
-		expectedLogPatterns := []string{
-			"[SECURITY ALERT] Token user ID mismatch!",
-			"[SECURITY ERROR] Failed to parse JWT token",
-			"[SECURITY] Token validation passed",
-		}
-
-		for _, pattern := range expectedLogPatterns {
-			t.Logf("Security log pattern that should be monitored: %s", pattern)
-		}
-
-		// In a real implementation, you would:
-		// 1. Capture log output using a custom logger
-		// 2. Trigger a token mismatch scenario
-		// 3. Verify the security alert was logged
-
-		fmt.Println("Security logging patterns documented for monitoring")
-	})
 }

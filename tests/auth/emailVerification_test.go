@@ -472,18 +472,6 @@ func TestGetVerificationStatusController_Unauthenticated(t *testing.T) {
 }
 
 // ============================================================
-// Access level constants tests
-// ============================================================
-
-func TestTerminalAccessLevelConstants(t *testing.T) {
-	// Import is from terminalTrainer/models but we test the concept here
-	// to ensure constants are properly wired
-	assert.Equal(t, "read", "read")
-	assert.Equal(t, "write", "write")
-	assert.Equal(t, "admin", "admin")
-}
-
-// ============================================================
 // Native EmailVerified field tests (Casdoor v2.337.0+)
 // Verify the code reads from the native user.EmailVerified bool
 // field instead of the custom Properties["email_verified"] string.
