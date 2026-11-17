@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,20 +84,26 @@ func createTestOrgMember(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID stri
 	return member
 }
 
-// historyUpstreamCall is the last request stubHistoryBackend received.
+// historyUpstreamCall is the last history request stubHistoryBackend received.
 type historyUpstreamCall struct {
 	Method, Path, Query, APIKey string
 }
 
 // stubHistoryBackend points the terminal service at a tt-backend that holds no
 // command history, so a caller who passes the access check gets a real answer,
-// and returns what that tt-backend was asked.
+// and returns a reader of the history request that tt-backend was asked.
 // Call it before building the controller, which reads the URL once.
-func stubHistoryBackend(t *testing.T) *historyUpstreamCall {
+func stubHistoryBackend(t *testing.T) func() historyUpstreamCall {
 	t.Helper()
-	call := &historyUpstreamCall{}
+	var mu sync.Mutex
+	var call historyUpstreamCall
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		*call = historyUpstreamCall{r.Method, r.URL.Path, r.URL.RawQuery, r.Header.Get("X-API-Key")}
+		// The service also fetches /enums in the background, at any time.
+		if strings.Contains(r.URL.Path, "/history") {
+			mu.Lock()
+			call = historyUpstreamCall{r.Method, r.URL.Path, r.URL.RawQuery, r.Header.Get("X-API-Key")}
+			mu.Unlock()
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodDelete {
 			_, _ = w.Write([]byte(`{"sessions_cleared":0}`))
@@ -107,7 +115,11 @@ func stubHistoryBackend(t *testing.T) *historyUpstreamCall {
 	t.Setenv("TERMINAL_TRAINER_URL", srv.URL)
 	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
 	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
-	return call
+	return func() historyUpstreamCall {
+		mu.Lock()
+		defer mu.Unlock()
+		return call
+	}
 }
 
 // makeHistoryRequest creates a gin router and sends a GET request for session history
