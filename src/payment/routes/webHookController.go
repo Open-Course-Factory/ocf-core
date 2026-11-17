@@ -63,6 +63,15 @@ func (wc *WebhookController) HandleStripeWebhook(ctx *gin.Context) {
 
 	// 3 : Validation de la signature Stripe
 	event, err := wc.stripeService.ValidateWebhookSignature(payload, signature)
+	if errors.Is(err, services.ErrWebhookSecretNotConfigured) {
+		// A server fault, not a bad signature: 503 keeps Stripe retrying until the secret is set.
+		utils.Error("Stripe webhook refused: STRIPE_WEBHOOK_SECRET is not configured")
+		ctx.JSON(http.StatusServiceUnavailable, &authErrors.APIError{
+			ErrorCode:    http.StatusServiceUnavailable,
+			ErrorMessage: "Webhook endpoint is not configured",
+		})
+		return
+	}
 	if err != nil {
 		utils.Debug("🚨 Webhook signature validation failed from IP %s: %v", ctx.ClientIP(), err)
 		ctx.JSON(http.StatusUnauthorized, &authErrors.APIError{
