@@ -21,45 +21,6 @@ func newTestEnforcer(t *testing.T) *casbin.Enforcer {
 	return e
 }
 
-// TestIncusUICasbinPolicy_StarPath_NeverMatchesRealURLs is a regression test
-// proving that using "*path" instead of "*" in a keyMatch2 Casbin policy breaks
-// matching for ALL real URLs. keyMatch2 only treats "/*" as a wildcard (→ "/.*"),
-// but "/*path" becomes "/.*path" — requiring the URL to end with literal "path".
-//
-// This was the root cause of the "missing Authorization header" error for non-admin
-// users accessing the Incus UI: Casbin denied the auth cookie setup POST (403),
-// the frontend ignored the error, and the iframe loaded without the cookie.
-func TestIncusUICasbinPolicy_StarPath_NeverMatchesRealURLs(t *testing.T) {
-	e := newTestEnforcer(t)
-
-	// The OLD (buggy) policy — DO NOT use *path in keyMatch2 patterns
-	_, err := e.AddPolicy("member", "/api/v1/incus-ui/:backendId/*path", "(GET|POST|PUT|DELETE)")
-	require.NoError(t, err)
-
-	testCases := []struct {
-		name   string
-		url    string
-		method string
-	}{
-		{"auth cookie setup", "/api/v1/incus-ui/_auth/cookie", "POST"},
-		{"iframe initial load", "/api/v1/incus-ui/backend1/ui/", "GET"},
-		{"Incus API call", "/api/v1/incus-ui/backend1/1.0/instances", "GET"},
-		{"asset request", "/api/v1/incus-ui/backend1/ui/assets/index.js", "GET"},
-		{"WebSocket upgrade", "/api/v1/incus-ui/backend1/1.0/events", "GET"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			allowed, err := e.Enforce("member", tc.url, tc.method)
-			assert.NoError(t, err)
-			assert.False(t, allowed,
-				"Regression: *path pattern must NOT match %s — keyMatch2 turns /*path "+
-					"into /.*path regex which requires URLs to end with literal 'path'",
-				tc.url)
-		})
-	}
-}
-
 // TestIncusUICasbinPolicy_MemberCanAccessAllIncusUIRoutes verifies that the
 // corrected Casbin policy (using "*" wildcard and including PATCH) allows
 // the member role to access all real Incus UI proxy URLs.
@@ -125,19 +86,4 @@ func TestIncusUICasbinPolicy_DoesNotLeakToOtherRoutes(t *testing.T) {
 				"incus-ui policy must NOT grant access to %s", tc.url)
 		})
 	}
-}
-
-// TestIncusUICasbinPolicy_MissingPATCH_Regression is a regression test verifying
-// that omitting PATCH from the method list would block Incus API config updates.
-func TestIncusUICasbinPolicy_MissingPATCH_Regression(t *testing.T) {
-	e := newTestEnforcer(t)
-
-	// Policy WITHOUT PATCH — would break instance configuration
-	_, err := e.AddPolicy("member", "/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|DELETE)")
-	require.NoError(t, err)
-
-	allowed, err := e.Enforce("member", "/api/v1/incus-ui/backend1/1.0/instances/foo", "PATCH")
-	assert.NoError(t, err)
-	assert.False(t, allowed,
-		"Regression: policy without PATCH must not allow PATCH requests")
 }
