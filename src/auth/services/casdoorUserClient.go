@@ -150,8 +150,14 @@ func deleteCasdoorTokensOf(user *casdoorsdk.User) error {
 }
 
 func (c *defaultCasdoorUserClient) AddUser(user *casdoorsdk.User) error {
-	_, err := casdoorsdk.AddUser(user)
-	return err
+	affected, err := casdoorsdk.AddUser(user)
+	if err != nil {
+		return err
+	}
+	if !affected {
+		return fmt.Errorf("%w: account %s was not added", ErrCasdoorWriteNotPersisted, user.Name)
+	}
+	return nil
 }
 
 func (c *defaultCasdoorUserClient) SetPassword(user *casdoorsdk.User, newPassword string) error {

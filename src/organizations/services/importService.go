@@ -82,7 +82,7 @@ func (s *importService) ImportOrganizationData(
 	updateExisting bool,
 	targetGroup string,
 	verifyEmails bool,
-) (*dto.ImportOrganizationDataResponse, error) {
+) (importResponse *dto.ImportOrganizationDataResponse, importErr error) {
 
 	startTime := time.Now()
 	response := &dto.ImportOrganizationDataResponse{
@@ -175,6 +175,8 @@ func (s *importService) ImportOrganizationData(
 				Message: fmt.Sprintf("Panic during import: %v", r),
 				Code:    dto.ErrCodeValidation,
 			})
+			// Never (nil, nil): the caller would report success on a rolled-back import.
+			importResponse, importErr = response, fmt.Errorf("import aborted and rolled back: %v", r)
 		}
 	}()
 
@@ -403,7 +405,11 @@ func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, ch
 
 	// Check if user already exists
 	existingUser, err := s.identity.GetUserByEmail(user.Email)
-	if err == nil && existingUser != nil {
+	if err != nil {
+		// The provider could not say whether the email is taken: never create on that.
+		return "", false, fmt.Errorf("failed to look up %s: %w", user.Email, err)
+	}
+	if existingUser != nil {
 		// User exists
 		if !updateExisting {
 			utils.Debug("User %s already exists, skipping", user.Email)
@@ -479,6 +485,14 @@ func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, ch
 	createdUser, err := s.identity.GetUserByEmail(user.Email)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to retrieve created user: %w", err)
+	}
+	if createdUser == nil {
+		return "", false, fmt.Errorf("created user %s not found when read back", user.Email)
+	}
+	// Only the account this import just added is the organization's: another
+	// account holding the email is an existing account without membership.
+	if createdUser.Name != newUser.Name {
+		return "", false, errNotAMember
 	}
 
 	// Add default roles
