@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"testing"
 
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/mocks"
 	"soli/formations/src/utils"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ==========================================
@@ -95,6 +97,43 @@ func TestRemovePolicy(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to remove policy")
+	})
+}
+
+// A real enforcer: the mock cannot tell whether a rule left memory.
+func TestRemovePolicy_RealEnforcer(t *testing.T) {
+	const route = "/api/v1/groups/abc"
+	opts := utils.DefaultPermissionOptions()
+	t.Run("no methods and no route - drops every policy of the subject, as user deletion does", func(t *testing.T) {
+		enforcer, err := casdoor.NewEnforcer("../../src/configuration/keymatch_model.conf")
+		require.NoError(t, err)
+		require.NoError(t, utils.AddPolicy(enforcer, "user123", route, "(GET)", opts))
+		require.NoError(t, utils.AddPolicy(enforcer, "user456", route, "(GET)", opts))
+
+		require.NoError(t, utils.RemovePolicy(enforcer, "user123", "", "", opts))
+
+		allowed, err := enforcer.Enforce("user123", route, "GET")
+		require.NoError(t, err)
+		assert.False(t, allowed, "the removed subject must be denied")
+		allowed, err = enforcer.Enforce("user456", route, "GET")
+		require.NoError(t, err)
+		assert.True(t, allowed, "another subject must keep its policy")
+	})
+
+	t.Run("with methods - removes exactly that rule", func(t *testing.T) {
+		enforcer, err := casdoor.NewEnforcer("../../src/configuration/keymatch_model.conf")
+		require.NoError(t, err)
+		require.NoError(t, utils.AddPolicy(enforcer, "user123", route, "(GET)", opts))
+		require.NoError(t, utils.AddPolicy(enforcer, "user123", route, "(DELETE)", opts))
+
+		require.NoError(t, utils.RemovePolicy(enforcer, "user123", route, "(DELETE)", opts))
+
+		allowed, err := enforcer.Enforce("user123", route, "DELETE")
+		require.NoError(t, err)
+		assert.False(t, allowed)
+		allowed, err = enforcer.Enforce("user123", route, "GET")
+		require.NoError(t, err)
+		assert.True(t, allowed, "the other rule on the same route must survive")
 	})
 }
 
