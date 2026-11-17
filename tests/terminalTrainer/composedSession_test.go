@@ -474,3 +474,31 @@ func TestStartComposedSession_CapsExpiryToPlanMaxDuration(t *testing.T) {
 		})
 	}
 }
+
+func TestStartComposedSession_SendsPlanHistoryRetentionNotTheCallers(t *testing.T) {
+	plan := makePlan(false)
+	plan.CommandHistoryRetentionDays = 30
+
+	body, _, _ := startOneComposedSession(t, plan, dto.CreateComposedSessionInput{HistoryRetentionDays: 365})
+
+	assert.Equal(t, float64(30), body["history_retention_days"])
+}
+
+func TestStartComposedSession_ClampsRecordingEnabledToZeroOrOne(t *testing.T) {
+	cases := []struct {
+		name      string
+		requested int
+		want      float64
+	}{
+		{"above one becomes one", 5, 1},
+		{"negative becomes zero", -1, 0},
+		{"one is kept", 1, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _, _ := startOneComposedSession(t, makePlan(false),
+				dto.CreateComposedSessionInput{RecordingEnabled: tc.requested})
+			assert.Equal(t, tc.want, body["recording_enabled"])
+		})
+	}
+}
