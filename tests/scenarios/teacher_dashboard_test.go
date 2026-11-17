@@ -388,18 +388,6 @@ func TestGetScenarioAnalytics_ExclusionsAndAvgTime(t *testing.T) {
 		"avg completion time must be the mean duration of completed sessions")
 }
 
-// --- Bulk start tests ---
-
-func TestBulkStartScenario_Success(t *testing.T) {
-	t.Skip("BulkStartScenario now requires a non-nil TerminalTrainerService mock; needs dedicated mock implementation")
-}
-
-// --- Teacher Controller HTTP tests ---
-
-func TestTeacherAPI_BulkStart(t *testing.T) {
-	t.Skip("BulkStartScenario now requires a non-nil TerminalTrainerService mock; needs dedicated mock implementation")
-}
-
 // --- Real TeacherController tests (with access control) ---
 
 func setupRealTeacherRouter(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
@@ -505,10 +493,6 @@ func TestTeacherController_GroupOwnerAccess(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-func TestTeacherController_BulkStart_ViaController(t *testing.T) {
-	t.Skip("BulkStartScenario now requires terminal service with API connectivity; needs integration test environment")
 }
 
 // --- Grade via VerifyCurrentStep integration test ---
