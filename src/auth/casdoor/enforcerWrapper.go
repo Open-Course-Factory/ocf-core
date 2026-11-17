@@ -50,6 +50,10 @@ func (e *enforcerWrapper) RemoveGroupingPolicy(params ...any) (bool, error) {
 	return e.enforcer.RemoveGroupingPolicy(params...)
 }
 
+func (e *enforcerWrapper) RemoveFilteredGroupingPolicy(fieldIndex int, fieldValues ...string) (bool, error) {
+	return e.enforcer.RemoveFilteredGroupingPolicy(fieldIndex, fieldValues...)
+}
+
 func (e *enforcerWrapper) GetImplicitPermissionsForUser(name string) ([][]string, error) {
 	return e.enforcer.GetImplicitPermissionsForUser(name)
 }

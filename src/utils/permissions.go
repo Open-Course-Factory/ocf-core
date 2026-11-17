@@ -136,7 +136,8 @@ func AddGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID str
 	return nil
 }
 
-// RemoveGroupingPolicy removes a user from a role group
+// RemoveGroupingPolicy removes a user from a role group. With an empty roleID
+// it removes the user from every role group.
 //
 // Example:
 //
@@ -148,7 +149,14 @@ func RemoveGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID 
 		}
 	}
 
-	_, err := enforcer.RemoveGroupingPolicy(userID, roleID)
+	var err error
+	if roleID == "" {
+		// An exact removal with no role matches no rule in memory, so the user
+		// would keep their roles until the next reload: remove them all.
+		_, err = enforcer.RemoveFilteredGroupingPolicy(0, userID)
+	} else {
+		_, err = enforcer.RemoveGroupingPolicy(userID, roleID)
+	}
 	if err != nil {
 		if opts.WarnOnError {
 			Warn("Failed to remove user %s from role %s: %v", userID, roleID, err)

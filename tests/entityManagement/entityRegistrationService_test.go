@@ -82,6 +82,10 @@ func (m *MockEnforcerForTests) AddGroupingPolicy(params ...any) (bool, error) {
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockEnforcerForTests) RemoveFilteredGroupingPolicy(fieldIndex int, fieldValues ...string) (bool, error) {
+	return true, nil
+}
+
 func (m *MockEnforcerForTests) RemoveGroupingPolicy(params ...any) (bool, error) {
 	args := m.Called(params...)
 	return args.Bool(0), args.Error(1)

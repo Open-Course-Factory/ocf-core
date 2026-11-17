@@ -106,6 +106,10 @@ func (m *MockControllerEnforcer) GetPolicy() ([][]string, error) {
 	return args.Get(0).([][]string), args.Error(1)
 }
 
+func (m *MockControllerEnforcer) RemoveFilteredGroupingPolicy(fieldIndex int, fieldValues ...string) (bool, error) {
+	return true, nil
+}
+
 func (m *MockControllerEnforcer) RemoveGroupingPolicy(params ...any) (bool, error) {
 	args := m.Called(params...)
 	return args.Bool(0), args.Error(1)

@@ -28,6 +28,7 @@ type MockEnforcer struct {
 	GetRolesForUserCalls               [][]any
 	AddGroupingPolicyCalls             [][]any
 	RemoveGroupingPolicyCalls          [][]any
+	RemoveFilteredGroupingPolicyCalls  [][]string
 	GetImplicitPermissionsForUserCalls [][]any
 	GetFilteredPolicyCalls             [][]any
 	GetPolicyCalls                     int
@@ -144,6 +145,11 @@ func (m *MockEnforcer) AddGroupingPolicy(params ...any) (bool, error) {
 func (m *MockEnforcer) RemoveGroupingPolicy(params ...any) (bool, error) {
 	m.RemoveGroupingPolicyCalls = append(m.RemoveGroupingPolicyCalls, params)
 	return m.RemoveGroupingPolicyFunc(params...)
+}
+
+func (m *MockEnforcer) RemoveFilteredGroupingPolicy(fieldIndex int, fieldValues ...string) (bool, error) {
+	m.RemoveFilteredGroupingPolicyCalls = append(m.RemoveFilteredGroupingPolicyCalls, fieldValues)
+	return true, nil
 }
 
 // Helper methods for testing

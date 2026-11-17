@@ -44,6 +44,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"soli/formations/src/auth/casdoor"
 	authServices "soli/formations/src/auth/services"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	paymentModels "soli/formations/src/payment/models"
@@ -584,6 +585,27 @@ func TestDeleteUser_BillingPseudonymizationFailure_DoesNotAbort(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// A real enforcer: the mock cannot tell whether a role left memory.
+func TestDeleteUser_UserHoldsRole_RoleDroppedWithoutPolicyReload(t *testing.T) {
+	userID := "user-del-role"
+	enforcer, err := casdoor.NewEnforcer("../../src/configuration/keymatch_model.conf")
+	require.NoError(t, err)
+	_, err = enforcer.AddPolicy("administrator", "/api/v1/things", "(GET)")
+	require.NoError(t, err)
+	_, err = enforcer.AddGroupingPolicy(userID, "administrator")
+	require.NoError(t, err)
+	prevEnforcer := casdoor.Enforcer
+	casdoor.Enforcer = enforcer
+	t.Cleanup(func() { casdoor.Enforcer = prevEnforcer })
+
+	casdoorMock, helperMock, _ := happyMocks(userID)
+	require.NoError(t, authServices.NewUserService(casdoorMock, helperMock).DeleteUser(userID))
+
+	allowed, err := enforcer.Enforce(userID, "/api/v1/things", "GET")
+	require.NoError(t, err)
+	assert.False(t, allowed, "a deleted user must lose their role straight away")
+}
 
 func indexOf(slice []string, target string) int {
 	for i, v := range slice {
