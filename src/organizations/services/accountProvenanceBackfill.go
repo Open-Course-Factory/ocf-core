@@ -27,9 +27,12 @@ type MemberRef struct {
 // ProvenanceBackfillReport lists what BackfillAccountProvenance marked (or
 // would mark), the team memberships it left unmarked, the erasure dates it
 // cleared on those, and the accounts an unmarked membership's offboarding
-// blocked, which an operator reviews by hand.
+// blocked, which an operator reviews by hand. OffboardedWithoutErasureDate
+// lists the marked rows offboarded with no erasure date (offboarded after the
+// deploy, before this run, as attached members); they are left as they are.
 type ProvenanceBackfillReport struct {
 	Marked, LeftUnmarked, ErasureDatesCleared, BlockedAccounts []MemberRef
+	OffboardedWithoutErasureDate                               []MemberRef
 }
 
 // importedName is the name the import gives an account: a base, then the unix
@@ -63,11 +66,16 @@ func BackfillAccountProvenance(db *gorm.DB, accounts IdentityAccountLister, cuto
 		Find(&rows).Error; err != nil {
 		return report, fmt.Errorf("failed to list team memberships: %w", err)
 	}
+	// An empty listing would unmark every row and clear every erasure date.
+	emptyListing := len(users) == 0 && len(rows) > 0
 
 	for _, row := range rows {
 		ref := MemberRef{OrganizationID: row.OrganizationID, UserID: row.UserID}
 		if createdThroughImport(byID[row.UserID], row.JoinedAt) {
 			report.Marked = append(report.Marked, ref)
+			if row.LeftAt != nil && row.ScheduledErasureAt == nil {
+				report.OffboardedWithoutErasureDate = append(report.OffboardedWithoutErasureDate, ref)
+			}
 			continue
 		}
 		report.LeftUnmarked = append(report.LeftUnmarked, ref)
@@ -80,6 +88,9 @@ func BackfillAccountProvenance(db *gorm.DB, accounts IdentityAccountLister, cuto
 	}
 	if dryRun {
 		return report, nil
+	}
+	if emptyListing {
+		return report, fmt.Errorf("the identity provider listed no account against %d candidate memberships; refusing to write", len(rows))
 	}
 
 	err = db.Transaction(func(tx *gorm.DB) error {

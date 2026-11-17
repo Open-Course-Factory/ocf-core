@@ -46,6 +46,7 @@ func RunAccountProvenanceBackfill(db *gorm.DB, createdBefore string, dryRun bool
 	fmt.Printf("  left unmarked:                           %d\n", len(report.LeftUnmarked))
 	fmt.Printf("  erasure dates cleared:                   %d\n", len(report.ErasureDatesCleared))
 	fmt.Printf("  accounts blocked by an unmarked offboarding: %d\n", len(report.BlockedAccounts))
+	fmt.Printf("  marked members offboarded without erasure date: %d\n", len(report.OffboardedWithoutErasureDate))
 
 	unmarked := map[string][]string{}
 	var orgs []string
@@ -62,6 +63,11 @@ func RunAccountProvenanceBackfill(db *gorm.DB, createdBefore string, dryRun bool
 	}
 	fmt.Println("\nBlocked accounts to review by hand (organization, user):")
 	for _, ref := range report.BlockedAccounts {
+		fmt.Printf("  %s %s\n", ref.OrganizationID, ref.UserID)
+	}
+	fmt.Println("\nMarked members offboarded without erasure date (organization, user): offboarded between the deploy and this run,")
+	fmt.Println("they were not blocked and have no erasure date; reinstate and offboard them again if blocking and erasure were intended:")
+	for _, ref := range report.OffboardedWithoutErasureDate {
 		fmt.Printf("  %s %s\n", ref.OrganizationID, ref.UserID)
 	}
 }
