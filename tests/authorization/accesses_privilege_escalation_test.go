@@ -452,3 +452,24 @@ func TestAccessesEndpoint_RevokeAccess_DeniedWithoutPolicyReload(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, allowed, "a revoked access must be denied straight after the 204")
 }
+
+// Guards the reload POST /accesses does between removing and adding: without
+// it the broader rule would outlive the narrower grant.
+func TestAccessesEndpoint_GrantNarrowerAccess_ReplacesBroaderWithoutPolicyReload(t *testing.T) {
+	suite := setupAccessesTest(t)
+	router := newAccessesAdminRouter(t, suite, "narrow-admin-001")
+	subject, route := "narrow-subject-001", "/api/v1/class-groups/narrow-group-001"
+
+	err := utils.AddPolicy(casdoor.Enforcer, subject, route, "(GET|POST|DELETE)", utils.DefaultPermissionOptions())
+	require.NoError(t, err)
+
+	w := addAccessRequest(router, dto.CreateEntityAccessInput{GroupName: subject, Route: route, AuthorizedMethods: "(GET)"})
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	canDelete, err := casdoor.Enforcer.Enforce(subject, route, "DELETE")
+	require.NoError(t, err)
+	assert.False(t, canDelete, "the broader grant must be gone straight after the 201")
+	canGet, err := casdoor.Enforcer.Enforce(subject, route, "GET")
+	require.NoError(t, err)
+	assert.True(t, canGet, "the narrower grant must be in force")
+}
