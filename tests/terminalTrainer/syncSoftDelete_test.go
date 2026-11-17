@@ -24,10 +24,6 @@ import (
 // Actual behavior: CreateTerminalSession fails with a UNIQUE constraint error
 // because the soft-deleted row still occupies the unique index slot.
 func TestSyncCreateSession_SoftDeletedExists_ShouldRestoreInsteadOfFail(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	db := setupTestDB(t)
 	repo := repositories.NewTerminalRepository(db)
 
@@ -95,10 +91,6 @@ func TestSyncCreateSession_SoftDeletedExists_ShouldRestoreInsteadOfFail(t *testi
 // uses a scoped GORM query (excludes soft-deleted rows), returned nil, then tried
 // db.Create which failed because the soft-deleted row still occupies the unique index.
 func TestSyncRepository_CreateTerminalSessionFromAPI_SoftDeletedExists_ShouldRestore(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	db := setupTestDB(t)
 	repo := repositories.NewTerminalRepository(db)
 
@@ -157,10 +149,6 @@ func TestSyncRepository_CreateTerminalSessionFromAPI_SoftDeletedExists_ShouldRes
 // exists. This confirms the test infrastructure is sound and the bug is specifically
 // about the soft-delete + unique constraint interaction.
 func TestSyncCreateSession_NoSoftDelete_ShouldWork(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	db := setupTestDB(t)
 	repo := repositories.NewTerminalRepository(db)
 

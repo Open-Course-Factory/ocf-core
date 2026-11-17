@@ -325,9 +325,6 @@ func TestStopSession_Persistent_ResumableAfterOriginalExpiryAndFreesBudget(t *te
 // ---------------------------------------------------------------------------
 
 func TestSyncUserSessions_StoppedSession_MissingFromAPI_MarkedDeleted(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	srv := emptySessionsListTTServer(t)
 	defer srv.Close()
 	configureTTServer(t, srv.URL)
@@ -366,9 +363,6 @@ func TestSyncUserSessions_StoppedSession_MissingFromAPI_MarkedDeleted(t *testing
 // ---------------------------------------------------------------------------
 
 func TestSyncUserSessions_StoppedSession_StillInAPI_KeptStopped(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	sessionID := "sync-stopped-present-" + uuid.New().String()
 	srv := sessionListContainingTTServer(t, sessionID, "stopped")
 	defer srv.Close()

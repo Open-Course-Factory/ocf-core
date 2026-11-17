@@ -152,10 +152,6 @@ func stoppedSessionTTServer(t *testing.T, sessionID string, idleUntilTS int64) *
 }
 
 func TestSyncUserSessions_PropagatesStateFromTTBackend(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	sessionID := "sync-state-session-" + uuid.New().String()
 	idleUntilTS := time.Now().Add(30 * time.Minute).Unix()
 
