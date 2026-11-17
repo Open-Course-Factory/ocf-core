@@ -227,7 +227,8 @@ func TestBackfillProvenance_AccountMissingFromIdentityProvider_LeftUnmarked(t *t
 	orgID := seedOrg(t, db, models.OrgTypeTeam)
 	seedRow(t, db, orgID, "gone", time.Now().Add(-time.Hour), time.Now().Add(-time.Hour))
 
-	report, err := services.BackfillAccountProvenance(db, accountList{}, time.Now(), false)
+	other := importedAccount("other", time.Now().Add(-time.Hour), nil)
+	report, err := services.BackfillAccountProvenance(db, accountList{other}, time.Now(), false)
 	require.NoError(t, err)
 
 	assert.False(t, load(t, db, orgID, "gone").AccountCreatedByOrganization)
@@ -250,4 +251,44 @@ func TestBackfillProvenance_ListingFails_WritesNothing(t *testing.T) {
 
 	require.Error(t, err)
 	assert.NotNil(t, load(t, db, orgID, "attached").ScheduledErasureAt, "without the account list no erasure date is cleared")
+}
+
+// An empty answer from the identity provider would leave every row unmarked
+// and clear every legacy erasure date: the real run refuses, the dry run reports.
+func TestBackfillProvenance_NoAccountListedWithCandidateRows_RealRunRefusesDryRunReports(t *testing.T) {
+	db := newDB()
+	orgID := seedOrg(t, db, models.OrgTypeTeam)
+	seedRow(t, db, orgID, "u1", time.Now().Add(-time.Hour), time.Now().Add(-time.Hour))
+	offboardedRow(t, db, orgID, "u1")
+
+	dry, err := services.BackfillAccountProvenance(db, accountList{}, time.Now(), true)
+	require.NoError(t, err)
+	assert.Contains(t, dry.ErasureDatesCleared, ref(orgID, "u1"), "the dry run still reports")
+
+	_, err = services.BackfillAccountProvenance(db, accountList{}, time.Now(), false)
+
+	require.Error(t, err, "zero accounts against candidate rows is a failed listing, not an answer")
+	assert.NotNil(t, load(t, db, orgID, "u1").ScheduledErasureAt, "nothing is written")
+}
+
+// A created member offboarded between the deploy and the backfill was treated
+// as attached: no erasure date. The backfill marks the row and lists it for
+// the operator, without changing it.
+func TestBackfillProvenance_MarkedRowOffboardedWithoutErasureDate_Listed(t *testing.T) {
+	db := newDB()
+	created := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+	orgID := seedOrg(t, db, models.OrgTypeTeam)
+	seedRow(t, db, orgID, "u1", created.Add(30*time.Second), created.Add(30*time.Second))
+	require.NoError(t, db.Model(&models.OrganizationMember{}).Where("organization_id = ? AND user_id = ?", orgID, "u1").
+		Updates(map[string]any{"is_active": false, "left_at": time.Now()}).Error)
+
+	report, err := services.BackfillAccountProvenance(db, accountList{importedAccount("u1", created, nil)}, time.Now(), false)
+	require.NoError(t, err)
+
+	assert.Equal(t, []services.MemberRef{ref(orgID, "u1")}, report.Marked)
+	assert.Equal(t, []services.MemberRef{ref(orgID, "u1")}, report.OffboardedWithoutErasureDate)
+	m := load(t, db, orgID, "u1")
+	assert.True(t, m.AccountCreatedByOrganization)
+	assert.False(t, m.IsActive)
+	assert.Nil(t, m.ScheduledErasureAt, "listed, not modified")
 }

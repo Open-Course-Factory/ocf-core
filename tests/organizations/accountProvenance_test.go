@@ -443,3 +443,68 @@ func TestGenericMemberCreate_LiftFails_MemberCreatedBlockAndStampKept(t *testing
 	assert.True(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding,
 		"the stamp is what lets a later join lift the block: it must survive a failed unblock")
 }
+
+// importNewRow imports one row for new@example.com as owner-1 into a fresh
+// organization and returns the response with the organization's member count
+// beside the owner.
+func importNewRow(t *testing.T, identity *fakeIdentity) (*gorm.DB, uuid.UUID, *dto.ImportOrganizationDataResponse) {
+	t.Helper()
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	orgID := seedTeamOrg(t, db, "owner-1", new(10))
+	resp, err := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity)).
+		ImportOrganizationData(orgID, "owner-1", usersCSV(t, "new@example.com,Ada,Lovelace,member\n"), nil, nil, false, false, "", true)
+	// The import recovers a panic and then returns no response at all.
+	require.NotNil(t, resp, "the import returned no response (a recovered panic), err=%v", err)
+	return db, orgID, resp
+}
+
+func membersBesidesOwner(t *testing.T, db *gorm.DB, orgID uuid.UUID) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Model(&models.OrganizationMember{}).Where("organization_id = ? AND user_id <> ?", orgID, "owner-1").Count(&n).Error)
+	return n
+}
+
+// The provider could not say whether the email is taken: the row is an error,
+// never a new account.
+func TestImport_LookupByEmailFails_RowErrorNothingCreatedOrEnrolled(t *testing.T) {
+	identity := newFakeIdentity()
+	identity.lookupErrs = 1
+
+	db, orgID, resp := importNewRow(t, identity)
+
+	assert.Empty(t, identity.created, "no account is created on a failed lookup")
+	assert.Equal(t, 0, resp.Summary.UsersCreated)
+	assert.Len(t, resp.Errors, 1, "the row is reported as an error, errors=%+v", resp.Errors)
+	assert.Equal(t, int64(0), membersBesidesOwner(t, db, orgID))
+}
+
+// Adding the account "succeeds" without creating it, and the email already
+// belongs to another account: the import did not create that account, so it
+// neither marks nor enrols it; the row is skipped with a warning.
+func TestImport_AddUserCreatesNothingEmailHeldByAnotherAccount_NotMarkedNotEnrolled(t *testing.T) {
+	identity := newFakeIdentity()
+	identity.addUser = func(*casdoorsdk.User) error {
+		identity.users["existing"] = &casdoorsdk.User{Id: "existing", Name: "someone-else", Email: "new@example.com"}
+		return nil
+	}
+
+	db, orgID, resp := importNewRow(t, identity)
+
+	assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "existing"), "an account this import did not create is not enrolled")
+	assert.Equal(t, 0, resp.Summary.UsersCreated)
+	assert.NotEmpty(t, resp.Warnings, "the row is reported as skipped")
+}
+
+// Adding the account "succeeds" and the read-back finds nothing: a row error,
+// not a crash.
+func TestImport_ReadBackFindsNoAccount_RowError(t *testing.T) {
+	identity := newFakeIdentity()
+	identity.addUser = func(*casdoorsdk.User) error { return nil }
+
+	db, orgID, resp := importNewRow(t, identity)
+
+	assert.Len(t, resp.Errors, 1, "errors=%+v", resp.Errors)
+	assert.Equal(t, int64(0), membersBesidesOwner(t, db, orgID))
+}

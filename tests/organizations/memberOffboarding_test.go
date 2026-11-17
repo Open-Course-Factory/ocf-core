@@ -69,6 +69,10 @@ type fakeIdentity struct {
 	created      []*casdoorsdk.User
 	passwordsSet map[string]string
 	affected     bool
+	// lookupErrs makes the next lookups by email fail, as an unreachable provider does.
+	lookupErrs int
+	// addUser, when set, replaces what AddUser does to the store (the lock is held).
+	addUser func(user *casdoorsdk.User) error
 }
 
 func newFakeIdentity(userIDs ...string) *fakeIdentity {
@@ -85,15 +89,21 @@ func (f *fakeIdentity) GetUserByUserId(userID string) (*casdoorsdk.User, error) 
 	return f.users[userID], nil
 }
 
+// GetUserByEmail answers like the real SDK: an unknown email is (nil, nil);
+// an error means the provider could not answer.
 func (f *fakeIdentity) GetUserByEmail(email string) (*casdoorsdk.User, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.lookupErrs > 0 {
+		f.lookupErrs--
+		return nil, errors.New("identity provider unreachable")
+	}
 	for _, u := range f.users {
 		if u.Email == email {
 			return u, nil
 		}
 	}
-	return nil, fmt.Errorf("user not found: %s", email)
+	return nil, nil
 }
 
 func (f *fakeIdentity) DeleteUser(user *casdoorsdk.User) (bool, error) {
@@ -109,6 +119,9 @@ func (f *fakeIdentity) DeleteUser(user *casdoorsdk.User) (bool, error) {
 func (f *fakeIdentity) AddUser(user *casdoorsdk.User) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.addUser != nil {
+		return f.addUser(user)
+	}
 	if user.Id == "" {
 		user.Id = fmt.Sprintf("imported-%d", len(f.created)+1)
 	}
