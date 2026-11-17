@@ -136,21 +136,10 @@ func TestDuplicateScenario_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Basic fields copied
+	// The copy is marked as one; every other scenario field is compared by
+	// TestDuplicateScenario_ScenarioIsFieldCompleteAgainstSource.
 	assert.Equal(t, "Test Scenario (Copy)", result.Title)
-	assert.Equal(t, source.Description, result.Description)
-	assert.Equal(t, source.Difficulty, result.Difficulty)
-	assert.Equal(t, source.EstimatedTimeMinutes, result.EstimatedTimeMinutes)
-	assert.Equal(t, source.InstanceType, result.InstanceType)
-	assert.Equal(t, source.Hostname, result.Hostname)
-	assert.Equal(t, source.OsType, result.OsType)
-	assert.Equal(t, source.FlagsEnabled, result.FlagsEnabled)
-	assert.Equal(t, source.CrashTraps, result.CrashTraps)
-	assert.Equal(t, source.Objectives, result.Objectives)
-	assert.Equal(t, source.Prerequisites, result.Prerequisites)
-	assert.Equal(t, source.IntroText, result.IntroText)
-	assert.Equal(t, source.FinishText, result.FinishText)
-	assert.Equal(t, source.IsPublic, result.IsPublic)
+	assert.Contains(t, result.Name, "copy")
 
 	// Steps count matches
 	assert.Len(t, result.Steps, 2)
@@ -176,18 +165,6 @@ func TestDuplicateScenario_Success(t *testing.T) {
 
 	// CreatedByID is the new user
 	assert.Equal(t, "new-user", result.CreatedByID)
-}
-
-func TestDuplicateScenario_TitleHasCopySuffix(t *testing.T) {
-	db := freshTestDB(t)
-	source := createFullSourceScenario(t, db, nil)
-	svc := services.NewScenarioDuplicateService(db)
-
-	result, err := svc.DuplicateScenario(source.ID, "user1", nil)
-	require.NoError(t, err)
-
-	assert.Equal(t, "Test Scenario (Copy)", result.Title)
-	assert.Contains(t, result.Name, "copy")
 }
 
 func TestDuplicateScenario_NewIDs(t *testing.T) {
