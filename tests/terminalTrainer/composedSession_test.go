@@ -5,9 +5,13 @@ import (
 
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
+	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // ==========================================
@@ -413,4 +417,41 @@ func TestComputeSessionOptions_PopulatesCPUMcpu(t *testing.T) {
 			assert.Equal(t, tc.expected, s.CPUMcpu, tc.comment)
 		})
 	}
+}
+
+// ==========================================
+// StartComposedSession: plan-derived values reach tt-backend and the row
+// ==========================================
+
+// startOneComposedSession drives a composed start through the real service
+// against the fake tt-backend and returns the body it received.
+func startOneComposedSession(t *testing.T, plan *paymentModels.SubscriptionPlan, input dto.CreateComposedSessionInput) (map[string]any, *gorm.DB, string) {
+	t.Helper()
+	srv, rec := startComposedSessionTTServer(t)
+	t.Cleanup(srv.Close)
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	userID := "composed-user-" + uuid.New().String()
+	_, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+
+	input.Distribution = "ubuntu-24.04"
+	input.Size = "S"
+	input.Terms = "accepted"
+	_, err = services.NewTerminalTrainerService(db).StartComposedSession(userID, input, plan)
+	require.NoError(t, err)
+	require.Equal(t, 1, rec.calls)
+	return rec.gotBody, db, userID
+}
+
+// The stored InstanceType builds the console URL: the distribution name there
+// instead of its prefix breaks the WebSocket (close code 1006).
+func TestStartComposedSession_StoresDistributionPrefixAsInstanceType(t *testing.T) {
+	_, db, userID := startOneComposedSession(t, makePlan(false), dto.CreateComposedSessionInput{})
+
+	var terminal models.Terminal
+	require.NoError(t, db.Where("user_id = ?", userID).First(&terminal).Error)
+	assert.Equal(t, "ubuntu", terminal.InstanceType)
+	assert.Equal(t, "ubuntu-24.04", terminal.ComposedDistribution)
 }
