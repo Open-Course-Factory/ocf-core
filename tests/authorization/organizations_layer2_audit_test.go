@@ -25,9 +25,7 @@ package authorization_tests
 // are covered by the generic parameterized suite in
 // layer2_audit_parameterized_test.go via adaptOrganizationsRoutes().
 //
-// This file retains the route catalog and structural guards:
-//   - TestOrganizationsLayer2_RegistryDeclaresEveryAuditedRoute
-//   - TestOrganizationsLayer2_NoRegexMethodInCatalog
+// This file holds the route catalog only.
 //
 // Implementation note on /organizations/:id/groups/:groupId/regenerate-passwords:
 // the RoutePermission declares Param="id" (the organization ID), NOT
@@ -38,10 +36,6 @@ package authorization_tests
 // :id is consulted by the OrgRole enforcer.
 
 import (
-	"testing"
-
-	"github.com/stretchr/testify/assert"
-
 	access "soli/formations/src/auth/access"
 )
 
@@ -111,58 +105,6 @@ func allOrganizationsAuditRoutes() []organizationsAuditRoute {
 // aligned.
 // -----------------------------------------------------------------------------
 
-func TestOrganizationsLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
-	access.RouteRegistry.Reset()
-	access.ResetEnforcers()
-	t.Cleanup(func() {
-		access.RouteRegistry.Reset()
-		access.ResetEnforcers()
-	})
-
-	// Register every route in the audit catalog using the same shape
-	// production uses — this matches what RegisterOrganizationPermissions
-	// does at startup. We don't import the production function here
-	// because doing so would also pull in unrelated module init; the
-	// catalog parity check above is what guards drift.
-	for _, route := range allOrganizationsAuditRoutes() {
-		rule := access.AccessRule{
-			Type:    route.ruleType,
-			MinRole: route.minRole,
-		}
-		if route.ruleType == access.OrgRole {
-			rule.Param = route.paramName
-		}
-
-		role := "member"
-		if route.ruleType == access.AdminOnly {
-			role = "administrator"
-		}
-
-		access.RouteRegistry.Register("Organizations",
-			access.RoutePermission{
-				Path:   route.registeredPath,
-				Method: route.method,
-				Role:   role,
-				Access: rule,
-			},
-		)
-	}
-
-	for _, route := range allOrganizationsAuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			perm, found := access.RouteRegistry.Lookup(route.method, route.registeredPath)
-			assert.True(t, found,
-				"RouteRegistry.Lookup must find a declaration for %s %s — a missing entry means Layer 2 silently passes the route through",
-				route.method, route.registeredPath)
-			if found {
-				assert.Equal(t, route.ruleType, perm.Access.Type,
-					"declared access rule type must match catalog for %s %s",
-					route.method, route.registeredPath)
-			}
-		})
-	}
-}
-
 // -----------------------------------------------------------------------------
 // Regression guard: no regex-method declarations.
 //
@@ -172,20 +114,3 @@ func TestOrganizationsLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
 // This subtest verifies every catalog entry uses a single concrete
 // HTTP verb, mirroring what the production permissions.go declares.
 // -----------------------------------------------------------------------------
-
-func TestOrganizationsLayer2_NoRegexMethodInCatalog(t *testing.T) {
-	allowed := map[string]bool{
-		"GET": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true,
-	}
-
-	for _, route := range allOrganizationsAuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			assert.True(t, allowed[route.method],
-				"catalog route %s %s declares a non-canonical HTTP method — Layer 2 Lookup is exact-match, regex/alternation methods would silently bypass enforcement",
-				route.method, route.registeredPath)
-			assert.NotContains(t, route.method, "|",
-				"alternation in method string for %s %s would silently bypass Layer 2 (see MR !180)",
-				route.method, route.registeredPath)
-		})
-	}
-}

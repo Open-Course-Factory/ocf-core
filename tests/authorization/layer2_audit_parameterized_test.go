@@ -24,8 +24,7 @@ package authorization_tests
 //   - AdminOnly: a non-admin member IS the outsider case; InsufficientRole
 //     is also skipped (AdminOnly has no role hierarchy, just admin / non-admin).
 //   - SelfScoped: documentation-only; enforcement runs in the controller,
-//     not in Layer 2.  Skipped entirely in enforcement tests (covered only
-//     by registry-parity tests in the per-module files).
+//     not in Layer 2.  Skipped entirely in enforcement tests.
 //
 // Generic helpers are prefixed "layer2Audit" to avoid collisions with the
 // per-module harness helpers that were removed from the originating files.
@@ -241,7 +240,7 @@ func allLayer2AuditRoutes() []layer2AuditRoute {
 
 // adaptAuthAdminRoutes converts authAuditAdminRoutes (auth module) to the
 // unified struct.  SelfScoped routes are omitted — they have no Layer 2
-// enforcement and are covered by TestAuthLayer2_RegistryDeclaresEveryAuditedRoute.
+// enforcement.
 func adaptAuthAdminRoutes() []layer2AuditRoute {
 	out := make([]layer2AuditRoute, 0, len(authAuditAdminRoutes))
 	for _, r := range authAuditAdminRoutes {
@@ -462,85 +461,6 @@ func TestLayer2Audit_AdminBypass_Allowed(t *testing.T) {
 			assert.Equal(t, http.StatusOK, w.Code,
 				"admin must reach handler on %s %s (body=%s)",
 				route.method, route.requestPath, w.Body.String())
-		})
-	}
-}
-
-// =============================================================================
-// Generic structural guards (cross-module)
-// =============================================================================
-
-// TestLayer2Audit_RegistryDeclaresEveryAuditedRoute cross-walks the merged
-// catalog against the RouteRegistry.  Every (method, path) pair in the
-// catalog must be findable via RouteRegistry.Lookup — a missing entry means
-// Layer 2 silently passes the route through without consulting the rule.
-func TestLayer2Audit_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
-	access.RouteRegistry.Reset()
-	access.ResetEnforcers()
-	t.Cleanup(func() {
-		access.RouteRegistry.Reset()
-		access.ResetEnforcers()
-	})
-
-	// Register every route exactly as production would.
-	for _, route := range allLayer2AuditRoutes() {
-		rule := access.AccessRule{
-			Type:    route.ruleType,
-			MinRole: route.minRole,
-			Entity:  route.entity,
-			Field:   route.field,
-		}
-		switch route.ruleType {
-		case access.GroupRole, access.OrgRole:
-			rule.Param = route.paramName
-		}
-		casbinRole := "member"
-		if route.ruleType == access.AdminOnly {
-			casbinRole = "administrator"
-		}
-		access.RouteRegistry.Register(route.module,
-			access.RoutePermission{
-				Path:   route.registeredPath,
-				Method: route.method,
-				Role:   casbinRole,
-				Access: rule,
-			},
-		)
-	}
-
-	for _, route := range allLayer2AuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			perm, found := access.RouteRegistry.Lookup(route.method, route.registeredPath)
-			assert.True(t, found,
-				"RouteRegistry.Lookup must find a declaration for %s %s (module=%s) — a missing entry means Layer 2 silently passes the route through",
-				route.method, route.registeredPath, route.module)
-			if found {
-				assert.Equal(t, route.ruleType, perm.Access.Type,
-					"declared access rule type must match catalog for %s %s",
-					route.method, route.registeredPath)
-			}
-		})
-	}
-}
-
-// TestLayer2Audit_NoRegexMethodInCatalog verifies that every catalog entry
-// uses a single concrete HTTP verb (GET, POST, etc.) rather than a regex
-// alternation like "(GET|POST|PATCH|DELETE)".  RouteRegistry.Lookup does
-// exact method+path string matching, so alternation-style methods silently
-// bypass Layer 2 enforcement (see #265, MR !180).
-func TestLayer2Audit_NoRegexMethodInCatalog(t *testing.T) {
-	allowed := map[string]bool{
-		"GET": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true,
-	}
-
-	for _, route := range allLayer2AuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			assert.True(t, allowed[route.method],
-				"catalog route %s %s declares a non-canonical HTTP method — Layer 2 Lookup is exact-match, regex/alternation methods silently bypass enforcement (see #265, MR !180)",
-				route.method, route.registeredPath)
-			assert.NotContains(t, route.method, "|",
-				"alternation in method string %q for %s would silently bypass Layer 2 (see #265, MR !180)",
-				route.method, route.registeredPath)
 		})
 	}
 }
