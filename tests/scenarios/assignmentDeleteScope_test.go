@@ -383,25 +383,37 @@ func TestDeleteScenarioAssignment_OrgWide_ClassManagerWithOrgMemberRole_RunAband
 	assert.Contains(t, f.deleted(), "term-scope-class-manager")
 }
 
-// Known gap, pinned not decided: the create route does not check the scope
-// against the ids it names.
-func TestCreateScenarioAssignment_ScopeDisagreeingWithIDs_KnownGap(t *testing.T) {
+// The create route stores an assignment only when its scope and its ids say
+// the same thing: access grants from the scope column alone.
+func TestCreateScenarioAssignment_ScopeMustAgreeWithIDs(t *testing.T) {
 	cases := []struct {
-		name string
-		body func(f scopeFixture) map[string]any
+		name     string
+		body     func(f scopeFixture) map[string]any
+		wantCode int
 	}{
 		{"org scope naming a class", func(f scopeFixture) map[string]any {
 			return map[string]any{"scope": "org", "group_id": f.classID, "organization_id": f.orgID}
-		}},
+		}, http.StatusBadRequest},
 		{"group scope without a class", func(f scopeFixture) map[string]any {
 			return map[string]any{"scope": "group", "organization_id": f.orgID}
-		}},
+		}, http.StatusBadRequest},
 		{"org scope without an organization", func(f scopeFixture) map[string]any {
 			return map[string]any{"scope": "org", "group_id": f.classID}
-		}},
+		}, http.StatusBadRequest},
 		{"unknown scope", func(f scopeFixture) map[string]any {
 			return map[string]any{"scope": "everyone", "group_id": f.classID, "organization_id": f.orgID}
-		}},
+		}, http.StatusBadRequest},
+		// Controls: what ocf-front sends for a class, a class naming its
+		// organization, and an organization-wide assignment.
+		{"control: group scope with its class", func(f scopeFixture) map[string]any {
+			return map[string]any{"scope": "group", "group_id": f.classID}
+		}, http.StatusCreated},
+		{"control: group scope with its class and organization", func(f scopeFixture) map[string]any {
+			return map[string]any{"scope": "group", "group_id": f.classID, "organization_id": f.orgID}
+		}, http.StatusCreated},
+		{"control: org scope with its organization", func(f scopeFixture) map[string]any {
+			return map[string]any{"scope": "org", "organization_id": f.orgID}
+		}, http.StatusCreated},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -416,11 +428,14 @@ func TestCreateScenarioAssignment_ScopeDisagreeingWithIDs_KnownGap(t *testing.T)
 			req.Header.Set("Content-Type", "application/json")
 			router.ServeHTTP(w, req)
 			var stored int64
-			require.NoError(t, f.db.Model(&models.ScenarioAssignment{}).Where("scope = ?", body["scope"]).Count(&stored).Error)
-			// Today every one is accepted and stored as sent (the DTO's oneof
-			// binding is not applied on entity routes). Change with the rule.
-			assert.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body.String())
-			assert.Equal(t, int64(1), stored)
+			require.NoError(t, f.db.Model(&models.ScenarioAssignment{}).Where("scenario_id = ?", f.scenarioID).Count(&stored).Error)
+
+			assert.Equal(t, tc.wantCode, w.Code, "body: %s", w.Body.String())
+			if tc.wantCode == http.StatusCreated {
+				assert.Equal(t, int64(1), stored)
+			} else {
+				assert.Zero(t, stored, "nothing is stored")
+			}
 		})
 	}
 }

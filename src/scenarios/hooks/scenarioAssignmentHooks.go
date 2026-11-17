@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	access "soli/formations/src/auth/access"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
@@ -58,6 +59,11 @@ func (h *ScenarioAssignmentAuthorizationHook) Execute(ctx *hooks.HookContext) er
 }
 
 func (h *ScenarioAssignmentAuthorizationHook) handleBeforeCreate(ctx *hooks.HookContext) error {
+	if assignment, ok := ctx.NewEntity.(*models.ScenarioAssignment); ok {
+		if err := validateAssignmentScope(assignment); err != nil {
+			return err
+		}
+	}
 	// Admin bypasses all authorization checks
 	if ctx.IsAdmin() {
 		assignment, ok := ctx.NewEntity.(*models.ScenarioAssignment)
@@ -88,6 +94,21 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeCreate(ctx *hooks.Hook
 		return err
 	}
 	return h.refuseInvisibleScenario(assignment, ctx.UserID)
+}
+
+// validateAssignmentScope keeps the scope and the ids saying the same thing,
+// since access grants from the scope column: a class assignment names its
+// class (and may name the class's organization), an organization one names
+// its organization and no class. Scope and ids are not patchable.
+func validateAssignmentScope(a *models.ScenarioAssignment) error {
+	switch {
+	case a.Scope == "group" && a.GroupID != nil:
+		return nil
+	case a.Scope == "org" && a.OrganizationID != nil && a.GroupID == nil:
+		return nil
+	}
+	return entityErrors.NewValidationError("scope",
+		"scope must be \"group\" with a group_id, or \"org\" with an organization_id and no group_id")
 }
 
 // refuseInvisibleScenario keeps an assignment to scenarios the caller may
