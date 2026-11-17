@@ -36,6 +36,8 @@ import (
 	"gorm.io/gorm"
 
 	auditModels "soli/formations/src/audit/models"
+	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/auth/mocks"
 	configModels "soli/formations/src/configuration/models"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupModels "soli/formations/src/groups/models"
@@ -797,4 +799,62 @@ func TestSetParticipantSessionBlock_UnblockWithoutBlock_200NoClearedAudit(t *tes
 	w := pcDo(t, c.db, member(pcManager), http.MethodPut, participantPath(c.group.ID, pcLearner, "session-block"), map[string]any{"blocked": false})
 	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 	assert.Empty(t, auditRowsOf(t, c.db, auditSessionBlockClear), "nothing was cleared: no cleared row")
+}
+
+// pcPlatformAdminMember is a plain member of the class whom the platform
+// role lookup answers as an administrator.
+const pcPlatformAdminMember = "pc-platform-admin-member"
+
+func withPlatformAdminMember(t *testing.T, c *pcClass) string {
+	t.Helper()
+	orig := casdoor.Enforcer
+	enforcer := mocks.NewMockEnforcer()
+	enforcer.GetRolesForUserFunc = func(name string) ([]string, error) {
+		if name == pcPlatformAdminMember {
+			return []string{"member", "administrator"}, nil
+		}
+		return []string{"member"}, nil
+	}
+	casdoor.Enforcer = enforcer
+	t.Cleanup(func() { casdoor.Enforcer = orig })
+	createTestGroupMember(t, c.db, c.group.ID, pcPlatformAdminMember, groupModels.GroupMemberRoleMember)
+	return pcTerminal(t, c.db, pcPlatformAdminMember, &c.orgID, models.StateRunning, `{"network":true}`)
+}
+
+// A platform administrator who is a plain member of the class is out of a
+// class manager's and owner's reach, as in the organization scope: no stop,
+// no network cut, no session block.
+func TestParticipantControlsWrites_TargetIsPlatformAdministrator_403(t *testing.T) {
+	for _, caller := range []string{pcManager, pcOwner} {
+		for _, route := range pcRoutes()[1:] {
+			t.Run(caller+"/"+route.name, func(t *testing.T) {
+				c := newPCClass(t)
+				tt := newPCTT(t)
+				session := withPlatformAdminMember(t, c)
+
+				w := pcDo(t, c.db, member(caller), route.method, route.path(c, pcPlatformAdminMember), route.body)
+
+				assert.Equal(t, http.StatusForbidden, w.Code, "body=%s", w.Body.String())
+				assert.Empty(t, tt.stopped())
+				assert.Empty(t, tt.toggles())
+				assert.Zero(t, testTools.CountSessionBlocks(c.db, pcPlatformAdminMember))
+				assert.Zero(t, testTools.CountNetworkCuts(c.db, pcPlatformAdminMember))
+				assert.Equal(t, models.StateRunning, pcState(t, c.db, session))
+			})
+		}
+	}
+}
+
+func TestParticipantControlsWrites_AdminOnPlatformAdministratorMember_Allowed(t *testing.T) {
+	for _, route := range pcRoutes()[1:] {
+		t.Run(route.name, func(t *testing.T) {
+			c := newPCClass(t)
+			newPCTT(t)
+			withPlatformAdminMember(t, c)
+
+			w := pcDo(t, c.db, pcCaller{userID: pcAdmin, roles: []string{"administrator"}}, route.method, route.path(c, pcPlatformAdminMember), route.body)
+
+			assert.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+		})
+	}
 }
