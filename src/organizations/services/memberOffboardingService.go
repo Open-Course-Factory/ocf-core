@@ -34,7 +34,7 @@ type AccountForbidder interface {
 // DepartedMemberEraser is the erasure entry point for a member an organization
 // offboarded. auth/services' UserDeletionService satisfies it.
 type DepartedMemberEraser interface {
-	EraseDepartedMember(orgID uuid.UUID, userID string) error
+	EraseDepartedMember(orgID uuid.UUID, userID string, byAdministrator bool) error
 }
 
 // LicenceRevoker is the existing bulk-licence revoke path, narrowed to what
@@ -58,8 +58,9 @@ type MemberOffboardingService interface {
 	// cleared, and the account block is lifted only if this offboarding set it.
 	// Refuses a member who is not offboarded or who outranks actorID.
 	Reinstate(orgID uuid.UUID, userID string, actorID string) error
-	// EraseNow erases an offboarded member ahead of its scheduled date.
-	EraseNow(orgID uuid.UUID, userID string) error
+	// EraseNow erases an offboarded member ahead of its scheduled date. Only a
+	// platform administrator actorID erases an account the organization did not create.
+	EraseNow(orgID uuid.UUID, userID string, actorID string) error
 	// Enrol makes userID an active member: it reinstates an existing inactive
 	// row, leaves an active one alone, and creates the row otherwise, recording
 	// accountCreated (the organization created the account). An existing row
@@ -286,7 +287,7 @@ func LiftOffboardingBlock(tx *gorm.DB, accounts AccountForbidder, userID string)
 	return nil
 }
 
-func (s *memberOffboardingService) EraseNow(orgID uuid.UUID, userID string) error {
+func (s *memberOffboardingService) EraseNow(orgID uuid.UUID, userID string, actorID string) error {
 	member, err := findMembership(s.db, orgID, userID)
 	if err != nil {
 		return err
@@ -294,7 +295,7 @@ func (s *memberOffboardingService) EraseNow(orgID uuid.UUID, userID string) erro
 	if !member.IsOffboarded() {
 		return ErrMemberNotOffboarded
 	}
-	return s.eraser.EraseDepartedMember(orgID, userID)
+	return s.eraser.EraseDepartedMember(orgID, userID, IsPlatformAdmin(actorID))
 }
 
 func (s *memberOffboardingService) Enrol(orgID uuid.UUID, userID string, accountCreated bool) error {

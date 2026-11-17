@@ -196,7 +196,7 @@ func TestEraseNow_AttachedMember_RefusedNotCreatedByOrganization(t *testing.T) {
 	// Offboarded before provenance existed: the row is offboarded with an erasure date.
 	offboardedAt(t, db, orgID, "attached-1", time.Now().AddDate(0, 0, -20), time.Now().Add(-time.Hour))
 
-	assert.Error(t, newDeletionService(db, identity).CheckDepartedMemberErasable(orgID, "attached-1"),
+	assert.Error(t, newDeletionService(db, identity).CheckDepartedMemberErasable(orgID, "attached-1", false),
 		"the members list reports the erasure as refused")
 	rec := eraseAs(t, db, identity, orgID, "owner-1", "attached-1")
 

@@ -616,9 +616,12 @@ func (h *OrganizationMemberPermissionHook) grantForNewMember(ctx *hooks.HookCont
 		}
 	}
 
-	if member.IsActive {
-		// A failure leaves the account blocked, the safe direction: warn, do not fail the write.
-		if err := services.LiftOffboardingBlock(h.db, h.accounts, member.UserID); err != nil {
+	if member.IsActive && h.accounts != nil {
+		// A failed unblock rolls the stamps back so a later join can still lift the
+		// block; the account stays blocked, the safe direction: warn, do not fail the write.
+		if err := h.db.Transaction(func(tx *gorm.DB) error {
+			return services.LiftOffboardingBlock(tx, h.accounts, member.UserID)
+		}); err != nil {
 			utils.Warn("Failed to lift the offboarding block of new organization member %s: %v", member.UserID, err)
 		}
 	}

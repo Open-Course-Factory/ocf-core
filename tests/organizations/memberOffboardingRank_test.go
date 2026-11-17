@@ -680,7 +680,7 @@ func joinAfterBlockingOffboarding(t *testing.T, join string) (blocked, bStamp bo
 	}
 	require.True(t, loadMember(t, db, orgC, "student-1").IsActive, "student-1 is an active member of C")
 	return identity.forbidden["student-1"], loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding,
-		svc.EraseNow(orgB, "student-1")
+		svc.EraseNow(orgB, "student-1", "owner-b")
 }
 
 // Whichever way the account becomes an active member of another organization,

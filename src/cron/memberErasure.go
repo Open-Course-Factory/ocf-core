@@ -15,7 +15,7 @@ import (
 // DepartedMemberEraser is the erasure entry point the job calls for each due
 // member. auth/services' UserDeletionService satisfies it.
 type DepartedMemberEraser interface {
-	EraseDepartedMember(orgID uuid.UUID, userID string) error
+	EraseDepartedMember(orgID uuid.UUID, userID string, byAdministrator bool) error
 }
 
 // ErasureSkip records a due member the job did not erase and why.
@@ -69,7 +69,7 @@ func RunMemberErasure(db *gorm.DB, eraser DepartedMemberEraser, now time.Time, m
 
 	var report MemberErasureReport
 	for _, member := range due {
-		if err := eraser.EraseDepartedMember(member.OrganizationID, member.UserID); err != nil {
+		if err := eraser.EraseDepartedMember(member.OrganizationID, member.UserID, false); err != nil {
 			report.Skipped = append(report.Skipped, ErasureSkip{OrganizationID: member.OrganizationID, UserID: member.UserID, Reason: err})
 			continue
 		}

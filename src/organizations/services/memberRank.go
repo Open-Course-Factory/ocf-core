@@ -57,7 +57,7 @@ func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organization
 // a platform administrator; the owner may act on any other member, other actors
 // only on plain members (ReachPlainMembers).
 func newRankOnlyCheck(db *gorm.DB, org *organizationModels.Organization, actorID string) (func(targetID string) (*organizationModels.OrganizationMember, error), bool, error) {
-	actorIsAdmin, _ := isPlatformAdmin(actorID)
+	actorIsAdmin := IsPlatformAdmin(actorID)
 	// Offboarding, reinstating, password regeneration and import change an account's
 	// access or credentials: they keep the narrow reach until the product widens it.
 	check, err := rankCheckAs(db, org, actorID, actorIsAdmin, ReachPlainMembers)
@@ -116,7 +116,7 @@ func rankCheckAs(db *gorm.DB, org *organizationModels.Organization, actorID stri
 			return target, nil
 		}
 		// Fails closed: an unknown platform role for the target counts as administrator.
-		if targetIsAdmin, err := isPlatformAdmin(targetID); err != nil || targetIsAdmin {
+		if targetIsAdmin, err := platformAdmin(targetID); err != nil || targetIsAdmin {
 			return target, errOutranksActor
 		}
 		if !actorIsOwner && !withinReach(actorRole, target.Role, reach) {
@@ -156,8 +156,15 @@ func belongsToOrganizationAlone(alone OrganizationAloneChecker, orgID uuid.UUID,
 	return true
 }
 
-// isPlatformAdmin resolves the caller's platform roles the way the JWT resolver does.
-func isPlatformAdmin(userID string) (bool, error) {
+// IsPlatformAdmin reports whether userID is a platform administrator; an
+// unknown answer reports false.
+func IsPlatformAdmin(userID string) bool {
+	admin, _ := platformAdmin(userID)
+	return admin
+}
+
+// platformAdmin resolves the caller's platform roles the way the JWT resolver does.
+func platformAdmin(userID string) (bool, error) {
 	if casdoor.Enforcer == nil {
 		return false, errors.New("role enforcer not initialised")
 	}

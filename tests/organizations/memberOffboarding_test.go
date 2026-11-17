@@ -723,7 +723,7 @@ func TestEraseDepartedMember_WaitsWhenTheArchiveCannotBeSaved(t *testing.T) {
 	seedClassWithMember(t, db, orgID, "owner-1", "student-a")
 	seedRunningTerminal(t, db, "student-a")
 
-	err := eraser.EraseDepartedMember(orgID, "student-a")
+	err := eraser.EraseDepartedMember(orgID, "student-a", false)
 
 	require.ErrorIs(t, err, scenarioServices.ErrCommandsUnavailable)
 	assert.Empty(t, identity.deleted)
@@ -744,11 +744,11 @@ func TestEraseNow_RunsTheSharedCascade(t *testing.T) {
 		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()}, UserID: "student-a", DefaultLandingPage: "/dashboard",
 	}).Error)
 
-	err := svc.EraseNow(orgID, "student-a")
+	err := svc.EraseNow(orgID, "student-a", "owner-1")
 	require.ErrorIs(t, err, services.ErrMemberNotOffboarded, "erasure is the end of offboarding, never a shortcut past it")
 
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
-	require.NoError(t, svc.EraseNow(orgID, "student-a"))
+	require.NoError(t, svc.EraseNow(orgID, "student-a", "owner-1"))
 
 	var orgMembers, groupMembers, settings, keys, liveTerminals int64
 	db.Model(&models.OrganizationMember{}).Where("user_id = ?", "student-a").Count(&orgMembers)
@@ -784,11 +784,11 @@ func TestEraseNow_RefusedWhileActiveElsewhere_AndListedAsBlocked(t *testing.T) {
 	seedMember(t, db, otherOrgID, "student-a", models.OrgRoleMember)
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
 
-	err := svc.EraseNow(orgID, "student-a")
+	err := svc.EraseNow(orgID, "student-a", "owner-1")
 	require.ErrorIs(t, err, authServices.ErrStillActiveElsewhere)
 	assert.Equal(t, int64(1), countMemberRows(t, db, orgID, "student-a"))
 
-	blocked := newDeletionService(db, identity).CheckDepartedMemberErasable(orgID, "student-a")
+	blocked := newDeletionService(db, identity).CheckDepartedMemberErasable(orgID, "student-a", false)
 	require.ErrorIs(t, blocked, authServices.ErrStillActiveElsewhere,
 		"the members list reports the same reason the erasure would refuse with")
 }

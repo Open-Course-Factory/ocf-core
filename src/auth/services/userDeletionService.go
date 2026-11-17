@@ -47,11 +47,13 @@ type UserDeletionService interface {
 	// EraseDepartedMember is EraseUser for a member an organization offboarded:
 	// it adds the cross-organization pre-flight (ErrStillActiveElsewhere) that
 	// self-service and admin deletion deliberately do not have.
-	EraseDepartedMember(orgID uuid.UUID, userID string) error
+	// byAdministrator (a platform administrator asked) skips the provenance
+	// check only; the nightly job passes false.
+	EraseDepartedMember(orgID uuid.UUID, userID string, byAdministrator bool) error
 	// CheckDepartedMemberErasable runs every pre-flight EraseDepartedMember
 	// would, without erasing. The members list uses it to report why an
 	// erasure is blocked — one owner for the rule and its explanation.
-	CheckDepartedMemberErasable(orgID uuid.UUID, userID string) error
+	CheckDepartedMemberErasable(orgID uuid.UUID, userID string, byAdministrator bool) error
 	// CheckBelongsToOrganizationAlone refuses, with the erasure errors, a user
 	// still tied to anything outside orgID: an active membership in another team
 	// organization, a paid personal subscription, or an organization or group
@@ -141,8 +143,8 @@ func (s *userDeletionService) revokeTerminalKey(userID string) {
 
 // EraseDepartedMember erases a member that orgID offboarded, refusing while the
 // user is still active somewhere the organization does not control.
-func (s *userDeletionService) EraseDepartedMember(orgID uuid.UUID, userID string) error {
-	if err := s.assertCreatedByOrganization(orgID, userID); err != nil {
+func (s *userDeletionService) EraseDepartedMember(orgID uuid.UUID, userID string, byAdministrator bool) error {
+	if err := s.assertCreatedByOrganization(orgID, userID, byAdministrator); err != nil {
 		return err
 	}
 	if err := s.assertNotActiveElsewhere(orgID, userID); err != nil {
@@ -157,8 +159,8 @@ func (s *userDeletionService) EraseDepartedMember(orgID uuid.UUID, userID string
 }
 
 // CheckDepartedMemberErasable is the read-only twin of EraseDepartedMember.
-func (s *userDeletionService) CheckDepartedMemberErasable(orgID uuid.UUID, userID string) error {
-	if err := s.assertCreatedByOrganization(orgID, userID); err != nil {
+func (s *userDeletionService) CheckDepartedMemberErasable(orgID uuid.UUID, userID string, byAdministrator bool) error {
+	if err := s.assertCreatedByOrganization(orgID, userID, byAdministrator); err != nil {
 		return err
 	}
 	if err := s.assertNotActiveElsewhere(orgID, userID); err != nil {
@@ -175,8 +177,11 @@ func (s *userDeletionService) CheckBelongsToOrganizationAlone(orgID uuid.UUID, u
 }
 
 // assertCreatedByOrganization refuses unless orgID's membership of userID
-// records that orgID created the account.
-func (s *userDeletionService) assertCreatedByOrganization(orgID uuid.UUID, userID string) error {
+// records that orgID created the account; a platform administrator passes.
+func (s *userDeletionService) assertCreatedByOrganization(orgID uuid.UUID, userID string, byAdministrator bool) error {
+	if byAdministrator {
+		return nil
+	}
 	var created int64
 	if err := s.db.Model(&organizationModels.OrganizationMember{}).
 		Where("organization_id = ? AND user_id = ? AND account_created_by_organization = ?", orgID, userID, true).

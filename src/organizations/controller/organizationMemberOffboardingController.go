@@ -104,7 +104,7 @@ func (oc *OrganizationController) EraseMember(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	err := oc.offboarding.EraseNow(orgID, ctx.Param("userId"))
+	err := oc.offboarding.EraseNow(orgID, ctx.Param("userId"), ctx.GetString("userId"))
 	if err != nil {
 		status, message := offboardingErrorResponse(err)
 		if status == http.StatusInternalServerError {
@@ -117,9 +117,9 @@ func (oc *OrganizationController) EraseMember(ctx *gin.Context) {
 }
 
 // erasureBlockedReason is what the members list shows next to an offboarded
-// member: the pre-flight the erasure would refuse with, or nothing.
-func (oc *OrganizationController) erasureBlockedReason(orgID uuid.UUID, userID string) string {
-	if err := oc.deletionService.CheckDepartedMemberErasable(orgID, userID); err != nil {
+// member: the pre-flight the erasure would refuse with for the viewer, or nothing.
+func (oc *OrganizationController) erasureBlockedReason(orgID uuid.UUID, userID string, viewerIsAdmin bool) string {
+	if err := oc.deletionService.CheckDepartedMemberErasable(orgID, userID, viewerIsAdmin); err != nil {
 		return err.Error()
 	}
 	return ""

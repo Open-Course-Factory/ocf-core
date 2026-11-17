@@ -323,7 +323,7 @@ func TestRegeneratePasswords_OwnerTargetsManagerOwningAClassOfThisOrganization_R
 	resp := regenerate(t, db, identity, orgID, classID, "owner-1", "manager-1")
 
 	assertRegenerated(t, identity, resp, "manager-1")
-	assert.ErrorIs(t, newDeletionService(db, identity).CheckDepartedMemberErasable(orgID, "manager-1"), authServices.ErrOwnsGroups)
+	assert.ErrorIs(t, newDeletionService(db, identity).CheckDepartedMemberErasable(orgID, "manager-1", false), authServices.ErrOwnsGroups)
 }
 
 // Without the belongs-elsewhere check only a platform administrator may proceed.

@@ -110,6 +110,7 @@ func (oc *OrganizationController) GetOrganizationMembers(ctx *gin.Context) {
 
 	// Convert to output DTOs
 	membersOutput := make([]dto.OrganizationMemberOutput, 0, len(*members))
+	viewerIsAdmin := services.IsPlatformAdmin(ctx.GetString("userId"))
 	for _, member := range *members {
 		memberOutput := dto.OrganizationMemberOutput{
 			ID:                 member.ID,
@@ -126,7 +127,7 @@ func (oc *OrganizationController) GetOrganizationMembers(ctx *gin.Context) {
 			ScheduledErasureAt: member.ScheduledErasureAt,
 		}
 		if member.IsOffboarded() {
-			memberOutput.ErasureBlockedReason = oc.erasureBlockedReason(orgID, member.UserID)
+			memberOutput.ErasureBlockedReason = oc.erasureBlockedReason(orgID, member.UserID, viewerIsAdmin)
 		}
 
 		// Include Organization if it was loaded
