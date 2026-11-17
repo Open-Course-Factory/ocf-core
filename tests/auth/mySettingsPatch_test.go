@@ -191,7 +191,11 @@ func TestMySettings_NoUserID_Returns401AndCreatesNoRow(t *testing.T) {
 func TestMySettings_ConcurrentFirstRequests_AllSucceedWithOneRow(t *testing.T) {
 	r, _ := setupMySettingsRoutes(t)
 	// A file DB: ":memory:" gives each pooled connection its own empty database.
-	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/settings.db?_busy_timeout=5000"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	// Writers must queue on SQLite's single write lock, not fail: WAL with no fsync keeps
+	// each commit short on a loaded runner, BEGIN IMMEDIATE takes the lock under the busy
+	// handler, and the busy timeout leaves a wide margin.
+	dsn := t.TempDir() + "/settings.db?_journal_mode=WAL&_synchronous=OFF&_txlock=immediate&_busy_timeout=60000"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&authModels.UserSettings{}))
 	sqldb.DB = db // setupMySettingsRoutes' cleanup restores the previous DB
