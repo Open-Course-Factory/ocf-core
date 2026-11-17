@@ -287,3 +287,30 @@ func TestBulkCreate_CreatorOfClassOfLiveOrganization_ActiveOwnerRow_Allowed(t *t
 	w := bulkCreateAsOrgClassCreator(t, false)
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
+
+// A trainer's recording choice is sent as JSON; it must reach tt-backend for
+// each member's session.
+func TestBulkCreate_RecordingEnabledInTheRequest_ReachesTTBackend(t *testing.T) {
+	srv, rec := startComposedSessionTTServer(t)
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := setupBulkCreateTestDB(t)
+	ownerID, memberID := "bulk-rec-owner", "bulk-rec-member"
+	group := createTestGroup(t, db, ownerID)
+	addActiveGroupMember(t, db, group.ID, memberID, groupModels.GroupMemberRoleMember)
+	_, err := createTestUserKey(db, memberID)
+	require.NoError(t, err)
+
+	router := setupBulkCreateRouter(db, ownerID, []string{"member"}, makePlan(false))
+
+	body := `{"terms": "accepted", "instance_type": "ubuntu-24.04", "recording_enabled": 1}`
+	req := httptest.NewRequest("POST", "/class-groups/"+group.ID.String()+"/bulk-create-terminals", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, 1, rec.calls, w.Body.String())
+	assert.Equal(t, float64(1), rec.gotBody["recording_enabled"])
+}
