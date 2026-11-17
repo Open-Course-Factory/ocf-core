@@ -235,15 +235,15 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 	}
 
 	// Learners only, as ResetGroupScenarioSessions: a staff member's own run
-	// was not given by this assignment. A class assignment also names its
-	// organization, so the class is checked first.
+	// was not given by this assignment. Which learners follows the scope
+	// column, as CheckScenarioAccess grants from it.
 	var learners *gorm.DB
 	switch {
-	case assignment.GroupID != nil:
+	case assignment.Scope == "group" && assignment.GroupID != nil:
 		learners = h.db.Model(&groupModels.GroupMember{}).
 			Where("group_id = ? AND is_active = ?", *assignment.GroupID, true).
 			Scopes(groupModels.LearnerRoleScope("group_members"))
-	case assignment.OrganizationID != nil:
+	case assignment.Scope == "org" && assignment.OrganizationID != nil:
 		learners = h.db.Model(&orgModels.OrganizationMember{}).
 			Where("organization_id = ? AND is_active = ?", *assignment.OrganizationID, true).
 			Scopes(groupModels.OrgLearnerRoleScope("organization_members"))
