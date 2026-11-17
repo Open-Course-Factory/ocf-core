@@ -61,9 +61,6 @@ func syncStubBackend(t *testing.T, provider func() []dto.TerminalTrainerSession)
 // branch: a running API session with no local counterpart materialises a new
 // local row (with the size denorm from BuildTerminalFromAPISession).
 func TestSyncUserSessions_MissingLocalRow_CreatedFromAPI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	userID := "sync-create-user"
 	sessionID := "sess-create-1"
 
@@ -101,9 +98,6 @@ func TestSyncUserSessions_MissingLocalRow_CreatedFromAPI(t *testing.T) {
 // a running local row that no longer appears in the API list is marked
 // StateDeleted (the container has been reaped on tt-backend).
 func TestSyncUserSessions_OrphanLocalRow_SoftDeleted(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	userID := "sync-reap-user"
 	sessionID := "sess-reap-1"
 
@@ -141,9 +135,6 @@ func TestSyncUserSessions_OrphanLocalRow_SoftDeleted(t *testing.T) {
 // API counterpart reports state=stopped adopts StateStopped and the
 // tt-backend idle_until as its ExpiresAt (via the shared markSessionStopped).
 func TestSyncUserSessions_StoppedAPISession_PropagatesStateAndIdleUntil(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	userID := "sync-stop-user"
 	sessionID := "sess-stop-1"
 

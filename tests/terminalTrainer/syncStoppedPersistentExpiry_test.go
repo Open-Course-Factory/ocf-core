@@ -85,9 +85,6 @@ func syncSessionTTServer(
 // ---------------------------------------------------------------------------
 
 func TestSyncUserSessions_AutoStopped_ExtendsExpiresAtToIdleUntil(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	cases := []struct {
 		name string
 		mode string
@@ -158,9 +155,6 @@ func TestSyncUserSessions_AutoStopped_ExtendsExpiresAtToIdleUntil(t *testing.T) 
 // ---------------------------------------------------------------------------
 
 func TestSyncUserSessions_AutoStopped_IdleUntilZero_UsesPlanFallback(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	cases := []struct {
 		name string
 		mode string
@@ -226,9 +220,6 @@ func TestSyncUserSessions_AutoStopped_IdleUntilZero_UsesPlanFallback(t *testing.
 // ---------------------------------------------------------------------------
 
 func TestSyncUserSessions_AlreadyStopped_Idempotent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	cases := []struct {
 		name string
 		mode string
@@ -294,9 +285,6 @@ func TestSyncUserSessions_AlreadyStopped_Idempotent(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSyncUserSessions_Running_NotTouched(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	cases := []struct {
 		name string
 		mode string
@@ -360,9 +348,6 @@ func TestSyncUserSessions_Running_NotTouched(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSyncUserSessions_Stopped_NoPlanNoIdleUntil_LeavesExpiresAtUnchanged(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	cases := []struct {
 		name string
 		mode string
@@ -425,9 +410,6 @@ func TestSyncUserSessions_Stopped_NoPlanNoIdleUntil_LeavesExpiresAtUnchanged(t *
 // ---------------------------------------------------------------------------
 
 func TestSyncUserSessions_AutoStopped_PlanWithoutDurationCap_LeavesExpiresAtUnchanged(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	sessionID := "sync-auto-stop-uncapped-plan-" + uuid.New().String()
 	originalExpiry := time.Now().Add(2 * time.Hour).Truncate(time.Second)
 

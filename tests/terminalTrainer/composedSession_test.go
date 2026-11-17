@@ -15,10 +15,6 @@ import (
 // ==========================================
 
 func TestNormalizeSizeKey(t *testing.T) {
-	if testing.Short() {
-		// These are pure-function tests, always run them
-	}
-
 	tests := []struct {
 		name     string
 		input    string

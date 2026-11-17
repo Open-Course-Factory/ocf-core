@@ -90,10 +90,6 @@ func newCommandHistoryTestService(baseURL, apiVersion string, db *gorm.DB) *term
 
 // TestGetSessionCommandHistory_URLConstruction tests that the correct URL is built with query params
 func TestGetSessionCommandHistory_URLConstruction(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	var capturedPath string
 	var capturedQuery string
 	var capturedAPIKey string
@@ -127,10 +123,6 @@ func TestGetSessionCommandHistory_URLConstruction(t *testing.T) {
 
 // TestGetSessionCommandHistory_NoOptionalParams tests URL construction without optional params
 func TestGetSessionCommandHistory_NoOptionalParams(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	var capturedQuery string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -155,10 +147,6 @@ func TestGetSessionCommandHistory_NoOptionalParams(t *testing.T) {
 
 // TestGetSessionCommandHistory_CSVFormat tests that CSV format is correctly passed and content type set
 func TestGetSessionCommandHistory_CSVFormat(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	var capturedQuery string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -183,10 +171,6 @@ func TestGetSessionCommandHistory_CSVFormat(t *testing.T) {
 
 // TestGetSessionCommandHistory_FormatWhitelist_InvalidFormat tests that invalid format is defaulted to json
 func TestGetSessionCommandHistory_FormatWhitelist_InvalidFormat(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	var capturedQuery string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -213,10 +197,6 @@ func TestGetSessionCommandHistory_FormatWhitelist_InvalidFormat(t *testing.T) {
 
 // TestGetSessionCommandHistory_FormatWhitelist_InjectionAttempt tests that URL injection via format is blocked
 func TestGetSessionCommandHistory_FormatWhitelist_InjectionAttempt(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	var capturedQuery string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -243,10 +223,6 @@ func TestGetSessionCommandHistory_FormatWhitelist_InjectionAttempt(t *testing.T)
 
 // TestGetSessionCommandHistory_FormatWhitelist_ValidFormats tests all valid format values
 func TestGetSessionCommandHistory_FormatWhitelist_ValidFormats(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	validFormats := []struct {
 		input       string
 		expectInURL string
@@ -297,10 +273,6 @@ func TestGetSessionCommandHistory_FormatWhitelist_ValidFormats(t *testing.T) {
 
 // TestGetSessionCommandHistory_SessionNotFound tests error when session doesn't exist
 func TestGetSessionCommandHistory_SessionNotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	db := setupTestDBForService(t)
 
 	svc := newCommandHistoryTestService("http://localhost:9999", "1.0", db)
@@ -315,10 +287,6 @@ func TestGetSessionCommandHistory_SessionNotFound(t *testing.T) {
 
 // TestGetSessionCommandHistory_Pagination tests that limit/offset are appended to the proxied URL
 func TestGetSessionCommandHistory_Pagination(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	var capturedQuery string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -345,10 +313,6 @@ func TestGetSessionCommandHistory_Pagination(t *testing.T) {
 
 // TestGetSessionCommandHistory_PaginationZeroValues tests that zero limit/offset are not appended
 func TestGetSessionCommandHistory_PaginationZeroValues(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	var capturedQuery string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -378,10 +342,6 @@ func TestGetSessionCommandHistory_PaginationZeroValues(t *testing.T) {
 // returns an error when tt-backend returns a response larger than 10MB. This prevents
 // an OOM scenario where a massive history payload could exhaust ocf-core's memory.
 func TestGetHistory_LargeResponse_LimitedTo10MB(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	// Create a mock tt-backend that returns a response just over 10MB
 	oversizedBody := make([]byte, 10*1024*1024+1) // 10MB + 1 byte
 	for i := range oversizedBody {
@@ -409,10 +369,6 @@ func TestGetHistory_LargeResponse_LimitedTo10MB(t *testing.T) {
 // TestGetHistory_ExactlyAtLimit_Succeeds verifies that a response exactly at 10MB
 // is allowed through (the limit applies to responses strictly larger than 10MB).
 func TestGetHistory_ExactlyAtLimit_Succeeds(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	// Create a response exactly at 10MB
 	exactBody := make([]byte, 10*1024*1024) // exactly 10MB
 	for i := range exactBody {
@@ -680,10 +636,6 @@ func TestBulkCreateTerminals_SetsRetentionDaysFromPlan(t *testing.T) {
 
 // TestStartComposedSession_InvalidPlanType tests that invalid plan type returns error
 func TestStartComposedSession_InvalidPlanType(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	db := setupTestDBForService(t)
 
 	// Use the production constructor so the composer collaborator is wired;
@@ -863,10 +815,6 @@ func TestStartSessionURLConstruction_Backend(t *testing.T) {
 // error containing the status code so the controller can map it to a proper 403 instead
 // of a generic 500.
 func TestGetSessionCommandHistory_403Forbidden_ReturnsError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -891,10 +839,6 @@ func TestGetSessionCommandHistory_403Forbidden_ReturnsError(t *testing.T) {
 // returns 429 (rate limit exceeded), the service returns an error containing the status
 // code so the controller can map it appropriately instead of returning a generic 500.
 func TestGetSessionCommandHistory_429RateLimit_ReturnsError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)

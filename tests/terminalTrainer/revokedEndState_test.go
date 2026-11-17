@@ -57,9 +57,6 @@ const revokedWireState = "revoked"
 //
 // RED today: pre-list sync overwrites "revoked" -> "running".
 func TestGetUserSessions_RevokedSession_ExposesRevokedState(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	userID := "revoked-endpoint-user"
 	sessionID := "sess-revoked-endpoint"
 
@@ -128,9 +125,6 @@ func TestGetUserSessions_RevokedSession_ExposesRevokedState(t *testing.T) {
 //
 // RED today: the sync flips "revoked" -> "running".
 func TestSyncUserSessions_RevokedRow_NotClobberedByActiveAPI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	userID := "revoked-sync-user"
 	sessionID := "sess-revoked-sync"
 
@@ -179,9 +173,6 @@ func TestSyncUserSessions_RevokedRow_NotClobberedByActiveAPI(t *testing.T) {
 //
 // GREEN today and must stay green after the revoked contract lands.
 func TestSyncUserSessions_ExpiredSession_StillDeletedNotRevoked(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	userID := "expiry-guard-user"
 	sessionID := "sess-expiry-guard"
 
@@ -228,9 +219,6 @@ func TestSyncUserSessions_ExpiredSession_StillDeletedNotRevoked(t *testing.T) {
 //
 // RED today: markSessionStopped resurrects "revoked" as "stopped".
 func TestSyncUserSessions_RevokedRow_NotClobberedByStoppedContainer(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	userID := "revoked-stopped-user"
 	sessionID := "sess-revoked-stopped"
 
@@ -293,9 +281,6 @@ func TestSyncUserSessions_RevokedRow_NotClobberedByStoppedContainer(t *testing.T
 //
 // GREEN today and must stay green after the guard lands.
 func TestSyncUserSessions_StoppedRow_StillRefreshesIdleDeadline(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	userID := "stopped-refresh-user"
 	sessionID := "sess-stopped-refresh"
 

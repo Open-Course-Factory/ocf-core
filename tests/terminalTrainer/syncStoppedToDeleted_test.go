@@ -79,9 +79,6 @@ func seedSyncTerminal(t *testing.T, sessionID, userID string, state models.Termi
 }
 
 func TestSyncUserSessions_StoppedRowAdoptsTerminalDeletion(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	freshTestDB(t)
 
 	sessionID := "sync-dead-" + uuid.New().String()
@@ -106,9 +103,6 @@ func TestSyncUserSessions_StoppedRowAdoptsTerminalDeletion(t *testing.T) {
 }
 
 func TestSyncUserSessions_StoppedRowStillIgnoresRunningFlap(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	freshTestDB(t)
 
 	sessionID := "sync-flap-" + uuid.New().String()
@@ -139,9 +133,6 @@ func TestSyncUserSessions_StoppedRowStillIgnoresRunningFlap(t *testing.T) {
 // its scenario run read as paused instead of rebuilt.
 
 func TestSyncUserSessions_DeletedRowIgnoresStoppedReport(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	freshTestDB(t)
 
 	sessionID := "sync-tomb-stopped-" + uuid.New().String()
@@ -165,9 +156,6 @@ func TestSyncUserSessions_DeletedRowIgnoresStoppedReport(t *testing.T) {
 }
 
 func TestSyncUserSessions_DeletedRowIgnoresRunningReport(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	freshTestDB(t)
 
 	sessionID := "sync-tomb-running-" + uuid.New().String()
@@ -193,9 +181,6 @@ func TestSyncUserSessions_DeletedRowIgnoresRunningReport(t *testing.T) {
 // container as stopped, then a sync. The terminal must stay a tombstone and
 // the scenario run on it must be rebuilt, not resumed as paused.
 func TestStopThenSync_EphemeralTerminalStaysDeletedAndItsRunIsRebuilt(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	db := freshTestDB(t)
 	userID := "stop-sync-tomb-user-" + uuid.New().String()
 	seedActiveSubscription(t, db, userID)
@@ -257,9 +242,6 @@ func TestStopThenSync_EphemeralTerminalStaysDeletedAndItsRunIsRebuilt(t *testing
 // judged on the intermediate deleted, it would bury a live persistent session
 // and refuse the stopped report that follows its auto-stop, losing Resume.
 func TestSyncUserSessions_ClockExpiredRunningRowStaysRunning(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	freshTestDB(t)
 
 	sessionID := "sync-clock-expired-" + uuid.New().String()
@@ -288,9 +270,6 @@ func TestSyncUserSessions_ClockExpiredRunningRowStaysRunning(t *testing.T) {
 // not relabel it as expired, and markSessionStopped must not hand the revoked
 // user a resumable session back.
 func TestSyncUserSessions_RevokedRowInItsExpirySecondStaysRevoked(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	freshTestDB(t)
 
 	sessionID := "sync-revoked-expiry-" + uuid.New().String()
@@ -327,9 +306,6 @@ func TestSyncUserSessions_RevokedRowInItsExpirySecondStaysRevoked(t *testing.T) 
 // retry tt refuses is not the pass's failure: the row stays buried and the
 // next pass tries again.
 func TestSyncUserSessions_TombstoneRetriesTheTTDeleteOnlyWhileTheContainerIsLive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	for _, tc := range []struct {
 		name        string
 		status      int
