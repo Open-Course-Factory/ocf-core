@@ -1,0 +1,170 @@
+// tests/organizations/provenanceBackfill/provenanceBackfill_test.go
+//
+// The one-off backfill marks the memberships whose organization created the
+// account through the import, from the signals the import leaves on the
+// identity provider's account. Refs #599.
+//
+// Its own package: until the backfill exists this file does not compile, and
+// the organizations test package must keep running meanwhile.
+package provenancebackfill_tests
+
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"soli/formations/src/organizations/models"
+	"soli/formations/src/organizations/services"
+	testTools "soli/formations/tests/testTools"
+
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+)
+
+type accountList []*casdoorsdk.User
+
+func (a accountList) GetUsers() ([]*casdoorsdk.User, error) { return a, nil }
+
+func newDB() *gorm.DB {
+	return testTools.MemoryDB(&models.Organization{}, &models.OrganizationMember{})
+}
+
+func seedOrg(t *testing.T, db *gorm.DB, orgType models.OrganizationType) uuid.UUID {
+	t.Helper()
+	org := &models.Organization{Name: "org-" + uuid.NewString()[:8], DisplayName: "Org", OwnerUserID: "owner", OrganizationType: orgType, IsActive: true}
+	org.ID = uuid.New()
+	require.NoError(t, db.Omit("Metadata", "OwnerIDs", "Members", "Groups").Create(org).Error)
+	return org.ID
+}
+
+func seedRow(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID string, joinedAt, createdAt time.Time) {
+	t.Helper()
+	m := &models.OrganizationMember{OrganizationID: orgID, UserID: userID, Role: models.OrgRoleMember, JoinedAt: joinedAt, IsActive: true}
+	m.CreatedAt = createdAt
+	require.NoError(t, db.Omit("Metadata").Create(m).Error)
+}
+
+// offboardedRow turns the row into one offboarded with an erasure date and the block stamp.
+func offboardedRow(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID string) {
+	t.Helper()
+	require.NoError(t, db.Model(&models.OrganizationMember{}).Where("organization_id = ? AND user_id = ?", orgID, userID).
+		Updates(map[string]any{"is_active": false, "left_at": time.Now(), "scheduled_erasure_at": time.Now().AddDate(0, 0, 30),
+			"account_forbidden_by_offboarding": true}).Error)
+}
+
+// importedAccount looks like an account the import created at createdAt; extra
+// properties are added to the ones the import sets.
+func importedAccount(id string, createdAt time.Time, extra map[string]string) *casdoorsdk.User {
+	props := map[string]string{"tos_accepted_at": createdAt.Format(time.RFC3339), "tos_version": createdAt.Format("2006-01-02")}
+	for k, v := range extra {
+		props[k] = v
+	}
+	return &casdoorsdk.User{Id: id, Name: fmt.Sprintf("ada-lovelace-%d", createdAt.Unix()), CreatedTime: createdAt.Format(time.RFC3339), Properties: props}
+}
+
+func load(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID string) models.OrganizationMember {
+	t.Helper()
+	var m models.OrganizationMember
+	require.NoError(t, db.Where("organization_id = ? AND user_id = ?", orgID, userID).First(&m).Error)
+	return m
+}
+
+func ref(orgID uuid.UUID, userID string) services.MemberRef {
+	return services.MemberRef{OrganizationID: orgID, UserID: userID}
+}
+
+func TestBackfillProvenance_ImportedAccount_Marked(t *testing.T) {
+	db := newDB()
+	created := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+	importer := seedOrg(t, db, models.OrgTypeTeam)
+	laterOrg := seedOrg(t, db, models.OrgTypeTeam)
+	personal := seedOrg(t, db, models.OrgTypePersonal)
+	seedRow(t, db, importer, "u1", created.Add(30*time.Second), created.Add(30*time.Second))
+	seedRow(t, db, personal, "u1", created.Add(31*time.Second), created.Add(31*time.Second))
+	seedRow(t, db, laterOrg, "u1", created.Add(24*time.Hour), created.Add(24*time.Hour))
+
+	report, err := services.BackfillAccountProvenance(db, accountList{importedAccount("u1", created, nil)}, time.Now(), false)
+	require.NoError(t, err)
+
+	assert.True(t, load(t, db, importer, "u1").AccountCreatedByOrganization, "the importing organization created the account")
+	assert.False(t, load(t, db, laterOrg, "u1").AccountCreatedByOrganization, "a membership joined later is an attachment")
+	assert.False(t, load(t, db, personal, "u1").AccountCreatedByOrganization, "only team organizations are marked")
+	assert.Equal(t, []services.MemberRef{ref(importer, "u1")}, report.Marked)
+	assert.Contains(t, report.LeftUnmarked, ref(laterOrg, "u1"))
+}
+
+func TestBackfillProvenance_SelfSignupAttached_NotMarked(t *testing.T) {
+	db := newDB()
+	created := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+	orgID := seedOrg(t, db, models.OrgTypeTeam)
+	seedRow(t, db, orgID, "u1", created.Add(30*time.Second), created.Add(30*time.Second))
+	offboardedRow(t, db, orgID, "u1")
+
+	report, err := services.BackfillAccountProvenance(db,
+		accountList{importedAccount("u1", created, map[string]string{"username": "ada"})}, time.Now(), false)
+	require.NoError(t, err)
+
+	m := load(t, db, orgID, "u1")
+	assert.False(t, m.AccountCreatedByOrganization, "self-signup sets the username property; the import never does")
+	assert.Nil(t, m.ScheduledErasureAt, "an attached member's erasure date is cleared")
+	assert.Contains(t, report.LeftUnmarked, ref(orgID, "u1"))
+	assert.Contains(t, report.ErasureDatesCleared, ref(orgID, "u1"))
+	assert.Contains(t, report.BlockedAccounts, ref(orgID, "u1"), "a block set by an organization that did not create the account is listed for an operator")
+	assert.Empty(t, report.Marked)
+}
+
+func TestBackfillProvenance_AdminCreated_NotMarked(t *testing.T) {
+	db := newDB()
+	created := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+	orgID := seedOrg(t, db, models.OrgTypeTeam)
+	seedRow(t, db, orgID, "u1", created.Add(30*time.Second), created.Add(30*time.Second))
+
+	report, err := services.BackfillAccountProvenance(db,
+		accountList{importedAccount("u1", created, map[string]string{"created_by_admin": "true"})}, time.Now(), false)
+	require.NoError(t, err)
+
+	assert.False(t, load(t, db, orgID, "u1").AccountCreatedByOrganization)
+	assert.Empty(t, report.Marked)
+}
+
+func TestBackfillProvenance_RowAfterCutoff_Untouched(t *testing.T) {
+	db := newDB()
+	created := time.Now().Truncate(time.Second)
+	orgID := seedOrg(t, db, models.OrgTypeTeam)
+	seedRow(t, db, orgID, "u1", created.Add(30*time.Second), created.Add(30*time.Second))
+	offboardedRow(t, db, orgID, "u1")
+	before := load(t, db, orgID, "u1")
+
+	report, err := services.BackfillAccountProvenance(db, accountList{importedAccount("u1", created, nil)}, time.Now().Add(-time.Hour), false)
+	require.NoError(t, err)
+
+	after := load(t, db, orgID, "u1")
+	assert.False(t, after.AccountCreatedByOrganization, "rows written after the release record their provenance themselves")
+	require.NotNil(t, after.ScheduledErasureAt)
+	assert.Equal(t, before.ScheduledErasureAt.UnixMilli(), after.ScheduledErasureAt.UnixMilli())
+	assert.Empty(t, report.Marked)
+	assert.Empty(t, report.ErasureDatesCleared)
+}
+
+func TestBackfillProvenance_DryRun_WritesNothing(t *testing.T) {
+	db := newDB()
+	created := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+	orgID := seedOrg(t, db, models.OrgTypeTeam)
+	seedRow(t, db, orgID, "imported", created.Add(30*time.Second), created.Add(30*time.Second))
+	seedRow(t, db, orgID, "attached", created.Add(30*time.Second), created.Add(30*time.Second))
+	offboardedRow(t, db, orgID, "attached")
+
+	report, err := services.BackfillAccountProvenance(db, accountList{
+		importedAccount("imported", created, nil),
+		importedAccount("attached", created, map[string]string{"username": "ada"}),
+	}, time.Now(), true)
+	require.NoError(t, err)
+
+	assert.Equal(t, []services.MemberRef{ref(orgID, "imported")}, report.Marked, "the dry run reports what it would mark")
+	assert.Equal(t, []services.MemberRef{ref(orgID, "attached")}, report.ErasureDatesCleared)
+	assert.False(t, load(t, db, orgID, "imported").AccountCreatedByOrganization, "a dry run writes nothing")
+	assert.NotNil(t, load(t, db, orgID, "attached").ScheduledErasureAt, "a dry run writes nothing")
+}

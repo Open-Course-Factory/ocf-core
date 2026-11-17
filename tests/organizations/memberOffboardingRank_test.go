@@ -636,9 +636,9 @@ func TestReinstate_OffboardedByTwoOrganizations_ReinstatingTheFirstLiftsTheSecon
 	assert.NotNil(t, loadMember(t, db, orgB, "student-1").LeftAt, "B's membership stays offboarded")
 }
 
-// joinAfterBlockingOffboarding: organization B offboards student-1, who belongs
-// to B alone, so B blocks the account. Organization C then takes the account in
-// through join ("reinstate" / "enrol" of a row C offboarded earlier, or "create",
+// joinAfterBlockingOffboarding: organization B offboards student-1, an account
+// B created and that belongs to B alone, so B blocks the account. Organization
+// C then takes the account in through join ("reinstate" / "enrol" of a row C offboarded earlier, or "create",
 // the generic POST /organization-members of a fresh row). Reports whether the
 // account is still blocked, whether B's row keeps its block stamp, and what B's
 // scheduled erasure answers now.
@@ -650,6 +650,7 @@ func joinAfterBlockingOffboarding(t *testing.T, join string) (blocked, bStamp bo
 	orgB := seedTeamOrg(t, db, "owner-b", new(10))
 	orgC := seedTeamOrg(t, db, "owner-c", new(10))
 	seedMember(t, db, orgB, "student-1", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgB, "student-1")
 	svc := newOffboardingService(db, identity)
 	if join != "create" {
 		seedMember(t, db, orgC, "student-1", models.OrgRoleMember)
@@ -678,22 +679,15 @@ func joinAfterBlockingOffboarding(t *testing.T, join string) (blocked, bStamp bo
 		svc.EraseNow(orgB, "student-1")
 }
 
-// The join paths differ on purpose, pending the open decision on attaching an
-// existing account to an organization: this pins today's behaviour, it endorses none.
-func TestOffboardingBlock_AccountJoinsAnotherOrganization_PathsDifferPendingAttachDecision(t *testing.T) {
-	for _, c := range []struct {
-		join                   string
-		wantBlocked, wantStamp bool
-	}{
-		{"reinstate", false, false},
-		{"enrol", false, false},
-		{"create", true, true},
-	} {
-		t.Run(c.join, func(t *testing.T) {
-			blocked, stamp, eraseErr := joinAfterBlockingOffboarding(t, c.join)
+// Whichever way the account becomes an active member of another organization,
+// the offboarding block no longer stands and B's stamp goes with it.
+func TestOffboardingBlock_AccountJoinsAnotherOrganization_AllPathsLiftBlock(t *testing.T) {
+	for _, join := range []string{"reinstate", "enrol", "create"} {
+		t.Run(join, func(t *testing.T) {
+			blocked, stamp, eraseErr := joinAfterBlockingOffboarding(t, join)
 
-			assert.Equal(t, c.wantBlocked, blocked, "account blocked after joining C")
-			assert.Equal(t, c.wantStamp, stamp, "B's block stamp kept after joining C")
+			assert.False(t, blocked, "account blocked after joining C")
+			assert.False(t, stamp, "B's block stamp kept after joining C")
 			assert.ErrorIs(t, eraseErr, authServices.ErrStillActiveElsewhere, "B's erasure waits while the account is active in C")
 		})
 	}
