@@ -66,16 +66,21 @@ func TestStripeWebhook_EventType_AppliesItsEffect(t *testing.T) {
 			eventType: "customer.subscription.resumed",
 			object: func(t *testing.T, db *gorm.DB, sub *models.UserSubscription) string {
 				require.NoError(t, db.Model(sub).Update("status", "paused").Error)
-				return stripeSubscriptionJSON(*sub.StripeSubscriptionID, *sub.StripeCustomerID, "active", nil)
+				// Not "active": a handler that hard-codes it must fail here.
+				return stripeSubscriptionJSON(*sub.StripeSubscriptionID, *sub.StripeCustomerID, "trialing", nil)
 			},
 			check: func(t *testing.T, db *gorm.DB, sub *models.UserSubscription) {
-				assert.Equal(t, "active", userSubscriptionStatus(t, db, sub.ID))
+				assert.Equal(t, "trialing", userSubscriptionStatus(t, db, sub.ID))
 			},
 		},
 		{
 			name:      "payment method attached is recorded for the customer's user",
 			eventType: "payment_method.attached",
-			object: func(_ *testing.T, _ *gorm.DB, sub *models.UserSubscription) string {
+			object: func(t *testing.T, db *gorm.DB, sub *models.UserSubscription) string {
+				// Another customer's subscription, sorted first, so a lookup that
+				// ignores the customer id picks the wrong user.
+				other := seedUpgradeSubscription(t, db, "user_other", seedPlan(t, db, models.SubscriptionPlan{Name: "Other plan"}))
+				require.NoError(t, db.Model(other).Update("id", uuid.Nil).Error)
 				return fmt.Sprintf(`{"id":"pm_attached","object":"payment_method","type":"card","customer":%q,`+
 					`"card":{"brand":"visa","last4":"4242","exp_month":12,"exp_year":2030}}`, *sub.StripeCustomerID)
 			},
