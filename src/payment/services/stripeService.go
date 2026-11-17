@@ -2550,8 +2550,16 @@ func (ss *stripeService) SendInvoice(invoiceID string) error {
 	return err
 }
 
+// ErrWebhookSecretNotConfigured means STRIPE_WEBHOOK_SECRET is unset, so no
+// webhook can be verified.
+var ErrWebhookSecretNotConfigured = errors.New("stripe webhook secret is not configured")
+
 // ValidateWebhookSignature valide la signature d'un webhook Stripe
 func (ss *stripeService) ValidateWebhookSignature(payload []byte, signature string) (*stripe.Event, error) {
+	// An empty secret verifies any payload signed with the empty string.
+	if ss.webhookSecret == "" {
+		return nil, ErrWebhookSecretNotConfigured
+	}
 	event, err := webhook.ConstructEvent(payload, signature, ss.webhookSecret)
 	if err != nil {
 		return nil, fmt.Errorf("webhook signature verification failed: %w", err)
