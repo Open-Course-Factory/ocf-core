@@ -663,6 +663,7 @@ func TestGetBackends_AuthAndContract(t *testing.T) {
 // returns 500 (TT API not configured), the body does NOT leak URLs, keys, or
 // internal error details — only the generic message.
 func TestGetBackends_GenericErrorOnFailure(t *testing.T) {
+	t.Setenv("TERMINAL_TRAINER_URL", "") // TT API unconfigured
 	db := freshTestDB(t)
 	router := getBackendsRouter(db, "admin-user", []string{"administrator"})
 
@@ -670,9 +671,7 @@ func TestGetBackends_GenericErrorOnFailure(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Skipf("expected 500 (TT API unconfigured), got %d — skipping leak check", w.Code)
-	}
+	require.Equal(t, http.StatusInternalServerError, w.Code, w.Body.String())
 	var apiErr map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &apiErr))
 	errMsg := apiErr["error_message"].(string)
@@ -683,6 +682,7 @@ func TestGetBackends_GenericErrorOnFailure(t *testing.T) {
 }
 
 func TestGetServerMetrics_GenericErrorOnFailure(t *testing.T) {
+	t.Setenv("TERMINAL_TRAINER_URL", "") // TT API unconfigured
 	db := freshTestDB(t)
 	ctrl := terminalController.NewTerminalController(db)
 	gin.SetMode(gin.TestMode)
@@ -699,9 +699,7 @@ func TestGetServerMetrics_GenericErrorOnFailure(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Skipf("expected 500 (TT API unconfigured), got %d — skipping leak check", w.Code)
-	}
+	require.Equal(t, http.StatusInternalServerError, w.Code, w.Body.String())
 	var apiErr map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &apiErr))
 	assert.Equal(t, "Failed to get server metrics", apiErr["error_message"])

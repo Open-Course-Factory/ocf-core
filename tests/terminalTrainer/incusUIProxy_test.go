@@ -46,7 +46,6 @@ func makeIncusUIRequest(router *gin.Engine, backendID, path string) *httptest.Re
 
 // TestIncusUIProxy_AdminCanAccessAnyBackend verifies that a system administrator
 // can access any backendId through the Incus UI proxy.
-// In the RED phase the stub returns 501, so this test expects != 501 and != 403.
 func TestIncusUIProxy_AdminCanAccessAnyBackend(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
@@ -63,12 +62,9 @@ func TestIncusUIProxy_AdminCanAccessAnyBackend(t *testing.T) {
 	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
 	w := makeIncusUIRequest(router, "any-backend-id", "some/path")
 
-	// Admin should be authorized — we expect the proxy to forward (200) or at least
-	// not return 403 Forbidden or 501 Not Implemented.
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
+	assert.Equal(t, http.StatusOK, w.Code,
 		"System administrator should not be denied access to any backend")
-	assert.NotEqual(t, http.StatusNotImplemented, w.Code,
-		"ProxyIncusUI should be implemented and proxy the request for admins")
+	assert.JSONEq(t, `{"status":"ok"}`, w.Body.String(), "the upstream answer is relayed")
 }
 
 // TestIncusUIProxy_OrgOwnerCanAccessAllowedBackend verifies that an organization
@@ -99,11 +95,9 @@ func TestIncusUIProxy_OrgOwnerCanAccessAllowedBackend(t *testing.T) {
 	router := newIncusUIRouter("org-owner1", []string{"member"}, controller)
 	w := makeIncusUIRequest(router, "backend1", "some/path")
 
-	// Org owner should be authorized for backend1
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
+	assert.Equal(t, http.StatusOK, w.Code,
 		"Org owner should be allowed to access a backend in their org's AllowedBackends")
-	assert.NotEqual(t, http.StatusNotImplemented, w.Code,
-		"ProxyIncusUI should be implemented and proxy the request for authorized org owners")
+	assert.JSONEq(t, `{"status":"ok"}`, w.Body.String(), "the upstream answer is relayed")
 }
 
 // TestIncusUIProxy_OrgManagerCanAccessAllowedBackend verifies that an organization
@@ -133,11 +127,9 @@ func TestIncusUIProxy_OrgManagerCanAccessAllowedBackend(t *testing.T) {
 	router := newIncusUIRouter("manager1", []string{"member"}, controller)
 	w := makeIncusUIRequest(router, "backend1", "some/path")
 
-	// Org manager should be authorized for backend1
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
+	assert.Equal(t, http.StatusOK, w.Code,
 		"Org manager should be allowed to access a backend in their org's AllowedBackends")
-	assert.NotEqual(t, http.StatusNotImplemented, w.Code,
-		"ProxyIncusUI should be implemented and proxy the request for authorized org managers")
+	assert.JSONEq(t, `{"status":"ok"}`, w.Body.String(), "the upstream answer is relayed")
 }
 
 // TestIncusUIProxy_OrgOwnerDeniedUnallowedBackend verifies that an organization
@@ -543,9 +535,9 @@ func TestIncusUIProxy_IncusUIEnabled_OrgOwnerGranted(t *testing.T) {
 	router := newIncusUIRouter("org-owner1", []string{"member"}, controller)
 	w := makeIncusUIRequest(router, "backend1", "some/path")
 
-	// Should be granted access (proxied, not 403)
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
+	assert.Equal(t, http.StatusOK, w.Code,
 		"Org owner should be granted access when incus_ui_enabled is true")
+	assert.JSONEq(t, `{"status":"ok"}`, w.Body.String(), "the upstream answer is relayed")
 }
 
 // TestIncusUIProxy_ProtectedBackend_NonAdminDenied verifies that a non-admin
@@ -599,9 +591,9 @@ func TestIncusUIProxy_ProtectedBackend_AdminGranted(t *testing.T) {
 	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
 	w := makeIncusUIRequest(router, "protected-backend", "some/path")
 
-	// Admin should access protected backends
-	assert.NotEqual(t, http.StatusForbidden, w.Code,
+	assert.Equal(t, http.StatusOK, w.Code,
 		"Admin should access protected backends")
+	assert.JSONEq(t, `{"status":"ok"}`, w.Body.String(), "the upstream answer is relayed")
 }
 
 // TestIncusUIProxy_IsUserAuthorizedForBackend_IncusUIDisabled verifies that
