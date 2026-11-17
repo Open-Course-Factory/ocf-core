@@ -179,10 +179,6 @@ func findListing(t *testing.T, listings []adminUsersRoutes.UserListing, id strin
 // ---------------------------------------------------------------------------
 
 func TestBuildUserListings_EmptyUsers_ReturnsEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	listings, err := adminUsersRoutes.BuildUserListings(nil, db, noAdminFn())
@@ -191,10 +187,6 @@ func TestBuildUserListings_EmptyUsers_ReturnsEmpty(t *testing.T) {
 }
 
 func TestBuildUserListings_UserWithNoMemberships_ReturnsEmptyArrays(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	users := []*casdoorsdk.User{
@@ -220,10 +212,6 @@ func TestBuildUserListings_UserWithNoMemberships_ReturnsEmptyArrays(t *testing.T
 }
 
 func TestBuildUserListings_UserWithOrgMembership_IncludesOrg(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	orgID := seedOrg(t, db, "Acme Corp", uidAlice)
@@ -247,10 +235,6 @@ func TestBuildUserListings_UserWithOrgMembership_IncludesOrg(t *testing.T) {
 }
 
 func TestBuildUserListings_UserWithGroupMembership_IncludesGroup(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	groupID := seedGroup(t, db, "Linux 101", uidAlice)
@@ -274,10 +258,6 @@ func TestBuildUserListings_UserWithGroupMembership_IncludesGroup(t *testing.T) {
 }
 
 func TestBuildUserListings_UserWithMultipleOrgsAndGroups_AllReturned(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	// Two orgs: alice is owner of one, member of the other.
@@ -320,10 +300,6 @@ func TestBuildUserListings_UserWithMultipleOrgsAndGroups_AllReturned(t *testing.
 }
 
 func TestBuildUserListings_AdminFlag_TrueWhenAdmin(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	users := []*casdoorsdk.User{
@@ -338,10 +314,6 @@ func TestBuildUserListings_AdminFlag_TrueWhenAdmin(t *testing.T) {
 }
 
 func TestBuildUserListings_AdminFlag_FalseForRegularUser(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	users := []*casdoorsdk.User{
@@ -357,10 +329,6 @@ func TestBuildUserListings_AdminFlag_FalseForRegularUser(t *testing.T) {
 }
 
 func TestBuildUserListings_OnlyReturnsActiveOrgMemberships(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	activeOrg := seedOrg(t, db, "ActiveOrg", uidAlice)
@@ -427,10 +395,6 @@ type handlerJSONUser struct {
 }
 
 func TestAdminUsersHandler_OverrideListAllCasdoorUsers_ReturnsExpectedJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	// Seed alice as owner of OrgOne and manager of GroupOne.

@@ -40,9 +40,6 @@ func validCreateUserBody() adminUsersRoutes.AdminCreateUserInput {
 }
 
 func TestCreateUserHandler_Success(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -107,9 +104,6 @@ func TestCreateUserHandler_Success(t *testing.T) {
 }
 
 func TestCreateUserHandler_EmailVerifiedFlagMarksAccountVerified(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -157,9 +151,6 @@ func TestCreateUserHandler_EmailVerifiedFlagMarksAccountVerified(t *testing.T) {
 }
 
 func TestCreateUserHandler_NonAdmin_403(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -176,9 +167,6 @@ func TestCreateUserHandler_NonAdmin_403(t *testing.T) {
 }
 
 func TestCreateUserHandler_CasdoorRejects_400(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -207,9 +195,6 @@ func TestCreateUserHandler_CasdoorRejects_400(t *testing.T) {
 // The admin path must give the account what self-signup gives it — the
 // personal organization was once silently missing here.
 func TestCreateUserHandler_ProvisionsPersonalOrganization(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -260,9 +245,6 @@ func TestCreateUserHandler_ProvisionsPersonalOrganization(t *testing.T) {
 }
 
 func TestCreateUserHandler_RejectsInvalidInput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.CreateCasdoorUser
@@ -305,9 +287,6 @@ func TestCreateUserHandler_RejectsInvalidInput(t *testing.T) {
 // --- Verify email -----------------------------------------------------------
 
 func TestVerifyEmailHandler_Success(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.MarkUserEmailVerified
@@ -330,9 +309,6 @@ func TestVerifyEmailHandler_Success(t *testing.T) {
 }
 
 func TestVerifyEmailHandler_UnknownUser_404(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.MarkUserEmailVerified
@@ -352,9 +328,6 @@ func TestVerifyEmailHandler_UnknownUser_404(t *testing.T) {
 }
 
 func TestVerifyEmailHandler_NonAdmin_403(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	r := newAdminRouter(http.MethodPost, "/admin/users/:id/verify-email",
@@ -370,9 +343,6 @@ func TestVerifyEmailHandler_NonAdmin_403(t *testing.T) {
 // --- Set password directly (no email) ---------------------------------------
 
 func TestSetPasswordHandler_Success(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.SetUserPassword
@@ -399,9 +369,6 @@ func TestSetPasswordHandler_Success(t *testing.T) {
 }
 
 func TestSetPasswordHandler_TooShort_400(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.SetUserPassword
@@ -426,9 +393,6 @@ func TestSetPasswordHandler_TooShort_400(t *testing.T) {
 }
 
 func TestSetPasswordHandler_UnknownUser_404(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.SetUserPassword
@@ -450,9 +414,6 @@ func TestSetPasswordHandler_UnknownUser_404(t *testing.T) {
 }
 
 func TestSetPasswordHandler_NonAdmin_403(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	r := newAdminRouter(http.MethodPut, "/admin/users/:id/password",
@@ -470,9 +431,6 @@ func TestSetPasswordHandler_NonAdmin_403(t *testing.T) {
 // --- email_verified surfaced in the listing ---------------------------------
 
 func TestBuildUserListings_SurfacesEmailVerified(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	verified := fakeUser(uidAlice, "alice", "Alice", "alice@example.com", "")

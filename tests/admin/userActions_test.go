@@ -53,9 +53,6 @@ func newAdminRouter(method, path string, handler gin.HandlerFunc, admin bool) *g
 // --- Send password reset email ---------------------------------------------
 
 func TestSendPasswordResetHandler_Success(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	originalGet := adminUsersRoutes.GetCasdoorUserByID
@@ -93,9 +90,6 @@ func TestSendPasswordResetHandler_Success(t *testing.T) {
 }
 
 func TestSendPasswordResetHandler_UnknownUser_404(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	originalGet := adminUsersRoutes.GetCasdoorUserByID
@@ -115,9 +109,6 @@ func TestSendPasswordResetHandler_UnknownUser_404(t *testing.T) {
 }
 
 func TestSendPasswordResetHandler_NonAdmin_403(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	r := newAdminRouter(http.MethodPost, "/admin/users/:id/send-password-reset-email",
@@ -133,9 +124,6 @@ func TestSendPasswordResetHandler_NonAdmin_403(t *testing.T) {
 // --- Grant / revoke admin role -----------------------------------------------
 
 func TestGrantAdminRoleHandler_Success(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -160,9 +148,6 @@ func TestGrantAdminRoleHandler_Success(t *testing.T) {
 }
 
 func TestGrantAdminRoleHandler_UnknownUser_404(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -182,9 +167,6 @@ func TestGrantAdminRoleHandler_UnknownUser_404(t *testing.T) {
 }
 
 func TestGrantAdminRoleHandler_NonAdmin_403(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -200,9 +182,6 @@ func TestGrantAdminRoleHandler_NonAdmin_403(t *testing.T) {
 }
 
 func TestRevokeAdminRoleHandler_Success(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -221,9 +200,6 @@ func TestRevokeAdminRoleHandler_Success(t *testing.T) {
 }
 
 func TestRevokeAdminRoleHandler_CannotRevokeOwnRole(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 	enforcer := mocks.NewMockEnforcer()
 
@@ -242,9 +218,6 @@ func TestRevokeAdminRoleHandler_CannotRevokeOwnRole(t *testing.T) {
 // --- Block / unblock account (forbidden) ------------------------------------
 
 func TestSetForbiddenHandler_BlocksAccount(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.SetAccountForbidden
@@ -288,9 +261,6 @@ func TestSetForbiddenHandler_BlocksAccount(t *testing.T) {
 // even if tt-backend itself is unreachable — the account block (Casdoor) is
 // the point of this endpoint and must still succeed.
 func TestSetForbiddenHandler_BlocksAccountEvenIfKeyDisableFails(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.SetAccountForbidden
@@ -321,9 +291,6 @@ func TestSetForbiddenHandler_BlocksAccountEvenIfKeyDisableFails(t *testing.T) {
 // the common case (the account's key, if any, is already inactive from the
 // original block).
 func TestSetForbiddenHandler_UnblockDoesNotTouchTerminalKey(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	originalForbidden := adminUsersRoutes.SetAccountForbidden
@@ -355,9 +322,6 @@ func TestSetForbiddenHandler_UnblockDoesNotTouchTerminalKey(t *testing.T) {
 // A running terminal must not outlive the block: TerminateUserTerminals
 // revokes it, which also frees its slot and budget.
 func TestSetForbiddenHandler_BlockRevokesRunningTerminals(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	originalForbidden := adminUsersRoutes.SetAccountForbidden
@@ -392,9 +356,6 @@ func TestSetForbiddenHandler_BlockRevokesRunningTerminals(t *testing.T) {
 }
 
 func TestSetForbiddenHandler_UnknownUser_404(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.SetAccountForbidden
@@ -415,9 +376,6 @@ func TestSetForbiddenHandler_UnknownUser_404(t *testing.T) {
 }
 
 func TestSetForbiddenHandler_CannotBlockOwnAccount(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.SetAccountForbidden
@@ -442,9 +400,6 @@ func TestSetForbiddenHandler_CannotBlockOwnAccount(t *testing.T) {
 }
 
 func TestSetForbiddenHandler_CanUnblockOwnAccount(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	original := adminUsersRoutes.SetAccountForbidden
@@ -474,9 +429,6 @@ func TestSetForbiddenHandler_CanUnblockOwnAccount(t *testing.T) {
 //     generic PATCH /group-members/:id role-change control) --------------
 
 func TestBuildUserListings_SurfacesMemberIDForOrgAndGroup(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
 	db := freshTestDB(t)
 
 	orgID := seedOrg(t, db, "OrgOne", uidAlice)
