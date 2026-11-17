@@ -165,7 +165,7 @@ func TestCreateOrgSubscription_NonMemberNonAdmin_Forbidden(t *testing.T) {
 		"Non-member non-admin should get 403 Forbidden")
 }
 
-func TestGetOrgSubscription_AdminNonMember_NotForbidden(t *testing.T) {
+func TestGetOrgSubscription_AdminNonMember_Succeeds(t *testing.T) {
 	orgID := setupSubscribedOrg(t)
 
 	w := asAdminNonMember(t, "GET", "/organizations/"+orgID.String()+"/subscription", nil)
@@ -187,7 +187,7 @@ func TestGetOrgFeatures_AdminNonMember_NotForbidden(t *testing.T) {
 		"Admin should NOT get 403 Forbidden when viewing org features")
 }
 
-func TestGetOrgUsageLimits_AdminNonMember_NotForbidden(t *testing.T) {
+func TestGetOrgUsageLimits_AdminNonMember_Succeeds(t *testing.T) {
 	orgID := setupSubscribedOrg(t)
 
 	w := asAdminNonMember(t, "GET", "/organizations/"+orgID.String()+"/usage-limits", nil)
@@ -195,7 +195,7 @@ func TestGetOrgUsageLimits_AdminNonMember_NotForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
-func TestCancelOrgSubscription_AdminNonMember_NotForbidden(t *testing.T) {
+func TestCancelOrgSubscription_AdminNonMember_Succeeds(t *testing.T) {
 	orgID := setupSubscribedOrg(t)
 
 	w := asAdminNonMember(t, "DELETE", "/organizations/"+orgID.String()+"/subscription",

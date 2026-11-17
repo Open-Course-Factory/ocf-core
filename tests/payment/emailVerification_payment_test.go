@@ -14,7 +14,8 @@ import (
 
 // setupPaymentTestRouter mounts the real UserSubscriptionRoutes behind the real
 // AuthManagement (see installRealGateway). Casdoor knows every caller as an
-// account whose email is not verified.
+// account whose email is not verified. gatewayMember holds a subscription:
+// without one, GET /current asks Stripe for it.
 func setupPaymentTestRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 
@@ -22,6 +23,7 @@ func setupPaymentTestRouter(t *testing.T) *gin.Engine {
 
 	db := freshTestDB(t)
 	installRealGateway(t)
+	createUserSubscription(t, db, gatewayMember, seedAnyPlan(t, db))
 	t.Cleanup(authServices.SwapCasdoorUserReader(func(userID string) (*casdoorsdk.User, error) {
 		return &casdoorsdk.User{Id: userID, EmailVerified: false}, nil
 	}))
@@ -40,20 +42,18 @@ func TestUnverifiedUser_CanReadSubscriptionInfo(t *testing.T) {
 	readEndpoints := []struct {
 		caller string
 		path   string
-		status int
 	}{
-		// The caller holds no subscription: the handler answers 404 itself.
-		{gatewayMember, "/api/v1/user-subscriptions/current", http.StatusNotFound},
-		{gatewayMember, "/api/v1/user-subscriptions/all", http.StatusOK},
-		{gatewayMember, "/api/v1/user-subscriptions/usage", http.StatusOK},
-		{gatewayAdmin, "/api/v1/user-subscriptions/analytics", http.StatusOK},
+		{gatewayMember, "/api/v1/user-subscriptions/current"},
+		{gatewayMember, "/api/v1/user-subscriptions/all"},
+		{gatewayMember, "/api/v1/user-subscriptions/usage"},
+		{gatewayAdmin, "/api/v1/user-subscriptions/analytics"},
 	}
 
 	for _, ep := range readEndpoints {
 		t.Run("GET "+ep.path, func(t *testing.T) {
 			w := requestAs(router, ep.caller, "GET", ep.path, "")
 
-			assert.Equal(t, ep.status, w.Code, w.Body.String())
+			assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 			assert.NotContains(t, w.Body.String(), "EMAIL_NOT_VERIFIED",
 				"Read endpoint %s should not return EMAIL_NOT_VERIFIED", ep.path)
 		})
