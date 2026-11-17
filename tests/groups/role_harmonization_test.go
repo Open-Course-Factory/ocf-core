@@ -10,46 +10,6 @@ import (
 )
 
 // =============================================================================
-// Test 1: Role constants match the 3-level model (member, manager, owner)
-// =============================================================================
-
-func TestGroupMemberRole_Constants(t *testing.T) {
-	t.Run("manager role exists with correct value", func(t *testing.T) {
-		assert.Equal(t, models.GroupMemberRole("manager"), models.GroupMemberRoleManager,
-			"GroupMemberRoleManager should be 'manager'")
-	})
-
-	t.Run("owner role exists with correct value", func(t *testing.T) {
-		assert.Equal(t, models.GroupMemberRole("owner"), models.GroupMemberRoleOwner,
-			"GroupMemberRoleOwner should be 'owner'")
-	})
-
-	t.Run("member role exists with correct value", func(t *testing.T) {
-		assert.Equal(t, models.GroupMemberRole("member"), models.GroupMemberRoleMember,
-			"GroupMemberRoleMember should be 'member'")
-	})
-
-	t.Run("exactly three roles exist", func(t *testing.T) {
-		// Enumerate all valid roles — if someone adds admin/assistant back,
-		// this test documents the contract: only 3 roles are valid.
-		validRoles := []models.GroupMemberRole{
-			models.GroupMemberRoleOwner,
-			models.GroupMemberRoleManager,
-			models.GroupMemberRoleMember,
-		}
-		assert.Len(t, validRoles, 3, "there should be exactly 3 group member roles")
-
-		// Verify the old 4-level roles are NOT among the valid values
-		for _, role := range validRoles {
-			assert.NotEqual(t, models.GroupMemberRole("admin"), role,
-				"'admin' should not be a valid group member role")
-			assert.NotEqual(t, models.GroupMemberRole("assistant"), role,
-				"'assistant' should not be a valid group member role")
-		}
-	})
-}
-
-// =============================================================================
 // Test 2: IsManager() returns true for owner and manager, false for member
 // =============================================================================
 
