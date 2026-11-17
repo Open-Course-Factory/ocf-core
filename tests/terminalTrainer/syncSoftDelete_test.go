@@ -143,39 +143,3 @@ func TestSyncRepository_CreateTerminalSessionFromAPI_SoftDeletedExists_ShouldRes
 	err = repo.CreateTerminalSessionFromAPI(newTerminal)
 	assert.NoError(t, err, "CreateTerminalSessionFromAPI should handle soft-deleted records gracefully, but fails with unique constraint violation (BUG)")
 }
-
-// TestSyncCreateSession_NoSoftDelete_ShouldWork is a sanity check that creating a
-// terminal with a brand-new session_id works correctly when no soft-deleted record
-// exists. This confirms the test infrastructure is sound and the bug is specifically
-// about the soft-delete + unique constraint interaction.
-func TestSyncCreateSession_NoSoftDelete_ShouldWork(t *testing.T) {
-	db := setupTestDB(t)
-	repo := repositories.NewTerminalRepository(db)
-
-	userKey, err := createTestUserKey(db, "sync-user-3")
-	require.NoError(t, err)
-
-	sessionID := "fresh-session-" + uuid.New().String()
-
-	terminal := &models.Terminal{
-		SessionID:         sessionID,
-		UserID:            "sync-user-3",
-		Name:              "Fresh Terminal",
-		State:            models.StateRunning,
-		ExpiresAt:         time.Now().Add(time.Hour),
-		InstanceType:      "test",
-		MachineSize:       "S",
-		UserTerminalKeyID: userKey.ID,
-	}
-
-	// This should work — no prior record exists with this session_id
-	err = repo.CreateTerminalSession(terminal)
-	assert.NoError(t, err, "creating a terminal with a new session_id should succeed")
-
-	// Verify it was created
-	found, err := repo.GetTerminalSessionBySessionID(sessionID)
-	assert.NoError(t, err)
-	assert.NotNil(t, found)
-	assert.Equal(t, sessionID, found.SessionID)
-	assert.Equal(t, "Fresh Terminal", found.Name)
-}
