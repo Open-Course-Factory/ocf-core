@@ -3,12 +3,10 @@
 // The one-off backfill marks the memberships whose organization created the
 // account through the import, from the signals the import leaves on the
 // identity provider's account. Refs #599.
-//
-// Its own package: until the backfill exists this file does not compile, and
-// the organizations test package must keep running meanwhile.
 package provenancebackfill_tests
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -167,4 +165,89 @@ func TestBackfillProvenance_DryRun_WritesNothing(t *testing.T) {
 	assert.Equal(t, []services.MemberRef{ref(orgID, "attached")}, report.ErasureDatesCleared)
 	assert.False(t, load(t, db, orgID, "imported").AccountCreatedByOrganization, "a dry run writes nothing")
 	assert.NotNil(t, load(t, db, orgID, "attached").ScheduledErasureAt, "a dry run writes nothing")
+}
+
+func TestBackfillProvenance_SecondRun_MarksAndClearsNothingNew(t *testing.T) {
+	db := newDB()
+	created := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+	orgID := seedOrg(t, db, models.OrgTypeTeam)
+	seedRow(t, db, orgID, "imported", created.Add(30*time.Second), created.Add(30*time.Second))
+	seedRow(t, db, orgID, "attached", created.Add(30*time.Second), created.Add(30*time.Second))
+	offboardedRow(t, db, orgID, "attached")
+	accounts := accountList{importedAccount("imported", created, nil), importedAccount("attached", created, map[string]string{"username": "ada"})}
+
+	dry, err := services.BackfillAccountProvenance(db, accounts, time.Now(), true)
+	require.NoError(t, err)
+	first, err := services.BackfillAccountProvenance(db, accounts, time.Now(), false)
+	require.NoError(t, err)
+	second, err := services.BackfillAccountProvenance(db, accounts, time.Now(), false)
+	require.NoError(t, err)
+
+	assert.Equal(t, dry.Marked, first.Marked, "the dry run announces exactly what the real run marks")
+	assert.Equal(t, dry.ErasureDatesCleared, first.ErasureDatesCleared)
+	assert.Empty(t, second.Marked, "a second run marks nothing")
+	assert.Empty(t, second.ErasureDatesCleared, "a second run clears nothing")
+	assert.Equal(t, first.BlockedAccounts, second.BlockedAccounts, "blocked accounts stay listed until an operator lifts them")
+	assert.True(t, load(t, db, orgID, "imported").AccountCreatedByOrganization)
+}
+
+// Pins the inclusive bounds the code takes: the name's timestamp within 5
+// minutes of the account's creation, the join within 10 minutes of it.
+func TestBackfillProvenance_TimeWindows_InclusiveBounds(t *testing.T) {
+	created := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+	for _, c := range []struct {
+		name               string
+		stampShift, joined time.Duration
+		marked             bool
+	}{
+		{"stamp +5m, joined at creation", 5 * time.Minute, 0, true},
+		{"stamp -5m", -5 * time.Minute, 0, true},
+		{"stamp +5m1s", 5*time.Minute + time.Second, 0, false},
+		{"joined +10m", 0, 10 * time.Minute, true},
+		{"joined -10m", 0, -10 * time.Minute, true},
+		{"joined +10m1s", 0, 10*time.Minute + time.Second, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			db := newDB()
+			orgID := seedOrg(t, db, models.OrgTypeTeam)
+			seedRow(t, db, orgID, "u1", created.Add(c.joined), created.Add(c.joined))
+			account := importedAccount("u1", created, nil)
+			account.Name = fmt.Sprintf("ada-lovelace-%d", created.Add(c.stampShift).Unix())
+
+			_, err := services.BackfillAccountProvenance(db, accountList{account}, time.Now(), false)
+			require.NoError(t, err)
+
+			assert.Equal(t, c.marked, load(t, db, orgID, "u1").AccountCreatedByOrganization)
+		})
+	}
+}
+
+func TestBackfillProvenance_AccountMissingFromIdentityProvider_LeftUnmarked(t *testing.T) {
+	db := newDB()
+	orgID := seedOrg(t, db, models.OrgTypeTeam)
+	seedRow(t, db, orgID, "gone", time.Now().Add(-time.Hour), time.Now().Add(-time.Hour))
+
+	report, err := services.BackfillAccountProvenance(db, accountList{}, time.Now(), false)
+	require.NoError(t, err)
+
+	assert.False(t, load(t, db, orgID, "gone").AccountCreatedByOrganization)
+	assert.Contains(t, report.LeftUnmarked, ref(orgID, "gone"))
+}
+
+type failingAccounts struct{}
+
+func (failingAccounts) GetUsers() ([]*casdoorsdk.User, error) {
+	return nil, errors.New("identity provider down")
+}
+
+func TestBackfillProvenance_ListingFails_WritesNothing(t *testing.T) {
+	db := newDB()
+	orgID := seedOrg(t, db, models.OrgTypeTeam)
+	seedRow(t, db, orgID, "attached", time.Now().Add(-time.Hour), time.Now().Add(-time.Hour))
+	offboardedRow(t, db, orgID, "attached")
+
+	_, err := services.BackfillAccountProvenance(db, failingAccounts{}, time.Now(), false)
+
+	require.Error(t, err)
+	assert.NotNil(t, load(t, db, orgID, "attached").ScheduledErasureAt, "without the account list no erasure date is cleared")
 }
