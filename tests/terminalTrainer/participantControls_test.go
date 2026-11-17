@@ -41,6 +41,7 @@ import (
 	auditModels "soli/formations/src/audit/models"
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/identity"
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/mocks"
 	groupModels "soli/formations/src/groups/models"
 	scenarioModels "soli/formations/src/scenarios/models"
@@ -98,6 +99,10 @@ func newPCClass(t *testing.T) *pcClass {
 	t.Helper()
 	db := freshTestDB(t)
 	stubPCNames(t)
+	// The target's platform role is read and fails closed without an enforcer.
+	origEnforcer := casdoor.Enforcer
+	casdoor.Enforcer = mocks.NewMockEnforcer()
+	t.Cleanup(func() { casdoor.Enforcer = origEnforcer })
 
 	orgID := uuid.New()
 	group := &groupModels.ClassGroup{Name: "pc-class", DisplayName: "pc-class", OwnerUserID: pcOwner, MaxMembers: 50, OrganizationID: &orgID}

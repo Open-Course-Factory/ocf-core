@@ -79,8 +79,8 @@ func GlobalControlScope() ControlScope {
 }
 
 // ClassControlScope checks that targetUserID is a participant actor may act on
-// in the class groupID — an active member, below manager and not its owner
-// (a platform administrator may also act on its managers and owner), never
+// in the class groupID — an active member, below manager, not its owner and not
+// a platform administrator (a platform administrator may also act on those), never
 // the actor — and returns the class scope. The caller must already have
 // checked that actor manages the class.
 func ClassControlScope(db *gorm.DB, groupID uuid.UUID, actor ControlActor, targetUserID string) (ControlScope, error) {
@@ -110,11 +110,23 @@ func ClassControlScope(db *gorm.DB, groupID uuid.UUID, actor ControlActor, targe
 		if err != nil {
 			return ControlScope{}, err
 		}
-		if manages {
+		if manages || targetIsPlatformAdmin(targetUserID) {
 			return ControlScope{}, ErrParticipantForbidden
 		}
 	}
 	return ControlScope{Type: models.SessionBlockScopeGroup, ID: &groupID, OrgID: group.OrganizationID}, nil
+}
+
+// targetIsPlatformAdmin reports whether userID is a platform administrator, out
+// of reach of any other caller. Same lookup as organizations/services' rank rule
+// (which this package cannot import: it imports us); fails closed, so a missing
+// enforcer or a failed lookup counts as administrator.
+func targetIsPlatformAdmin(userID string) bool {
+	if casdoor.Enforcer == nil {
+		return true
+	}
+	roles, err := casdoor.Enforcer.GetRolesForUser(userID)
+	return err != nil || access.IsAdmin(roles)
 }
 
 // managesOrganization reports whether userID owns the organization orgID or
@@ -179,16 +191,8 @@ func OrgControlScope(db *gorm.DB, orgID uuid.UUID, actor ControlActor, targetUse
 	if !actor.IsAdmin && (member.IsManager() || org.OwnerUserID == targetUserID) {
 		return ControlScope{}, ErrParticipantForbidden
 	}
-	if !actor.IsAdmin {
-		// Same lookup as organizations/services' rank rule (which this package cannot
-		// import: it imports us); fails closed, an unknown role counts as administrator.
-		if casdoor.Enforcer == nil {
-			return ControlScope{}, ErrParticipantForbidden
-		}
-		roles, err := casdoor.Enforcer.GetRolesForUser(targetUserID)
-		if err != nil || access.IsAdmin(roles) {
-			return ControlScope{}, ErrParticipantForbidden
-		}
+	if !actor.IsAdmin && targetIsPlatformAdmin(targetUserID) {
+		return ControlScope{}, ErrParticipantForbidden
 	}
 	return ControlScope{Type: models.SessionBlockScopeOrg, ID: &orgID, OrgID: &orgID}, nil
 }
