@@ -473,41 +473,6 @@ func TestHooksSimple_ServiceIntegration_AfterCreate(t *testing.T) {
 	t.Logf("✅ After create hook executed (async)")
 }
 
-func TestHooksSimple_ConcurrentExecution(t *testing.T) {
-	t.Skip("SQLite in-memory database doesn't handle concurrent writes well. This test works with PostgreSQL in production.")
-
-	_, service, registry := setupHookServiceTestSimple(t)
-
-	hook := NewSimpleTrackingHook("concurrent-hook", "HookTestEntity", []hooks.HookType{hooks.BeforeCreate}, 10)
-	_ = registry.RegisterHook(hook)
-
-	// Create multiple entities concurrently
-	numGoroutines := 10
-	var wg sync.WaitGroup
-	wg.Add(numGoroutines)
-
-	for i := range numGoroutines {
-		go func(index int) {
-			defer wg.Done()
-
-			entity := HookTestEntitySimple{
-				Name:   fmt.Sprintf("Entity %d", index),
-				Value:  index,
-				Status: "active",
-			}
-
-			_, err := service.CreateEntity(entity, "HookTestEntity")
-			assert.NoError(t, err)
-		}(i)
-	}
-
-	wg.Wait()
-	time.Sleep(200 * time.Millisecond)
-
-	assert.Equal(t, numGoroutines, hook.GetExecutedCount())
-	t.Logf("✅ Hook executed %d times concurrently", hook.GetExecutedCount())
-}
-
 // ============================================================================
 // Error Tracking Tests
 // ============================================================================
