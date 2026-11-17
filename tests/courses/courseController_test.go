@@ -974,7 +974,7 @@ func serveGitURL(router *gin.Engine, url string) map[string]*httptest.ResponseRe
 // https and git@host:path URLs still reach the course loader on both routes.
 func TestCreateCourseFromGit_HTTPSOrSSHURL_ReachesLoader(t *testing.T) {
 	router := setupGitLoaderRouter(t)
-	for _, url := range []string{"https://example.org/x.git", "git@example.org:x.git"} {
+	for _, url := range []string{"https://example.org/x.git", "git@example.org:x.git", "https://gitlab.example.org/group/x.git"} {
 		for route, w := range serveGitURL(router, url) {
 			assert.Equal(t, http.StatusBadRequest, w.Code, route+" "+url+": "+w.Body.String())
 			assert.Contains(t, w.Body.String(), "Impossible de récupérer le cours", route+" "+url)
@@ -991,6 +991,27 @@ func TestCreateCourseFromGit_NonHTTPSOrSSHURL_RefusedBeforeLoader(t *testing.T) 
 			assert.Equal(t, http.StatusBadRequest, w.Code, route+" "+url+": "+w.Body.String())
 			assert.NotContains(t, w.Body.String(), "Impossible de récupérer le cours", route+" "+url+" must not reach the loader")
 			assert.NotContains(t, w.Body.String(), url, route+" must not echo the url")
+		}
+	}
+}
+
+// Literal internal targets (loopback, private, link-local, unspecified IPs, localhost,
+// an explicit port, an empty host) and the existing rule's edge forms get the same fixed
+// 400 as any refused url, before the loader: the loader's error must not probe the network.
+func TestCreateCourseFromGit_InternalOrMalformedHost_RefusedLikeAnyURL(t *testing.T) {
+	router := setupGitLoaderRouter(t)
+	refused := serveGitURL(router, "file:///etc")
+	for _, url := range []string{
+		"https://127.0.0.1:5432/x", "https://[::1]/x", "https://169.254.169.254/latest",
+		"https://10.0.0.5/x.git", "https://localhost/x", "https://host:22/x", "https://:443/x",
+		"https://0.0.0.0/x", "https://192.168.1.1/x", "https://172.16.0.1/x",
+		"git@localhost:x", "git@127.0.0.1:x", "git@10.0.0.5:x",
+		// pins for the existing rule
+		"https://user@host/x", "git@-oProxyCommand=x:y", "git@host:x\n",
+	} {
+		for route, w := range serveGitURL(router, url) {
+			assert.Equal(t, http.StatusBadRequest, w.Code, route+" "+url+": "+w.Body.String())
+			assert.Equal(t, refused[route].Body.String(), w.Body.String(), route+" "+url+" must get the fixed refusal")
 		}
 	}
 }
