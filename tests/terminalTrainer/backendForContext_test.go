@@ -152,12 +152,13 @@ func TestValidateBackendForContext_OrgHasConfig_PlanRestrictionIgnored(t *testin
 		Size:           "S",
 		Terms:          "accepted",
 		OrganizationID: org.ID.String(),
-		Backend:        "shared-pool", // In plan's allowed list, but NOT in org's
+		Backend:        "premium-pool", // In org's allowed list, but NOT in plan's
 	}
 
-	resp, err := svc.StartComposedSession(userID, composedInput, plan)
-	assert.ErrorIs(t, err, services.ErrBackendNotAllowed)
-	assert.Nil(t, resp)
+	// No tt-backend runs here, so the start still fails, but not on the policy.
+	_, err = svc.StartComposedSession(userID, composedInput, plan)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, services.ErrBackendNotAllowed)
 }
 
 // TestValidateBackendForContext_NilOrg_PlanRejectsDisallowed verifies that when there's no
