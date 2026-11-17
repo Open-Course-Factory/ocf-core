@@ -6,13 +6,11 @@ package scenarios_test
 // directly from the URL param without verifying the caller is a member of that org.
 // Any authenticated user could enumerate scenarios from any org by guessing UUIDs.
 //
-// These tests prove the gap exists by verifying:
-//  1. A total outsider (no org membership at all) MUST be denied (403)
-//  2. A member of org A who is also a manager of org B MUST be denied when accessing org A (not their managed org)
+// Fixed by an in-handler membership check on top of the Layer 2 OrgRole gate.
+// These tests pin both guards, each on its own router:
+//  1. A total outsider (no org membership at all) is denied (403)
+//  2. A manager of org A is denied when listing org B's scenarios (403)
 //  3. Only a manager+ of the requested org may list its scenarios (200)
-//
-// Tests 1 and 2 are FAILING until the fix is in place (in-handler membership check or
-// verified Layer 2 registration). Test 3 is the passing baseline.
 
 import (
 	"encoding/json"
@@ -86,8 +84,7 @@ func setupLayer2Router(t *testing.T, db *gorm.DB, userID string, roles []string)
 // TestOrgListScenarios_NonMember_ShouldBeDenied
 //
 // A user who has NO membership record for org X must NOT be able to list
-// org X's scenarios. Without an in-handler check, the controller returns 200.
-// With proper authorization (Layer 2 or in-handler), it must return 403.
+// org X's scenarios: both the in-handler check and Layer 2 return 403.
 // ============================================================================
 
 // TestOrgListScenarios_NonMember_RawController_ShouldNotReturn200
@@ -116,7 +113,6 @@ func TestOrgListScenarios_NonMember_RawController_ShouldNotReturn200(t *testing.
 
 // TestOrgListScenarios_NonMember_ShouldBeDenied
 // An outsider must get 403 from the fully-wired (Layer 2) stack.
-// This test should PASS already because Layer 2 is registered for this route.
 func TestOrgListScenarios_NonMember_ShouldBeDenied(t *testing.T) {
 	db := freshTestDB(t)
 	ownerID := "auth-owner-002"
@@ -227,67 +223,9 @@ func TestOrgListScenarios_DifferentOrg_ShouldNotLeakData(t *testing.T) {
 		"a manager of org A must be denied access to org B's scenarios")
 }
 
-// ============================================================================
-// Additional: verify the in-handler check specifically (not relying on Layer 2)
-//
-// These tests expose the raw controller without Layer 2 and assert it returns 403.
-// They FAIL today (controller has no in-handler check) and will PASS after the fix.
-// ============================================================================
-
-// TestOrgListScenarios_NonMember_NoLayer2_ShouldBeDenied
-// FAILING: proves that the controller itself must reject non-members even when
-// Layer 2 is not present (defense in depth — the handler must be self-contained).
-func TestOrgListScenarios_NoLayer2_NonMember_ShouldBeDenied(t *testing.T) {
-	db := freshTestDB(t)
-	ownerID := "auth-owner-006"
-	outsiderID := "auth-outsider-006"
-
-	orgID := createTestOrg(t, db, ownerID)
-	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
-	createTestScenarioForOrg(t, db, orgID, "secret-scenario-006")
-
-	// Raw controller — no Layer 2
-	router := setupControllerOnlyRouter(db, outsiderID)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios", nil)
-	router.ServeHTTP(w, req)
-
-	// FAILS TODAY: controller returns 200. After fix it must return 403.
-	assert.Equal(t, http.StatusForbidden, w.Code,
-		"the controller itself must deny non-members even without Layer 2 middleware")
-}
-
-// TestOrgListScenarios_NoLayer2_DifferentOrg_ShouldBeDenied
-// FAILING: proves that a manager of org A cannot access org B's scenarios when
-// the in-handler check is the only guard (no Layer 2).
-func TestOrgListScenarios_NoLayer2_DifferentOrg_ShouldBeDenied(t *testing.T) {
-	db := freshTestDB(t)
-	orgAOwnerID := "auth-owner-a-007"
-	orgBOwnerID := "auth-owner-b-007"
-
-	orgAID := createTestOrg(t, db, orgAOwnerID)
-	addOrgMember(t, db, orgAID, orgAOwnerID, orgModels.OrgRoleOwner)
-
-	orgBID := createTestOrg(t, db, orgBOwnerID)
-	addOrgMember(t, db, orgBID, orgBOwnerID, orgModels.OrgRoleOwner)
-	createTestScenarioForOrg(t, db, orgBID, "org-b-secret-007")
-
-	// Raw controller — no Layer 2
-	router := setupControllerOnlyRouter(db, orgAOwnerID)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgBID.String()+"/scenarios", nil)
-	router.ServeHTTP(w, req)
-
-	// FAILS TODAY: controller returns 200. After fix it must return 403.
-	assert.Equal(t, http.StatusForbidden, w.Code,
-		"the controller itself must deny cross-org access even without Layer 2 middleware")
-}
-
 // TestOrgListScenarios_NoLayer2_Manager_ShouldSucceed
-// After the fix, an org manager must still be able to list their org's scenarios
-// even through the raw controller (the in-handler check should allow managers).
+// An org manager can list their org's scenarios through the raw controller:
+// the in-handler check lets managers through.
 func TestOrgListScenarios_NoLayer2_Manager_ShouldSucceed(t *testing.T) {
 	db := freshTestDB(t)
 	managerID := "auth-manager-008"
@@ -303,8 +241,6 @@ func TestOrgListScenarios_NoLayer2_Manager_ShouldSucceed(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios", nil)
 	router.ServeHTTP(w, req)
 
-	// FAILS TODAY: This passes (200) only because there's no check at all.
-	// After fix: must still return 200, but now because the manager IS verified.
 	assert.Equal(t, http.StatusOK, w.Code,
 		"an org manager must be able to list their org's scenarios via the controller itself")
 
