@@ -1,9 +1,11 @@
 package courseController
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 
 	"soli/formations/src/courses/dto"
 
@@ -61,15 +63,24 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 const repoURLRefused = "Repository URL must be https://host/path or git@host:path"
 
 // git@<host>:<path>, host without '/', ':' or '@' and not starting with '-' (no ssh option injection).
-var sshRepoURL = regexp.MustCompile(`^git@[^-/:@\s][^/:@\s]*:\S+$`)
+var sshRepoURL = regexp.MustCompile(`^git@([^-/:@\s][^/:@\s]*):\S+$`)
 
 // isAllowedRepoURL accepts only the remote forms the HTTP import offers; the CLI calls the
 // loader directly and keeps its local and other forms.
-// shortcut: an https host that resolves to an internal address is not checked (DNS-level SSRF out of scope).
+// shortcut: literal internal addresses are refused, but a public name resolving to an internal address is not (DNS-level SSRF out of scope).
 func isAllowedRepoURL(raw string) bool {
-	if sshRepoURL.MatchString(raw) {
-		return true
+	if m := sshRepoURL.FindStringSubmatch(raw); m != nil {
+		return isPublicHost(m[1])
 	}
 	u, err := url.Parse(raw)
-	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
+	return err == nil && u.Scheme == "https" && u.User == nil && u.Port() == "" && isPublicHost(u.Hostname())
+}
+
+// isPublicHost refuses an empty host, localhost and loopback, private, link-local or unspecified IP literals.
+func isPublicHost(host string) bool {
+	if host == "" || strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified())
 }
