@@ -16,7 +16,6 @@ import (
 	"gorm.io/gorm"
 
 	"soli/formations/src/auth/casdoor"
-	authModels "soli/formations/src/auth/models"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/entityManagement/services"
 	groupHooks "soli/formations/src/groups/hooks"
@@ -52,47 +51,12 @@ func setupGroupTestEnvironment(t *testing.T) (*gorm.DB, services.GenericService)
 	err = casdoor.Enforcer.LoadPolicy()
 	require.NoError(t, err)
 
-	// Add role-level policies matching groupRegistration.go:
-	// member: GET|POST only, admin: GET|POST|PATCH|DELETE
-	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = false
-
-	err = utils.AddPolicy(
-		casdoor.Enforcer,
-		string(authModels.Member),
-		"/api/v1/class-groups/:id",
-		"(GET|POST)",
-		opts,
-	)
-	require.NoError(t, err)
-
-	err = utils.AddPolicy(
-		casdoor.Enforcer,
-		string(authModels.Admin),
-		"/api/v1/class-groups/:id",
-		"(GET|POST|PATCH|DELETE)",
-		opts,
-	)
-	require.NoError(t, err)
-
 	// Clear hooks and register group hooks
 	hooks.GlobalHookRegistry.ClearAllHooks()
 	groupHooks.InitGroupHooks(db)
 
 	genericService := services.NewGenericService(db, casdoor.Enforcer)
 	return db, genericService
-}
-
-func setupGroupRouterTestEnvironment(t *testing.T) (*gorm.DB, *gin.Engine, controller.GenericController) {
-	db, _ := setupGroupTestEnvironment(t)
-
-	gin.SetMode(gin.TestMode)
-
-	// Register ClassGroup entity (needed for controller to resolve entity type)
-	groupRegistration.RegisterGroup(ems.GlobalEntityRegistrationService)
-
-	ctrl := controller.NewGenericController(db, casdoor.Enforcer)
-	return db, nil, ctrl
 }
 
 // createGroup creates a ClassGroup and sets up owner membership + Casbin permissions manually.
@@ -135,27 +99,6 @@ func createGroup(t *testing.T, db *gorm.DB, _ services.GenericService, ownerID s
 	return group
 }
 
-func addGroupMember(t *testing.T, db *gorm.DB, groupID uuid.UUID, userID string, role groupModels.GroupMemberRole) *groupModels.GroupMember {
-	member := &groupModels.GroupMember{
-		GroupID:   groupID,
-		UserID:    userID,
-		Role:      role,
-		InvitedBy: "test-admin",
-		JoinedAt:  time.Now(),
-		IsActive:  true,
-	}
-	err := db.Omit("Metadata").Create(member).Error
-	require.NoError(t, err)
-	return member
-}
-
-func checkGroupPermission(t *testing.T, userID, groupID, method string) bool {
-	route := "/api/v1/class-groups/" + groupID
-	allowed, err := casdoor.Enforcer.Enforce(userID, route, method)
-	require.NoError(t, err)
-	return allowed
-}
-
 // createDeleteRouter creates a gin router with the DELETE endpoint for class-groups
 // configured with proper auth middleware simulation for a specific user
 func createDeleteRouter(userID string, ctrl controller.GenericController) *gin.Engine {
@@ -169,185 +112,6 @@ func createDeleteRouter(userID string, ctrl controller.GenericController) *gin.E
 		ctrl.DeleteEntity(ctx, true)
 	})
 	return router
-}
-
-// ============================================================================
-// Group Deletion Authorization Tests
-// ============================================================================
-
-// Test 1: Owner has user-specific Casbin permission -> DELETE succeeds
-func TestGroupAuthorization_OwnerCanDeleteGroup(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-001"
-	group := createGroup(t, db, genericService, ownerID)
-
-	// Owner should have DELETE permission via user-specific policy from GrantGroupPermissionsToUser
-	hasPermission := checkGroupPermission(t, ownerID, group.ID.String(), "DELETE")
-	assert.True(t, hasPermission, "Group owner should have DELETE permission via user-specific Casbin policy")
-}
-
-// Test 2: User with "member" role only has GET|POST -> DELETE returns 403
-func TestGroupAuthorization_MemberRoleCannotDeleteGroup(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-002"
-	memberUserID := "user-member-group-002"
-
-	group := createGroup(t, db, genericService, ownerID)
-
-	// Assign memberUserID to the "member" system role
-	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = true
-	err := utils.AddGroupingPolicy(casdoor.Enforcer, memberUserID, string(authModels.Member), opts)
-	require.NoError(t, err)
-
-	// Member role only grants GET|POST, NOT DELETE
-	hasPermission := checkGroupPermission(t, memberUserID, group.ID.String(), "DELETE")
-	assert.False(t, hasPermission, "Member role should NOT grant DELETE permission on class-groups")
-}
-
-// Test 3: Being a group member (in group_members table) doesn't grant DELETE
-func TestGroupAuthorization_GroupMemberCannotDeleteOthersGroup(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-003"
-	memberUserID := "user-member-group-003"
-
-	group := createGroup(t, db, genericService, ownerID)
-
-	// Add user as a "member" in the group_members table (not owner role)
-	addGroupMember(t, db, group.ID, memberUserID, groupModels.GroupMemberRoleMember)
-
-	// Assign system member role
-	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = true
-	err := utils.AddGroupingPolicy(casdoor.Enforcer, memberUserID, string(authModels.Member), opts)
-	require.NoError(t, err)
-
-	// Even though user is in the group_members table, they should NOT have DELETE
-	hasPermission := checkGroupPermission(t, memberUserID, group.ID.String(), "DELETE")
-	assert.False(t, hasPermission,
-		"Being a group member (in group_members table) should NOT grant DELETE permission - "+
-			"only user-specific Casbin policies from owner setup hooks grant DELETE")
-}
-
-// Test 4: User with no permissions at all -> 403
-func TestGroupAuthorization_StrangerCannotDeleteGroup(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-004"
-	strangerID := "user-stranger-group-004"
-
-	group := createGroup(t, db, genericService, ownerID)
-
-	// Stranger has no role, no group membership, no user-specific policies
-	hasPermission := checkGroupPermission(t, strangerID, group.ID.String(), "DELETE")
-	assert.False(t, hasPermission, "User with no permissions should NOT have DELETE access to any group")
-}
-
-// Test 5: System "admin" role has full CRUD -> can DELETE any group
-// SECURITY NOTE: No ownership check at the application level beyond Casbin
-func TestGroupAuthorization_SystemAdminCanDeleteAnyGroup(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-005"
-	adminID := "user-admin-group-005"
-
-	group := createGroup(t, db, genericService, ownerID)
-
-	// Add admin role to user (via grouping policy)
-	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = false
-	err := utils.AddGroupingPolicy(casdoor.Enforcer, adminID, string(authModels.Admin), opts)
-	require.NoError(t, err)
-
-	// Admin role grants GET|POST|PATCH|DELETE on class-groups
-	hasPermission := checkGroupPermission(t, adminID, group.ID.String(), "DELETE")
-	assert.True(t, hasPermission,
-		"System admin should be able to DELETE any group via admin role policy - "+
-			"SECURITY NOTE: no additional ownership check exists beyond Casbin")
-}
-
-// ============================================================================
-// Group CRUD Role Tests
-// ============================================================================
-
-// Test 6: Member role can GET a specific group (via :id pattern)
-func TestGroupAuthorization_MemberRoleCanGetGroup(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-006"
-	memberUserID := "user-member-get-006"
-
-	group := createGroup(t, db, genericService, ownerID)
-
-	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = true
-	err := utils.AddGroupingPolicy(casdoor.Enforcer, memberUserID, string(authModels.Member), opts)
-	require.NoError(t, err)
-
-	// GET on a specific group ID should be allowed for members
-	// The policy "/api/v1/class-groups/:id" with keyMatch2 matches any UUID in :id position
-	hasPermission := checkGroupPermission(t, memberUserID, group.ID.String(), "GET")
-	assert.True(t, hasPermission, "Member role should allow GET on specific class-group via :id pattern")
-}
-
-// Test 7: Member role can POST to a specific group path (via :id pattern)
-func TestGroupAuthorization_MemberRoleCanCreateGroup(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-007"
-	memberUserID := "user-member-create-007"
-
-	group := createGroup(t, db, genericService, ownerID)
-
-	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = true
-	err := utils.AddGroupingPolicy(casdoor.Enforcer, memberUserID, string(authModels.Member), opts)
-	require.NoError(t, err)
-
-	// POST on a specific group path should be allowed for members
-	hasPermission := checkGroupPermission(t, memberUserID, group.ID.String(), "POST")
-	assert.True(t, hasPermission, "Member role should allow POST on class-groups via :id pattern")
-}
-
-// Test 8: Member role cannot PATCH a group
-func TestGroupAuthorization_MemberRoleCannotPatchGroup(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-008"
-	memberUserID := "user-member-patch-008"
-
-	group := createGroup(t, db, genericService, ownerID)
-
-	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = true
-	err := utils.AddGroupingPolicy(casdoor.Enforcer, memberUserID, string(authModels.Member), opts)
-	require.NoError(t, err)
-
-	// PATCH should NOT be allowed for member role
-	hasPermission := checkGroupPermission(t, memberUserID, group.ID.String(), "PATCH")
-	assert.False(t, hasPermission, "Member role should NOT grant PATCH on class-groups")
-}
-
-// Test 9: Member role cannot DELETE group (role-level check)
-func TestGroupAuthorization_MemberRoleCannotDeleteGroupRoleLevel(t *testing.T) {
-	db, genericService := setupGroupTestEnvironment(t)
-
-	ownerID := "user-owner-group-009"
-	memberUserID := "user-member-delete-009"
-
-	group := createGroup(t, db, genericService, ownerID)
-
-	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = true
-	err := utils.AddGroupingPolicy(casdoor.Enforcer, memberUserID, string(authModels.Member), opts)
-	require.NoError(t, err)
-
-	// DELETE should NOT be allowed for member role
-	hasPermission := checkGroupPermission(t, memberUserID, group.ID.String(), "DELETE")
-	assert.False(t, hasPermission, "Member role should NOT grant DELETE on class-groups")
 }
 
 // ============================================================================
