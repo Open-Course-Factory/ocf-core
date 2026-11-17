@@ -20,10 +20,6 @@ func TestNewEmailService_ReturnsNonNil(t *testing.T) {
 }
 
 func TestNewEmailServiceWithDB_ReturnsNonNil(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewEmailServiceWithDB(db)
 	assert.NotNil(t, svc)
@@ -83,10 +79,6 @@ func TestEmailService_SendPasswordResetEmail_WithoutDB_Errors(t *testing.T) {
 }
 
 func TestEmailService_SendPasswordResetEmail_WithDB_UsesTemplate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	os.Unsetenv("SMTP_USERNAME")
 	os.Unsetenv("SMTP_PASSWORD")
 
@@ -112,10 +104,6 @@ func TestEmailService_SendTemplatedEmail_NoTemplateService(t *testing.T) {
 }
 
 func TestEmailService_SendTemplatedEmail_TemplateNotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 	svc := services.NewEmailServiceWithDB(db)
 
@@ -125,10 +113,6 @@ func TestEmailService_SendTemplatedEmail_TemplateNotFound(t *testing.T) {
 }
 
 func TestEmailService_SendTemplatedEmail_ValidTemplate_FailsAtSMTP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	os.Unsetenv("SMTP_USERNAME")
 	os.Unsetenv("SMTP_PASSWORD")
 

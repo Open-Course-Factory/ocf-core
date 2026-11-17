@@ -47,10 +47,6 @@ type modelWithNoJsonTag struct {
 // TestJsonEncodeSerializedFields_SliceField tests that a []string value
 // for a field with gorm:"serializer:json" is JSON-encoded to a string.
 func TestJsonEncodeSerializedFields_SliceField(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := simpleSerializedModel{}
 	updateMap := map[string]any{
 		"features": []string{"terminal", "ssh", "vnc"},
@@ -71,10 +67,6 @@ func TestJsonEncodeSerializedFields_SliceField(t *testing.T) {
 // TestJsonEncodeSerializedFields_NilValue tests that nil values in the map
 // are skipped and not JSON-encoded.
 func TestJsonEncodeSerializedFields_NilValue(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := simpleSerializedModel{}
 	updateMap := map[string]any{
 		"features": nil,
@@ -89,10 +81,6 @@ func TestJsonEncodeSerializedFields_NilValue(t *testing.T) {
 // TestJsonEncodeSerializedFields_NonSerializedField tests that fields WITHOUT
 // gorm:"serializer:json" are left as-is in the map, even if they are slices.
 func TestJsonEncodeSerializedFields_NonSerializedField(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := modelWithoutSerializer{}
 	originalTags := []string{"linux", "devops"}
 	updateMap := map[string]any{
@@ -110,10 +98,6 @@ func TestJsonEncodeSerializedFields_NonSerializedField(t *testing.T) {
 // TestJsonEncodeSerializedFields_MapValue tests that a map[string]any value
 // for a serializer:json field is JSON-encoded.
 func TestJsonEncodeSerializedFields_MapValue(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := modelWithMapField{}
 	updateMap := map[string]any{
 		"config": map[string]any{
@@ -137,10 +121,6 @@ func TestJsonEncodeSerializedFields_MapValue(t *testing.T) {
 // TestJsonEncodeSerializedFields_EmbeddedStruct tests that serializer:json fields
 // inside embedded (anonymous) structs are found and encoded.
 func TestJsonEncodeSerializedFields_EmbeddedStruct(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := modelWithEmbeddedStruct{}
 	updateMap := map[string]any{
 		"metadata": []string{"key1", "key2"},
@@ -165,10 +145,6 @@ func TestJsonEncodeSerializedFields_EmbeddedStruct(t *testing.T) {
 // TestJsonEncodeSerializedFields_PointerModel tests that passing a pointer
 // to the model struct works the same as passing a value.
 func TestJsonEncodeSerializedFields_PointerModel(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := &simpleSerializedModel{}
 	updateMap := map[string]any{
 		"features": []string{"terminal", "ssh"},
@@ -189,10 +165,6 @@ func TestJsonEncodeSerializedFields_PointerModel(t *testing.T) {
 // gorm:"column:custom_name;serializer:json" uses the custom column name
 // as the map key.
 func TestJsonEncodeSerializedFields_ColumnTag(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := modelWithColumnTag{}
 	updateMap := map[string]any{
 		"custom_name": []string{"a", "b", "c"},
@@ -213,10 +185,6 @@ func TestJsonEncodeSerializedFields_ColumnTag(t *testing.T) {
 // gorm:"serializer:json" but no json tag falls back to snake_case
 // of the Go field name.
 func TestJsonEncodeSerializedFields_NoJsonTag(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := modelWithNoJsonTag{}
 	updateMap := map[string]any{
 		"front_matter_content": []string{"intro", "summary"},
@@ -235,10 +203,6 @@ func TestJsonEncodeSerializedFields_NoJsonTag(t *testing.T) {
 
 // TestCamelToSnake tests the CamelToSnake helper for various inputs.
 func TestCamelToSnake(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	tests := []struct {
 		input    string
 		expected string
@@ -266,10 +230,6 @@ func TestCamelToSnake(t *testing.T) {
 // SubscriptionPlan model from the payment module, ensuring real-world fields
 // like features, allowed_backends, pricing_tiers, etc. are all encoded.
 func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := paymentModels.SubscriptionPlan{}
 	updateMap := map[string]any{
 		"name":             "Pro Plan",
@@ -310,10 +270,6 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 // TestJsonEncodeSerializedFields_NilModel tests that a nil model is handled
 // gracefully without panicking.
 func TestJsonEncodeSerializedFields_NilModel(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	updateMap := map[string]any{
 		"features": []string{"a", "b"},
 	}
@@ -331,10 +287,6 @@ func TestJsonEncodeSerializedFields_NilModel(t *testing.T) {
 // TestJsonEncodeSerializedFields_NilMap tests that a nil updateMap is handled
 // gracefully without panicking.
 func TestJsonEncodeSerializedFields_NilMap(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping in short mode")
-	}
-
 	model := simpleSerializedModel{}
 
 	// Should not panic

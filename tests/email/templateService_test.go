@@ -31,10 +31,6 @@ func seedTemplate(t *testing.T, tmpl *emailModels.EmailTemplate) {
 // --- GetTemplate ---
 
 func TestTemplateService_GetTemplate_Found(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	svc := createTemplateService(t)
 
 	seedTemplate(t, &emailModels.EmailTemplate{
@@ -53,10 +49,6 @@ func TestTemplateService_GetTemplate_Found(t *testing.T) {
 }
 
 func TestTemplateService_GetTemplate_NotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	svc := createTemplateService(t)
 
 	tmpl, err := svc.GetTemplate("nonexistent")
@@ -66,10 +58,6 @@ func TestTemplateService_GetTemplate_NotFound(t *testing.T) {
 }
 
 func TestTemplateService_GetTemplate_InactiveNotReturned(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	svc := createTemplateService(t)
 
 	id := uuid.New()
@@ -92,10 +80,6 @@ func TestTemplateService_GetTemplate_InactiveNotReturned(t *testing.T) {
 // --- RenderTemplate ---
 
 func TestTemplateService_RenderTemplate_VariableSubstitution(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	svc := createTemplateService(t)
 
 	seedTemplate(t, &emailModels.EmailTemplate{
@@ -119,10 +103,6 @@ func TestTemplateService_RenderTemplate_VariableSubstitution(t *testing.T) {
 }
 
 func TestTemplateService_RenderTemplate_MissingVars(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	svc := createTemplateService(t)
 
 	seedTemplate(t, &emailModels.EmailTemplate{
@@ -142,10 +122,6 @@ func TestTemplateService_RenderTemplate_MissingVars(t *testing.T) {
 }
 
 func TestTemplateService_RenderTemplate_TemplateNotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	svc := createTemplateService(t)
 
 	_, _, err := svc.RenderTemplate("nonexistent", map[string]any{})
@@ -154,10 +130,6 @@ func TestTemplateService_RenderTemplate_TemplateNotFound(t *testing.T) {
 }
 
 func TestTemplateService_RenderTemplate_BadBodySyntax(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	// Seed a template with bad HTML body syntax directly in DB
 	// (bypassing the EmailTemplate hook which validates)
 	db := freshTestDB(t)
@@ -181,10 +153,6 @@ func TestTemplateService_RenderTemplate_BadBodySyntax(t *testing.T) {
 // --- TestTemplate ---
 
 func TestTemplateService_TestTemplate_NotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	svc := createTemplateService(t)
 
 	err := svc.TestTemplate(uuid.New(), "test@example.com")
@@ -193,10 +161,6 @@ func TestTemplateService_TestTemplate_NotFound(t *testing.T) {
 }
 
 func TestTemplateService_TestTemplate_SMTPNotConfigured(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	svc := createTemplateService(t)
 
 	id := uuid.New()
@@ -218,10 +182,6 @@ func TestTemplateService_TestTemplate_SMTPNotConfigured(t *testing.T) {
 }
 
 func TestTemplateService_TestTemplate_InvalidVariablesJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	svc := createTemplateService(t)
 
 	id := uuid.New()

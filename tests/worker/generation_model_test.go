@@ -316,10 +316,6 @@ func TestGeneration_FullLifecycle_PendingToProcessingToFailed(t *testing.T) {
 // --- DB persistence (if DB is available) ---
 
 func TestGeneration_DBPersistence_CreateAndRead(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	gen := &models.Generation{
@@ -339,10 +335,6 @@ func TestGeneration_DBPersistence_CreateAndRead(t *testing.T) {
 }
 
 func TestGeneration_DBPersistence_UpdateStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping DB test in short mode")
-	}
-
 	db := freshTestDB(t)
 
 	gen := &models.Generation{
