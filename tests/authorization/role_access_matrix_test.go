@@ -45,6 +45,8 @@ import (
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	authModels "soli/formations/src/auth/models"
+	accessController "soli/formations/src/auth/routes/accessesRoutes"
+	userController "soli/formations/src/auth/routes/usersRoutes"
 	configModels "soli/formations/src/configuration/models"
 	sqldb "soli/formations/src/db"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -416,6 +418,31 @@ func learnerRows() []accessRow {
 	}
 }
 
+// platformRows: POST and DELETE /accesses write Casbin policies for any
+// subject, so a member who reaches them can grant themselves anything.
+func platformRows() []accessRow {
+	accesses := func(matrixWorld) string { return "/api/v1/accesses" }
+	// A route no role opens, so only the granted policy can let the learner in.
+	const granted = "/api/v1/granted-by-hand"
+	policy := func(matrixWorld) any {
+		return map[string]any{"GroupName": mxLearner, "Route": granted, "AuthorizedMethods": "(GET)"}
+	}
+	// Allowed means the policy is in force afterwards, not only a 2xx answer.
+	policyInForce := func(w matrixWorld, code int, body string) (bool, bool) {
+		allowed, decided := defaultVerdict(w, code, body)
+		if !allowed {
+			return false, decided
+		}
+		inForce, err := casdoor.Enforcer.Enforce(mxLearner, granted, http.MethodGet)
+		return inForce, err == nil
+	}
+	return []accessRow{
+		{action: "platform: grant a Casbin policy", request: send(http.MethodPost, accesses, policy),
+			allowed: allow(mxAdmin), verdict: policyInForce},
+		{action: "platform: revoke a Casbin policy", request: send(http.MethodDelete, accesses, policy), allowed: allow(mxAdmin)},
+	}
+}
+
 func TestRoleAccessMatrix(t *testing.T) {
 	stack := newMatrixStack(t)
 
@@ -428,6 +455,7 @@ func TestRoleAccessMatrix(t *testing.T) {
 		{"Scenarios", scenarioRows()},
 		{"Assignments", assignmentRows()},
 		{"Learners", learnerRows()},
+		{"Platform", platformRows()},
 	}
 	for _, g := range groups {
 		t.Run(g.name, func(t *testing.T) {
@@ -545,6 +573,7 @@ func newMatrixStack(t *testing.T) *matrixStack {
 	terminalController.RegisterTerminalPermissions(casdoor.Enforcer)
 	organizationRoutes.RegisterOrganizationPermissions(casdoor.Enforcer)
 	paymentController.RegisterPaymentPermissions(casdoor.Enforcer)
+	userController.RegisterUserPermissions(casdoor.Enforcer)
 	access.RegisterBuiltinEnforcers(access.NewGormEntityLoader(db), access.NewGormMembershipChecker(db))
 
 	groupHooks.InitGroupHooks(db)
@@ -568,6 +597,7 @@ func newMatrixStack(t *testing.T) *matrixStack {
 	swaggerGenerator.NewSwaggerRouteGenerator(db).RegisterDocumentedRoutes(api, authMiddleware.AuthManagement(), authMiddleware.IdentifyIfPresent())
 	scenarioController.ScenarioRoutes(api, db)
 	organizationRoutes.OrganizationRoutes(api, db)
+	accessController.AccessRoutes(api, db)
 	for _, route := range gateOnlyRoutes {
 		api.Handle(route.method, route.path, authMiddleware.AuthManagement(), func(c *gin.Context) { c.Status(http.StatusOK) })
 	}
