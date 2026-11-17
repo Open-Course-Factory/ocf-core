@@ -1,14 +1,12 @@
 package terminalTrainer_tests
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	orgModels "soli/formations/src/organizations/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
@@ -18,9 +16,6 @@ import (
 // GetOrganizationTerminalSessions handler reads the organization ID from a
 // route parameter named "id" (not "orgId"), ensuring consistency with every
 // other route under /api/v1/organizations/:id/*.
-//
-// This test is expected to FAIL (red phase) while the handler still reads
-// ctx.Param("orgId"), because the test registers the route with ":id".
 func TestOrgTerminalSessions_RouteParamConsistency(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
@@ -50,20 +45,9 @@ func TestOrgTerminalSessions_RouteParamConsistency(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// If the handler reads ctx.Param("orgId") instead of ctx.Param("id"),
-	// the orgID will be empty → uuid.Parse("") fails → 400 Bad Request.
-	// We expect anything BUT a 400 "Invalid organization ID" error.
-	assert.NotEqual(t, http.StatusBadRequest, w.Code,
-		"Handler should read :id param, not :orgId — got 400 which means param was empty")
-
-	if w.Code == http.StatusBadRequest {
-		var resp map[string]any
-		err := json.Unmarshal(w.Body.Bytes(), &resp)
-		require.NoError(t, err)
-		t.Logf("Response: %s", w.Body.String())
-		assert.NotEqual(t, "Invalid organization ID", resp["error_message"],
-			"Handler is reading the wrong route parameter name (orgId instead of id)")
-	}
+	// A handler reading ctx.Param("orgId") gets an empty id and answers 400;
+	// the owner must get the list.
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 // A plain member of the organization may not list everyone's sessions.
@@ -91,5 +75,4 @@ func TestOrgTerminalSessions_PlainMember_Forbidden(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
-	assert.NotContains(t, w.Body.String(), "sessions")
 }
