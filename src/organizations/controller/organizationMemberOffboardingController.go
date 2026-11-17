@@ -16,7 +16,7 @@ import (
 
 // OffboardMembers godoc
 // @Summary Offboard organization members
-// @Description Deactivates the memberships, blocks sign-in and terminates all running terminals of accounts that belong to this organization alone (only this organization's terminals otherwise), releases assigned seats and schedules erasure after the organization's retention period. Class rosters are untouched.
+// @Description Deactivates the memberships, terminates this organization's running terminals and releases assigned seats. For an account this organization created, it schedules erasure after the organization's retention period and, when the account belongs to this organization alone, blocks sign-in and terminates all its terminals. Class rosters are untouched.
 // @Tags organizations
 // @Accept json
 // @Produce json
@@ -55,7 +55,7 @@ func (oc *OrganizationController) OffboardMembers(ctx *gin.Context) {
 
 // ReinstateMember godoc
 // @Summary Reinstate an offboarded member
-// @Description Reactivates the membership and clears the erasure schedule. Sign-in is unblocked only when this offboarding blocked it; a block set otherwise stays.
+// @Description Reactivates the membership and clears the erasure schedule. Sign-in is unblocked when an organization's offboarding blocked it; a block set otherwise stays.
 // @Tags organizations
 // @Produce json
 // @Param id path string true "Organization ID"
@@ -87,7 +87,7 @@ func (oc *OrganizationController) ReinstateMember(ctx *gin.Context) {
 
 // EraseMember godoc
 // @Summary Erase an offboarded member now
-// @Description Runs the full account erasure ahead of the scheduled date. Refused while the user is still active in another organization, holds a personal paid subscription, or still owns organizations or groups.
+// @Description Runs the full account erasure ahead of the scheduled date. Refused for an account this organization did not create (unless the caller is a platform administrator), and while the user is still active in another organization, holds a personal paid subscription, or still owns organizations or groups.
 // @Tags organizations
 // @Produce json
 // @Param id path string true "Organization ID"

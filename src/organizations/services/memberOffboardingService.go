@@ -55,7 +55,8 @@ type MemberOffboardingService interface {
 	// outranks actorID refuses the whole call.
 	Offboard(orgID uuid.UUID, userIDs []string, actorID string) error
 	// Reinstate reverses Offboard: the row is active again with both stamps
-	// cleared, and the account block is lifted only if this offboarding set it.
+	// cleared, and the account block is lifted when any organization's
+	// offboarding set it (a block set otherwise stays).
 	// Refuses a member who is not offboarded or who outranks actorID.
 	Reinstate(orgID uuid.UUID, userID string, actorID string) error
 	// EraseNow erases an offboarded member ahead of its scheduled date. Only a
