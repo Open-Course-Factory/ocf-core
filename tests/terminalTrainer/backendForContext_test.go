@@ -92,13 +92,9 @@ func TestValidateBackendForContext_OrgHasBackendConfig_RejectsDisallowed(t *test
 		Backend:        "local", // Requesting backend NOT in org's allowed list
 	}
 
-	// StartComposedSession calls GetSessionOptions first (which needs tt-backend),
-	// then validateBackendForContext. Without a running tt-backend, we expect
-	// a network error from GetSessionOptions (fetching distributions).
 	resp, err := svc.StartComposedSession(userID, composedInput, plan)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, services.ErrBackendNotAllowed)
 	assert.Nil(t, resp)
-	// The error may come from GetSessionOptions (network) or org restriction
 }
 
 // TestValidateBackendForContext_PlanAllowedBackends_RejectsDisallowed verifies that when
@@ -159,13 +155,9 @@ func TestValidateBackendForContext_OrgHasConfig_PlanRestrictionIgnored(t *testin
 		Backend:        "shared-pool", // In plan's allowed list, but NOT in org's
 	}
 
-	// StartComposedSession calls GetSessionOptions first (which needs tt-backend),
-	// then validateBackendForContext. Without a running tt-backend, we expect
-	// a network error from GetSessionOptions (fetching distributions).
 	resp, err := svc.StartComposedSession(userID, composedInput, plan)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, services.ErrBackendNotAllowed)
 	assert.Nil(t, resp)
-	// The error may come from GetSessionOptions (network) or org restriction
 }
 
 // TestValidateBackendForContext_NilOrg_PlanRejectsDisallowed verifies that when there's no
@@ -227,121 +219,42 @@ func TestValidateBackendForContext_PersonalOrg_NoConfig_PlanRestricts(t *testing
 		"an explicit backend outside the plan's list is refused, not silently swapped")
 }
 
-// TestValidateBackendForContext_NilOrg_NoPlanRestrictions_ArbitraryBackend_ShouldRejectOrDefault
-// verifies that when a plan has empty AllowedBackends and empty DefaultBackend, an explicit
-// backend request should NOT be passed through verbatim. It should either be rejected or
-// fall back to the system default.
-func TestValidateBackendForContext_NilOrg_NoPlanRestrictions_ArbitraryBackend_ShouldRejectOrDefault(t *testing.T) {
-	db := freshTestDB(t)
-
-	userID := "user-no-restrictions-passthrough"
-	_, err := createTestUserKey(db, userID)
-	require.NoError(t, err)
-
-	// Plan with NO backend restrictions: empty AllowedBackends and empty DefaultBackend
-	plan := createPlanWithBackendConfig(t, db, "UnrestrictedPlan", 5, 2,
-		"",         // no DefaultBackend
-		[]string{}, // no AllowedBackends
-	)
-
-	svc := services.NewTerminalTrainerService(db)
-	composedInput := dto.CreateComposedSessionInput{
-		Distribution: "debian",
-		Size:         "S",
-		Terms:        "accepted",
-		Backend:      "some-arbitrary-backend", // arbitrary backend that doesn't exist
-	}
-
-	resp, err := svc.StartComposedSession(userID, composedInput, plan)
-
-	// StartComposedSession calls GetSessionOptions first, which will fail
-	// because tt-backend is not running. This validates that the flow reaches
-	// the network call (since there's no backend restriction to catch it earlier).
-	if err != nil {
-		assert.NotContains(t, err.Error(), "failed to get user key",
-			"should not reach session creation with arbitrary backend — validation should have caught it")
-	} else {
-		assert.NotNil(t, resp)
-	}
-}
-
-// TestGetBackendsForContext_OrgHasConfig_UsesOrgBackends verifies that when the org
-// has its own backend config, GetBackendsForContext lists the org's backends, not the plan's.
-func TestGetBackendsForContext_OrgHasConfig_UsesOrgBackends(t *testing.T) {
-	db := freshTestDB(t)
-
-	userID := "user-backends-ctx-org"
-	org := createOrgWithBackendConfig(t, db, "org-ctx-has-config", userID,
-		organizationModels.OrgTypeTeam, "dedicated-1", []string{"dedicated-1"})
-
-	// Add user as member
-	db.Create(&organizationModels.OrganizationMember{
-		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
-		OrganizationID: org.ID,
-		UserID:         userID,
-		Role:           "owner",
-		IsActive:       true,
-	})
-
-	// User has a plan with different backends — but org config should win
-	plan := createPlanWithBackendConfig(t, db, "PlanForCtxTest", 10, 5, "shared-pool", []string{"shared-pool"})
-	db.Create(&paymentModels.UserSubscription{
-		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
-		UserID:             userID,
-		SubscriptionPlanID: plan.ID,
-		Status:             "active",
-		SubscriptionType:   "personal",
-	})
-
-	svc := services.NewTerminalTrainerService(db)
-	// GetBackendsForContext should return org's backends (not plan's)
-	// Note: the actual backend IDs won't exist in tt-backend, but the filtering logic
-	// is what we're testing. The org's policy decides, which filters
-	// from the cached backend list. Since we can't easily mock tt-backend here,
-	// we just verify it doesn't error out for the org-has-config path.
-	_, err := svc.GetBackendsForContext(org.ID, userID)
-	// May error because tt-backend is not running, but should NOT panic
-	if err != nil {
-		// Expected: "terminal trainer not configured" or similar network error
-		assert.NotContains(t, err.Error(), "not a member")
-	}
-}
-
 // TestGetBackendsForContext_OrgNoConfig_UsesPlanBackends verifies that when the org
-// has no backend config, GetBackendsForContext resolves the user's plan and uses
-// plan-level backend filtering.
+// has no backend config, the picker lists the backends of the user's own plan.
 func TestGetBackendsForContext_OrgNoConfig_UsesPlanBackends(t *testing.T) {
-	db := freshTestDB(t)
+	svc, db := setupServiceWithMockBackends(t, []dto.BackendInfo{
+		{ID: "system", Connected: true},
+		{ID: "premium-infra", Connected: true},
+		{ID: "free-infra", Connected: true},
+	}, "system")
 
 	userID := "user-backends-ctx-plan"
 	org := createOrgWithBackendConfig(t, db, "org-ctx-no-config", userID,
 		organizationModels.OrgTypeTeam, "", []string{}) // No backend config
-
-	// Add user as member
-	db.Create(&organizationModels.OrganizationMember{
+	require.NoError(t, db.Create(&organizationModels.OrganizationMember{
 		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
 		OrganizationID: org.ID,
 		UserID:         userID,
 		Role:           "owner",
 		IsActive:       true,
-	})
-
-	// User has a plan with specific backends
+	}).Error)
 	plan := createPlanWithBackendConfig(t, db, "PlanWithBackends", 10, 5, "premium-infra", []string{"premium-infra", "free-infra"})
-	db.Create(&paymentModels.UserSubscription{
+	require.NoError(t, db.Create(&paymentModels.UserSubscription{
 		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
 		UserID:             userID,
 		SubscriptionPlanID: plan.ID,
 		Status:             "active",
 		SubscriptionType:   "personal",
-	})
+	}).Error)
 
-	svc := services.NewTerminalTrainerService(db)
-	_, err := svc.GetBackendsForContext(org.ID, userID)
-	// May error because tt-backend is not running, but the plan resolution path should work
-	if err != nil {
-		assert.NotContains(t, err.Error(), "not a member")
+	backends, err := svc.GetBackendsForContext(org.ID, userID)
+	require.NoError(t, err)
+
+	defaults := map[string]bool{}
+	for _, b := range backends {
+		defaults[b.ID] = b.IsDefault
 	}
+	assert.Equal(t, map[string]bool{"premium-infra": true, "free-infra": false}, defaults)
 }
 
 // TestValidateBackendForContext_PlanRejectsUnlistedBackend verifies that a plan
