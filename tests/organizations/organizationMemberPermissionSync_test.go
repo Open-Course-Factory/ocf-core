@@ -41,6 +41,7 @@ import (
 	"soli/formations/src/entityManagement/hooks"
 	organizationHooks "soli/formations/src/organizations/hooks"
 	"soli/formations/src/organizations/models"
+	"soli/formations/src/organizations/services"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -62,12 +63,13 @@ func installMockEnforcer(t *testing.T) *mocks.MockEnforcer {
 // registerOrgHooks populates the global hook registry with the real organization hooks
 // (exactly as production does) for the duration of the test, then clears it again so no
 // hook leaks into sibling tests. It also clears any globalDisable a prior test may have
-// left set, so ExecuteHooks actually runs the hooks.
-func registerOrgHooks(t *testing.T, db *gorm.DB) {
+// left set, so ExecuteHooks actually runs the hooks. accounts is the identity the
+// member create path lifts offboarding blocks through (nil when the test sets none).
+func registerOrgHooks(t *testing.T, db *gorm.DB, accounts services.AccountForbidder) {
 	t.Helper()
 	hooks.GlobalHookRegistry.ClearAllHooks()
 	hooks.GlobalHookRegistry.DisableAllHooks(false)
-	organizationHooks.InitOrganizationHooks(db)
+	organizationHooks.InitOrganizationHooks(db, accounts)
 	t.Cleanup(func() { hooks.GlobalHookRegistry.ClearAllHooks() })
 }
 
@@ -108,7 +110,7 @@ func TestOrgMemberCreate_MemberRole_GrantsBaseGrouping(t *testing.T) {
 	orgID := seedOrgWithMembers(t, db, ownerID, map[string]models.OrganizationMemberRole{
 		ownerID: models.OrgRoleOwner,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	ctx := &hooks.HookContext{
 		EntityName: "OrganizationMember",
@@ -140,7 +142,7 @@ func TestOrgMemberCreate_ManagerRole_GrantsManagerGrouping(t *testing.T) {
 	orgID := seedOrgWithMembers(t, db, ownerID, map[string]models.OrganizationMemberRole{
 		ownerID: models.OrgRoleOwner,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	ctx := &hooks.HookContext{
 		EntityName: "OrganizationMember",
@@ -175,7 +177,7 @@ func TestOrgMemberUpdate_PromoteToManager_GrantsManagerGrouping(t *testing.T) {
 		ownerID:  models.OrgRoleOwner,
 		targetID: models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	ctx := &hooks.HookContext{
 		EntityName: "OrganizationMember",
@@ -205,7 +207,7 @@ func TestOrgMemberUpdate_DemoteToMember_RevokesManagerGrouping(t *testing.T) {
 		ownerID:  models.OrgRoleOwner,
 		targetID: models.OrgRoleManager,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	ctx := &hooks.HookContext{
 		EntityName: "OrganizationMember",
@@ -236,7 +238,7 @@ func TestOrgMemberUpdate_DemoteToMember_KeepsBaseGrouping(t *testing.T) {
 		ownerID:  models.OrgRoleOwner,
 		targetID: models.OrgRoleManager,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	ctx := &hooks.HookContext{
 		EntityName: "OrganizationMember",
@@ -266,7 +268,7 @@ func TestOrgMemberDelete_Manager_RevokesBothGroupings(t *testing.T) {
 		ownerID:  models.OrgRoleOwner,
 		targetID: models.OrgRoleManager,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	ctx := &hooks.HookContext{
 		EntityName: "OrganizationMember",
@@ -300,7 +302,7 @@ func TestOrgMemberDelete_Member_RevokesBaseGrouping(t *testing.T) {
 		ownerID:  models.OrgRoleOwner,
 		targetID: models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	ctx := &hooks.HookContext{
 		EntityName: "OrganizationMember",

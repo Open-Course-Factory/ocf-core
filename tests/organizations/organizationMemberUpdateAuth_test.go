@@ -90,7 +90,7 @@ func TestOrgMemberUpdateAuth_EmptyActor_Denied(t *testing.T) {
 		ownerID:  models.OrgRoleOwner,
 		targetID: models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	err := runMemberUpdateAuth(t, db, orgID, targetID, models.OrgRoleMember, "", nil, models.OrgRoleManager)
 	require.Error(t, err,
@@ -109,7 +109,7 @@ func TestOrgMemberUpdateAuth_PlainMemberActor_Denied(t *testing.T) {
 		actorID:  models.OrgRoleMember,
 		targetID: models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	err := runMemberUpdateAuth(t, db, orgID, targetID, models.OrgRoleMember, actorID, platformMember, models.OrgRoleManager)
 	require.Error(t, err,
@@ -129,7 +129,7 @@ func TestOrgMemberUpdateAuth_ManagerActor_Allowed(t *testing.T) {
 		actorID:  models.OrgRoleManager,
 		targetID: models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	err := runMemberUpdateAuth(t, db, orgID, targetID, models.OrgRoleMember, actorID, platformMember, models.OrgRoleManager)
 	require.NoError(t, err,
@@ -149,7 +149,7 @@ func TestOrgMemberUpdateAuth_ManagerPromotesToOwner_Denied(t *testing.T) {
 		actorID:  models.OrgRoleManager,
 		targetID: models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	err := runMemberUpdateAuth(t, db, orgID, targetID, models.OrgRoleMember, actorID, platformMember, models.OrgRoleOwner)
 	require.Error(t, err,
@@ -169,7 +169,7 @@ func TestOrgMemberUpdateAuth_AdminPromotesToOwner_Allowed(t *testing.T) {
 		actorID:  models.OrgRoleManager,
 		targetID: models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	err := runMemberUpdateAuth(t, db, orgID, targetID, models.OrgRoleMember, actorID, []string{string(authModels.Admin)}, models.OrgRoleOwner)
 	require.NoError(t, err,
@@ -189,7 +189,7 @@ func TestOrgMemberUpdateAuth_ChangingOwnerRole_Denied(t *testing.T) {
 		ownerID: models.OrgRoleOwner,
 		actorID: models.OrgRoleManager,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	err := runMemberUpdateAuth(t, db, orgID, ownerID, models.OrgRoleOwner, actorID, platformMember, models.OrgRoleMember)
 	require.Error(t, err,
@@ -239,7 +239,7 @@ func TestOrgMemberUpdateAuth_PlainMemberActor_RoleAbsentPatch_Denied(t *testing.
 		actorID:  models.OrgRoleMember,
 		targetID: models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	err := runMemberStatusPatchAuth(t, orgID, targetID, models.OrgRoleMember, actorID, platformMember)
 	require.Error(t, err,
@@ -259,7 +259,7 @@ func TestOrgMemberUpdateAuth_ManagerActor_RoleAbsentPatch_Allowed(t *testing.T) 
 		actorID:  models.OrgRoleManager,
 		targetID: models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	err := runMemberStatusPatchAuth(t, orgID, targetID, models.OrgRoleMember, actorID, platformMember)
 	require.NoError(t, err,

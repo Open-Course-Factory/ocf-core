@@ -40,6 +40,10 @@ type OrganizationMember struct {
 	// AccountForbiddenByOffboarding records that this offboarding set the
 	// account block, so reinstating lifts only a block it owns. Never exposed.
 	AccountForbiddenByOffboarding bool `gorm:"not null;default:false" json:"-"`
+	// AccountCreatedByOrganization records that this organization created the
+	// account (through the import): only then may it reset the password, block
+	// or erase the account. Never exposed, never settable by a client.
+	AccountCreatedByOrganization bool `gorm:"not null;default:false" json:"-"`
 
 	// Optional metadata (custom fields per member)
 	Metadata map[string]any `gorm:"type:jsonb;serializer:json" json:"metadata,omitempty"`

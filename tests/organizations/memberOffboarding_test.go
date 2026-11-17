@@ -337,8 +337,10 @@ func TestOffboardMembers_SetsLeftAtInactiveAndScheduledErasureFromOrgRetention(t
 
 	orgWithRetention := seedTeamOrg(t, db, "owner-1", new(30))
 	seedMember(t, db, orgWithRetention, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgWithRetention, "student-a")
 	orgWithDefault := seedTeamOrg(t, db, "owner-2", nil)
 	seedMember(t, db, orgWithDefault, "student-b", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgWithDefault, "student-b")
 
 	before := time.Now()
 	require.NoError(t, svc.Offboard(orgWithRetention, []string{"student-a"}, "owner-1"))
@@ -364,6 +366,7 @@ func TestOffboardMembers_ForbidsTheCasdoorAccount_WithColumnList(t *testing.T) {
 	db := newOffboardingDB(t)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 
 	// The real client, with the SDK seams swapped: the assertion is on the exact
 	// column list the production code sends, not on a fake's own bookkeeping.
@@ -405,6 +408,7 @@ func TestOffboardMembers_ForbidsTheCasdoorAccount_WithColumnList(t *testing.T) {
 	// affected=false with a nil error means Casdoor changed nothing: the offboarding
 	// must fail and the membership must be rolled back to active.
 	seedMember(t, db, orgID, "student-b", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-b")
 	affected = false
 	err = svc.Offboard(orgID, []string{"student-b"}, "owner-1")
 	require.Error(t, err, "affected=false must be treated as a failure")
@@ -442,6 +446,7 @@ func TestOffboardedMember_TerminalsAreTerminated_AndLicenceReleased(t *testing.T
 	svc := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 	sessionID := seedRunningTerminal(t, db, "student-a")
 	licenceID := seedAssignedLicence(t, db, "owner-1", "student-a")
 
@@ -489,6 +494,7 @@ func TestReinstate_ClearsBothFieldsAndUnforbidsTheAccount(t *testing.T) {
 	svc := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
 	require.True(t, identity.forbidden["student-a"])
 
@@ -528,6 +534,7 @@ func TestCsvImport_ReenrolsAnOffboardedStudentByEmail(t *testing.T) {
 	offboarding := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 	require.NoError(t, offboarding.Offboard(orgID, []string{"student-a"}, "owner-1"))
 
 	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
@@ -556,7 +563,7 @@ func TestManualAddMember_ReenrolsAnOffboardedStudent(t *testing.T) {
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	// The manual add is the generic POST /organization-members create, whose
 	// BeforeCreate hook cannot turn an insert into an update. It must refuse
@@ -619,7 +626,7 @@ func TestRetentionDays_OnlyOwnerMayChangeIt(t *testing.T) {
 		"owner-1":   models.OrgRoleOwner,
 		"manager-1": models.OrgRoleManager,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 
 	var org models.Organization
 	require.NoError(t, db.First(&org, "id = ?", orgID).Error)
@@ -673,6 +680,7 @@ func TestMemberErasureJob_ErasesOnlyDueMembers(t *testing.T) {
 	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
 	for _, u := range []string{"due", "not-due", "elsewhere"} {
 		seedMember(t, db, orgID, u, models.OrgRoleMember)
+		markCreatedByOrganization(t, db, orgID, u)
 		seedRunningTerminal(t, db, u)
 	}
 	seedMember(t, db, otherOrgID, "elsewhere", models.OrgRoleMember)
@@ -711,6 +719,7 @@ func TestEraseDepartedMember_WaitsWhenTheArchiveCannotBeSaved(t *testing.T) {
 		scenarioServices.NewParticipationArchiver(db, unreachableCommandHistory{}))
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 	seedClassWithMember(t, db, orgID, "owner-1", "student-a")
 	seedRunningTerminal(t, db, "student-a")
 
@@ -728,6 +737,7 @@ func TestEraseNow_RunsTheSharedCascade(t *testing.T) {
 	svc := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 	classID := seedClassWithMember(t, db, orgID, "owner-1", "student-a")
 	seedRunningTerminal(t, db, "student-a")
 	require.NoError(t, db.Create(&authModels.UserSettings{
@@ -770,6 +780,7 @@ func TestEraseNow_RefusedWhileActiveElsewhere_AndListedAsBlocked(t *testing.T) {
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 	seedMember(t, db, otherOrgID, "student-a", models.OrgRoleMember)
 	require.NoError(t, svc.Offboard(orgID, []string{"student-a"}, "owner-1"))
 

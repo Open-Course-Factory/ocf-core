@@ -47,10 +47,12 @@ type LicenceRevoker interface {
 // reinstate, erase — and enrolment, because re-enrolling an offboarded member
 // IS reinstating, so both must share one helper.
 type MemberOffboardingService interface {
-	// Offboard deactivates the memberships, stamps left_at / scheduled_erasure_at
-	// from the organization's retention, forbids the accounts that belong to this
-	// organization alone, terminates their running terminals and releases their
-	// assigned seats. A target who outranks actorID refuses the whole call.
+	// Offboard deactivates the memberships, stamps left_at, terminates their
+	// running terminals and releases their assigned seats. For an account this
+	// organization created it also schedules the erasure from the organization's
+	// retention, and forbids the account when it belongs to this organization
+	// alone; a platform administrator forbids any such account. A target who
+	// outranks actorID refuses the whole call.
 	Offboard(orgID uuid.UUID, userIDs []string, actorID string) error
 	// Reinstate reverses Offboard: the row is active again with both stamps
 	// cleared, and the account block is lifted only if this offboarding set it.
@@ -59,8 +61,10 @@ type MemberOffboardingService interface {
 	// EraseNow erases an offboarded member ahead of its scheduled date.
 	EraseNow(orgID uuid.UUID, userID string) error
 	// Enrol makes userID an active member: it reinstates an existing inactive
-	// row, leaves an active one alone, and creates the row otherwise.
-	Enrol(orgID uuid.UUID, userID string) error
+	// row, leaves an active one alone, and creates the row otherwise, recording
+	// accountCreated (the organization created the account). An existing row
+	// keeps its provenance.
+	Enrol(orgID uuid.UUID, userID string, accountCreated bool) error
 }
 
 type memberOffboardingService struct {
@@ -84,11 +88,12 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 		return fmt.Errorf("organization not found: %w", err)
 	}
 
-	checkRank, _, err := newRankOnlyCheck(s.db, &org, actorID)
+	checkRank, actorIsAdmin, err := newRankOnlyCheck(s.db, &org, actorID)
 	if err != nil {
 		return err
 	}
 	forbid := make(map[string]bool, len(userIDs))
+	schedule := make(map[string]bool, len(userIDs))
 	setsBlock := make(map[string]bool, len(userIDs))
 	skip := make(map[string]bool, len(userIDs))
 	for _, userID := range userIDs {
@@ -104,8 +109,11 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 			skip[userID] = true
 			continue
 		}
+		// The nightly erasure job erases only accounts the organization created.
+		schedule[userID] = target.AccountCreatedByOrganization
 		// An unknown answer does not forbid: blocking a whole account is the harmful direction.
-		forbid[userID] = belongsToOrganizationAlone(s.alone, org.ID, userID)
+		forbid[userID] = (target.AccountCreatedByOrganization || actorIsAdmin) &&
+			belongsToOrganizationAlone(s.alone, org.ID, userID)
 		if forbid[userID] {
 			// A block someone else set is left alone, so reinstating never lifts it.
 			blocked, err := authModels.IsAccountBlocked(s.db, userID)
@@ -117,12 +125,16 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 	}
 
 	now := time.Now()
-	erasureAt := now.AddDate(0, 0, org.EffectiveRetentionDays())
+	retention := now.AddDate(0, 0, org.EffectiveRetentionDays())
 	var forbidden []string
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		for _, userID := range userIDs {
 			if skip[userID] {
 				continue
+			}
+			var erasureAt *time.Time
+			if schedule[userID] {
+				erasureAt = &retention
 			}
 			if err := s.offboardOne(tx, &org, userID, now, erasureAt, forbid[userID], setsBlock[userID]); err != nil {
 				return err
@@ -155,8 +167,8 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 // offboardOne stamps a single membership and terminates the member's running
 // terminals on the caller's transaction: all of them when the account is
 // forbidden, only this organization's otherwise. setsBlock stamps that this
-// offboarding is the one blocking the account.
-func (s *memberOffboardingService) offboardOne(tx *gorm.DB, org *organizationModels.Organization, userID string, now, erasureAt time.Time, forbidden, setsBlock bool) error {
+// offboarding is the one blocking the account; a nil erasureAt schedules no erasure.
+func (s *memberOffboardingService) offboardOne(tx *gorm.DB, org *organizationModels.Organization, userID string, now time.Time, erasureAt *time.Time, forbidden, setsBlock bool) error {
 	member, err := findMembership(tx, org.ID, userID)
 	if err != nil {
 		return err
@@ -250,17 +262,26 @@ func (s *memberOffboardingService) reactivate(tx *gorm.DB, member *organizationM
 	}).Error; err != nil {
 		return fmt.Errorf("failed to reinstate member %s: %w", member.UserID, err)
 	}
+	return LiftOffboardingBlock(tx, s.accounts, member.UserID)
+}
+
+// LiftOffboardingBlock is called whenever userID becomes an active member of an
+// organization: an offboarding block stood because the account belonged to the
+// offboarding organization alone, which it no longer does. Every row's block
+// stamp is cleared (the rows stay offboarded) and the account is unblocked when
+// one was set. A block set otherwise (no stamp) stays.
+func LiftOffboardingBlock(tx *gorm.DB, accounts AccountForbidder, userID string) error {
 	cleared := tx.Model(&organizationModels.OrganizationMember{}).
-		Where("user_id = ? AND account_forbidden_by_offboarding = ?", member.UserID, true).
+		Where("user_id = ? AND account_forbidden_by_offboarding = ?", userID, true).
 		Update("account_forbidden_by_offboarding", false)
 	if cleared.Error != nil {
-		return fmt.Errorf("failed to clear the offboarding block of %s: %w", member.UserID, cleared.Error)
+		return fmt.Errorf("failed to clear the offboarding block of %s: %w", userID, cleared.Error)
 	}
 	if cleared.RowsAffected == 0 {
 		return nil
 	}
-	if err := s.accounts.SetForbidden(member.UserID, false); err != nil {
-		return fmt.Errorf("failed to unforbid account %s: %w", member.UserID, err)
+	if err := accounts.SetForbidden(userID, false); err != nil {
+		return fmt.Errorf("failed to unforbid account %s: %w", userID, err)
 	}
 	return nil
 }
@@ -276,12 +297,12 @@ func (s *memberOffboardingService) EraseNow(orgID uuid.UUID, userID string) erro
 	return s.eraser.EraseDepartedMember(orgID, userID)
 }
 
-func (s *memberOffboardingService) Enrol(orgID uuid.UUID, userID string) error {
+func (s *memberOffboardingService) Enrol(orgID uuid.UUID, userID string, accountCreated bool) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		member, err := findMembership(tx, orgID, userID)
 		switch {
 		case errors.Is(err, ErrMemberNotFound):
-			return createMembership(tx, orgID, userID)
+			return createMembership(tx, orgID, userID, accountCreated)
 		case err != nil:
 			return err
 		case member.IsActive:
@@ -306,13 +327,15 @@ func findMembership(tx *gorm.DB, orgID uuid.UUID, userID string) (*organizationM
 
 // createMembership inserts a plain member row and grants the organization
 // policy, as the CSV import always did.
-func createMembership(tx *gorm.DB, orgID uuid.UUID, userID string) error {
+func createMembership(tx *gorm.DB, orgID uuid.UUID, userID string, accountCreated bool) error {
 	member := organizationModels.OrganizationMember{
 		OrganizationID: orgID,
 		UserID:         userID,
 		Role:           organizationModels.OrgRoleMember,
 		JoinedAt:       time.Now(),
 		IsActive:       true,
+
+		AccountCreatedByOrganization: accountCreated,
 	}
 	if err := tx.Create(&member).Error; err != nil {
 		return fmt.Errorf("failed to add user to organization: %w", err)

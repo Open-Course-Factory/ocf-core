@@ -163,7 +163,7 @@ func main() {
 	courseHooks.InitCourseHooks(sqldb.DB)
 	emailHooks.InitEmailHooks(sqldb.DB)
 	groupHooks.InitGroupHooks(sqldb.DB)
-	organizationHooks.InitOrganizationHooks(sqldb.DB) // Phase 1: Organization hooks
+	organizationHooks.InitOrganizationHooks(sqldb.DB, authServices.NewCasdoorUserClient()) // Phase 1: Organization hooks
 	terminalHooks.InitTerminalHooks(sqldb.DB)         // Terminal permission hooks
 	scenarioHooks.InitScenarioHooks(sqldb.DB)         // Scenario assignment authorization hooks
 

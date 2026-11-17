@@ -628,6 +628,8 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 				message = fmt.Sprintf("user %s outranks the caller; skipped", userID)
 			case errors.Is(err, errBelongsElsewhere):
 				message = fmt.Sprintf("user %s also belongs elsewhere; skipped", userID)
+			case errors.Is(err, errNotCreatedHere):
+				message = fmt.Sprintf("user %s was not created by this organization; skipped", userID)
 			}
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 1,

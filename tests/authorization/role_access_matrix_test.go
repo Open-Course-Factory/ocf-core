@@ -548,7 +548,7 @@ func newMatrixStack(t *testing.T) *matrixStack {
 	access.RegisterBuiltinEnforcers(access.NewGormEntityLoader(db), access.NewGormMembershipChecker(db))
 
 	groupHooks.InitGroupHooks(db)
-	orgHooks.InitOrganizationHooks(db)
+	orgHooks.InitOrganizationHooks(db, nil)
 	scenarioHooks.InitScenarioHooks(db)
 	ems.RegisterOwnershipHooks(db)
 

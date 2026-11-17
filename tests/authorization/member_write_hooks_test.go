@@ -41,7 +41,7 @@ func bootProductionEntitiesAndHooks(t *testing.T) {
 	payment.InitPaymentEntities(db)
 	courseHooks.InitCourseHooks(db)
 	groupHooks.InitGroupHooks(db)
-	organizationHooks.InitOrganizationHooks(db)
+	organizationHooks.InitOrganizationHooks(db, nil)
 	terminalHooks.InitTerminalHooks(db)
 	scenarioHooks.InitScenarioHooks(db)
 	ems.RegisterOwnershipHooks(db)

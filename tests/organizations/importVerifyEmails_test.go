@@ -63,6 +63,7 @@ func TestCsvImport_VerifyEmails_UpdatedAccountIsVerifiedAndKeepsItsProperties(t 
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 
 	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",
@@ -88,6 +89,7 @@ func TestCsvImport_VerifyEmailsOff_LeavesVerificationUntouched(t *testing.T) {
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "owner-1", models.OrgRoleOwner)
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 
 	importer := services.NewImportService(db, identity, offboarding, newDeletionService(db, identity))
 	resp, err := importer.ImportOrganizationData(orgID, "owner-1",

@@ -386,7 +386,7 @@ var errNotAMember = errors.New("not a member of this organization; skipped")
 
 // isRankSkip reports the refusals of the importer's rank check: a skipped row, not a failure.
 func isRankSkip(err error) bool {
-	return errors.Is(err, errNotAMember) || errors.Is(err, errOutranksActor) || errors.Is(err, errBelongsElsewhere)
+	return errors.Is(err, errNotAMember) || errors.Is(err, errOutranksActor) || errors.Is(err, errBelongsElsewhere) || errors.Is(err, errNotCreatedHere)
 }
 
 // processUser creates or updates a user in Casdoor and reports whether it
@@ -424,7 +424,7 @@ func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, ch
 		}
 
 		// Re-enrolling by email: an offboarded member is reinstated here.
-		if err := s.members.Enrol(orgID, existingUser.Id); err != nil {
+		if err := s.members.Enrol(orgID, existingUser.Id, false); err != nil {
 			return "", false, err
 		}
 
@@ -484,7 +484,7 @@ func (s *importService) processUser(user *dto.UserImportRow, orgID uuid.UUID, ch
 	// Add default roles
 	s.addRolesToUser(createdUser.Id)
 
-	if err := s.members.Enrol(orgID, createdUser.Id); err != nil {
+	if err := s.members.Enrol(orgID, createdUser.Id, true); err != nil {
 		return "", false, err
 	}
 

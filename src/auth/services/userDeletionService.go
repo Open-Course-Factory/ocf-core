@@ -29,6 +29,10 @@ var (
 	// subscription of their own, so the departing organization does not own
 	// the whole account.
 	ErrStillActiveElsewhere = errors.New("user is still active in another organization or holds a personal paid subscription")
+	// ErrNotCreatedByOrganization blocks an organization-triggered erasure of
+	// an account the organization did not create; only a platform
+	// administrator erases it, through DELETE /users/:id.
+	ErrNotCreatedByOrganization = errors.New("this account was not created by this organization; it cannot be erased by it")
 )
 
 // UserDeletionService handles RGPD right-to-erasure account deletion.
@@ -138,6 +142,9 @@ func (s *userDeletionService) revokeTerminalKey(userID string) {
 // EraseDepartedMember erases a member that orgID offboarded, refusing while the
 // user is still active somewhere the organization does not control.
 func (s *userDeletionService) EraseDepartedMember(orgID uuid.UUID, userID string) error {
+	if err := s.assertCreatedByOrganization(orgID, userID); err != nil {
+		return err
+	}
 	if err := s.assertNotActiveElsewhere(orgID, userID); err != nil {
 		return err
 	}
@@ -151,6 +158,9 @@ func (s *userDeletionService) EraseDepartedMember(orgID uuid.UUID, userID string
 
 // CheckDepartedMemberErasable is the read-only twin of EraseDepartedMember.
 func (s *userDeletionService) CheckDepartedMemberErasable(orgID uuid.UUID, userID string) error {
+	if err := s.assertCreatedByOrganization(orgID, userID); err != nil {
+		return err
+	}
 	if err := s.assertNotActiveElsewhere(orgID, userID); err != nil {
 		return err
 	}
@@ -162,6 +172,21 @@ func (s *userDeletionService) CheckBelongsToOrganizationAlone(orgID uuid.UUID, u
 		return err
 	}
 	return s.assertNoOwnedOrgsOrGroups(userID, orgID)
+}
+
+// assertCreatedByOrganization refuses unless orgID's membership of userID
+// records that orgID created the account.
+func (s *userDeletionService) assertCreatedByOrganization(orgID uuid.UUID, userID string) error {
+	var created int64
+	if err := s.db.Model(&organizationModels.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ? AND account_created_by_organization = ?", orgID, userID, true).
+		Count(&created).Error; err != nil {
+		return fmt.Errorf("%w: failed to check account provenance: %v", ErrDeletionFailed, err)
+	}
+	if created == 0 {
+		return ErrNotCreatedByOrganization
+	}
+	return nil
 }
 
 // assertNotActiveElsewhere refuses when the user holds an active membership in

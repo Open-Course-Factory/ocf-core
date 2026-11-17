@@ -226,7 +226,7 @@ func TestGenericMemberCreate_AdministratorBlock_NotLifted(t *testing.T) {
 	identity := newFakeIdentity("owner-c", "student-1")
 	orgC := seedTeamOrg(t, db, "owner-c", new(10))
 	adminSetsForbidden(t, db, identity, "student-1", true)
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, identity)
 
 	member := &models.OrganizationMember{OrganizationID: orgC, UserID: "student-1", Role: models.OrgRoleMember}
 	ctx := &hooks.HookContext{EntityName: "OrganizationMember", HookType: hooks.BeforeCreate, NewEntity: member, UserID: "owner-c", UserRoles: platformMember}

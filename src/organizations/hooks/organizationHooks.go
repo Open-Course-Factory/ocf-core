@@ -568,13 +568,15 @@ func requestedRoleFromPatch(patch map[string]any) (models.OrganizationMemberRole
 type OrganizationMemberPermissionHook struct {
 	db                  *gorm.DB
 	organizationService services.OrganizationService
+	accounts            services.AccountForbidder
 	hooks.BaseHook
 }
 
-func NewOrganizationMemberPermissionHook(db *gorm.DB) hooks.Hook {
+func NewOrganizationMemberPermissionHook(db *gorm.DB, accounts services.AccountForbidder) hooks.Hook {
 	return &OrganizationMemberPermissionHook{
 		db:                  db,
 		organizationService: services.NewOrganizationService(db),
+		accounts:            accounts,
 		BaseHook: hooks.BaseHook{
 			Name:       "organization_member_permission",
 			EntityName: "OrganizationMember",
@@ -596,7 +598,8 @@ func (h *OrganizationMemberPermissionHook) Execute(ctx *hooks.HookContext) error
 }
 
 // grantForNewMember grants the base organization grouping to a freshly created member and,
-// for a manager-grade role (manager or owner), additionally grants the manager grouping.
+// for a manager-grade role (manager or owner), additionally grants the manager grouping. The
+// account now belongs to another organization, so an offboarding block on it is lifted.
 func (h *OrganizationMemberPermissionHook) grantForNewMember(ctx *hooks.HookContext) error {
 	member, ok := ctx.NewEntity.(*models.OrganizationMember)
 	if !ok {
@@ -610,6 +613,13 @@ func (h *OrganizationMemberPermissionHook) grantForNewMember(ctx *hooks.HookCont
 	if member.IsManager() {
 		if err := h.organizationService.GrantOrganizationManagerPermissions(member.UserID, member.OrganizationID); err != nil {
 			utils.Warn("Failed to grant organization manager permissions to user %s: %v", member.UserID, err)
+		}
+	}
+
+	if member.IsActive {
+		// A failure leaves the account blocked, the safe direction: warn, do not fail the write.
+		if err := services.LiftOffboardingBlock(h.db, h.accounts, member.UserID); err != nil {
+			utils.Warn("Failed to lift the offboarding block of new organization member %s: %v", member.UserID, err)
 		}
 	}
 

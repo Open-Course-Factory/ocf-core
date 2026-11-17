@@ -148,6 +148,7 @@ func TestOffboard_BatchMixingBelongsElsewhereAndAlone_OnlyAloneForbidden(t *test
 	db := newOffboardingDB(t)
 	orgID, _, identity := seedRankedClass(t, db)
 	seedMember(t, db, orgID, "student-2", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-2")
 	seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), "student-2", models.OrgRoleMember)
 	identity.users["student-2"] = identity.users["student-1"]
 
@@ -168,6 +169,7 @@ func TestOffboard_ForbidFailsMidBatch_OnlyAccountsThisCallForbadeAreUnforbidden(
 	identity.users["student-2"] = identity.users["student-1"]
 	identity.forbidden["student-2"] = true                  // blocked by someone else; this call does not touch it
 	seedMember(t, db, orgID, "ghost", models.OrgRoleMember) // unknown to the identity provider: SetForbidden fails
+	markCreatedByOrganization(t, db, orgID, "ghost")
 
 	err := newOffboardingService(db, identity).Offboard(orgID, []string{"student-2", "student-1", "ghost"}, "manager-1")
 
@@ -389,6 +391,7 @@ func TestCsvImport_ReenrolsMemberBlockedBeforeOffboarding_AccountStillBlocked(t 
 	offboarding := newOffboardingService(db, identity)
 	orgID := seedTeamOrg(t, db, "owner-1", new(10))
 	seedMember(t, db, orgID, "student-a", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgID, "student-a")
 	blockAccount(t, db, identity, "student-a")
 	require.NoError(t, offboarding.Offboard(orgID, []string{"student-a"}, "owner-1"))
 
@@ -464,7 +467,7 @@ func TestEnrol_RemovedMemberNeverOffboarded_ReactivatedAndBlockUntouched(t *test
 		Where("organization_id = ? AND user_id = ?", orgID, "student-1").Update("is_active", false).Error)
 	blockAccount(t, db, identity, "student-1")
 
-	require.NoError(t, newOffboardingService(db, identity).Enrol(orgID, "student-1"))
+	require.NoError(t, newOffboardingService(db, identity).Enrol(orgID, "student-1", false))
 
 	assert.True(t, loadMember(t, db, orgID, "student-1").IsActive)
 	assert.True(t, identity.forbidden["student-1"], "re-adding a removed member does not lift a block it never set")
@@ -620,6 +623,7 @@ func TestReinstate_OffboardedByTwoOrganizations_ReinstatingTheFirstLiftsTheSecon
 	orgB := seedTeamOrg(t, db, "owner-2", new(10))
 	seedMember(t, db, orgA, "student-1", models.OrgRoleMember)
 	seedMember(t, db, orgB, "student-1", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgB, "student-1")
 	svc := newOffboardingService(db, identity)
 
 	require.NoError(t, svc.Offboard(orgA, []string{"student-1"}, "owner-1"))
@@ -664,9 +668,9 @@ func joinAfterBlockingOffboarding(t *testing.T, join string) (blocked, bStamp bo
 	case "reinstate":
 		require.NoError(t, svc.Reinstate(orgC, "student-1", "owner-c"))
 	case "enrol":
-		require.NoError(t, svc.Enrol(orgC, "student-1"))
+		require.NoError(t, svc.Enrol(orgC, "student-1", false))
 	case "create":
-		registerOrgHooks(t, db)
+		registerOrgHooks(t, db, identity)
 		member := &models.OrganizationMember{OrganizationID: orgC, UserID: "student-1", Role: models.OrgRoleMember}
 		ctx := &hooks.HookContext{EntityName: "OrganizationMember", HookType: hooks.BeforeCreate, NewEntity: member, UserID: "owner-c", UserRoles: platformMember}
 		require.NoError(t, hooks.GlobalHookRegistry.ExecuteHooks(ctx))
@@ -701,6 +705,7 @@ func TestReinstate_AdministratorBlockAfterTwoOrganizationOffboardings_StillBlock
 	orgB := seedTeamOrg(t, db, "owner-2", new(10))
 	seedMember(t, db, orgA, "student-1", models.OrgRoleMember)
 	seedMember(t, db, orgB, "student-1", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgB, "student-1")
 	svc := newOffboardingService(db, identity)
 	require.NoError(t, svc.Offboard(orgA, []string{"student-1"}, "owner-1"))
 	require.NoError(t, svc.Offboard(orgB, []string{"student-1"}, "owner-2"))

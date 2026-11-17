@@ -3,12 +3,14 @@ package organizationHooks
 import (
 	"log"
 	"soli/formations/src/entityManagement/hooks"
+	"soli/formations/src/organizations/services"
 
 	"gorm.io/gorm"
 )
 
-// InitOrganizationHooks registers all organization-related hooks
-func InitOrganizationHooks(db *gorm.DB) {
+// InitOrganizationHooks registers all organization-related hooks. accounts
+// lifts an offboarding block when a membership is created.
+func InitOrganizationHooks(db *gorm.DB, accounts services.AccountForbidder) {
 	log.Println("🔗 Initializing organization hooks...")
 
 	// Hook that strips subscription_plan_id from non-admin create/update payloads
@@ -73,7 +75,7 @@ func InitOrganizationHooks(db *gorm.DB) {
 	}
 
 	// Hook for syncing casbin groupings on member create and role change
-	memberPermissionHook := NewOrganizationMemberPermissionHook(db)
+	memberPermissionHook := NewOrganizationMemberPermissionHook(db, accounts)
 	if err := hooks.GlobalHookRegistry.RegisterHook(memberPermissionHook); err != nil {
 		log.Printf("❌ Failed to register organization member permission hook: %v", err)
 	} else {

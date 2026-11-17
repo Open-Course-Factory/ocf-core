@@ -33,7 +33,8 @@ import (
 // seedRankedClass builds an organization owned by owner-1 with two managers, a
 // member, a member who is a platform administrator, and an account that is in
 // the class but holds no membership in the organization. Everyone is an active
-// member of the class and known to the identity provider.
+// member of the class and known to the identity provider. The organization
+// created every member's account.
 func seedRankedClass(t *testing.T, db *gorm.DB) (orgID, classID uuid.UUID, identity *fakeIdentity) {
 	t.Helper()
 	enforcer := installMockEnforcer(t)
@@ -49,6 +50,9 @@ func seedRankedClass(t *testing.T, db *gorm.DB) (orgID, classID uuid.UUID, ident
 	seedMember(t, db, orgID, "manager-2", models.OrgRoleManager)
 	seedMember(t, db, orgID, "student-1", models.OrgRoleMember)
 	seedMember(t, db, orgID, "admin-1", models.OrgRoleMember)
+	for _, id := range []string{"manager-1", "manager-2", "student-1", "admin-1"} {
+		markCreatedByOrganization(t, db, orgID, id)
+	}
 
 	classID = seedClassWithMember(t, db, orgID, "manager-1", "student-1")
 	for _, id := range []string{"owner-1", "manager-1", "manager-2", "admin-1", "outsider-1"} {

@@ -16,6 +16,7 @@ import (
 var (
 	errOutranksActor    = errors.New("outranks the caller; skipped")
 	errBelongsElsewhere = errors.New("also belongs elsewhere; skipped")
+	errNotCreatedHere   = errors.New("not created by this organization; skipped")
 )
 
 // OrganizationAloneChecker refuses an account still tied to anything outside
@@ -27,7 +28,8 @@ type OrganizationAloneChecker interface {
 // newRankCheck resolves the actor once and returns the check for one target,
 // with the target's membership when it has one: the rank rule of
 // newRankOnlyCheck, then, for an actor who is not a platform administrator, the
-// target must belong to this organization alone (errBelongsElsewhere otherwise).
+// organization must have created the account (errNotCreatedHere otherwise) and
+// the target must belong to this organization alone (errBelongsElsewhere otherwise).
 func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organizationModels.Organization, actorID string) (func(targetID string) (*organizationModels.OrganizationMember, error), error) {
 	checkRank, actorIsAdmin, err := newRankOnlyCheck(db, org, actorID)
 	if err != nil {
@@ -37,6 +39,9 @@ func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organization
 		target, err := checkRank(targetID)
 		if err != nil || actorIsAdmin {
 			return target, err
+		}
+		if !target.AccountCreatedByOrganization {
+			return target, errNotCreatedHere
 		}
 		if !belongsToOrganizationAlone(alone, org.ID, targetID) {
 			return target, errBelongsElsewhere

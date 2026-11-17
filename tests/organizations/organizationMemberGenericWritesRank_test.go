@@ -45,7 +45,7 @@ func seedGenericWritesOrg(t *testing.T) (*gorm.DB, uuid.UUID) {
 		"student-1": models.OrgRoleMember,
 		"admin-1":   models.OrgRoleMember,
 	})
-	registerOrgHooks(t, db)
+	registerOrgHooks(t, db, nil)
 	return db, orgID
 }
 

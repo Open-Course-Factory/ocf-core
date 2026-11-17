@@ -15,7 +15,8 @@ func ErasureErrorResponse(err error) (int, string) {
 	switch {
 	case errors.Is(err, ErrUserNotFound):
 		return http.StatusNotFound, "User not found"
-	case errors.Is(err, ErrOwnsOrganizations), errors.Is(err, ErrOwnsGroups), errors.Is(err, ErrStillActiveElsewhere):
+	case errors.Is(err, ErrOwnsOrganizations), errors.Is(err, ErrOwnsGroups), errors.Is(err, ErrStillActiveElsewhere),
+		errors.Is(err, ErrNotCreatedByOrganization):
 		return http.StatusConflict, err.Error()
 	default:
 		return http.StatusInternalServerError, "User erasure failed"
