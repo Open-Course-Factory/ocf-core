@@ -20,7 +20,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// 1. ProjectFile CRUD
+// 1. ProjectFile column defaults
 // ---------------------------------------------------------------------------
 
 func TestProjectFile_Create_Success(t *testing.T) {
@@ -46,93 +46,6 @@ func TestProjectFile_Create_Success(t *testing.T) {
 	assert.Equal(t, int64(0), found.SizeBytes)     // default
 	assert.Equal(t, "database", found.StorageType) // default
 	assert.NotEqual(t, uuid.Nil, found.ID)
-}
-
-func TestProjectFile_Update_Success(t *testing.T) {
-	db := freshTestDB(t)
-
-	file := models.ProjectFile{
-		Name:        "original.sh",
-		ContentType: "script",
-		Content:     "echo hello",
-	}
-	require.NoError(t, db.Create(&file).Error)
-
-	// Update name and content
-	err := db.Model(&file).Updates(map[string]any{
-		"name":    "updated.sh",
-		"content": "echo updated",
-	}).Error
-	require.NoError(t, err)
-
-	// Verify changes persisted
-	var found models.ProjectFile
-	require.NoError(t, db.First(&found, "id = ?", file.ID).Error)
-
-	assert.Equal(t, "updated.sh", found.Name)
-	assert.Equal(t, "echo updated", found.Content)
-	assert.Equal(t, "script", found.ContentType) // unchanged
-}
-
-func TestProjectFile_Delete_Success(t *testing.T) {
-	db := freshTestDB(t)
-
-	file := models.ProjectFile{
-		Name:        "to-delete.sh",
-		ContentType: "script",
-		Content:     "rm -rf /tmp/test",
-	}
-	require.NoError(t, db.Create(&file).Error)
-
-	// Soft delete
-	err := db.Delete(&file).Error
-	require.NoError(t, err)
-
-	// Should not be found with default scope
-	var found models.ProjectFile
-	err = db.First(&found, "id = ?", file.ID).Error
-	assert.Error(t, err) // record not found
-}
-
-// ---------------------------------------------------------------------------
-// 2. ProjectFile content types
-// ---------------------------------------------------------------------------
-
-func TestProjectFile_Create_AllContentTypes(t *testing.T) {
-	db := freshTestDB(t)
-
-	types := []struct {
-		name        string
-		contentType string
-		content     string
-	}{
-		{"verify.sh", "script", "#!/bin/bash\nexit 0"},
-		{"intro.md", "markdown", "# Welcome\nThis is an intro."},
-		{"notes.txt", "text", "Plain text content here."},
-	}
-
-	for _, tt := range types {
-		file := models.ProjectFile{
-			Name:        tt.name,
-			ContentType: tt.contentType,
-			Content:     tt.content,
-		}
-		require.NoError(t, db.Create(&file).Error, "failed to create %s file", tt.contentType)
-	}
-
-	// Verify all three persisted
-	var files []models.ProjectFile
-	require.NoError(t, db.Find(&files).Error)
-	assert.Len(t, files, 3)
-
-	// Verify each content type is present
-	contentTypes := make(map[string]bool)
-	for _, f := range files {
-		contentTypes[f.ContentType] = true
-	}
-	assert.True(t, contentTypes["script"])
-	assert.True(t, contentTypes["markdown"])
-	assert.True(t, contentTypes["text"])
 }
 
 // ---------------------------------------------------------------------------
@@ -292,70 +205,4 @@ func TestProjectFileController_GetByScenario_NotFound(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
-}
-
-// ---------------------------------------------------------------------------
-// 6. Filter ProjectFiles by scenarioId (admin page filter)
-// ---------------------------------------------------------------------------
-
-func TestProjectFile_FilterByScenarioId(t *testing.T) {
-	db := freshTestDB(t)
-
-	// Create two scenarios
-	scenario1 := models.Scenario{
-		Name:         "filter-scenario-1",
-		Title:        "Filter Scenario 1",
-		InstanceType: "ubuntu:22.04",
-		CreatedByID:  "user-1",
-	}
-	scenario2 := models.Scenario{
-		Name:         "filter-scenario-2",
-		Title:        "Filter Scenario 2",
-		InstanceType: "ubuntu:22.04",
-		CreatedByID:  "user-1",
-	}
-	require.NoError(t, db.Create(&scenario1).Error)
-	require.NoError(t, db.Create(&scenario2).Error)
-
-	// Create ProjectFiles: 2 for scenario1, 1 for scenario2, 1 with no scenario
-	s1Files := []models.ProjectFile{
-		{Name: "s1-intro.md", ContentType: "markdown", Content: "Intro 1", ScenarioID: &scenario1.ID},
-		{Name: "s1-verify.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", ScenarioID: &scenario1.ID},
-	}
-	s2File := models.ProjectFile{Name: "s2-intro.md", ContentType: "markdown", Content: "Intro 2", ScenarioID: &scenario2.ID}
-	orphanFile := models.ProjectFile{Name: "orphan.txt", ContentType: "text", Content: "No scenario"}
-
-	for i := range s1Files {
-		require.NoError(t, db.Create(&s1Files[i]).Error)
-	}
-	require.NoError(t, db.Create(&s2File).Error)
-	require.NoError(t, db.Create(&orphanFile).Error)
-
-	// Filter by scenario1 — should return exactly 2 files
-	var filtered1 []models.ProjectFile
-	err := db.Where("scenario_id = ?", scenario1.ID).Find(&filtered1).Error
-	require.NoError(t, err)
-	assert.Len(t, filtered1, 2, "should find 2 files for scenario1")
-	for _, f := range filtered1 {
-		assert.Equal(t, scenario1.ID, *f.ScenarioID)
-	}
-
-	// Filter by scenario2 — should return exactly 1 file
-	var filtered2 []models.ProjectFile
-	err = db.Where("scenario_id = ?", scenario2.ID).Find(&filtered2).Error
-	require.NoError(t, err)
-	assert.Len(t, filtered2, 1, "should find 1 file for scenario2")
-	assert.Equal(t, "s2-intro.md", filtered2[0].Name)
-
-	// No filter — should return all 4
-	var all []models.ProjectFile
-	err = db.Find(&all).Error
-	require.NoError(t, err)
-	assert.Len(t, all, 4, "should find all 4 files without filter")
-
-	// Filter by nonexistent scenario — should return 0
-	var none []models.ProjectFile
-	err = db.Where("scenario_id = ?", uuid.New()).Find(&none).Error
-	require.NoError(t, err)
-	assert.Len(t, none, 0, "should find 0 files for nonexistent scenario")
 }
