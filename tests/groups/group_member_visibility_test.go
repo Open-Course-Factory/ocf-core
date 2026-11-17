@@ -20,10 +20,12 @@ package groups_tests
 // registration in src/groups/entityRegistration/groupMemberRegistration.go.
 
 import (
+	"net/http"
 	"reflect"
 	"testing"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/entityManagement/repositories"
@@ -440,17 +442,73 @@ func TestClassGroup_Visibility_RemovedOrgManagerSeesNothing(t *testing.T) {
 		addOrgMember(t, db, orgOneID, "userA", orgModels.OrgRoleManager)
 		require.NoError(t, db.Where("user_id = ?", "userA").Delete(&orgModels.OrganizationMember{}).Error)
 
-		ems.GlobalEntityRegistrationService.RegisterMembershipConfig("ClassGroup",
-			&entityManagementInterfaces.MembershipConfig{
-				MemberTable: "group_members", EntityIDColumn: "group_id", UserIDColumn: "user_id",
-				RoleColumn: "role", IsActiveColumn: "is_active",
-				OrgAccessEnabled: true, ManagerRoles: []string{"owner", "manager"},
-			},
-		)
+		registerClassGroupMembershipConfig()
 		_, total, err := repositories.NewGenericRepository(db).GetAllEntities(
 			groupModels.ClassGroup{}, 1, 100, map[string]any{"user_member_id": "userA"}, nil,
 		)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), total, "a removed organization manager must not see the organization's classes")
 	})
+}
+
+// registerClassGroupMembershipConfig mirrors the production ClassGroup
+// registration (src/groups/entityRegistration/groupRegistration.go).
+func registerClassGroupMembershipConfig() {
+	ems.GlobalEntityRegistrationService.RegisterMembershipConfig("ClassGroup",
+		&entityManagementInterfaces.MembershipConfig{
+			MemberTable: "group_members", EntityIDColumn: "group_id", UserIDColumn: "user_id",
+			RoleColumn: "role", IsActiveColumn: "is_active",
+			OrgAccessEnabled: true, ManagerRoles: []string{"owner", "manager"},
+		},
+	)
+}
+
+func listTotal(t *testing.T, db *gorm.DB, entity any, userID string) int64 {
+	t.Helper()
+	_, total, err := repositories.NewGenericRepository(db).GetAllEntities(entity, 1, 100, map[string]any{"user_member_id": userID}, nil)
+	require.NoError(t, err)
+	return total
+}
+
+// A manager of a deleted organization (member row still active: the delete
+// cascade leaves it) lists neither its classes nor their rosters.
+func TestClassGroup_Visibility_ManagerOfDeletedOrgSeesNothing(t *testing.T) {
+	withFreshRegistration(func() {
+		db := setupGroupMemberVisibilityDB(t)
+		orgOneID, _, _ := seedFixture(t, db)
+		addOrgMember(t, db, orgOneID, "userA", orgModels.OrgRoleManager)
+		registerClassGroupMembershipConfig()
+
+		require.EqualValues(t, 1, listTotal(t, db, groupModels.ClassGroup{}, "userA"), "control: a live organization's manager lists its class")
+		require.NoError(t, db.Delete(&orgModels.Organization{}, "id = ?", orgOneID).Error)
+		assert.EqualValues(t, 0, listTotal(t, db, groupModels.ClassGroup{}, "userA"), "a deleted organization's manager lists none of its classes")
+	})
+}
+
+func TestGroupMember_Visibility_ManagerOfDeletedOrgSeesNothing(t *testing.T) {
+	withFreshRegistration(func() {
+		db := setupGroupMemberVisibilityDB(t)
+		orgOneID, _, _ := seedFixture(t, db)
+		addOrgMember(t, db, orgOneID, "userA", orgModels.OrgRoleManager)
+		registerGroupMemberMembershipConfig()
+
+		require.EqualValues(t, 2, listTotal(t, db, groupModels.GroupMember{}, "userA"), "control: a live organization's manager lists the roster")
+		require.NoError(t, db.Delete(&orgModels.Organization{}, "id = ?", orgOneID).Error)
+		assert.EqualValues(t, 0, listTotal(t, db, groupModels.GroupMember{}, "userA"), "a deleted organization's manager lists none of its rosters")
+	})
+}
+
+// Platform administrators keep listing a deleted organization's classes (they
+// are the ones who can reopen them): GET /class-groups adds no membership
+// filter for an administrator (entityManagement/routes/getEntities.go). The
+// delete cascade archives the class, hence include_archived.
+func TestClassGroup_Visibility_AdminListsClassOfDeletedOrg(t *testing.T) {
+	env := setupClassArchiveEnv(t)
+	org, group := seedOrgClass(t, env)
+	deleteOrg(t, env, org)
+
+	env.as("platform-admin", access.RoleAdministrator)
+	rec := env.do(http.MethodGet, classGroupsPath+"?include_archived=true", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), group.ID.String(), "an administrator lists the class of a deleted organization")
 }

@@ -259,3 +259,30 @@ func TestOrganization_MemberVisibility_RemovedMemberSeesNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total, "a removed member must not see the organization")
 }
+
+// KNOWN GAP, not an endorsement: GET /organization-members filters by direct
+// membership on the member table itself, with no live-organization check, so
+// an active member of a DELETED organization still lists all its member rows.
+// Flip this assertion when the gap is closed.
+func TestOrganizationMember_Visibility_KnownGap_MemberOfDeletedOrgStillListsMembers(t *testing.T) {
+	db := setupMemberVisibilityDB(t)
+
+	original := ems.GlobalEntityRegistrationService
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	defer func() { ems.GlobalEntityRegistrationService = original }()
+
+	ems.GlobalEntityRegistrationService.RegisterMembershipConfig("OrganizationMember",
+		&entityManagementInterfaces.MembershipConfig{
+			MemberTable: "organization_members", EntityIDColumn: "organization_id", UserIDColumn: "user_id",
+			RoleColumn: "role", IsActiveColumn: "is_active", ManagerRoles: []string{"owner", "manager"},
+		},
+	)
+	orgID := seedMemberVisibilityData(t, db)
+	require.NoError(t, db.Delete(&models.Organization{}, "id = ?", orgID).Error)
+
+	_, total, err := repositories.NewGenericRepository(db).GetAllEntities(
+		models.OrganizationMember{}, 1, 100, map[string]any{"user_member_id": "userB"}, nil,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total, "known gap: userB still lists both member rows (userA owner, userB member) of the deleted organization")
+}
