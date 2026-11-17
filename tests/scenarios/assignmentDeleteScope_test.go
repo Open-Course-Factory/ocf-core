@@ -8,6 +8,8 @@
 package scenarios_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +26,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
+	"soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 )
 
@@ -298,4 +301,126 @@ func TestDeleteScenarioAssignment_PublicScenario_KeepsRuns(t *testing.T) {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	assert.Empty(t, rec.deleted)
+}
+
+// --- scope versus ids -------------------------------------------------------
+
+// scopeFixture: an org scenario, a class of that org with one learner, and an
+// organization learner outside the class, each with an open run.
+type scopeFixture struct {
+	db                          *gorm.DB
+	rec                         *persistenceRecorder
+	orgID, classID, scenarioID  uuid.UUID
+	classLearnerRun, orgOnlyRun uuid.UUID
+}
+
+func seedScopeFixture(t *testing.T) scopeFixture {
+	t.Helper()
+	srv, rec := newPersistenceTTBackend(t)
+	configureTTServerForPersistence(t, srv.URL)
+	db := freshTestDB(t)
+	f := scopeFixture{db: db, rec: rec}
+	f.orgID = createTestOrg(t, db, "org-owner")
+	addOrgMember(t, db, f.orgID, "org-manager", orgModels.OrgRoleManager)
+	addOrgMember(t, db, f.orgID, "scope-class-learner", orgModels.OrgRoleMember)
+	addOrgMember(t, db, f.orgID, "scope-org-learner", orgModels.OrgRoleMember)
+	f.scenarioID = createTestScenarioForOrg(t, db, f.orgID, "scope-vs-ids").ID
+	f.classID = createTestGroupInOrg(t, db, f.orgID, "org-owner")
+	addGroupMember(t, db, f.classID, "scope-class-learner", groupModels.GroupMemberRoleMember)
+	f.classLearnerRun = seedBulkRun(t, db, f.scenarioID, "scope-class-learner", "active", "term-scope-class-learner", true)
+	f.orgOnlyRun = seedBulkRun(t, db, f.scenarioID, "scope-org-learner", "active", "term-scope-org-learner", true)
+	return f
+}
+
+func (f scopeFixture) deleted() []string {
+	f.rec.mu.Lock()
+	defer f.rec.mu.Unlock()
+	return append([]string(nil), f.rec.deleted...)
+}
+
+// Access reads the scope column: an `org` row that also names a class grants
+// the whole organization, so its removal must clean up the organization.
+func TestDeleteScenarioAssignment_OrgScopeNamingAClass_CleansUpTheOrganization(t *testing.T) {
+	f := seedScopeFixture(t)
+	assignment := createScenarioAssignment(t, f.db, f.scenarioID, &f.classID, &f.orgID, "org")
+	reached, err := services.CheckScenarioAccess(f.db, "scope-org-learner", f.scenarioID)
+	require.NoError(t, err)
+	require.True(t, reached, "precondition: the org-scope row reaches a learner outside the class")
+
+	deleteAssignmentAs(t, f.db, "org-manager", []string{"member"}, assignment.ID)
+
+	assert.Equal(t, "abandoned", sessionStatus(t, f.db, f.orgOnlyRun),
+		"the organization learner this row gave the scenario to loses the run")
+	assert.Contains(t, f.deleted(), "term-scope-org-learner")
+}
+
+// Guard: a class assignment carries its organization id too, and still cleans
+// up the class only.
+func TestDeleteScenarioAssignment_GroupScopeWithOrgID_CleansUpTheClassOnly(t *testing.T) {
+	f := seedScopeFixture(t)
+	assignment := createScenarioAssignment(t, f.db, f.scenarioID, &f.classID, &f.orgID, "group")
+
+	deleteAssignmentAs(t, f.db, "org-manager", []string{"member"}, assignment.ID)
+
+	assert.Equal(t, "abandoned", sessionStatus(t, f.db, f.classLearnerRun), "control: the class learner's run goes")
+	assert.Equal(t, "active", sessionStatus(t, f.db, f.orgOnlyRun), "an organization learner outside the class keeps the run")
+	assert.Equal(t, []string{"term-scope-class-learner"}, f.deleted())
+}
+
+// Pins current behaviour: a class MANAGER whose organization role is plain
+// member counts as an organization learner, so removing an organization-wide
+// assignment abandons their run (no class assignment reaches them).
+func TestDeleteScenarioAssignment_OrgWide_ClassManagerWithOrgMemberRole_RunAbandoned(t *testing.T) {
+	f := seedScopeFixture(t)
+	addOrgMember(t, f.db, f.orgID, "scope-class-manager", orgModels.OrgRoleMember)
+	addGroupMember(t, f.db, f.classID, "scope-class-manager", groupModels.GroupMemberRoleManager)
+	run := seedBulkRun(t, f.db, f.scenarioID, "scope-class-manager", "active", "term-scope-class-manager", true)
+	assignment := createScenarioAssignment(t, f.db, f.scenarioID, nil, &f.orgID, "org")
+
+	deleteAssignmentAs(t, f.db, "org-manager", []string{"member"}, assignment.ID)
+
+	assert.Equal(t, "abandoned", sessionStatus(t, f.db, run))
+	assert.Contains(t, f.deleted(), "term-scope-class-manager")
+}
+
+// Known gap, pinned not decided: the create route does not check the scope
+// against the ids it names.
+func TestCreateScenarioAssignment_ScopeDisagreeingWithIDs_KnownGap(t *testing.T) {
+	cases := []struct {
+		name string
+		body func(f scopeFixture) map[string]any
+	}{
+		{"org scope naming a class", func(f scopeFixture) map[string]any {
+			return map[string]any{"scope": "org", "group_id": f.classID, "organization_id": f.orgID}
+		}},
+		{"group scope without a class", func(f scopeFixture) map[string]any {
+			return map[string]any{"scope": "group", "organization_id": f.orgID}
+		}},
+		{"org scope without an organization", func(f scopeFixture) map[string]any {
+			return map[string]any{"scope": "org", "group_id": f.classID}
+		}},
+		{"unknown scope", func(f scopeFixture) map[string]any {
+			return map[string]any{"scope": "everyone", "group_id": f.classID, "organization_id": f.orgID}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := seedScopeFixture(t)
+			body := tc.body(f)
+			body["scenario_id"] = f.scenarioID
+			raw, err := json.Marshal(body)
+			require.NoError(t, err)
+			router := setupArchiveRouter(t, f.db, "org-manager", []string{"member"})
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scenario-assignments", bytes.NewReader(raw))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+			var stored int64
+			require.NoError(t, f.db.Model(&models.ScenarioAssignment{}).Where("scope = ?", body["scope"]).Count(&stored).Error)
+			// Today every one is accepted and stored as sent (the DTO's oneof
+			// binding is not applied on entity routes). Change with the rule.
+			assert.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body.String())
+			assert.Equal(t, int64(1), stored)
+		})
+	}
 }
