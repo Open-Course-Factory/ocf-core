@@ -87,10 +87,10 @@ func setupLayer2Router(t *testing.T, db *gorm.DB, userID string, roles []string)
 // org X's scenarios: both the in-handler check and Layer 2 return 403.
 // ============================================================================
 
-// TestOrgListScenarios_NonMember_RawController_ShouldNotReturn200
+// TestOrgListScenarios_RawController_NonMember_Forbidden
 // Verifies that the in-handler membership check (fix for issue #241) denies
 // non-members even when Layer 2 middleware is not present.
-func TestOrgListScenarios_NonMember_RawController_ShouldNotReturn200(t *testing.T) {
+func TestOrgListScenarios_RawController_NonMember_Forbidden(t *testing.T) {
 	db := freshTestDB(t)
 	ownerID := "auth-owner-001"
 	outsiderID := "auth-outsider-001"
@@ -169,10 +169,10 @@ func TestOrgListScenarios_Member_ShouldSucceed(t *testing.T) {
 // by simply changing the URL param. This is the cross-org enumeration vector.
 // ============================================================================
 
-// TestOrgListScenarios_DifferentOrg_RawController_LeaksData
+// TestOrgListScenarios_RawController_DifferentOrg_Forbidden
 // Verifies that the in-handler membership check (fix for issue #241) denies
 // cross-org access even when Layer 2 middleware is not present.
-func TestOrgListScenarios_DifferentOrg_RawController_LeaksData(t *testing.T) {
+func TestOrgListScenarios_RawController_DifferentOrg_Forbidden(t *testing.T) {
 	db := freshTestDB(t)
 	orgAOwnerID := "auth-owner-a-004"
 	orgBOwnerID := "auth-owner-b-004"
