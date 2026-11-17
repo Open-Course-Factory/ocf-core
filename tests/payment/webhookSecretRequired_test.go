@@ -22,6 +22,7 @@ import (
 func TestStripeWebhook_NoSecretConfigured_RefusedAsMisconfiguration(t *testing.T) {
 	for name, secret := range map[string]string{
 		"secret is empty": "",
+		"secret is blank": " \n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			db := freshTestDB(t)

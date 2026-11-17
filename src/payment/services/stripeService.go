@@ -2547,8 +2547,8 @@ var ErrWebhookSecretNotConfigured = errors.New("stripe webhook secret is not con
 
 // ValidateWebhookSignature valide la signature d'un webhook Stripe
 func (ss *stripeService) ValidateWebhookSignature(payload []byte, signature string) (*stripe.Event, error) {
-	// An empty secret verifies any payload signed with the empty string.
-	if ss.webhookSecret == "" {
+	// An empty or blank secret verifies any payload signed with that same guessable value.
+	if strings.TrimSpace(ss.webhookSecret) == "" {
 		return nil, ErrWebhookSecretNotConfigured
 	}
 	event, err := webhook.ConstructEvent(payload, signature, ss.webhookSecret)
