@@ -82,12 +82,20 @@ func createTestOrgMember(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID stri
 	return member
 }
 
+// historyUpstreamCall is the last request stubHistoryBackend received.
+type historyUpstreamCall struct {
+	Method, Path, Query, APIKey string
+}
+
 // stubHistoryBackend points the terminal service at a tt-backend that holds no
-// command history, so a caller who passes the access check gets a real answer.
+// command history, so a caller who passes the access check gets a real answer,
+// and returns what that tt-backend was asked.
 // Call it before building the controller, which reads the URL once.
-func stubHistoryBackend(t *testing.T) {
+func stubHistoryBackend(t *testing.T) *historyUpstreamCall {
 	t.Helper()
+	call := &historyUpstreamCall{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*call = historyUpstreamCall{r.Method, r.URL.Path, r.URL.RawQuery, r.Header.Get("X-API-Key")}
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodDelete {
 			_, _ = w.Write([]byte(`{"sessions_cleared":0}`))
@@ -99,6 +107,7 @@ func stubHistoryBackend(t *testing.T) {
 	t.Setenv("TERMINAL_TRAINER_URL", srv.URL)
 	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
 	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+	return call
 }
 
 // makeHistoryRequest creates a gin router and sends a GET request for session history

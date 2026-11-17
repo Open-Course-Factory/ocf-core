@@ -14,9 +14,10 @@ import (
 	terminalController "soli/formations/src/terminalTrainer/routes"
 )
 
-// makeDeleteHistoryRequest creates a gin router and sends a DELETE request for session history
-func makeDeleteHistoryRequest(t *testing.T, db *gorm.DB, sessionID string, userID string, userRoles []string) *httptest.ResponseRecorder {
-	stubHistoryBackend(t)
+// makeDeleteHistoryRequest creates a gin router and sends a DELETE request for
+// session history. It also returns what tt-backend was asked.
+func makeDeleteHistoryRequest(t *testing.T, db *gorm.DB, sessionID string, userID string, userRoles []string) (*httptest.ResponseRecorder, *historyUpstreamCall) {
+	upstream := stubHistoryBackend(t)
 	controller := terminalController.NewTerminalController(db)
 
 	gin.SetMode(gin.TestMode)
@@ -34,12 +35,13 @@ func makeDeleteHistoryRequest(t *testing.T, db *gorm.DB, sessionID string, userI
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	return w
+	return w, upstream
 }
 
-// makeDeleteAllHistoryRequest creates a gin router and sends a DELETE request for all user history
-func makeDeleteAllHistoryRequest(t *testing.T, db *gorm.DB, userID string, userRoles []string) *httptest.ResponseRecorder {
-	stubHistoryBackend(t)
+// makeDeleteAllHistoryRequest creates a gin router and sends a DELETE request
+// for all user history. It also returns what tt-backend was asked.
+func makeDeleteAllHistoryRequest(t *testing.T, db *gorm.DB, userID string, userRoles []string) (*httptest.ResponseRecorder, *historyUpstreamCall) {
+	upstream := stubHistoryBackend(t)
 	controller := terminalController.NewTerminalController(db)
 
 	gin.SetMode(gin.TestMode)
@@ -57,7 +59,7 @@ func makeDeleteAllHistoryRequest(t *testing.T, db *gorm.DB, userID string, userR
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	return w
+	return w, upstream
 }
 
 // --- GetSessionHistory controller tests ---
@@ -118,7 +120,7 @@ func TestGetSessionHistory_QueryParams(t *testing.T) {
 	terminal, err := createTestTerminal(db, "owner-user", "stopped", nil)
 	require.NoError(t, err)
 
-	stubHistoryBackend(t)
+	upstream := stubHistoryBackend(t)
 	controller := terminalController.NewTerminalController(db)
 
 	gin.SetMode(gin.TestMode)
@@ -136,6 +138,11 @@ func TestGetSessionHistory_QueryParams(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, historyUpstreamCall{
+		Method: "GET", Path: "/1.0/test/history",
+		Query:  "id=" + terminal.SessionID + "&since=1000&format=csv&limit=50&offset=10",
+		APIKey: "test-api-key-owner-user",
+	}, *upstream, "the history is read upstream with the session owner's key")
 }
 
 // --- DeleteSessionHistory controller tests ---
@@ -145,7 +152,7 @@ func TestGetSessionHistory_QueryParams(t *testing.T) {
 func TestDeleteSessionHistory_NonexistentSession_Returns404(t *testing.T) {
 	db := setupTestDB(t)
 
-	w := makeDeleteHistoryRequest(t, db, "nonexistent-session-id", "user1", []string{"user"})
+	w, _ := makeDeleteHistoryRequest(t, db, "nonexistent-session-id", "user1", []string{"user"})
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
@@ -163,7 +170,7 @@ func TestDeleteSessionHistory_Unauthorized_Returns403(t *testing.T) {
 	terminal, err := createTestTerminal(db, "owner-user", "stopped", nil)
 	require.NoError(t, err)
 
-	w := makeDeleteHistoryRequest(t, db, terminal.SessionID, "other-user", []string{"user"})
+	w, _ := makeDeleteHistoryRequest(t, db, terminal.SessionID, "other-user", []string{"user"})
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 
@@ -181,9 +188,13 @@ func TestDeleteSessionHistory_OwnerPassesAccessCheck(t *testing.T) {
 	terminal, err := createTestTerminal(db, "owner-user", "stopped", nil)
 	require.NoError(t, err)
 
-	w := makeDeleteHistoryRequest(t, db, terminal.SessionID, "owner-user", []string{"user"})
+	w, upstream := makeDeleteHistoryRequest(t, db, terminal.SessionID, "owner-user", []string{"user"})
 
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, historyUpstreamCall{
+		Method: "DELETE", Path: "/1.0/test/history", Query: "id=" + terminal.SessionID,
+		APIKey: "test-api-key-owner-user",
+	}, *upstream, "the session is deleted upstream with its owner's key")
 }
 
 // --- DeleteAllUserHistory controller tests ---
@@ -194,7 +205,7 @@ func TestDeleteAllUserHistory_NoApiKey_Returns500(t *testing.T) {
 	db := setupTestDB(t)
 
 	// User "no-key-user" has no terminal API key
-	w := makeDeleteAllHistoryRequest(t, db, "no-key-user", []string{"user"})
+	w, _ := makeDeleteAllHistoryRequest(t, db, "no-key-user", []string{"user"})
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
@@ -213,7 +224,10 @@ func TestDeleteAllUserHistory_WithApiKey_PassesKeyLookup(t *testing.T) {
 	_, err := createTestUserKey(db, "keyed-user")
 	require.NoError(t, err)
 
-	w := makeDeleteAllHistoryRequest(t, db, "keyed-user", []string{"user"})
+	w, upstream := makeDeleteAllHistoryRequest(t, db, "keyed-user", []string{"user"})
 
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, historyUpstreamCall{
+		Method: "DELETE", Path: "/1.0/history/all", APIKey: "test-api-key-keyed-user",
+	}, *upstream, "the bulk delete is scoped upstream by the caller's own key")
 }
