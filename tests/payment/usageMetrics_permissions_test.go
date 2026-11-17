@@ -88,6 +88,18 @@ func TestUsageMetricsGet_MemberCanReadOwnMetrics(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
+// TestUsageMetricsGet_MemberCannotReadAnotherUsersMetrics verifies that the
+// handler itself refuses a member who targets someone else with user_id: the
+// gateway lets every member reach this self-scoped route.
+func TestUsageMetricsGet_MemberCannotReadAnotherUsersMetrics(t *testing.T) {
+	router, _ := setupUsageMetricsRealRouter(t)
+
+	w := requestAs(router, gatewayMember, "GET", "/api/v1/usage-metrics/user?user_id=target-user", "")
+
+	assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "Access denied")
+}
+
 // TestUsageMetricsReset_AdminCanTargetSpecificUser verifies that an admin
 // can reset metrics for a specific user via the user_id query parameter.
 func TestUsageMetricsReset_AdminCanTargetSpecificUser(t *testing.T) {
