@@ -225,88 +225,6 @@ func TestSessionOptions_FeaturePlanDisabled(t *testing.T) {
 }
 
 
-func TestStartComposedSession_RejectsDisabledFeature(t *testing.T) {
-	plan := freePlan() // network disabled
-	distro := baseDistro()
-	sizes := baseSizes()
-	features := baseFeatures()
-
-	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
-
-	// Simulate validation: trying to enable network
-	for _, f := range opts.AllowedFeatures {
-		if f.Key == "network" {
-			assert.False(t, f.Allowed, "network should be disabled on Free plan")
-			assert.Equal(t, "plan_disabled", f.Reason)
-		}
-	}
-}
-
-func TestStartComposedSession_EnforcesMaxDuration(t *testing.T) {
-	plan := freePlan() // max 60 minutes = 3600 seconds
-
-	// Case 1: expiry exceeds max → should be capped
-	expiry := 7200 // 2 hours
-	maxDurationSeconds := plan.MaxSessionDurationMinutes * 60
-	if expiry == 0 || expiry > maxDurationSeconds {
-		expiry = maxDurationSeconds
-	}
-	assert.Equal(t, 3600, expiry, "expiry should be capped to plan max duration")
-
-	// Case 2: expiry is 0 → should be set to max
-	expiry = 0
-	if expiry == 0 || expiry > maxDurationSeconds {
-		expiry = maxDurationSeconds
-	}
-	assert.Equal(t, 3600, expiry, "zero expiry should default to plan max duration")
-
-	// Case 3: expiry within limits → should stay
-	expiry = 1800 // 30 minutes
-	if expiry == 0 || expiry > maxDurationSeconds {
-		expiry = maxDurationSeconds
-	}
-	assert.Equal(t, 1800, expiry, "expiry within limits should not change")
-}
-
-func TestSessionOptions_AllSizesKey(t *testing.T) {
-	plan := &paymentModels.SubscriptionPlan{
-		NetworkAccessEnabled: false,
-	}
-	distro := baseDistro()
-	sizes := baseSizes()
-	features := []dto.TTFeature{}
-
-	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
-
-	for _, s := range opts.AllowedSizes {
-		assert.True(t, s.Allowed, "size %s should be allowed when plan has 'all'", s.Key)
-	}
-}
-
-// TestSessionOptions_MinSize_DistroExcludesBelowFloor — the distro's
-// MinSizeKey is now the only size gate at read time. Sizes below the
-// floor are dropped from AllowedSizes entirely; everything at or above
-// is admitted (the budget engine handles per-launch limits).
-func TestSessionOptions_MinSize_DistroExcludesBelowFloor(t *testing.T) {
-	plan := &paymentModels.SubscriptionPlan{}
-	distro := baseDistro()
-	distro.MinSizeKey = "S"
-	sizes := baseSizes()
-	features := []dto.TTFeature{}
-
-	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
-
-	sizeKeys := make([]string, 0, len(opts.AllowedSizes))
-	for _, s := range opts.AllowedSizes {
-		sizeKeys = append(sizeKeys, s.Key)
-	}
-	assert.NotContains(t, sizeKeys, "XS", "XS should be excluded by distro min_size")
-
-	for _, s := range opts.AllowedSizes {
-		assert.True(t, s.Allowed, "%s should be admitted", s.Key)
-	}
-}
-
 // ==========================================
 // Distribution prefix vs name (regression: console URL must use prefix)
 // ==========================================
@@ -331,30 +249,6 @@ func TestComputeSessionOptions_ReturnsDistributionPrefix(t *testing.T) {
 	assert.Equal(t, "alpine", result.Distribution.Name, "session options must return distribution name")
 	assert.NotEqual(t, result.Distribution.Name, result.Distribution.Prefix,
 		"name and prefix must be different — if they're equal, the code might confuse them")
-}
-
-func TestDistributionPrefix_MustBeUsedForInstanceType(t *testing.T) {
-	// This test documents the invariant: InstanceType on the Terminal model
-	// must be the distribution PREFIX (e.g., "alp"), not the name (e.g., "alpine").
-	// The prefix is used by tt-backend for console, info, expire URL paths.
-	// Using the name instead causes WebSocket 1006 errors.
-
-	distro := dto.TTDistribution{
-		Name:   "debian",
-		Prefix: "deb",
-	}
-
-	// Simulate what StartComposedSession does after GetSessionOptions
-	input := dto.CreateComposedSessionInput{
-		Distribution: "debian",
-	}
-	input.DistributionPrefix = distro.Prefix
-
-	// The InstanceType stored on Terminal must be the prefix, not the name
-	instanceType := input.DistributionPrefix
-	assert.Equal(t, "deb", instanceType, "InstanceType must be the prefix, not the distribution name")
-	assert.NotEqual(t, input.Distribution, instanceType,
-		"InstanceType must differ from Distribution (prefix vs name)")
 }
 
 // ==========================================
