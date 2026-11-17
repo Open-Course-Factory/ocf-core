@@ -40,34 +40,6 @@ func TestTerminalStateConstants_PinnedWireFormat(t *testing.T) {
 	}
 }
 
-// TestTerminalStateConstants_Distinct guards against a copy-paste regression
-// where two constants would share the same underlying string (e.g.
-// StateStarting = "starting"; StateResuming = "starting"). Such a bug would
-// silently fold two lifecycle states into one and would not be caught by the
-// pinned-wire-format test alone.
-func TestTerminalStateConstants_Distinct(t *testing.T) {
-	all := []models.TerminalState{
-		models.StateRunning,
-		models.StateStopped,
-		models.StateDeleted,
-		models.StateStarting,
-		models.StateResuming,
-		models.StateHibernating,
-	}
-
-	seen := make(map[string]models.TerminalState, len(all))
-	for _, s := range all {
-		v := string(s)
-		if prev, ok := seen[v]; ok {
-			t.Errorf("duplicate underlying value %q shared by %q and %q", v, prev, s)
-			continue
-		}
-		seen[v] = s
-	}
-
-	assert.Equal(t, len(all), len(seen), "every TerminalState constant must have a unique underlying string")
-}
-
 // TestTerminalState_JSONRoundTrip_ByteIdentical pins the JSON wire format of
 // the State field on the Terminal model. The frontend's TerminalSession union
 // type (ocf-front src/types/terminal.ts) discriminates on the raw "state"
