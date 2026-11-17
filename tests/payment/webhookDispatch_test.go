@@ -132,9 +132,7 @@ func TestStripeWebhook_EventType_AppliesItsEffect(t *testing.T) {
 			router.ServeHTTP(w, buildSignedWebhookRequest(t, payload, secret))
 
 			require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
-			var event models.WebhookEvent
-			require.NoError(t, db.First(&event, "event_id = ?", eventID).Error)
-			assert.Equal(t, models.WebhookEventStatusProcessed, event.Status)
+			assert.Equal(t, models.WebhookEventStatusProcessed, fetchWebhookEventStatus(t, db, eventID))
 			tc.check(t, db, sub)
 		})
 	}

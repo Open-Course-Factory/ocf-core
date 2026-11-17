@@ -1,7 +1,8 @@
 // tests/payment/linkSubscriptionToUser_test.go
 //
-// The admin route that attaches an existing Stripe subscription to a user,
-// through the real controller and service.
+// The route that attaches an existing Stripe subscription to a user, through
+// the real controller and service. The router has no auth middleware: who may
+// call the route is not tested here.
 package payment_tests
 
 import (
@@ -19,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLinkSubscriptionToUser_AdminRequest_StoresSubscriptionForNamedUser(t *testing.T) {
+func TestLinkSubscriptionToUser_UnlinkedSubscription_StoredForNamedUser(t *testing.T) {
 	const stripeSubID = "sub_to_link"
 
 	cases := []struct {
@@ -30,6 +31,7 @@ func TestLinkSubscriptionToUser_AdminRequest_StoresSubscriptionForNamedUser(t *t
 		wantOwner       string // owner of the Stripe subscription afterwards, empty = not stored
 	}{
 		{name: "unlinked subscription goes to the named user", userIDField: `"user_id":"user_named",`, wantStatus: http.StatusOK, wantOwner: "user_named"},
+		// A business conflict where 409 would fit: the handler maps every service error to 500. Flip this row on purpose when that changes.
 		{name: "already linked subscription stays with its owner", userIDField: `"user_id":"user_named",`, alreadyLinkedTo: "user_first", wantStatus: http.StatusInternalServerError, wantOwner: "user_first"},
 		{name: "request without a user is refused", wantStatus: http.StatusBadRequest},
 	}
