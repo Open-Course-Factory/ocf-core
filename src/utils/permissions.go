@@ -143,6 +143,11 @@ func AddGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID str
 //
 //	RemoveGroupingPolicy(enforcer, "userId123", "group:abc", opts)
 func RemoveGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID string, opts PermissionOptions) error {
+	// An empty user is a wildcard for the filtered removal below.
+	if userID == "" {
+		return fmt.Errorf("failed to remove user from role group: empty user")
+	}
+
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
 			return fmt.Errorf("failed to load policy: %w", err)

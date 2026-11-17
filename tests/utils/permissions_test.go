@@ -154,6 +154,17 @@ func TestRemoveGroupingPolicy(t *testing.T) {
 	})
 }
 
+// An empty user would act as a wildcard and remove every user's roles.
+func TestRemoveGroupingPolicy_EmptyUser_ReturnsErrorAndRemovesNothing(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	err := utils.RemoveGroupingPolicy(mockEnforcer, "", "", utils.DefaultPermissionOptions())
+
+	assert.Error(t, err)
+	assert.Empty(t, mockEnforcer.RemoveFilteredGroupingPolicyCalls)
+	assert.Equal(t, 0, mockEnforcer.GetRemoveGroupingPolicyCallCount())
+}
+
 // ==========================================
 // High-Level Entity Permission Function Tests
 // ==========================================
