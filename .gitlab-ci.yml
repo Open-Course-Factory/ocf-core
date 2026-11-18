@@ -64,13 +64,21 @@ stages:
 
 .test_job_base:
   stage: test
-  # pull_policy if-not-present is refused by the runner (allowed_pull_policies: [always]).
+  # The labinux runner pulls images with pull_policy if-not-present.
   image: golang:${GO_VERSION}
   variables:
     GOPATH: $CI_PROJECT_DIR/.go
     GOCACHE: $CI_PROJECT_DIR/.go/cache
-  # No `cache:` here: the runner keeps its local cache per runner and per concurrent slot,
-  # so 0 of 4 jobs hit it while archiving cost 47-62 s each (#601).
+  # The labinux runner binds /cache to one host directory for all concurrent slots,
+  # so every job sees the cache the previous one pushed. Compiling dominates these jobs.
+  cache:
+    key:
+      prefix: go-
+      files: [go.sum]
+    paths:
+      - .go/pkg/mod
+      - .go/cache
+      - .go/bin
   before_script:
     - export PATH=$PATH:$GOPATH/bin
     - go mod download
