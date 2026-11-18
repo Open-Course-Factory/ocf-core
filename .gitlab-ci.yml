@@ -227,18 +227,21 @@ test:auth:
         MYSQL_DATABASE: casdoor
     - name: ${CI_REGISTRY_IMAGE}/casdoor-test:${CASDOOR_TEST_TAG}
       alias: casdoor-test
+      # latest moves; an if-not-present runner would keep a stale copy.
+      pull_policy: always
   variables:
     # Services reach each other by alias (Casdoor -> casdoor-db-test) only on a per-build network.
     FF_NETWORK_PER_BUILD: "true"
     CASDOOR_TEST_TAG: latest
+    # Service logs in the job log, to see why Casdoor or MySQL died.
+    CI_DEBUG_SERVICES: "true"
     RUNNING_IN_DOCKER: "true"
-    POSTGRES_DB: ocf_test
-    POSTGRES_USER: postgres
-    POSTGRES_PASSWORD: "postgres"
+    # The other POSTGRES_* globals configure both the postgres service and the tests.
     POSTGRES_HOST: postgres-test
-    POSTGRES_PORT: "5432"
-    POSTGRES_SSLMODE: disable
     CASDOOR_ENDPOINT: "http://casdoor-test:8000"
+  # test:unit is the only cache writer.
+  cache:
+    policy: pull
   before_script:
     - export PATH=$PATH:$GOPATH/bin
     # JWT certificate from a GitLab CI variable (test certificate for auth tests)
@@ -267,6 +270,7 @@ test:auth:
     expire_in: 1 week
   rules:
     # A Casdoor input changed: use the image build:casdoor-test-image pushed in this pipeline.
+    # A web pipeline on main rebuilds and moves latest.
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes: *casdoor_test_inputs
       variables:
