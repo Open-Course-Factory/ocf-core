@@ -366,6 +366,13 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 		return err
 	}
 
+	// Re-adding a removed member keeps the mark of the organization that created the account.
+	created, err := services.RemovedMembershipWasCreatedHere(h.db, org.ID, member.UserID)
+	if err != nil {
+		return err
+	}
+	member.AccountCreatedByOrganization = created
+
 	// Set InvitedBy if not already set
 	if member.InvitedBy == "" {
 		member.InvitedBy = ctx.UserID
@@ -620,7 +627,7 @@ func (h *OrganizationMemberPermissionHook) grantForNewMember(ctx *hooks.HookCont
 		// A failed unblock rolls the stamps back so a later join can still lift the
 		// block; the account stays blocked, the safe direction: warn, do not fail the write.
 		if err := h.db.Transaction(func(tx *gorm.DB) error {
-			return services.LiftOffboardingBlock(tx, h.accounts, member.UserID)
+			return services.LiftOffboardingBlock(tx, h.accounts, member.OrganizationID, member.UserID)
 		}); err != nil {
 			utils.Warn("Failed to lift the offboarding block of new organization member %s: %v", member.UserID, err)
 		}

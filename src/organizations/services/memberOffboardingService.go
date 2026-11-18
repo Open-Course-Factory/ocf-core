@@ -50,13 +50,14 @@ type MemberOffboardingService interface {
 	// Offboard deactivates the memberships, stamps left_at, terminates their
 	// running terminals and releases their assigned seats. For an account this
 	// organization created it also schedules the erasure from the organization's
-	// retention, and forbids the account when it belongs to this organization
-	// alone; a platform administrator forbids any such account. A target who
-	// outranks actorID refuses the whole call.
+	// retention, and forbids the account unless the person pays for it or owns
+	// an organization or group elsewhere (being active in another organization
+	// does not prevent it). A platform administrator also forbids an account
+	// this organization did not create when it belongs to this organization
+	// alone. A target who outranks actorID refuses the whole call.
 	Offboard(orgID uuid.UUID, userIDs []string, actorID string) error
 	// Reinstate reverses Offboard: the row is active again with both stamps
-	// cleared, and the account block is lifted when any organization's
-	// offboarding set it (a block set otherwise stays).
+	// cleared, and offboarding blocks are lifted as LiftOffboardingBlock says.
 	// Refuses a member who is not offboarded or who outranks actorID.
 	Reinstate(orgID uuid.UUID, userID string, actorID string) error
 	// EraseNow erases an offboarded member ahead of its scheduled date. Only a
@@ -115,7 +116,7 @@ func (s *memberOffboardingService) Offboard(orgID uuid.UUID, userIDs []string, a
 		schedule[userID] = target.AccountCreatedByOrganization
 		// An unknown answer does not forbid: blocking a whole account is the harmful direction.
 		forbid[userID] = (target.AccountCreatedByOrganization || actorIsAdmin) &&
-			belongsToOrganizationAlone(s.alone, org.ID, userID)
+			controlsAccount(s.alone, org.ID, target)
 		if forbid[userID] {
 			// A block someone else set is left alone, so reinstating never lifts it.
 			blocked, err := authModels.IsAccountBlocked(s.db, userID)
@@ -250,12 +251,10 @@ func (s *memberOffboardingService) Reinstate(orgID uuid.UUID, userID string, act
 }
 
 // reactivate is the one place a membership comes back to life: the row is
-// active with both offboarding stamps cleared, and the account block is lifted
-// only when an offboarding set it — this membership's or another
-// organization's, whose block stood because the account belonged to it alone,
-// which it no longer does. The other row stays offboarded; only its stamp goes.
-// The Casdoor call runs inside the transaction so a failure leaves the member
-// offboarded rather than active-but-locked-out.
+// active with both offboarding stamps cleared, and offboarding blocks are
+// lifted as LiftOffboardingBlock says. The Casdoor call runs inside the
+// transaction so a failure leaves the member offboarded rather than
+// active-but-locked-out.
 func (s *memberOffboardingService) reactivate(tx *gorm.DB, member *organizationModels.OrganizationMember) error {
 	if err := tx.Model(member).Updates(map[string]any{
 		"is_active":            true,
@@ -264,22 +263,34 @@ func (s *memberOffboardingService) reactivate(tx *gorm.DB, member *organizationM
 	}).Error; err != nil {
 		return fmt.Errorf("failed to reinstate member %s: %w", member.UserID, err)
 	}
-	return LiftOffboardingBlock(tx, s.accounts, member.UserID)
+	return LiftOffboardingBlock(tx, s.accounts, member.OrganizationID, member.UserID)
 }
 
-// LiftOffboardingBlock is called whenever userID becomes an active member of an
-// organization: an offboarding block stood because the account belonged to the
-// offboarding organization alone, which it no longer does. Every row's block
-// stamp is cleared (the rows stay offboarded) and the account is unblocked when
-// one was set. A block set otherwise (no stamp) stays.
-func LiftOffboardingBlock(tx *gorm.DB, accounts AccountForbidder, userID string) error {
+// LiftOffboardingBlock is called whenever userID becomes an active member of
+// orgID. It clears the block stamp of orgID's own row and of every row whose
+// organization did not create the account (that block stood because the
+// account belonged to it alone, which it no longer does); a creating
+// organization's stamp elsewhere stays, since that organization keeps control.
+// The rows stay offboarded. The account is unblocked only when a stamp was
+// cleared and none remains; a block set otherwise (no stamp) stays.
+func LiftOffboardingBlock(tx *gorm.DB, accounts AccountForbidder, orgID uuid.UUID, userID string) error {
 	cleared := tx.Model(&organizationModels.OrganizationMember{}).
-		Where("user_id = ? AND account_forbidden_by_offboarding = ?", userID, true).
+		Where("user_id = ? AND account_forbidden_by_offboarding = ? AND (account_created_by_organization = ? OR organization_id = ?)",
+			userID, true, false, orgID).
 		Update("account_forbidden_by_offboarding", false)
 	if cleared.Error != nil {
 		return fmt.Errorf("failed to clear the offboarding block of %s: %w", userID, cleared.Error)
 	}
 	if cleared.RowsAffected == 0 {
+		return nil
+	}
+	var remaining int64
+	if err := tx.Model(&organizationModels.OrganizationMember{}).
+		Where("user_id = ? AND account_forbidden_by_offboarding = ?", userID, true).
+		Count(&remaining).Error; err != nil {
+		return fmt.Errorf("failed to read the offboarding blocks of %s: %w", userID, err)
+	}
+	if remaining > 0 {
 		return nil
 	}
 	if err := accounts.SetForbidden(userID, false); err != nil {
@@ -328,8 +339,15 @@ func findMembership(tx *gorm.DB, orgID uuid.UUID, userID string) (*organizationM
 }
 
 // createMembership inserts a plain member row and grants the organization
-// policy, as the CSV import always did.
+// policy, as the CSV import always did. A removed membership's created mark is kept.
 func createMembership(tx *gorm.DB, orgID uuid.UUID, userID string, accountCreated bool) error {
+	if !accountCreated {
+		carried, err := RemovedMembershipWasCreatedHere(tx, orgID, userID)
+		if err != nil {
+			return err
+		}
+		accountCreated = carried
+	}
 	member := organizationModels.OrganizationMember{
 		OrganizationID: orgID,
 		UserID:         userID,
@@ -346,4 +364,17 @@ func createMembership(tx *gorm.DB, orgID uuid.UUID, userID string, accountCreate
 	opts.WarnOnError = true
 	utils.AddPolicy(casdoor.Enforcer, userID, fmt.Sprintf("/api/v1/organizations/%s", orgID), "GET|POST|PATCH", opts)
 	return nil
+}
+
+// RemovedMembershipWasCreatedHere reports whether a removed (soft-deleted)
+// membership of userID in orgID was marked created by orgID: re-adding the
+// member in the same organization keeps the mark.
+func RemovedMembershipWasCreatedHere(db *gorm.DB, orgID uuid.UUID, userID string) (bool, error) {
+	var marked int64
+	if err := db.Unscoped().Model(&organizationModels.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ? AND deleted_at IS NOT NULL AND account_created_by_organization = ?", orgID, userID, true).
+		Count(&marked).Error; err != nil {
+		return false, fmt.Errorf("failed to read the removed membership of %s: %w", userID, err)
+	}
+	return marked > 0, nil
 }

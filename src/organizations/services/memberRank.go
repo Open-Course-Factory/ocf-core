@@ -19,17 +19,22 @@ var (
 	errNotCreatedHere   = errors.New("not created by this organization; skipped")
 )
 
-// OrganizationAloneChecker refuses an account still tied to anything outside
-// orgID. auth/services' UserDeletionService satisfies it.
+// OrganizationAloneChecker answers what ties an account outside orgID.
+// auth/services' UserDeletionService satisfies it.
 type OrganizationAloneChecker interface {
+	// CheckBelongsToOrganizationAlone refuses an account still tied to anything outside orgID.
 	CheckBelongsToOrganizationAlone(orgID uuid.UUID, userID string) error
+	// CheckNoPersonalTies refuses an account its holder pays for personally or
+	// that owns an organization or group outside orgID.
+	CheckNoPersonalTies(orgID uuid.UUID, userID string) error
 }
 
 // newRankCheck resolves the actor once and returns the check for one target,
 // with the target's membership when it has one: the rank rule of
 // newRankOnlyCheck, then, for an actor who is not a platform administrator, the
 // organization must have created the account (errNotCreatedHere otherwise) and
-// the target must belong to this organization alone (errBelongsElsewhere otherwise).
+// the account must carry no personal tie (errBelongsElsewhere otherwise); being
+// active in another organization does not take it from its creator.
 func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organizationModels.Organization, actorID string) (func(targetID string) (*organizationModels.OrganizationMember, error), error) {
 	checkRank, actorIsAdmin, err := newRankOnlyCheck(db, org, actorID)
 	if err != nil {
@@ -43,7 +48,7 @@ func newRankCheck(db *gorm.DB, alone OrganizationAloneChecker, org *organization
 		if !target.AccountCreatedByOrganization {
 			return target, errNotCreatedHere
 		}
-		if !belongsToOrganizationAlone(alone, org.ID, targetID) {
+		if !controlsAccount(alone, org.ID, target) {
 			return target, errBelongsElsewhere
 		}
 		return target, nil
@@ -141,16 +146,22 @@ func withinReach(actorRole, targetRole organizationModels.OrganizationMemberRole
 		access.RolePriority(string(actorRole)) > access.RolePriority(string(targetRole))
 }
 
-// belongsToOrganizationAlone reports whether nothing outside orgID holds the
-// account; an unknown (nil check or failed lookup) reports false.
-func belongsToOrganizationAlone(alone OrganizationAloneChecker, orgID uuid.UUID, userID string) bool {
+// controlsAccount reports whether orgID may act on target's whole account
+// (reset it, block it): an account orgID created unless the person pays for it
+// or owns something outside orgID; any other account only when it belongs to
+// orgID alone. An unknown (nil check or failed lookup) reports false.
+func controlsAccount(alone OrganizationAloneChecker, orgID uuid.UUID, target *organizationModels.OrganizationMember) bool {
 	if alone == nil {
-		utils.Warn("No organization-alone check wired; treating user %s in %s as belonging elsewhere", userID, orgID)
+		utils.Warn("No organization-alone check wired; treating user %s in %s as belonging elsewhere", target.UserID, orgID)
 		return false
 	}
+	check := alone.CheckBelongsToOrganizationAlone
+	if target.AccountCreatedByOrganization {
+		check = alone.CheckNoPersonalTies
+	}
 	// The cause stays in the log: it describes another person's account.
-	if err := alone.CheckBelongsToOrganizationAlone(orgID, userID); err != nil {
-		utils.Debug("User %s belongs elsewhere than %s: %v", userID, orgID, err)
+	if err := check(orgID, target.UserID); err != nil {
+		utils.Debug("User %s belongs elsewhere than %s: %v", target.UserID, orgID, err)
 		return false
 	}
 	return true

@@ -16,7 +16,7 @@ import (
 
 // OffboardMembers godoc
 // @Summary Offboard organization members
-// @Description Deactivates the memberships, terminates this organization's running terminals and releases assigned seats. For an account this organization created, it schedules erasure after the organization's retention period and, when the account belongs to this organization alone, blocks sign-in and terminates all its terminals. Class rosters are untouched.
+// @Description Deactivates the memberships, terminates this organization's running terminals and releases assigned seats. For an account this organization created, it schedules erasure after the organization's retention period and, unless the person holds a paid personal subscription or owns an organization or group elsewhere, blocks sign-in and terminates all its terminals, even while the account is active in another organization. Class rosters are untouched.
 // @Tags organizations
 // @Accept json
 // @Produce json
@@ -55,7 +55,7 @@ func (oc *OrganizationController) OffboardMembers(ctx *gin.Context) {
 
 // ReinstateMember godoc
 // @Summary Reinstate an offboarded member
-// @Description Reactivates the membership and clears the erasure schedule. Sign-in is unblocked when an organization's offboarding blocked it; a block set otherwise stays.
+// @Description Reactivates the membership and clears the erasure schedule. Lifts this organization's offboarding block and any set by an organization that did not create the account; sign-in is unblocked once no offboarding block remains. A block set by the organization that created the account, or set otherwise, stays.
 // @Tags organizations
 // @Produce json
 // @Param id path string true "Organization ID"

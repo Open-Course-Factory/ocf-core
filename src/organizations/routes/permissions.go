@@ -21,12 +21,12 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/members/offboard", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
-			Description: "Offboard members the caller outranks: deactivate; for an account this organization created, block sign-in when it belongs to this organization alone and schedule erasure after the retention period",
+			Description: "Offboard members the caller outranks: deactivate; for an account this organization created, schedule erasure after the retention period and block sign-in unless the person pays for it or owns an organization or group elsewhere",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/members/:userId/reinstate", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
-			Description: "Reinstate an offboarded member the caller outranks; lifts the account block when an organization's offboarding set it",
+			Description: "Reinstate an offboarded member the caller outranks; lifts this organization's offboarding block and any set by an organization that did not create the account",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/members/:userId/erase", Method: "POST",

@@ -59,6 +59,9 @@ type UserDeletionService interface {
 	// organization, a paid personal subscription, or an organization or group
 	// owned outside orgID.
 	CheckBelongsToOrganizationAlone(orgID uuid.UUID, userID string) error
+	// CheckNoPersonalTies refuses, with the erasure errors, a user who holds a
+	// paid personal subscription or owns an organization or group outside orgID.
+	CheckNoPersonalTies(orgID uuid.UUID, userID string) error
 }
 
 // TerminalKeyRevoker is the one call erasure needs from the terminal service:
@@ -176,6 +179,13 @@ func (s *userDeletionService) CheckBelongsToOrganizationAlone(orgID uuid.UUID, u
 	return s.assertNoOwnedOrgsOrGroups(userID, orgID)
 }
 
+func (s *userDeletionService) CheckNoPersonalTies(orgID uuid.UUID, userID string) error {
+	if err := s.assertNoPaidPersonalSubscription(userID); err != nil {
+		return err
+	}
+	return s.assertNoOwnedOrgsOrGroups(userID, orgID)
+}
+
 // assertCreatedByOrganization refuses unless orgID's membership of userID
 // records that orgID created the account; a platform administrator passes.
 func (s *userDeletionService) assertCreatedByOrganization(orgID uuid.UUID, userID string, byAdministrator bool) error {
@@ -209,7 +219,12 @@ func (s *userDeletionService) assertNotActiveElsewhere(orgID uuid.UUID, userID s
 	if activeElsewhere > 0 {
 		return ErrStillActiveElsewhere
 	}
+	return s.assertNoPaidPersonalSubscription(userID)
+}
 
+// assertNoPaidPersonalSubscription refuses a user holding an entitling paid
+// subscription they bought themselves.
+func (s *userDeletionService) assertNoPaidPersonalSubscription(userID string) error {
 	var paidSubscriptions int64
 	if err := s.db.Model(&paymentModels.UserSubscription{}).
 		Joins("JOIN subscription_plans ON subscription_plans.id = user_subscriptions.subscription_plan_id").
