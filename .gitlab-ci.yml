@@ -52,7 +52,7 @@ variables:
 # ============================================================================
 
 stages:
-  - prepare  # Build CI images (only when Dockerfiles change)
+  - prepare  # Build CI images (only when their inputs change)
   - test     # All test suites (unit, integration, race, auth) — MUST pass before tagging
   - check    # Version validation and auto-tagging (only after tests pass)
   - build    # Docker image creation on release tags
@@ -103,7 +103,7 @@ stages:
     - if: $CI_PIPELINE_SOURCE == "web"  # Manual trigger
 
 # NOTE: .postgres_test_base removed — unit tests use in-memory SQLite.
-# PostgreSQL is only needed for integration tests (test:auth job with Docker-in-Docker).
+# PostgreSQL is only needed for integration tests (test:auth job, as a service).
 
 # ============================================================================
 # Release Component
@@ -138,25 +138,37 @@ include:
 # Prepare Stage — build CI images when their Dockerfiles change
 # ============================================================================
 
-build:ci-auth-image:
+# Casdoor with the test config and init data baked in, run by test:auth as a service.
+# Rebuilt when an input changes; the job definition itself is an input (build arg).
+.casdoor_test_inputs: &casdoor_test_inputs
+  - Dockerfile.casdoor
+  - init_data.json
+  - wait-for-mysql.sh
+  - src/configuration/casdoor_app_test.conf
+  - .gitlab-ci.yml
+
+build:casdoor-test-image:
   stage: prepare
   image: docker:27
   services:
     - docker:27-dind
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
-    CI_AUTH_IMAGE: ${CI_REGISTRY_IMAGE}/ci-auth:latest
+    CASDOOR_TEST_IMAGE: ${CI_REGISTRY_IMAGE}/casdoor-test
   script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build -f Dockerfile.ci-auth -t $CI_AUTH_IMAGE .
-    - docker push $CI_AUTH_IMAGE
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker build -f Dockerfile.casdoor --build-arg CONFIG_FILE=src/configuration/casdoor_app_test.conf -t $CASDOOR_TEST_IMAGE:$CI_COMMIT_SHA .
+    - docker push $CASDOOR_TEST_IMAGE:$CI_COMMIT_SHA
+    # Only main moves latest, so an MR never changes the image other MRs test against.
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag $CASDOOR_TEST_IMAGE:$CI_COMMIT_SHA $CASDOOR_TEST_IMAGE:latest
+        docker push $CASDOOR_TEST_IMAGE:latest
+      fi
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      changes:
-        - Dockerfile.ci-auth
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: *casdoor_test_inputs
     - if: $CI_PIPELINE_SOURCE == "web"
-      changes:
-        - Dockerfile.ci-auth
 
 # ============================================================================
 # Test Stage
@@ -197,93 +209,72 @@ test:unit:
       - tests.log
     expire_in: 1 week
 
-# Integration tests for Casdoor authentication flow
-# Requires: PostgreSQL (app DB), MySQL (Casdoor DB), Casdoor service
-# Uses Docker-in-Docker to run all services in isolated network
-# Only runs tests with //go:build integration tag
+# Integration tests for Casdoor authentication flow (//go:build integration).
+# PostgreSQL, MySQL and Casdoor run as job services: each job gets its own stack
+# on its own network, so jobs run in parallel without sharing state.
 test:auth:
-  stage: test
-  # One dind + compose stack at a time per project: parallel stacks starve the
-  # runner host and the dind service never comes up (issue #498).
-  resource_group: dind-integration
-  # Custom image with Go + tools pre-installed (see Dockerfile.ci-auth).
-  # Auto-built by build:ci-auth-image job when Dockerfile.ci-auth changes.
-  image: ${CI_REGISTRY_IMAGE}/ci-auth:latest
+  extends: .test_job_base
   needs:
-    - job: build:ci-auth-image
-      optional: true  # Skip dependency when Dockerfile.ci-auth hasn't changed
-
+    - job: build:casdoor-test-image
+      optional: true  # Absent when no Casdoor input changed: latest is used
   services:
-    - docker:27-dind
-
+    - name: postgres:16
+      alias: postgres-test
+    - name: mysql:8.4.13
+      alias: casdoor-db-test
+      variables:
+        MYSQL_ROOT_PASSWORD: "123456"
+        MYSQL_DATABASE: casdoor
+    - name: ${CI_REGISTRY_IMAGE}/casdoor-test:${CASDOOR_TEST_TAG}
+      alias: casdoor-test
   variables:
-    DOCKER_DRIVER: overlay2
-    DOCKER_TLS_CERTDIR: "/certs"
-    # Unique project name per job to avoid container name collisions
-    # when multiple MR pipelines run in parallel on the same runner
-    COMPOSE_PROJECT: "ocf-test-${CI_JOB_ID}"
-    # PostgreSQL connection via docker network (service name, resolved by compose DNS)
+    # Services reach each other by alias (Casdoor -> casdoor-db-test) only on a per-build network.
+    FF_NETWORK_PER_BUILD: "true"
+    CASDOOR_TEST_TAG: latest
+    RUNNING_IN_DOCKER: "true"
     POSTGRES_DB: ocf_test
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: "postgres"
     POSTGRES_HOST: postgres-test
     POSTGRES_PORT: "5432"
     POSTGRES_SSLMODE: disable
-    # Casdoor connection (service name, resolved by compose DNS)
     CASDOOR_ENDPOINT: "http://casdoor-test:8000"
-
   before_script:
-    # Create JWT certificate from GitLab CI variable (use test certificate for auth tests)
+    - export PATH=$PATH:$GOPATH/bin
+    # JWT certificate from a GitLab CI variable (test certificate for auth tests)
     - echo $token_jwt_key_test | base64 -d > ./src/auth/casdoor/token_jwt_key.pem
-
-    # Remove stacks left by earlier jobs that never reached after_script
-    - bash scripts/ci/reap-stale-stacks.sh ocf-test-
-
-    # Start all services at once — compose handles ordering via depends_on + healthchecks
-    - echo "🐳 Starting all services (compose handles dependency ordering)..."
-    # 480 = MySQL (180 s start_period + 30 x 2 s) then Casdoor (same), one after the other (#634)
-    - docker compose -p $COMPOSE_PROJECT -f docker-compose.test.yml up -d --wait --wait-timeout 480
-
-    - echo "🎉 All services are ready!"
-
-    # Download Go modules (host side, for go-junit-report)
-    - go mod download
-
-  script:
-    - echo "🔐 Running auth integration tests..."
-    # Run tests inside the compose network to access services by service name
-    # Fixed volume names (not per-job) so Go module cache persists across CI runs
+    - go install github.com/jstemmer/go-junit-report/v2@v2.1.0
+    # Compile while the services start; -exec true skips running TestMain, which needs them.
+    - go test -tags integration -count=1 -exec true ./tests/auth/...
+    # GitLab only waits for open ports; Casdoor answering means MySQL is up too.
     - |
-      docker run --rm \
-        --network ${COMPOSE_PROJECT}_default \
-        -v $(pwd):/workspace \
-        -v ocf-gomod-cache:/go/pkg/mod \
-        -v ocf-gobuild-cache:/root/.cache/go-build \
-        -w /workspace \
-        -e POSTGRES_DB=$POSTGRES_DB \
-        -e POSTGRES_USER=$POSTGRES_USER \
-        -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD \
-        -e POSTGRES_HOST=$POSTGRES_HOST \
-        -e POSTGRES_PORT=$POSTGRES_PORT \
-        -e POSTGRES_SSLMODE=$POSTGRES_SSLMODE \
-        -e CASDOOR_ENDPOINT=$CASDOOR_ENDPOINT \
-        golang:1.27-trixie \
-        sh -c "go test -v -tags integration -timeout=120s ./tests/auth/... 2>&1 | tee auth_tests.log"
-    - cat auth_tests.log | go-junit-report -set-exit-code > auth_report.xml
-
-  after_script:
-    # --rmi local: casdoor-test is built under the per-job project name, never reused.
-    - docker compose -p ${COMPOSE_PROJECT:-ocf-test-cleanup} -f docker-compose.test.yml down -v --remove-orphans --rmi local || true
-
+      echo "Waiting for PostgreSQL and Casdoor..."
+      timeout 300 bash -c 'until (echo > /dev/tcp/postgres-test/5432) 2>/dev/null && curl -fsS -o /dev/null http://casdoor-test:8000/api/get-account; do sleep 2; done' \
+        || { echo "Services not ready after 300 s"; exit 1; }
+      echo "Services ready"
+  script:
+    - go test -v -tags integration -count=1 -timeout=120s ./tests/auth/... > auth_tests.log 2>&1 || TEST_RC=$?
+    - cat auth_tests.log
+    - go-junit-report -in auth_tests.log -set-exit-code > auth_report.xml || TEST_RC=${TEST_RC:-1}
+    - exit ${TEST_RC:-0}
   artifacts:
+    when: always
     reports:
       junit: auth_report.xml
     paths:
       - auth_report.xml
       - auth_tests.log
     expire_in: 1 week
-
-  rules: !reference [.code_change_rules, rules]
+  rules:
+    # A Casdoor input changed: use the image build:casdoor-test-image pushed in this pipeline.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: *casdoor_test_inputs
+      variables:
+        CASDOOR_TEST_TAG: $CI_COMMIT_SHA
+    - if: $CI_PIPELINE_SOURCE == "web"
+      variables:
+        CASDOOR_TEST_TAG: $CI_COMMIT_SHA
+    - !reference [.code_change_rules, rules]
 
 # ============================================================================
 # Build Stage
