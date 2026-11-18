@@ -123,8 +123,8 @@ type layer2AuditRoute struct {
 // Generic setup / request helpers
 // =============================================================================
 
-// setupLayer2AuditRouter installs Layer 2 with the production declaration for
-// exactly one route, then returns a Gin engine with a fake 200 handler wired
+// setupLayer2AuditRouter installs Layer 2 with this file's catalog entry (not
+// the production declaration) for exactly one route, then returns a Gin engine with a fake 200 handler wired
 // on that route.  Each call starts from a clean registry + enforcer state and
 // registers a cleanup to restore that state.
 func setupLayer2AuditRouter(
