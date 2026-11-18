@@ -46,17 +46,12 @@ echo -e "${BOLD}🧪 Running tests...${NC}\n"
 if [ "$1" == "quick" ]; then
     echo -e "${YELLOW}Running quick SQLite tests only...${NC}"
     ./run_tests_compiled.sh quick
-elif [ "$1" == "postgres" ]; then
-    echo -e "${YELLOW}Running PostgreSQL tests only...${NC}"
-    go test -c -o entity_tests.exe ./
-    ./entity_tests.exe -test.v -test.run TestPostgres
-    rm -f entity_tests.exe
 elif [ "$1" == "all" ] || [ -z "$1" ]; then
     echo -e "${YELLOW}Running full test suite (SQLite + PostgreSQL)...${NC}"
     ./run_tests_compiled.sh all
 else
     echo -e "${RED}Unknown option: $1${NC}"
-    echo "Usage: $0 [quick|postgres|all]"
+    echo "Usage: $0 [quick|all]"
     exit 1
 fi
 

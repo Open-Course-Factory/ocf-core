@@ -56,7 +56,7 @@ type IntegrationTestEntityInput struct {
 	Name        string   `json:"name" binding:"required"`
 	Description string   `json:"description"`
 	Value       int      `json:"value"`
-	IsActive    bool     `json:"is_active"`
+	IsActive    bool     `json:"is_active" mapstructure:"is_active"`
 	Tags        []string `json:"tags"`
 }
 
@@ -240,8 +240,7 @@ func TestIntegration_FullCRUDFlow(t *testing.T) {
 		assert.Equal(t, input.Name, output.Name)
 		assert.Equal(t, input.Description, output.Description)
 		assert.Equal(t, input.Value, output.Value)
-		// TODO: IsActive field not being saved correctly - investigate boolean field handling
-		// assert.Equal(t, input.IsActive, output.IsActive)
+		assert.Equal(t, input.IsActive, output.IsActive)
 		assert.Equal(t, input.Tags, output.Tags)
 		assert.Contains(t, output.OwnerIDs, userID)
 		assert.NotZero(t, output.CreatedAt)
@@ -434,7 +433,7 @@ func TestIntegration_PaginationAndFiltering(t *testing.T) {
 
 	// Test filtering by boolean
 	t.Run("Filter By IsActive", func(t *testing.T) {
-		t.Skip("SQLite artifact, not a filtering bug: the filter binds the query string \"true\" to is_active = ?, SQLite stores the bool as 1 so it never matches; PostgreSQL converts 'true' to a boolean")
+		t.Skip("SQLite only: the filter binds the query string \"true\" to is_active = ?, SQLite stores the bool as 1 so nothing matches; PostgreSQL converts 'true' to a boolean")
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/integration-test-entities?isActive=true&page=1&size=10", nil)
 		w := httptest.NewRecorder()
 
