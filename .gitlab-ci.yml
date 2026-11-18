@@ -78,7 +78,6 @@ stages:
     paths:
       - .go/pkg/mod
       - .go/cache
-      - .go/bin
   before_script:
     - export PATH=$PATH:$GOPATH/bin
     - go mod download
