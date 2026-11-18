@@ -140,60 +140,6 @@ func allScenariosAuditRoutes() []scenariosAuditRoute {
 }
 
 // -----------------------------------------------------------------------------
-// AUDIT FINDING (#268, fixed by #269) — by-terminal/:terminalId is now
-// SelfScoped.
-//
-// Original bug: the route declared `Access: { Type: EntityOwner, Entity:
-// "ScenarioSession", Field: "UserID" }` but the URL parameter is
-// `:terminalId`, not `:id`. The EntityOwner enforcer at
-// src/auth/access/enforcement_middleware.go hardcodes
-// `entityID := ctx.Param("id")` — it does NOT honor `rule.Param` for
-// EntityOwner. The enforcer therefore read entityID="" and the
-// production GormEntityLoader rejected empty IDs → 403 for every
-// caller, including the legitimate session owner.
-//
-// Fix (#269): reclassify the route as SelfScoped. The controller at
-// scenarioController.go:629 already enforces
-// `if session.UserID != userID → 403` after loading the session by
-// terminal ID, so promoting that check to the canonical authority is
-// the smallest correct change. The deeper EntityOwner-honors-rule.Param
-// fix is tracked in #266.
-//
-// This test now asserts the *positive* shape: the production registry
-// declares the route as SelfScoped. If somebody accidentally regresses
-// the rule back to EntityOwner, this test fails immediately and points
-// at issues #268 / #269 / #266.
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-// AUDIT FINDING (positive) — Layer 1 / Layer 2 path consistency.
-//
-// Every (path, method) pair appearing in the Layer 1 ReconcilePolicy
-// loops at the top of permissions.go must have a matching
-// RouteRegistry.Register entry so Layer 2 actually inspects the route.
-// A Layer 1 policy without a Layer 2 declaration is a silent bypass:
-// the request makes it past the RBAC gate and through Layer 2
-// untouched. This subtest cross-walks the catalog above against the
-// real registry as populated by RegisterScenarioPermissions.
-//
-// We exercise the production registration path by importing the real
-// permissions.go via the scenarios route catalog — the routes in this
-// file are the canonical list. If a route is added or removed from
-// permissions.go, the catalog above must be updated; this subtest is a
-// reminder that the two must stay aligned.
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-// Regression guard: no regex-method declarations.
-//
-// The bug fixed in MR !180 (terminals incus-ui) was a regex method
-// like "(GET|POST|PUT|PATCH|DELETE)" silently bypassing
-// RouteRegistry.Lookup, which does exact method+path string match.
-// This subtest verifies every catalog entry uses a single concrete
-// HTTP verb, mirroring what the production permissions.go declares.
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
 // AUDIT: submit-quiz route (#283) — must be EntityOwner, not SelfScoped.
 //
 // POST /api/v1/scenario-sessions/:id/submit-quiz has the SAME shape as its

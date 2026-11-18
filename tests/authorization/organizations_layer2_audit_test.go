@@ -87,30 +87,3 @@ func allOrganizationsAuditRoutes() []organizationsAuditRoute {
 	all = append(all, organizationsAuditAdminRoutes...)
 	return all
 }
-
-// -----------------------------------------------------------------------------
-// AUDIT FINDING (positive) — Layer 1 / Layer 2 path consistency.
-//
-// Every (path, method) pair appearing in the Layer 1 ReconcilePolicy
-// loops at the top of permissions.go must have a matching
-// RouteRegistry.Register entry so Layer 2 actually inspects the route.
-// A Layer 1 policy without a Layer 2 declaration is a silent bypass:
-// the request makes it past the RBAC gate and through Layer 2
-// untouched. This subtest cross-walks the catalog above against the
-// registry as it would be populated by RegisterOrganizationPermissions.
-//
-// The catalog above is the canonical source of truth for this audit. If
-// a route is added or removed from permissions.go, the catalog must be
-// updated to match — this subtest is a reminder that the two must stay
-// aligned.
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-// Regression guard: no regex-method declarations.
-//
-// The bug fixed in MR !180 (terminals incus-ui) was a regex method
-// like "(GET|POST|PUT|PATCH|DELETE)" silently bypassing
-// RouteRegistry.Lookup, which does exact method+path string match.
-// This subtest verifies every catalog entry uses a single concrete
-// HTTP verb, mirroring what the production permissions.go declares.
-// -----------------------------------------------------------------------------
