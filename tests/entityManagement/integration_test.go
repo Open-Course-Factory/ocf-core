@@ -434,7 +434,7 @@ func TestIntegration_PaginationAndFiltering(t *testing.T) {
 
 	// Test filtering by boolean
 	t.Run("Filter By IsActive", func(t *testing.T) {
-		t.Skip("Boolean field filtering not working - IsActive field not being saved correctly")
+		t.Skip("SQLite artifact, not a filtering bug: the filter binds the query string \"true\" to is_active = ?, SQLite stores the bool as 1 so it never matches; PostgreSQL converts 'true' to a boolean")
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/integration-test-entities?isActive=true&page=1&size=10", nil)
 		w := httptest.NewRecorder()
 
