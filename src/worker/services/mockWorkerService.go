@@ -214,12 +214,5 @@ func (m *MockWorkerService) GetAllJobs() map[string]*MockJob {
 	return result
 }
 
-// ClearJobs nettoie tous les jobs (utile pour les tests)
-func (m *MockWorkerService) ClearJobs() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	m.jobs = make(map[string]*MockJob)
-}
-
 // Interface guard pour s'assurer que MockWorkerService implémente WorkerService
 var _ WorkerService = (*MockWorkerService)(nil)

@@ -13,16 +13,14 @@ type MockCasdoorService struct {
 	users  map[string]*casdoorsdk.User
 	groups map[string]*casdoorsdk.Group
 	// Configuration pour simuler des erreurs
-	userErrors  map[string]error
-	groupErrors map[string]error
+	userErrors map[string]error
 }
 
 func NewMockCasdoorService() *MockCasdoorService {
 	mock := &MockCasdoorService{
-		users:       make(map[string]*casdoorsdk.User),
-		groups:      make(map[string]*casdoorsdk.Group),
-		userErrors:  make(map[string]error),
-		groupErrors: make(map[string]error),
+		users:      make(map[string]*casdoorsdk.User),
+		groups:     make(map[string]*casdoorsdk.Group),
+		userErrors: make(map[string]error),
 	}
 
 	// Ajouter des utilisateurs de test par défaut
@@ -101,19 +99,9 @@ func (m *MockCasdoorService) SetUserError(email string, err error) {
 	m.userErrors[email] = err
 }
 
-// SetGroupError configure une erreur pour un groupe spécifique
-func (m *MockCasdoorService) SetGroupError(groupId string, err error) {
-	m.groupErrors[groupId] = err
-}
-
 // ClearUsers supprime tous les utilisateurs
 func (m *MockCasdoorService) ClearUsers() {
 	m.users = make(map[string]*casdoorsdk.User)
-}
-
-// ClearGroups supprime tous les groupes
-func (m *MockCasdoorService) ClearGroups() {
-	m.groups = make(map[string]*casdoorsdk.Group)
 }
 
 // GetUserByEmail implémente CasdoorService
@@ -135,11 +123,6 @@ func (m *MockCasdoorService) GetUserByEmail(email string) (*casdoorsdk.User, err
 
 // GetGroup implémente CasdoorService
 func (m *MockCasdoorService) GetGroup(groupId string) (*casdoorsdk.Group, error) {
-	// Vérifier s'il y a une erreur configurée pour ce groupe
-	if err, exists := m.groupErrors[groupId]; exists {
-		return nil, err
-	}
-
 	// Retourner le groupe s'il existe
 	if group, exists := m.groups[groupId]; exists {
 		return group, nil
@@ -153,13 +136,6 @@ func (m *MockCasdoorService) GetGroup(groupId string) (*casdoorsdk.Group, error)
 func (m *MockCasdoorService) GetAllUsers() map[string]*casdoorsdk.User {
 	result := make(map[string]*casdoorsdk.User)
 	maps.Copy(result, m.users)
-	return result
-}
-
-// GetAllGroups retourne tous les groupes (utile pour les tests)
-func (m *MockCasdoorService) GetAllGroups() map[string]*casdoorsdk.Group {
-	result := make(map[string]*casdoorsdk.Group)
-	maps.Copy(result, m.groups)
 	return result
 }
 
