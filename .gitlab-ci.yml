@@ -18,7 +18,7 @@ workflow:
 
 default:
   tags:
-    - ocf-core
+    - labinux
   # A newer pipeline on the same ref cancels this one (auto-cancel redundant
   # pipelines is on for the project), so a burst of pushes queues only the latest.
   interruptible: true
