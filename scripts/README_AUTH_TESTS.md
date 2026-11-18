@@ -160,7 +160,7 @@ The local scripts mirror the GitLab CI configuration with these differences:
 | JWT Key | From CI variable | Must be in place manually |
 | Cleanup | Always automatic | Optional (manual cleanup available) |
 | Go installation | Downloads Go 1.27 | Uses Docker image |
-| Networking | DinD network | Host Docker network |
+| Networking | GitLab job services (per-build network) | Host Docker network |
 
 ## What Gets Tested
 

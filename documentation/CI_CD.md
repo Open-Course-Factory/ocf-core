@@ -175,9 +175,9 @@ make coverage
 # Quick tests only
 go test -short ./tests/entityManagement/...
 
-# Auth tests (requires Casdoor)
-docker-compose -f docker-compose.test.yml up -d
-go test -v ./tests/auth/...
+# Auth tests (requires Casdoor; CI runs them as job services)
+docker compose -f docker-compose.test.yml up -d
+go test -v -tags integration ./tests/auth/...
 ```
 
 ### Test Types
