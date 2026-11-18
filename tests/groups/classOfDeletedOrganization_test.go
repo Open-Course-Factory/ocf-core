@@ -42,7 +42,7 @@ func seedOrgClass(t *testing.T, env *classArchiveEnv) (orgModels.Organization, g
 // soft-deletes the row the way the generic delete does.
 func deleteOrg(t *testing.T, env *classArchiveEnv, org orgModels.Organization) {
 	t.Helper()
-	require.NoError(t, orgHooks.NewOrganizationCleanupHook(env.db).Execute(&hooks.HookContext{
+	require.NoError(t, orgHooks.NewOrganizationCleanupHook(env.db, nil).Execute(&hooks.HookContext{
 		EntityName: "Organization", HookType: hooks.BeforeDelete, NewEntity: &org,
 	}))
 	require.NoError(t, env.db.Delete(&orgModels.Organization{}, "id = ?", org.ID).Error)

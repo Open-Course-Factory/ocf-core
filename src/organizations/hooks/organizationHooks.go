@@ -190,16 +190,19 @@ func (h *OrganizationDeleteAuthorizationHook) Execute(ctx *hooks.HookContext) er
 }
 
 // OrganizationCleanupHook revokes permissions when an organization is deleted
+// and lifts the offboarding blocks it set (accounts nil: no lift).
 type OrganizationCleanupHook struct {
 	db                  *gorm.DB
 	organizationService services.OrganizationService
+	accounts            services.AccountForbidder
 	hooks.BaseHook
 }
 
-func NewOrganizationCleanupHook(db *gorm.DB) hooks.Hook {
+func NewOrganizationCleanupHook(db *gorm.DB, accounts services.AccountForbidder) hooks.Hook {
 	return &OrganizationCleanupHook{
 		db:                  db,
 		organizationService: services.NewOrganizationService(db),
+		accounts:            accounts,
 		BaseHook: hooks.BaseHook{
 			Name:       "organization_cleanup",
 			EntityName: "Organization",
@@ -226,6 +229,8 @@ func (h *OrganizationCleanupHook) Execute(ctx *hooks.HookContext) error {
 	err := h.db.Where("organization_id = ?", org.ID).Find(&members).Error
 	if err == nil {
 		for _, member := range members {
+			h.liftOffboardingBlock(org.ID, member.UserID)
+
 			err = h.organizationService.RevokeOrganizationPermissions(member.UserID, org.ID)
 			if err != nil {
 				utils.Warn("Failed to revoke member permissions from user %s: %v", member.UserID, err)
@@ -246,6 +251,23 @@ func (h *OrganizationCleanupHook) Execute(ctx *hooks.HookContext) error {
 
 	utils.Info("Organization deleted: %s (ID: %s)", org.Name, org.ID)
 	return nil
+}
+
+// liftOffboardingBlock lifts the block this organization's offboarding set on
+// userID: once it is deleted nobody can reinstate there, and a join elsewhere
+// never lifts a creating organization's block. The delete runs no transaction
+// of its own, so each lift gets one: a refused unblock keeps the stamp. A
+// failure is logged and does not stop the deletion; an administrator can still
+// unblock the account.
+func (h *OrganizationCleanupHook) liftOffboardingBlock(orgID uuid.UUID, userID string) {
+	if h.accounts == nil {
+		return
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		return services.LiftDeletedOrganizationBlock(tx, h.accounts, orgID, userID)
+	}); err != nil {
+		utils.Warn("Failed to lift the offboarding block of %s when deleting organization %s: %v", userID, orgID, err)
+	}
 }
 
 // archiveOrganizationClasses retires the classes of an organization being

@@ -108,7 +108,7 @@ func seedOrgWithClass(t *testing.T, db *gorm.DB) (organizationModels.Organizatio
 
 func deleteOrganization(t *testing.T, db *gorm.DB, org organizationModels.Organization) error {
 	t.Helper()
-	hook := organizationHooks.NewOrganizationCleanupHook(db)
+	hook := organizationHooks.NewOrganizationCleanupHook(db, nil)
 	return hook.Execute(&hooks.HookContext{
 		HookType:  hooks.BeforeDelete,
 		NewEntity: &org,

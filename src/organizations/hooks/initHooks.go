@@ -51,7 +51,7 @@ func InitOrganizationHooks(db *gorm.DB, accounts services.AccountForbidder) {
 	}
 
 	// Hook for cleaning up permissions when an organization is deleted
-	cleanupHook := NewOrganizationCleanupHook(db)
+	cleanupHook := NewOrganizationCleanupHook(db, accounts)
 	if err := hooks.GlobalHookRegistry.RegisterHook(cleanupHook); err != nil {
 		log.Printf("❌ Failed to register organization cleanup hook: %v", err)
 	} else {

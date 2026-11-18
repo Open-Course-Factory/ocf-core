@@ -274,9 +274,22 @@ func (s *memberOffboardingService) reactivate(tx *gorm.DB, member *organizationM
 // The rows stay offboarded. The account is unblocked only when a stamp was
 // cleared and none remains; a block set otherwise (no stamp) stays.
 func LiftOffboardingBlock(tx *gorm.DB, accounts AccountForbidder, orgID uuid.UUID, userID string) error {
+	return clearStampsAndUnblock(tx, accounts, userID, "account_created_by_organization = ? OR organization_id = ?", false, orgID)
+}
+
+// LiftDeletedOrganizationBlock clears the block stamp of the deleted orgID's
+// own row of userID: nobody can reinstate there any more. Other organizations'
+// stamps stay; the account is unblocked only when none remains.
+func LiftDeletedOrganizationBlock(tx *gorm.DB, accounts AccountForbidder, orgID uuid.UUID, userID string) error {
+	return clearStampsAndUnblock(tx, accounts, userID, "organization_id = ?", orgID)
+}
+
+// clearStampsAndUnblock clears userID's block stamps on the rows scope selects,
+// then unblocks the account when a stamp was cleared and none remains.
+func clearStampsAndUnblock(tx *gorm.DB, accounts AccountForbidder, userID string, scope string, args ...any) error {
 	cleared := tx.Model(&organizationModels.OrganizationMember{}).
-		Where("user_id = ? AND account_forbidden_by_offboarding = ? AND (account_created_by_organization = ? OR organization_id = ?)",
-			userID, true, false, orgID).
+		Where("user_id = ? AND account_forbidden_by_offboarding = ?", userID, true).
+		Where(scope, args...).
 		Update("account_forbidden_by_offboarding", false)
 	if cleared.Error != nil {
 		return fmt.Errorf("failed to clear the offboarding block of %s: %w", userID, cleared.Error)
@@ -339,15 +352,8 @@ func findMembership(tx *gorm.DB, orgID uuid.UUID, userID string) (*organizationM
 }
 
 // createMembership inserts a plain member row and grants the organization
-// policy, as the CSV import always did. A removed membership's created mark is kept.
+// policy, as the CSV import always did.
 func createMembership(tx *gorm.DB, orgID uuid.UUID, userID string, accountCreated bool) error {
-	if !accountCreated {
-		carried, err := RemovedMembershipWasCreatedHere(tx, orgID, userID)
-		if err != nil {
-			return err
-		}
-		accountCreated = carried
-	}
 	member := organizationModels.OrganizationMember{
 		OrganizationID: orgID,
 		UserID:         userID,
