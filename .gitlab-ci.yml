@@ -186,6 +186,7 @@ test:unit:
   coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
 
   artifacts:
+    when: always
     reports:
       junit: report.xml
       coverage_report:
