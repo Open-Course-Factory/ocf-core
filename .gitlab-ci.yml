@@ -171,6 +171,8 @@ test:unit:
   script:
     - echo "🧪 Running all unit tests with coverage..."
     # Full -v output goes to the tests.log artifact only (it exceeds the 4 MB job-log limit).
+    # Build covdata once, serially: parallel test binaries building it race on ETXTBSY.
+    - go tool -n covdata > /dev/null
     - go test -v -short -count=1 -coverprofile=coverage.out -timeout=120s ./tests/... ./src/... > tests.log 2>&1 || TEST_RC=$?
     # Job log: package results, the full output of failing packages, compile errors.
     - |
