@@ -9,6 +9,7 @@ package organizations_tests
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,7 +26,10 @@ import (
 	orgRegistration "soli/formations/src/organizations/entityRegistration"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
+	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
+	testTools "soli/formations/tests/testTools"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
@@ -611,4 +615,248 @@ func TestProvenance_CreatedAccountAddedToAnotherOrganization_NotMarkedThere(t *t
 
 	assert.True(t, loadMember(t, db, orgID, "student-1").AccountCreatedByOrganization)
 	assert.False(t, loadMember(t, db, otherOrgID, "student-1").AccountCreatedByOrganization)
+}
+
+// --- #672 verification ---
+
+// deleteOrganizationThroughHooks deletes orgID as the generic DELETE does: the
+// registered BeforeDelete hooks, then the (soft) delete of the organization row.
+func deleteOrganizationThroughHooks(t *testing.T, db *gorm.DB, orgID uuid.UUID, actor string) {
+	t.Helper()
+	var org models.Organization
+	require.NoError(t, db.First(&org, "id = ?", orgID).Error)
+	require.NoError(t, hooks.GlobalHookRegistry.ExecuteHooks(&hooks.HookContext{
+		EntityName: "Organization", HookType: hooks.BeforeDelete, EntityID: orgID, NewEntity: &org, UserID: actor, UserRoles: platformMember,
+	}))
+	require.NoError(t, db.Delete(&models.Organization{}, "id = ?", orgID).Error)
+}
+
+// Deleting an organization leaves its member rows in place (soft delete). The
+// creating organization's offboarding stamp would then keep the account blocked
+// for good: nobody can reinstate there any more. The deletion lifts its stamps.
+func TestCreatingOrganizationDeleted_ItsOffboardingBlockLifted(t *testing.T) {
+	db, identity, orgB, _ := blockedByOffboardingOfB(t)
+	registerOrgHooks(t, db, identity)
+
+	deleteOrganizationThroughHooks(t, db, orgB, "owner-b")
+
+	assert.False(t, identity.forbidden["student-1"])
+	var m models.OrganizationMember
+	require.NoError(t, db.Where("organization_id = ? AND user_id = ?", orgB, "student-1").First(&m).Error)
+	assert.False(t, m.AccountForbiddenByOffboarding)
+}
+
+func TestCreatingOrganizationDeleted_AnotherStampRemains_StillBlocked(t *testing.T) {
+	db, identity, orgB, _ := blockedByOffboardingOfB(t)
+	orgA := seedTeamOrg(t, db, "owner-a", new(10))
+	seedMember(t, db, orgA, "student-1", models.OrgRoleMember)
+	offboardedAt(t, db, orgA, "student-1", time.Now().AddDate(0, 0, -2), time.Now().AddDate(0, 0, 8))
+	require.NoError(t, db.Model(&models.OrganizationMember{}).Where("organization_id = ? AND user_id = ?", orgA, "student-1").
+		Update("account_forbidden_by_offboarding", true).Error)
+	registerOrgHooks(t, db, identity)
+
+	deleteOrganizationThroughHooks(t, db, orgB, "owner-b")
+
+	assert.True(t, identity.forbidden["student-1"], "A's stamp still stands")
+	assert.True(t, loadMember(t, db, orgA, "student-1").AccountForbiddenByOffboarding)
+}
+
+func TestOrganizationDeleted_AdministratorBlockSurvives(t *testing.T) {
+	installMockEnforcer(t)
+	db := newOffboardingDB(t)
+	identity := newFakeIdentity("owner-b", "student-1")
+	orgB := seedTeamOrg(t, db, "owner-b", new(10))
+	seedMember(t, db, orgB, "student-1", models.OrgRoleMember)
+	markCreatedByOrganization(t, db, orgB, "student-1")
+	adminSetsForbidden(t, db, identity, "student-1", true)
+	registerOrgHooks(t, db, identity)
+
+	deleteOrganizationThroughHooks(t, db, orgB, "owner-b")
+
+	assert.True(t, identity.forbidden["student-1"], "an administrator's block carries no stamp and stays")
+}
+
+// A generic DELETE refuses an offboarded row, so the creating organization's
+// stamp cannot end up on a removed (soft-deleted) row that way.
+func TestCreatingOrganizationBlock_RemovingTheOffboardedRow_Refused(t *testing.T) {
+	db, identity, orgB, _ := blockedByOffboardingOfB(t)
+	registerOrgHooks(t, db, identity)
+
+	assert.Error(t, genericDelete(t, db, orgB, "owner-b", platformMember, "student-1"))
+	assert.True(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding)
+}
+
+// A deleted organization takes no new member, so its removed rows' mark cannot be revived there.
+func TestProvenance_CreatingOrganizationDeleted_NoMemberReAddedThere(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	registerOrgHooks(t, db, identity)
+	require.NoError(t, genericDelete(t, db, orgID, "owner-1", platformMember, "student-1"))
+	require.NoError(t, db.Where("organization_id = ? AND user_id = ?", orgID, "student-1").Delete(&models.OrganizationMember{}).Error)
+	require.NoError(t, db.Delete(&models.Organization{}, "id = ?", orgID).Error)
+
+	member := &models.OrganizationMember{OrganizationID: orgID, UserID: "student-1", Role: models.OrgRoleMember, IsActive: true, JoinedAt: time.Now()}
+	err := hooks.GlobalHookRegistry.ExecuteHooks(&hooks.HookContext{
+		EntityName: "OrganizationMember", HookType: hooks.BeforeCreate, NewEntity: member, UserID: "owner-1", UserRoles: platformMember,
+	})
+
+	assert.Error(t, err)
+}
+
+// Reinstate, then remove, then re-add: the creating relationship still holds,
+// the mark comes back.
+func TestProvenance_OffboardReinstateRemoveReAdd_StillMarked(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	registerOrgHooks(t, db, identity)
+	svc := newOffboardingService(db, identity)
+	require.NoError(t, svc.Offboard(orgID, []string{"student-1"}, "manager-1"))
+	require.NoError(t, svc.Reinstate(orgID, "student-1", "manager-1"))
+	require.NoError(t, genericDelete(t, db, orgID, "owner-1", platformMember, "student-1"))
+	require.NoError(t, db.Where("organization_id = ? AND user_id = ?", orgID, "student-1").Delete(&models.OrganizationMember{}).Error)
+
+	genericCreateMember(t, db, orgID, "owner-1", "student-1")
+
+	assert.True(t, loadMember(t, db, orgID, "student-1").AccountCreatedByOrganization)
+}
+
+func TestCreatingOrganizationBlock_AdministratorUnblocksThenAnotherJoins_StaysUnblocked(t *testing.T) {
+	db, identity, orgB, orgC := blockedByOffboardingOfB(t)
+	adminSetsForbidden(t, db, identity, "student-1", false)
+	registerOrgHooks(t, db, identity)
+
+	genericCreateMember(t, db, orgC, "owner-c", "student-1")
+
+	assert.False(t, identity.forbidden["student-1"])
+	assert.False(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding)
+}
+
+// A legacy stamp (A, not marked) and the creating organization B's stamp: B's
+// own reinstate clears both, and the account is unblocked.
+func TestOffboardingStamps_LegacyAndCreating_CreatingOrganizationReinstates_Unblocked(t *testing.T) {
+	db, identity, orgB, _ := blockedByOffboardingOfB(t)
+	orgA := seedTeamOrg(t, db, "owner-a", new(10))
+	seedMember(t, db, orgA, "student-1", models.OrgRoleMember)
+	offboardedAt(t, db, orgA, "student-1", time.Now().AddDate(0, 0, -2), time.Now().AddDate(0, 0, 8))
+	require.NoError(t, db.Model(&models.OrganizationMember{}).Where("organization_id = ? AND user_id = ?", orgA, "student-1").
+		Update("account_forbidden_by_offboarding", true).Error)
+
+	require.NoError(t, newOffboardingService(db, identity).Reinstate(orgB, "student-1", "owner-b"))
+
+	assert.False(t, identity.forbidden["student-1"])
+	assert.False(t, loadMember(t, db, orgA, "student-1").AccountForbiddenByOffboarding)
+	assert.False(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding)
+}
+
+// Blocking a created member who is active in another organization stops their
+// terminals there, and touches nothing else of that organization: the seat it
+// bought, its class roster, its session block.
+func TestCreatedMemberActiveElsewhere_Offboard_LeavesTheOtherOrganizationsSeatsRostersAndBlocks(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
+	seedMember(t, db, otherOrgID, "student-1", models.OrgRoleMember)
+	licenceID := seedAssignedLicence(t, db, "owner-2", "student-1")
+	classID := seedClassWithMember(t, db, otherOrgID, "owner-2", "student-1")
+	require.NoError(t, testTools.SeedSessionBlock(db, "student-1", "org", &otherOrgID, "r"))
+
+	require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"student-1"}, "manager-1"))
+	require.True(t, identity.forbidden["student-1"])
+
+	var licence paymentModels.UserSubscription
+	require.NoError(t, db.First(&licence, "id = ?", licenceID).Error)
+	assert.Equal(t, "active", licence.Status, "the other organization's seat stays assigned")
+	assert.Equal(t, "student-1", licence.UserID)
+	var roster groupModels.GroupMember
+	require.NoError(t, db.Where("group_id = ? AND user_id = ?", classID, "student-1").First(&roster).Error)
+	assert.True(t, roster.IsActive)
+	assert.True(t, loadMember(t, db, otherOrgID, "student-1").IsActive, "the other membership stays active")
+	var blocks int64
+	require.NoError(t, db.Model(&terminalModels.SessionBlock{}).Where("user_id = ? AND scope_id = ?", "student-1", otherOrgID).Count(&blocks).Error)
+	assert.Equal(t, int64(1), blocks)
+}
+
+// noPersonalTiesUnknown answers like a checker whose narrow lookup failed.
+type noPersonalTiesUnknown struct{}
+
+func (noPersonalTiesUnknown) CheckBelongsToOrganizationAlone(uuid.UUID, string) error { return nil }
+func (noPersonalTiesUnknown) CheckNoPersonalTies(uuid.UUID, string) error {
+	return errors.New("database unavailable")
+}
+
+func TestNoPersonalTiesLookupFails_ResetRefusedAndOffboardDoesNotBlock(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+
+	resp, err := services.NewOrganizationServiceWithIdentity(db, identity, noPersonalTiesUnknown{}).
+		RegenerateGroupMemberPasswords(orgID, classID, "manager-1", []string{"student-1"})
+	require.NoError(t, err)
+	assertRefused(t, identity, resp, "student-1", 1, "elsewhere")
+
+	svc := services.NewMemberOffboardingService(db, identity, paymentServices.NewBulkLicenseService(db), newDeletionService(db, identity), noPersonalTiesUnknown{})
+	require.NoError(t, svc.Offboard(orgID, []string{"student-1"}, "manager-1"))
+	assertOffboarded(t, db, orgID, "student-1")
+	assert.False(t, identity.forbidden["student-1"], "an unknown answer does not block")
+}
+
+func TestProvenance_MarkedRowRemovedInX_AddedToY_NotMarkedInY(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
+	registerOrgHooks(t, db, identity)
+	require.NoError(t, genericDelete(t, db, orgID, "owner-1", platformMember, "student-1"))
+	require.NoError(t, db.Where("organization_id = ? AND user_id = ?", orgID, "student-1").Delete(&models.OrganizationMember{}).Error)
+
+	genericCreateMember(t, db, otherOrgID, "owner-2", "student-1")
+
+	assert.False(t, loadMember(t, db, otherOrgID, "student-1").AccountCreatedByOrganization)
+}
+
+// The CSV import never re-adds a removed member: without update_existing an
+// existing account is skipped, with it a non-member is refused. So the import
+// cannot reach the re-add path at all.
+func TestCsvImport_AfterRemoval_ExistingAccountNotReAdded(t *testing.T) {
+	for _, updateExisting := range []bool{false, true} {
+		t.Run(map[bool]string{false: "plain", true: "update_existing"}[updateExisting], func(t *testing.T) {
+			db := newOffboardingDB(t)
+			orgID, _, identity := seedRankedClass(t, db)
+			registerOrgHooks(t, db, identity)
+			require.NoError(t, genericDelete(t, db, orgID, "owner-1", platformMember, "student-1"))
+			require.NoError(t, db.Where("organization_id = ? AND user_id = ?", orgID, "student-1").Delete(&models.OrganizationMember{}).Error)
+
+			_, err := services.NewImportService(db, identity, newOffboardingService(db, identity), newDeletionService(db, identity)).
+				ImportOrganizationData(orgID, "owner-1", usersCSV(t, "student-1@example.com,Ada,Lovelace,member\n"), nil, nil, false, updateExisting, "", true)
+			require.NoError(t, err)
+
+			assert.Equal(t, int64(0), countMemberRows(t, db, orgID, "student-1"))
+		})
+	}
+}
+
+func TestOffboard_AdministratorOnUnmarkedMemberActiveElsewhere_NotBlocked(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, classID, identity := seedRankedClass(t, db)
+	seedAttachedClassMember(t, db, identity, orgID, classID, "attached-1")
+	seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), "attached-1", models.OrgRoleMember)
+
+	require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"attached-1"}, "admin-1"))
+
+	assertOffboarded(t, db, orgID, "attached-1")
+	assert.False(t, identity.forbidden["attached-1"])
+}
+
+// A seat the person bought for themselves (a batch they purchased) is theirs:
+// the creating organization's offboarding does not release it.
+func TestCreatedMemberActiveElsewhere_Offboard_KeepsASeatThePersonBought(t *testing.T) {
+	db := newOffboardingDB(t)
+	orgID, _, identity := seedRankedClass(t, db)
+	seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), "student-1", models.OrgRoleMember)
+	licenceID := seedAssignedLicence(t, db, "student-1", "student-1")
+
+	require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"student-1"}, "manager-1"))
+
+	var licence paymentModels.UserSubscription
+	require.NoError(t, db.First(&licence, "id = ?", licenceID).Error)
+	assert.Equal(t, "active", licence.Status)
+	assert.Equal(t, "student-1", licence.UserID)
 }
