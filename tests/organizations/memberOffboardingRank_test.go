@@ -76,17 +76,25 @@ func TestOffboard_PlatformAdministratorTarget_RefusedToManagerAndOwner(t *testin
 	}
 }
 
+// student-1's account was created by this organization: being active in
+// another team organization does not take it away (it is blocked), a paid
+// personal subscription or another organization it owns does (it is not).
 func TestOffboard_MemberWhoBelongsElsewhere_OffboardedButAccountNotForbidden(t *testing.T) {
 	for _, c := range []struct {
-		name string
-		seed func(t *testing.T, db *gorm.DB)
+		name          string
+		seed          func(t *testing.T, db *gorm.DB)
+		wantForbidden bool
 	}{
 		{"active member of another team organization", func(t *testing.T, db *gorm.DB) {
 			seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), "student-1", models.OrgRoleMember)
-		}},
+		}, true},
 		{"paid personal subscription", func(t *testing.T, db *gorm.DB) {
 			seedPaidPersonalSubscription(t, db, "student-1")
-		}},
+		}, false},
+		{"owner of another organization", func(t *testing.T, db *gorm.DB) {
+			otherOrgID := seedTeamOrg(t, db, "student-1", new(10))
+			require.NoError(t, db.Where("organization_id = ? AND user_id = ?", otherOrgID, "student-1").Delete(&models.OrganizationMember{}).Error)
+		}, false},
 	} {
 		for _, caller := range []string{"manager-1", "owner-1"} {
 			t.Run(c.name+"/"+caller, func(t *testing.T) {
@@ -97,8 +105,7 @@ func TestOffboard_MemberWhoBelongsElsewhere_OffboardedButAccountNotForbidden(t *
 				require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"student-1"}, caller))
 
 				assertOffboarded(t, db, orgID, "student-1")
-				assert.False(t, identity.forbidden["student-1"],
-					"the account still belongs elsewhere: it must keep signing in")
+				assert.Equal(t, c.wantForbidden, identity.forbidden["student-1"])
 			})
 		}
 	}
@@ -158,7 +165,7 @@ func TestOffboard_BatchMixingBelongsElsewhereAndAlone_OnlyAloneForbidden(t *test
 	assertOffboarded(t, db, orgID, "student-2")
 	assert.NotNil(t, loadMember(t, db, orgID, "student-2").ScheduledErasureAt, "erasure is scheduled as before; the job refuses it while active elsewhere")
 	assert.True(t, identity.forbidden["student-1"])
-	assert.False(t, identity.forbidden["student-2"])
+	assert.True(t, identity.forbidden["student-2"], "the creating organization blocks its account even while it is active elsewhere")
 }
 
 func TestOffboard_ForbidFailsMidBatch_OnlyAccountsThisCallForbadeAreUnforbidden(t *testing.T) {
@@ -210,7 +217,7 @@ func TestOffboard_PlatformAdministratorWithoutMembership_OffboardsAndForbidsOnly
 	assertOffboarded(t, db, orgID, "student-1")
 	assertOffboarded(t, db, orgID, "manager-2")
 	assert.True(t, identity.forbidden["student-1"])
-	assert.False(t, identity.forbidden["manager-2"], "an administrator caller does not lift the belongs-elsewhere rule for forbidding")
+	assert.True(t, identity.forbidden["manager-2"], "an account this organization created is blocked even while active elsewhere")
 }
 
 func TestOffboard_WithoutTheAloneCheck_OffboardedButNotForbidden(t *testing.T) {
@@ -285,8 +292,8 @@ func TestOffboard_MemberWhoBelongsElsewhere_KeepsTheTerminalsOfTheOtherOrganizat
 	require.NoError(t, newOffboardingService(db, identity).Offboard(orgID, []string{"student-1"}, "manager-1"))
 
 	assert.NotEqual(t, terminalModels.StateRunning, terminalState(t, db, sessions[0]), "this organization's terminal is terminated")
-	assert.Equal(t, terminalModels.StateRunning, terminalState(t, db, sessions[1]),
-		"the account still belongs elsewhere: its terminal in the other organization keeps running")
+	assert.NotEqual(t, terminalModels.StateRunning, terminalState(t, db, sessions[1]),
+		"the creating organization blocks the account: its terminal in the other organization stops too")
 }
 
 func TestOffboard_MemberOfThisOrganizationAlone_AllTerminalsTerminated(t *testing.T) {
@@ -431,7 +438,8 @@ func TestReinstate_MemberWhoBelongsElsewhere_AccountStateUnchanged(t *testing.T)
 			}
 			svc := newOffboardingService(db, identity)
 			require.NoError(t, svc.Offboard(orgID, []string{"student-1"}, "manager-1"))
-			require.False(t, loadMember(t, db, orgID, "student-1").AccountForbiddenByOffboarding)
+			require.Equal(t, !blockedBefore, loadMember(t, db, orgID, "student-1").AccountForbiddenByOffboarding,
+				"the creating organization blocks its account even while it is active elsewhere, unless someone else already did")
 
 			require.NoError(t, svc.Reinstate(orgID, "student-1", "manager-1"))
 
@@ -635,8 +643,8 @@ func TestReinstate_OffboardedByTwoOrganizations_ReinstatingTheFirstLiftsTheSecon
 	require.NoError(t, svc.Reinstate(orgA, "student-1", "owner-1"))
 
 	assert.True(t, loadMember(t, db, orgA, "student-1").IsActive)
-	assert.False(t, identity.forbidden["student-1"], "the account belongs to A again: B's offboarding block no longer stands")
-	assert.False(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding, "B's stamp no longer describes the account's block")
+	assert.True(t, identity.forbidden["student-1"], "B created the account: only B or an administrator lifts B's block")
+	assert.True(t, loadMember(t, db, orgB, "student-1").AccountForbiddenByOffboarding, "B's stamp stays")
 	assert.NotNil(t, loadMember(t, db, orgB, "student-1").LeftAt, "B's membership stays offboarded")
 }
 
@@ -683,15 +691,15 @@ func joinAfterBlockingOffboarding(t *testing.T, join string) (blocked, bStamp bo
 		svc.EraseNow(orgB, "student-1", "owner-b")
 }
 
-// Whichever way the account becomes an active member of another organization,
-// the offboarding block no longer stands and B's stamp goes with it.
-func TestOffboardingBlock_AccountJoinsAnotherOrganization_AllPathsLiftBlock(t *testing.T) {
+// B created the account: whichever way it becomes an active member of another
+// organization, B's block and stamp stay.
+func TestOffboardingBlock_AccountJoinsAnotherOrganization_NoPathLiftsCreatingOrganizationsBlock(t *testing.T) {
 	for _, join := range []string{"reinstate", "enrol", "create"} {
 		t.Run(join, func(t *testing.T) {
 			blocked, stamp, eraseErr := joinAfterBlockingOffboarding(t, join)
 
-			assert.False(t, blocked, "account blocked after joining C")
-			assert.False(t, stamp, "B's block stamp kept after joining C")
+			assert.True(t, blocked, "account blocked after joining C")
+			assert.True(t, stamp, "B's block stamp kept after joining C")
 			assert.ErrorIs(t, eraseErr, authServices.ErrStillActiveElsewhere, "B's erasure waits while the account is active in C")
 		})
 	}

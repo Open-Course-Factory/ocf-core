@@ -511,10 +511,26 @@ func activeInAnotherTeamOrg(t *testing.T, userID string) func(db *gorm.DB) {
 	}
 }
 
-func TestCsvImport_UpdateExisting_ManagerOrOwnerImporterLeavesAMemberWhoBelongsElsewhereUntouched(t *testing.T) {
+// The organization created student-a's account: being active in another team
+// organization does not take it away; a paid personal subscription does.
+func TestCsvImport_UpdateExisting_ManagerOrOwnerImporterUpdatesACreatedMemberActiveElsewhere(t *testing.T) {
 	for _, importer := range []string{"manager-1", "owner-1"} {
 		t.Run(importer, func(t *testing.T) {
 			identity, resp := importOverMember(t, importer, "student-a", models.OrgRoleMember, activeInAnotherTeamOrg(t, "student-a"))
+
+			assert.Equal(t, "Str0ng-Pass!", identity.passwordsSet["user-student-a"])
+			assert.Equal(t, "Ada", identity.users["student-a"].FirstName)
+			assert.Equal(t, 1, resp.Summary.UsersUpdated, "warnings=%+v", resp.Warnings)
+		})
+	}
+}
+
+func TestCsvImport_UpdateExisting_ManagerOrOwnerImporterLeavesAMemberWithAPaidPersonalSubscriptionUntouched(t *testing.T) {
+	for _, importer := range []string{"manager-1", "owner-1"} {
+		t.Run(importer, func(t *testing.T) {
+			identity, resp := importOverMember(t, importer, "student-a", models.OrgRoleMember, func(db *gorm.DB) {
+				seedPaidPersonalSubscription(t, db, "student-a")
+			})
 
 			assertImportRefused(t, identity, resp, "student-a", "elsewhere")
 		})

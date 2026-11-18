@@ -251,32 +251,35 @@ func TestRegeneratePasswords_EveryTargetRefused_WellFormedResponseAndNoWrites(t 
 	assert.Equal(t, dto.RegeneratePasswordsSummary{Total: 3, Succeeded: 0, Failed: 3}, resp.Summary)
 }
 
-// student-1 is a plain member of this organization; each case also ties them to
-// something the organization does not answer for, seeded the way the erasure
-// tests do. The rule binds the owner as well as managers.
+// student-1 is a plain member whose account this organization created; each
+// case also ties them to something else, seeded the way the erasure tests do.
+// Being active in another team organization leaves the account to its creator;
+// anything the person owns or pays for makes it theirs. The rule binds the
+// owner as well as managers.
 func TestRegeneratePasswords_MemberWhoBelongsElsewhere_RefusedToManagerAndOwner(t *testing.T) {
 	for _, c := range []struct {
-		name string
-		seed func(t *testing.T, db *gorm.DB)
+		name       string
+		seed       func(t *testing.T, db *gorm.DB)
+		regenerate bool
 	}{
 		{"active member of another team organization", func(t *testing.T, db *gorm.DB) {
 			seedMember(t, db, seedTeamOrg(t, db, "owner-2", new(10)), "student-1", models.OrgRoleMember)
-		}},
+		}, true},
 		{"owner of another organization", func(t *testing.T, db *gorm.DB) {
 			otherOrgID := seedTeamOrg(t, db, "student-1", new(10))
 			// Ownership alone: no membership row in the other organization.
 			require.NoError(t, db.Where("organization_id = ? AND user_id = ?", otherOrgID, "student-1").Delete(&models.OrganizationMember{}).Error)
-		}},
+		}, false},
 		{"paid personal subscription", func(t *testing.T, db *gorm.DB) {
 			seedPaidPersonalSubscription(t, db, "student-1")
-		}},
+		}, false},
 		{"owner of a group with no organization", func(t *testing.T, db *gorm.DB) {
 			seedOwnedClass(t, db, "student-1", nil)
-		}},
+		}, false},
 		{"owner of a group of another organization", func(t *testing.T, db *gorm.DB) {
 			otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
 			seedOwnedClass(t, db, "student-1", &otherOrgID)
-		}},
+		}, false},
 	} {
 		for _, caller := range []string{"manager-1", "owner-1"} {
 			t.Run(c.name+"/"+caller, func(t *testing.T) {
@@ -286,7 +289,11 @@ func TestRegeneratePasswords_MemberWhoBelongsElsewhere_RefusedToManagerAndOwner(
 
 				resp := regenerate(t, db, identity, orgID, classID, caller, "student-1")
 
-				assertRefused(t, identity, resp, "student-1", 1, "elsewhere")
+				if c.regenerate {
+					assertRegenerated(t, identity, resp, "student-1")
+				} else {
+					assertRefused(t, identity, resp, "student-1", 1, "elsewhere")
+				}
 			})
 		}
 	}
