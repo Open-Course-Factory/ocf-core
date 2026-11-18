@@ -256,7 +256,7 @@ func TestRegeneratePasswords_EveryTargetRefused_WellFormedResponseAndNoWrites(t 
 // Being active in another team organization leaves the account to its creator;
 // anything the person owns or pays for makes it theirs. The rule binds the
 // owner as well as managers.
-func TestRegeneratePasswords_MemberWhoBelongsElsewhere_RefusedToManagerAndOwner(t *testing.T) {
+func TestRegeneratePasswords_CreatedMemberTiedElsewhere_RegeneratedWhenActiveElsewhereRefusedWhenOwningOrPaying(t *testing.T) {
 	for _, c := range []struct {
 		name       string
 		seed       func(t *testing.T, db *gorm.DB)

@@ -79,7 +79,7 @@ func TestOffboard_PlatformAdministratorTarget_RefusedToManagerAndOwner(t *testin
 // student-1's account was created by this organization: being active in
 // another team organization does not take it away (it is blocked), a paid
 // personal subscription or another organization it owns does (it is not).
-func TestOffboard_MemberWhoBelongsElsewhere_OffboardedButAccountNotForbidden(t *testing.T) {
+func TestOffboard_CreatedMemberTiedElsewhere_ForbiddenUnlessOwningOrPaying(t *testing.T) {
 	for _, c := range []struct {
 		name          string
 		seed          func(t *testing.T, db *gorm.DB)
@@ -151,7 +151,7 @@ func TestOffboard_BatchWithOneRefusedTarget_NothingWritten(t *testing.T) {
 	assertStillActiveMember(t, db, identity, orgID, "manager-2")
 }
 
-func TestOffboard_BatchMixingBelongsElsewhereAndAlone_OnlyAloneForbidden(t *testing.T) {
+func TestOffboard_BatchOfCreatedMembersActiveElsewhereAndAlone_BothForbidden(t *testing.T) {
 	db := newOffboardingDB(t)
 	orgID, _, identity := seedRankedClass(t, db)
 	seedMember(t, db, orgID, "student-2", models.OrgRoleMember)
@@ -201,7 +201,7 @@ func TestOffboard_Self_ManagerRefusedAsOutranking_OwnerRefusedAsOwner(t *testing
 	assertStillActiveMember(t, db, identity, orgID, "owner-1")
 }
 
-func TestOffboard_PlatformAdministratorWithoutMembership_OffboardsAndForbidsOnlyTheAlone(t *testing.T) {
+func TestOffboard_PlatformAdministratorWithoutMembership_OffboardsAndForbidsBothCreatedMembers(t *testing.T) {
 	db := newOffboardingDB(t)
 	orgID, _, identity := seedRankedClass(t, db)
 	installMockEnforcer(t).GetRolesForUserFunc = func(name string) ([]string, error) {
@@ -282,7 +282,7 @@ func terminalState(t *testing.T, db *gorm.DB, sessionID string) terminalModels.T
 	return term.State
 }
 
-func TestOffboard_MemberWhoBelongsElsewhere_KeepsTheTerminalsOfTheOtherOrganization(t *testing.T) {
+func TestOffboard_CreatedMemberActiveElsewhere_TerminalsOfEveryOrganizationTerminated(t *testing.T) {
 	db := newOffboardingDB(t)
 	orgID, _, identity := seedRankedClass(t, db)
 	otherOrgID := seedTeamOrg(t, db, "owner-2", new(10))
@@ -427,7 +427,7 @@ func TestOffboardReinstateCycle_BlockStampFollowsEachCycle_AccountEndsForbidden(
 	assert.True(t, identity.forbidden["student-1"])
 }
 
-func TestReinstate_MemberWhoBelongsElsewhere_AccountStateUnchanged(t *testing.T) {
+func TestReinstate_CreatedMemberActiveElsewhere_AccountBackToItsStateBeforeOffboarding(t *testing.T) {
 	for _, blockedBefore := range []bool{false, true} {
 		t.Run(map[bool]string{false: "not blocked", true: "blocked by someone else"}[blockedBefore], func(t *testing.T) {
 			db := newOffboardingDB(t)
@@ -623,7 +623,7 @@ func TestReinstate_AdministratorUnblocksThenBlocksAfterOffboarding_AccountStillB
 	assert.True(t, identity.forbidden["student-1"], "the administrator's block is not the organization's to lift")
 }
 
-func TestReinstate_OffboardedByTwoOrganizations_ReinstatingTheFirstLiftsTheSecondsBlock(t *testing.T) {
+func TestReinstate_OffboardedByTwoOrganizations_ReinstatingTheFirstKeepsTheCreatingOrganizationsBlock(t *testing.T) {
 	installMockEnforcer(t)
 	db := newOffboardingDB(t)
 	identity := newFakeIdentity("owner-1", "owner-2", "student-1")
