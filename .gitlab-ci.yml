@@ -138,12 +138,14 @@ include:
 # Prepare Stage — build CI images when their Dockerfiles change
 # ============================================================================
 
-# Casdoor with the test config and init data baked in, run by test:auth as a service.
+# Casdoor with the test config and init data baked in, and the MySQL it already
+# initialised (schema + init data), both run by test:auth as services.
 # Rebuilt when an input changes; the job definition itself is an input (build arg).
 .casdoor_test_inputs: &casdoor_test_inputs
   - Dockerfile.casdoor
   - init_data.json
   - wait-for-mysql.sh
+  - scripts/ci/build-casdoor-db-test.sh
   - src/configuration/casdoor_app_test.conf
   - .gitlab-ci.yml
 
@@ -155,15 +157,20 @@ build:casdoor-test-image:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
     CASDOOR_TEST_IMAGE: ${CI_REGISTRY_IMAGE}/casdoor-test
+    CASDOOR_DB_TEST_IMAGE: ${CI_REGISTRY_IMAGE}/casdoor-db-test
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     - docker build -f Dockerfile.casdoor --build-arg CONFIG_FILE=src/configuration/casdoor_app_test.conf -t $CASDOOR_TEST_IMAGE:$CI_COMMIT_SHA .
+    - sh scripts/ci/build-casdoor-db-test.sh $CASDOOR_TEST_IMAGE:$CI_COMMIT_SHA $CASDOOR_DB_TEST_IMAGE:$CI_COMMIT_SHA
     - docker push $CASDOOR_TEST_IMAGE:$CI_COMMIT_SHA
-    # Only main moves latest, so an MR never changes the image other MRs test against.
+    - docker push $CASDOOR_DB_TEST_IMAGE:$CI_COMMIT_SHA
+    # Only main moves latest, so an MR never changes the images other MRs test against.
     - |
       if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        docker tag $CASDOOR_TEST_IMAGE:$CI_COMMIT_SHA $CASDOOR_TEST_IMAGE:latest
-        docker push $CASDOOR_TEST_IMAGE:latest
+        for image in $CASDOOR_TEST_IMAGE $CASDOOR_DB_TEST_IMAGE; do
+          docker tag $image:$CI_COMMIT_SHA $image:latest
+          docker push $image:latest
+        done
       fi
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -220,14 +227,12 @@ test:auth:
   services:
     - name: postgres:16
       alias: postgres-test
-    - name: mysql:8.4.13
+    # latest moves; an if-not-present runner would keep a stale copy.
+    - name: ${CI_REGISTRY_IMAGE}/casdoor-db-test:${CASDOOR_TEST_TAG}
       alias: casdoor-db-test
-      variables:
-        MYSQL_ROOT_PASSWORD: "123456"
-        MYSQL_DATABASE: casdoor
+      pull_policy: always
     - name: ${CI_REGISTRY_IMAGE}/casdoor-test:${CASDOOR_TEST_TAG}
       alias: casdoor-test
-      # latest moves; an if-not-present runner would keep a stale copy.
       pull_policy: always
   variables:
     # Services reach each other by alias (Casdoor -> casdoor-db-test) only on a per-build network.
@@ -269,7 +274,7 @@ test:auth:
       - auth_tests.log
     expire_in: 1 week
   rules:
-    # A Casdoor input changed: use the image build:casdoor-test-image pushed in this pipeline.
+    # A Casdoor input changed: use the images build:casdoor-test-image pushed in this pipeline.
     # A web pipeline on main rebuilds and moves latest.
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes: *casdoor_test_inputs
