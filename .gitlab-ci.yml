@@ -54,9 +54,8 @@ variables:
 stages:
   - prepare  # Build CI images (only when their inputs change)
   - test     # All test suites (unit, integration, race, auth) — MUST pass before tagging
-  - check    # Version validation and auto-tagging (only after tests pass)
-  - build    # Docker image creation on release tags
-  - release  # Release creation
+  - build    # Docker image: :$CI_COMMIT_SHA on main, retagged on release tags
+  - release  # Version auto-tagging (main, after the build) and release creation
 
 # ============================================================================
 # Base Job Templates
@@ -110,15 +109,17 @@ stages:
 # ============================================================================
 
 include:
-  - component: usine.solution-libre.fr/gitlab/components/release/default@0.3.3
+  - component: usine.solution-libre.fr/gitlab/components/release/default@0.4.0
     inputs:
       # Enable all new features
       enable_version_check: true
       enable_docker_build: true
       enable_enhanced_release_notes: true
 
-      # Configure stages to match our pipeline
-      check_stage: check
+      # Configure stages to match our pipeline. check-version runs after the
+      # build: the version tag only appears once :$CI_COMMIT_SHA is pushed, so
+      # its pipeline retags instead of rebuilding, and a failed build tags nothing.
+      check_stage: release
       build_stage: build
       stage: release
 
@@ -130,6 +131,9 @@ include:
       # Docker build
       dockerfile_path: "Dockerfile"
       build_context: "."
+      # Build on the runner's persistent buildkitd; build once on main, retag on tags
+      buildkit_endpoint: "unix:///run/buildkit/buildkitd.sock"
+      build_on_main: true
 
       # Disable old changelog component (using enhanced notes instead)
       disable_changelog: true
@@ -291,8 +295,8 @@ test:auth:
 # ============================================================================
 
 # Build Docker image and push to registry
-# Only runs when version tags are pushed (triggered by check:version job)
-# Tags image with both the version number and 'latest'
+# On main pushes: builds :$CI_COMMIT_SHA. On version tags (created by
+# check-version): retags that image with the version number and 'latest'.
 #
 # Inherits image/services/script from the release component's .build-docker.
 # We override before_script to keep the component's setup (docker login,
