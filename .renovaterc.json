@@ -3,11 +3,28 @@
   "extends": [
     "config:recommended"
   ],
+  "timezone": "Europe/Paris",
+  "schedule": [
+    "before 7am on monday"
+  ],
+  "rebaseWhen": "behind-base-branch",
   "goGetDirs": [
     "./src/configuration/models"
   ],
   "postUpdateOptions": [
     "gomodTidyE"
   ],
-  "rebaseWhen": "conflicted"
+  "packageRules": [
+    {
+      "description": "One weekly MR for every non-major update; majors keep their own MR.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "groupName": "non-major dependencies",
+      "groupSlug": "non-major"
+    }
+  ]
 }
