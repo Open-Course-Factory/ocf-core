@@ -4,12 +4,12 @@ FROM golang:1.27-trixie AS builder
 # Setup working directory
 WORKDIR /usr/src/ocf-core
 
+# Tooling layer — before go.mod, so a dependency bump doesn't reinstall it
+RUN go install github.com/swaggo/swag/cmd/swag@v1.16.6
+
 # Dep layer — cached unless go.mod/go.sum change
 COPY go.mod go.sum ./
 RUN go mod download
-
-# Tooling layer — cached unless version bumps
-RUN go install github.com/swaggo/swag/cmd/swag@v1.16.6
 
 # Source layer — invalidates on every commit, but deps above are cached
 COPY . .
@@ -17,7 +17,8 @@ COPY . .
 # Init Swagger
 RUN swag init --parseDependency --parseInternal
 
-RUN go build -o ocf main.go
+# Build cache mount: only speeds up rebuilds, works when empty
+RUN --mount=type=cache,target=/root/.cache/go-build go build -o ocf main.go
 
 # Same Debian release as the builder: the binary links the builder's glibc (cgo).
 FROM debian:13-slim
