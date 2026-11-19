@@ -110,7 +110,7 @@ stages:
 # ============================================================================
 
 include:
-  - component: usine.solution-libre.fr/gitlab/components/release/default@0.3.2
+  - component: usine.solution-libre.fr/gitlab/components/release/default@0.3.3
     inputs:
       # Enable all new features
       enable_version_check: true
@@ -295,14 +295,11 @@ test:auth:
 # Tags image with both the version number and 'latest'
 #
 # Inherits image/services/script from the release component's .build-docker.
-# before_script replaces the component's: the labinux runner shares the dind TLS
-# certs, and buildx refuses to create a builder from TLS environment variables
-# without a docker context.
-# shortcut: duplicates the component's setup, drop once the component creates the context.
+# We override before_script to keep the component's setup (docker login,
+# buildx create) AND add our project-specific JWT key decoding — !reference
+# merges them; a plain `before_script:` list would replace the component's.
 build-docker:
   before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    - docker context create ci-context
-    - docker buildx create --use --name ci-builder --driver docker-container ci-context
+    - !reference [.build-docker, before_script]
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
 
