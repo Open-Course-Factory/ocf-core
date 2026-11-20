@@ -302,7 +302,9 @@ test:auth:
 # We override before_script to keep the component's setup (docker login,
 # buildx create) AND add our project-specific JWT key decoding — !reference
 # merges them; a plain `before_script:` list would replace the component's.
+# The component's dind service is unused with buildkit_endpoint: builds run on the runner's buildkitd.
 build-docker:
+  services: []
   before_script:
     - !reference [.build-docker, before_script]
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
