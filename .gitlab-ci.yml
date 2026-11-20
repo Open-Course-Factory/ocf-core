@@ -307,3 +307,17 @@ build-docker:
     - !reference [.build-docker, before_script]
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
 
+
+# Asks renovate-runner to open the deploy-to-k8s bump MR now instead of at its daily run.
+# Best effort: if the trigger fails, the daily run still opens the MR.
+request-deploy:
+  stage: .post
+  image:
+    name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/curlimages/curl:8.23.0
+    entrypoint: [""]
+  needs: [build-docker]
+  rules:
+    - if: $CI_COMMIT_TAG
+  allow_failure: true
+  script:
+    - curl --fail-with-body -sS -X POST -F "token=$RENOVATE_TRIGGER_TOKEN" -F ref=main "$CI_API_V4_URL/projects/gitlab%2Frenovate-runner/trigger/pipeline"
