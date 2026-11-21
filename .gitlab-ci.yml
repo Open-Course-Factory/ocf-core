@@ -309,6 +309,33 @@ build-docker:
     - !reference [.build-docker, before_script]
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
 
+# Cuts a release from a main pipeline: commits the version bump straight to
+# main, and that commit's pipeline builds and tags it. No release branch, MR or
+# merge. Code reaches main through a tested MR, so a main pipeline has nothing
+# left to test (see .code_change_rules).
+.release:
+  stage: release
+  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/alpine:3.22
+  # The push below starts a new main pipeline, which would cancel this job.
+  interruptible: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
+      when: manual
+      allow_failure: true
+  before_script:
+    - apk add --no-cache git bash
+  script:
+    - bash scripts/ci/release.sh "$RELEASE_LEVEL"
+
+release:patch:
+  extends: .release
+  variables:
+    RELEASE_LEVEL: patch
+
+release:minor:
+  extends: .release
+  variables:
+    RELEASE_LEVEL: minor
 
 # Asks renovate-runner to open the deploy-to-k8s bump MR now instead of at its daily run.
 # Best effort: if the trigger fails, the daily run still opens the MR.
