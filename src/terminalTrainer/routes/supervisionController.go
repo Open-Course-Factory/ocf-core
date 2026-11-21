@@ -22,8 +22,6 @@ import (
 	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
-	paymentModels "soli/formations/src/payment/models"
-	paymentServices "soli/formations/src/payment/services"
 )
 
 // supervisionReauthInterval is how often a live supervise stream re-checks that
@@ -115,6 +113,11 @@ func (tc *terminalController) GetGroupTerminalSessions(ctx *gin.Context) {
 		errors.Respond(ctx, http.StatusForbidden, "You are not a manager of this group")
 		return
 	}
+	// The wall says why it is empty, rather than showing tiles that cannot open.
+	if !isAdmin && !ClassOrgAllowsSupervision(tc.db, groupID) {
+		errors.Respond(ctx, http.StatusForbidden, orgPlanLacksSupervision)
+		return
+	}
 	ctx.JSON(http.StatusOK, sessions)
 }
 
@@ -172,16 +175,6 @@ func bindSelfAttachmentID(current string, data []byte) string {
 		return ev.AttachmentID
 	}
 	return current
-}
-
-// resolveSupervisionPlan resolves the caller's effective plan (same path used to
-// gate at WS open); nil when it cannot be resolved.
-func (tc *terminalController) resolveSupervisionPlan(userID string) *paymentModels.SubscriptionPlan {
-	res, err := paymentServices.NewEffectivePlanService(tc.db).GetUserEffectivePlan(userID, nil)
-	if err != nil || res == nil {
-		return nil
-	}
-	return res.Plan
 }
 
 // SuperviseSession godoc
@@ -253,10 +246,10 @@ func (tc *terminalController) prepareSupervision(ctx *gin.Context, sessionID str
 		return nil, false
 	}
 
-	// Plan gate (ANDed with authz): a valid manager on a plan without the feature
-	// is still denied.
-	if !PlanAllowsSupervision(tc.resolveSupervisionPlan(userID)) {
-		errors.Respond(ctx, http.StatusForbidden, "Your plan does not include terminal supervision")
+	// Plan gate (ANDed with authz): a valid manager in an organization that does
+	// not pay for supervision is still denied.
+	if !isAdmin && !ClassOrgAllowsSupervision(tc.db, groupID) {
+		errors.Respond(ctx, http.StatusForbidden, orgPlanLacksSupervision)
 		return nil, false
 	}
 
@@ -503,7 +496,7 @@ func (b *superviseBroker) handleControl(msgType string) {
 		// the stream opened under a valid plan. TakeHandForSupervision re-authorizes,
 		// re-checks the plan, and audits-before-act; any failure denies the promotion
 		// (fail-closed, no escalation).
-		if err := TakeHandForSupervision(b.tc.db, b.auditSvc, b.tc.resolveSupervisionPlan(b.userID), b.userID, b.isAdmin, b.sessionID, b.groupID); err != nil {
+		if err := TakeHandForSupervision(b.tc.db, b.auditSvc, b.userID, b.isAdmin, b.sessionID, b.groupID); err != nil {
 			return
 		}
 		if perr := b.tc.patchAttachmentRole(b.ttSessionID, aid, "interactive", b.ownerAPIKey); perr != nil {

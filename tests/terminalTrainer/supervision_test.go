@@ -14,12 +14,12 @@ package terminalTrainer_tests
 //   package terminalController (src/terminalTrainer/routes)
 //     HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessionID string) (groupID string, ok bool)
 //     SupervisionStillAuthorized(db *gorm.DB, callerUserID string, isAdmin bool, sessionID string) bool
-//     PlanAllowsSupervision(plan *paymentModels.SubscriptionPlan) bool
+//     ClassOrgAllowsSupervision(db *gorm.DB, groupID string) bool
 //     BuildSuperviseWSURL(terminalTrainerURL, apiVersion, instanceType, sessionID string) (string, error)
 //     SessionSupportsSupervision(db *gorm.DB, sessionID string) bool
 //     BuildConsoleWSURL(terminalTrainerURL, apiVersion, instanceType, sessionID string, supervisable bool) (string, error)
 //     StartSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID string) (groupID string, err error)
-//     TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, plan *paymentModels.SubscriptionPlan, actorUserID string, isAdmin bool, sessionID, groupID string) error
+//     TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string) error
 //     EndSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string) error
 //     ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isAdmin bool) (sessions []terminalModels.Terminal, ok bool)
 //
@@ -253,18 +253,32 @@ func TestSupervision_AdminBypass_StillAudited(t *testing.T) {
 
 // --- 4. Plan-feature gate ----------------------------------------------------
 
-// TestSupervision_PlanGate_AbsentDenied pins that a plan lacking the
-// session_supervision feature does not permit supervision, and a plan carrying
-// it does. The controller ANDs PlanAllowsSupervision with HasSupervisionAccess:
-// a valid manager on a plan without the feature is still 403.
-func TestSupervision_PlanGate_AbsentDenied(t *testing.T) {
-	without := &paymentModels.SubscriptionPlan{Name: "Free", SessionSupervisionEnabled: false}
-	with := &paymentModels.SubscriptionPlan{Name: "Pro", SessionSupervisionEnabled: true}
+// TestSupervision_PlanGate_IsTheClassOrganizations pins that supervision is the
+// organization's feature: a class is supervisable when its organization's
+// subscription carries session_supervision, whatever plan its managers hold
+// themselves. The controller ANDs it with HasSupervisionAccess: a valid manager
+// in an organization that does not pay for it is still 403.
+func TestSupervision_PlanGate_IsTheClassOrganizations(t *testing.T) {
+	db := setupTestDB(t)
 
-	assert.False(t, terminalController.PlanAllowsSupervision(without),
-		"plan without session_supervision must not permit supervision")
-	assert.True(t, terminalController.PlanAllowsSupervision(with),
-		"plan with session_supervision must permit supervision")
+	paid, _ := newSupervisedSession(t, db, "group-paid", "trainer-A", "learner-A")
+	grantOrgSupervision(t, db, paid, true)
+	assert.True(t, terminalController.ClassOrgAllowsSupervision(db, paid.ID.String()))
+
+	unpaid, _ := newSupervisedSession(t, db, "group-unpaid", "trainer-B", "learner-B")
+	grantOrgSupervision(t, db, unpaid, false)
+	assert.False(t, terminalController.ClassOrgAllowsSupervision(db, unpaid.ID.String()),
+		"an organization whose plan lacks session_supervision grants none")
+
+	noSubscription, _ := newSupervisedSession(t, db, "group-no-sub", "trainer-C", "learner-C")
+	assert.False(t, terminalController.ClassOrgAllowsSupervision(db, noSubscription.ID.String()),
+		"an organization with no plan grants none")
+
+	orgless := &groupModels.ClassGroup{Name: "group-orgless", DisplayName: "orgless", OwnerUserID: "trainer-D", MaxMembers: 50}
+	require.NoError(t, db.Omit("Metadata").Create(orgless).Error)
+	assert.False(t, terminalController.ClassOrgAllowsSupervision(db, orgless.ID.String()),
+		"a class outside any organization is never supervisable")
+	assert.False(t, terminalController.ClassOrgAllowsSupervision(db, "not-a-class"))
 }
 
 // --- 5. Non-existent / unowned session → deny, no info leak ------------------
@@ -350,7 +364,9 @@ func TestSupervision_TakeHandAudit_UsesTakeHandEvent(t *testing.T) {
 	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
 	audit := &mockSupervisionAudit{}
 
-	err := terminalController.TakeHandForSupervision(db, audit, planWithSupervision(), trainer, false, sessionID, group.ID.String())
+	grantOrgSupervision(t, db, group, true)
+
+	err := terminalController.TakeHandForSupervision(db, audit, trainer, false, sessionID, group.ID.String())
 
 	require.NoError(t, err)
 	require.Len(t, audit.logged, 1)
@@ -367,7 +383,9 @@ func TestSupervision_TakeHand_FailClosedOnAuditError(t *testing.T) {
 	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
 	audit := &mockSupervisionAudit{logErr: assert.AnError}
 
-	err := terminalController.TakeHandForSupervision(db, audit, planWithSupervision(), trainer, false, sessionID, group.ID.String())
+	grantOrgSupervision(t, db, group, true)
+
+	err := terminalController.TakeHandForSupervision(db, audit, trainer, false, sessionID, group.ID.String())
 
 	require.Error(t, err, "take-hand must fail closed when the audit write fails")
 	assert.Len(t, audit.logged, 1, "the audit write must be attempted before the act (audit-before-act)")
@@ -409,9 +427,20 @@ func TestSupervision_ListGroupSessions_NonManagerDenied(t *testing.T) {
 	assert.False(t, ok, "a plain member must NOT list the group's supervision sessions")
 }
 
-// planWithSupervision is a plan that carries the session_supervision feature.
-func planWithSupervision() *paymentModels.SubscriptionPlan {
-	return &paymentModels.SubscriptionPlan{Name: "Pro", SessionSupervisionEnabled: true}
+// grantOrgSupervision gives the class's organization an active subscription whose
+// plan does, or does not, carry the session_supervision feature.
+func grantOrgSupervision(t *testing.T, db *gorm.DB, group *groupModels.ClassGroup, supervision bool) {
+	t.Helper()
+	plan := &paymentModels.SubscriptionPlan{Name: "Org plan", IsActive: true, SessionSupervisionEnabled: supervision}
+	require.NoError(t, db.Create(plan).Error)
+	require.NoError(t, db.Create(&paymentModels.OrganizationSubscription{
+		OrganizationID:     *group.OrganizationID,
+		SubscriptionPlanID: plan.ID,
+		StripeCustomerID:   "",
+		Status:             "active",
+		CurrentPeriodStart: time.Now(),
+		CurrentPeriodEnd:   time.Now().AddDate(1, 0, 0),
+	}).Error)
 }
 
 // --- Review round (MR !313) --------------------------------------------------
@@ -531,9 +560,9 @@ func TestSupervision_InactiveManagingGroup_Denied(t *testing.T) {
 // --- R4. L2 plan re-check on take-hand ---------------------------------------
 
 // TestSupervision_TakeHand_PlanRevokedMidSession_Denied pins that take-hand
-// re-checks the plan feature: if the caller's effective plan no longer carries
-// session_supervision, the promotion is denied even though authz/group are
-// still valid. This closes the gap where the plan was only checked at WS open.
+// re-checks the plan feature: if the class's organization's plan no longer
+// carries session_supervision, the promotion is denied even though authz/group
+// are still valid. This closes the gap where the plan was only checked at WS open.
 func TestSupervision_TakeHand_PlanRevokedMidSession_Denied(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -541,9 +570,9 @@ func TestSupervision_TakeHand_PlanRevokedMidSession_Denied(t *testing.T) {
 	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
 	audit := &mockSupervisionAudit{}
 
-	planless := &paymentModels.SubscriptionPlan{Name: "Free", SessionSupervisionEnabled: false}
+	grantOrgSupervision(t, db, group, false)
 
-	err := terminalController.TakeHandForSupervision(db, audit, planless, trainer, false, sessionID, group.ID.String())
+	err := terminalController.TakeHandForSupervision(db, audit, trainer, false, sessionID, group.ID.String())
 
 	assert.Error(t, err, "take-hand must be denied when the effective plan lacks session_supervision")
 }

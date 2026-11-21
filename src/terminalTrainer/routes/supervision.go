@@ -26,7 +26,7 @@ import (
 	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/identity"
 	groupModels "soli/formations/src/groups/models"
-	paymentModels "soli/formations/src/payment/models"
+	paymentRepositories "soli/formations/src/payment/repositories"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 )
 
@@ -89,12 +89,24 @@ func SupervisionStillAuthorized(db *gorm.DB, callerUserID string, isAdmin bool, 
 	return ok
 }
 
-// PlanAllowsSupervision reports whether the plan carries the session-supervision
-// feature. The controller ANDs this with HasSupervisionAccess, so a valid manager
-// on a plan without the feature is still denied.
-func PlanAllowsSupervision(plan *paymentModels.SubscriptionPlan) bool {
-	return plan != nil && plan.SessionSupervisionEnabled
+// ClassOrgAllowsSupervision reports whether the organization running the class
+// pays for supervision: its subscription's plan carries the session-supervision
+// feature. That one rule, with being manager of the class, decides who supervises
+// it. Supervision only ever happens inside an organization, so it is the
+// organization's feature, not a trainer's: every manager of its classes gets it,
+// and a class outside any organization, or one with no such plan, gets none.
+func ClassOrgAllowsSupervision(db *gorm.DB, groupID string) bool {
+	var class groupModels.ClassGroup
+	if err := db.Select("organization_id").First(&class, "id = ?", groupID).Error; err != nil || class.OrganizationID == nil {
+		return false
+	}
+	sub, err := paymentRepositories.NewOrganizationSubscriptionRepository(db).GetActiveOrganizationSubscription(*class.OrganizationID)
+	return err == nil && sub.SubscriptionPlan.SessionSupervisionEnabled
 }
+
+// orgPlanLacksSupervision is the refusal a manager sees when their class's
+// organization does not pay for supervision.
+const orgPlanLacksSupervision = "This organization's plan does not include terminal supervision"
 
 // SessionSupportsSupervision reports whether a session is in a supervisable
 // context — i.e. its owner is an active member of at least one class-group. This
@@ -176,12 +188,13 @@ func StartSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID
 // promotion even when authz/group are still valid — and only then (3) writes
 // AuditEventSupervisionTakeHand. If any of these fails the promotion is refused
 // (fail-closed) and the caller MUST NOT promote.
-func TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, plan *paymentModels.SubscriptionPlan, actorUserID string, isAdmin bool, sessionID, groupID string) error {
-	if _, ok := HasSupervisionAccess(db, actorUserID, isAdmin, sessionID); !ok {
+func TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string) error {
+	managedGroupID, ok := HasSupervisionAccess(db, actorUserID, isAdmin, sessionID)
+	if !ok {
 		return fmt.Errorf("supervision not authorized")
 	}
-	if !PlanAllowsSupervision(plan) {
-		return fmt.Errorf("plan does not permit session supervision")
+	if !isAdmin && !ClassOrgAllowsSupervision(db, managedGroupID) {
+		return fmt.Errorf("%s", orgPlanLacksSupervision)
 	}
 	if err := audit.Log(buildSupervisionAudit(auditModels.AuditEventSupervisionTakeHand, actorUserID, sessionID, groupID)); err != nil {
 		return err
