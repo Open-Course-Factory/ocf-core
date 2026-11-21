@@ -216,7 +216,7 @@ func openRunsOn(db *gorm.DB, terminals []terminalModels.Terminal) (map[string]st
 func (tc *terminalController) GetParticipantControls(ctx *gin.Context) {
 	rows, allowed, err := ListParticipantControls(tc.db, ctx.Param("id"), ctx.GetString("userId"), access.IsAdmin(ctx.GetStringSlice("userRoles")))
 	if !allowed {
-		apiErrors.Respond(ctx, http.StatusForbidden, "You are not a manager of this group")
+		apiErrors.Respond(ctx, http.StatusForbidden, GroupManagerRefusal(tc.db, ctx.Param("id"), ctx.GetString("userId")))
 		return
 	}
 	if err != nil {
@@ -233,7 +233,7 @@ func (tc *terminalController) classParticipant(ctx *gin.Context) (services.Contr
 	actor := httperrors.ControlActorFrom(ctx)
 	gid, allowed := MayListGroupSessions(tc.db, ctx.Param("id"), actor.UserID, actor.IsAdmin)
 	if !allowed {
-		apiErrors.Respond(ctx, http.StatusForbidden, "You are not a manager of this group")
+		apiErrors.Respond(ctx, http.StatusForbidden, GroupManagerRefusal(tc.db, ctx.Param("id"), actor.UserID))
 		return actor, services.ControlScope{}, false
 	}
 	scope, err := services.ClassControlScope(tc.db, gid, actor, ctx.Param("userId"))

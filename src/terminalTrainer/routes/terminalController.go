@@ -648,7 +648,7 @@ func (tc *terminalController) listGroupMemberSessions(ctx *gin.Context, groupID 
 	terminals, allowed := ListGroupMemberSessions(
 		tc.db, groupID, ctx.GetString("userId"), access.IsAdmin(ctx.GetStringSlice("userRoles")))
 	if !allowed {
-		errors.Respond(ctx, http.StatusForbidden, "You are not a manager of this group")
+		errors.Respond(ctx, http.StatusForbidden, GroupManagerRefusal(tc.db, groupID, ctx.GetString("userId")))
 		return
 	}
 	ctx.JSON(http.StatusOK, toTerminalOutputs(terminals))

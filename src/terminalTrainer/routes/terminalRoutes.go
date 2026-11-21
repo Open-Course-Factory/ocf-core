@@ -38,7 +38,7 @@ func TerminalRoutes(router *gin.RouterGroup, db *gorm.DB) {
 		}
 		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 			"error":  "Access denied",
-			"detail": "You are not a manager of this group",
+			"detail": GroupManagerRefusal(db, groupID, userID),
 		})
 		return false
 	})
