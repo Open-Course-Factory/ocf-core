@@ -91,3 +91,39 @@ func TestGetStepByOrder_CarriesPosition(t *testing.T) {
 	assert.Equal(t, 1, resp.Position)
 	assert.Equal(t, []int{1, 2}, resp.StepOrders)
 }
+
+// The learner's copy of a scenario has no steps, so the current-step response
+// is the only place a client learns what kind of step comes next — which it
+// needs to lay out the next step before loading it.
+func TestGetCurrentStep_ListsStepTypesAlongsideOrders(t *testing.T) {
+	freshTestDB(t)
+	sessionID := seedPositionScenario(t, []int{1, 2}, 1)
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioStep{}).
+		Where("\"order\" = ?", 2).Update("step_type", "quiz").Error)
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	resp, err := svc.GetCurrentStep(sessionID)
+	require.NoError(t, err)
+
+	assert.Equal(t, []int{1, 2}, resp.StepOrders)
+	assert.Equal(t, []string{"info", "quiz"}, resp.StepTypes)
+}
+
+// While the environment is being set up, the placeholder still says which kind
+// of step it is preparing, so the page opens on the right layout.
+func TestGetCurrentStep_ProvisioningPlaceholderCarriesStepType(t *testing.T) {
+	freshTestDB(t)
+	sessionID := seedPositionScenario(t, []int{1, 2}, 1)
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioStep{}).
+		Where("\"order\" = ?", 1).Update("step_type", "quiz").Error)
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioSession{}).
+		Where("id = ?", sessionID).Update("status", "provisioning").Error)
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	resp, err := svc.GetCurrentStep(sessionID)
+	require.NoError(t, err)
+
+	assert.Equal(t, "provisioning", resp.Status)
+	assert.Equal(t, "quiz", resp.StepType)
+	assert.Empty(t, resp.Questions, "the placeholder carries no step content")
+}

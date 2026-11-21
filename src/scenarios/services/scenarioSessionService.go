@@ -1399,11 +1399,19 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 	}
 
 	if session.Status == "provisioning" {
+		// No content yet, but the kind of step being prepared: the page lays
+		// out a quiz differently from a terminal step and should open on the
+		// right one.
+		stepType := ""
+		if i := slices.IndexFunc(session.Scenario.Steps, func(st models.ScenarioStep) bool { return st.Order == session.CurrentStep }); i >= 0 {
+			stepType = session.Scenario.Steps[i].StepType
+		}
 		return &dto.CurrentStepResponse{
 			StepOrder:  session.CurrentStep,
 			TotalSteps: len(session.Scenario.Steps),
 			Title:      "Setting up environment...",
 			Status:     "provisioning",
+			StepType:   stepType,
 		}, nil
 	}
 
@@ -1454,13 +1462,16 @@ func StepPosition(steps []models.ScenarioStep, order int) int {
 }
 
 // stepPositionInfo returns the step's display position plus the full ordered
-// list of orders, which clients use to map any order to its position locally.
-func stepPositionInfo(steps []models.ScenarioStep, order int) (int, []int) {
+// lists of orders and types, which clients use to map any order to its
+// position, and to the kind of step it is, locally.
+func stepPositionInfo(steps []models.ScenarioStep, order int) (int, []int, []string) {
 	orders := make([]int, len(steps))
+	types := make([]string, len(steps))
 	for i := range steps {
 		orders[i] = steps[i].Order
+		types[i] = steps[i].StepType
 	}
-	return StepPosition(steps, order), orders
+	return StepPosition(steps, order), orders, types
 }
 
 // loadSanitizedQuestions fetches the quiz questions for a step and returns them
@@ -1572,11 +1583,12 @@ func (s *ScenarioSessionService) buildStepResponse(session *models.ScenarioSessi
 	textContent := stepText.Text
 	hintContent := stepText.Hint
 
-	position, stepOrders := stepPositionInfo(session.Scenario.Steps, step.Order)
+	position, stepOrders, stepTypes := stepPositionInfo(session.Scenario.Steps, step.Order)
 	response := &dto.CurrentStepResponse{
 		StepOrder:             step.Order,
 		Position:              position,
 		StepOrders:            stepOrders,
+		StepTypes:             stepTypes,
 		TotalSteps:            len(session.Scenario.Steps),
 		Title:                 stepText.Title,
 		Text:                  textContent,

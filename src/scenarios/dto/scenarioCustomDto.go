@@ -155,6 +155,10 @@ type CurrentStepResponse struct {
 	// StepOrders lists every step's Order in display order, so a client can
 	// map a display position back to the order it must navigate to.
 	StepOrders            []int                 `json:"step_orders,omitempty"`
+	// StepTypes is each step's type, paired with StepOrders. The learner's
+	// copy of the scenario has no steps, so this is how a client knows the
+	// kind of step that comes next and lays it out before loading it.
+	StepTypes             []string              `json:"step_types,omitempty"`
 	TotalSteps            int                   `json:"total_steps"`
 	Title                 string                `json:"title"`
 	Text                  string                `json:"text,omitempty"`
