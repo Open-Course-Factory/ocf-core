@@ -15,6 +15,8 @@ type CreateScenarioStepInput struct {
 	ShowImmediateFeedback bool    `json:"show_immediate_feedback,omitempty" mapstructure:"show_immediate_feedback"`
 	QuizScoringMode    string     `json:"quiz_scoring_mode,omitempty" mapstructure:"quiz_scoring_mode"`
 	QuizWrongPenalty   *float64   `json:"quiz_wrong_penalty,omitempty" mapstructure:"quiz_wrong_penalty"`
+	Ungraded           bool       `json:"ungraded,omitempty" mapstructure:"ungraded"`
+	ShowTerminal       bool       `json:"show_terminal,omitempty" mapstructure:"show_terminal"`
 	TextContent        string     `json:"text_content,omitempty" mapstructure:"text_content"`
 	HintContent        string     `json:"hint_content,omitempty" mapstructure:"hint_content"`
 	VerifyScript       string     `json:"verify_script,omitempty" mapstructure:"verify_script"`
@@ -39,6 +41,8 @@ type EditScenarioStepInput struct {
 	ShowImmediateFeedback *bool   `json:"show_immediate_feedback,omitempty" mapstructure:"show_immediate_feedback"`
 	QuizScoringMode    *string    `json:"quiz_scoring_mode,omitempty" mapstructure:"quiz_scoring_mode"`
 	QuizWrongPenalty   *float64   `json:"quiz_wrong_penalty,omitempty" mapstructure:"quiz_wrong_penalty"`
+	Ungraded           *bool      `json:"ungraded,omitempty" mapstructure:"ungraded"`
+	ShowTerminal       *bool      `json:"show_terminal,omitempty" mapstructure:"show_terminal"`
 	TextContent        *string    `json:"text_content,omitempty" mapstructure:"text_content"`
 	HintContent        *string    `json:"hint_content,omitempty" mapstructure:"hint_content"`
 	VerifyScript       *string    `json:"verify_script,omitempty" mapstructure:"verify_script"`
@@ -66,6 +70,8 @@ type ScenarioStepOutput struct {
 	ShowImmediateFeedback bool    `json:"show_immediate_feedback"`
 	QuizScoringMode    string     `json:"quiz_scoring_mode"`
 	QuizWrongPenalty   float64    `json:"quiz_wrong_penalty"`
+	Ungraded           bool       `json:"ungraded"`
+	ShowTerminal       bool       `json:"show_terminal"`
 	TextContent        string     `json:"text_content,omitempty"`
 	HintContent        string     `json:"hint_content,omitempty"`
 	VerifyScript       string     `json:"verify_script,omitempty"`

@@ -127,6 +127,8 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*d
 			ShowImmediateFeedback:    step.ShowImmediateFeedback,
 			QuizScoringMode:          step.QuizScoringMode,
 			QuizWrongPenalty:         exportedWrongPenalty(step),
+			Ungraded:                 step.Ungraded,
+			ShowTerminal:             step.ShowTerminal,
 			TextContent:              step.TextContent,
 			HintContent:              step.HintContent,
 			VerifyScript:             step.VerifyScript,
@@ -202,6 +204,7 @@ func exportQuestions(questions []models.ScenarioStepQuestion) []dto.SeedQuestion
 			CorrectAnswer: q.CorrectAnswer,
 			Explanation:   q.Explanation,
 			Points:        q.Points,
+			OptionPoints:  q.OptionPoints,
 		})
 	}
 	return out
@@ -417,6 +420,7 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		}
 		kcStep.BackgroundTimeoutSeconds = step.BackgroundTimeoutSeconds
 		kcStep.BackgroundAsync = step.BackgroundAsync
+		kcStep.Ungraded = step.Ungraded
 
 		details.Steps = append(details.Steps, kcStep)
 	}
@@ -485,7 +489,7 @@ func needsStepExtensions(step *models.ScenarioStep) bool {
 	if len(step.Questions) > 0 {
 		return true
 	}
-	if step.ShowImmediateFeedback || step.QuizScoringMode != "" || exportedWrongPenalty(*step) != nil {
+	if step.ShowImmediateFeedback || step.ShowTerminal || step.QuizScoringMode != "" || exportedWrongPenalty(*step) != nil {
 		return true
 	}
 	if step.StepType != "" && step.StepType != "terminal" {
@@ -524,6 +528,7 @@ func buildStepExtensions(step *models.ScenarioStep) *stepExtensions {
 				CorrectAnswer: q.CorrectAnswer,
 				Explanation:   q.Explanation,
 				Points:        q.Points,
+				OptionPoints:  q.OptionPoints,
 			})
 		}
 	}
@@ -531,6 +536,7 @@ func buildStepExtensions(step *models.ScenarioStep) *stepExtensions {
 	return &stepExtensions{
 		StepType:              stepType,
 		ShowImmediateFeedback: step.ShowImmediateFeedback,
+		ShowTerminal:          step.ShowTerminal,
 		QuizScoringMode:       step.QuizScoringMode,
 		QuizWrongPenalty:      exportedWrongPenalty(*step),
 		Questions:             questions,

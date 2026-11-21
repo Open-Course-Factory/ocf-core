@@ -1319,6 +1319,9 @@ func populateQuizQuestionsFromLoaded(
 				IsCorrect:     graded.Questions[qi].Correct,
 				Points:        q.Points,
 				Explanation:   q.Explanation,
+				OptionPoints:  q.OptionPoints,
+				EarnedPoints:  graded.Questions[qi].Earned,
+				MaxPoints:     graded.Questions[qi].Max,
 			})
 		}
 		steps[i].Questions = details

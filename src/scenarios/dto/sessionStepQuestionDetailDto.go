@@ -19,4 +19,9 @@ type SessionStepQuestionDetail struct {
 	IsCorrect     bool      `json:"is_correct"`
 	Points        int       `json:"points"`
 	Explanation   string    `json:"explanation,omitempty"`
+	// OptionPoints is set on a question scored by the option picked; the
+	// dashboard then shows EarnedPoints out of MaxPoints, not right/wrong.
+	OptionPoints string  `json:"option_points,omitempty"`
+	EarnedPoints float64 `json:"earned_points"`
+	MaxPoints    float64 `json:"max_points"`
 }

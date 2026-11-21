@@ -31,6 +31,8 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						Title:              input.Title,
 						StepType:           stepType,
 						ShowImmediateFeedback: input.ShowImmediateFeedback,
+						Ungraded:           input.Ungraded,
+						ShowTerminal:       input.ShowTerminal,
 						QuizScoringMode:    input.QuizScoringMode,
 						QuizWrongPenalty:   input.QuizWrongPenalty,
 						TextContent:        input.TextContent,
@@ -62,6 +64,12 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.ShowImmediateFeedback != nil {
 						updates["show_immediate_feedback"] = *input.ShowImmediateFeedback
+					}
+					if input.Ungraded != nil {
+						updates["ungraded"] = *input.Ungraded
+					}
+					if input.ShowTerminal != nil {
+						updates["show_terminal"] = *input.ShowTerminal
 					}
 					if input.QuizScoringMode != nil {
 						updates["quiz_scoring_mode"] = *input.QuizScoringMode
@@ -177,6 +185,8 @@ func ScenarioStepToOutput(model *models.ScenarioStep) dto.ScenarioStepOutput {
 		Title:              model.Title,
 		StepType:           model.StepType,
 		ShowImmediateFeedback: model.ShowImmediateFeedback,
+		Ungraded:           model.Ungraded,
+		ShowTerminal:       model.ShowTerminal,
 		QuizScoringMode:    model.ScoringMode(),
 		QuizWrongPenalty:   model.WrongPenalty(),
 		TextContent:        model.TextContent,

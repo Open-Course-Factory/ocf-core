@@ -26,6 +26,14 @@ type ScenarioStep struct {
 	// when the column has a default: a plain float64 would turn an author's
 	// "no penalty" (0) into 1. Read it through WrongPenalty.
 	QuizWrongPenalty *float64 `gorm:"default:1" json:"quiz_wrong_penalty,omitempty" mapstructure:"quiz_wrong_penalty"`
+	// Ungraded leaves the step out of the grade, as a survey is. Negative so
+	// that absent means graded: a "graded" bool with default:true would turn
+	// an author's false into true on insert.
+	Ungraded bool `gorm:"default:false" json:"ungraded,omitempty" mapstructure:"ungraded"`
+	// ShowTerminal opens a quiz or survey step with the console docked beside
+	// the questions instead of collapsed to a strip, for a quiz that asks about
+	// what the terminal just showed. The learner can still collapse it.
+	ShowTerminal bool `gorm:"default:false" json:"show_terminal,omitempty" mapstructure:"show_terminal"`
 	TextContent          string    `gorm:"type:text" json:"text_content,omitempty"` // markdown
 	HintContent           string    `gorm:"type:text" json:"hint_content,omitempty"` // markdown
 	VerifyScript          string    `gorm:"type:text" json:"-"`
@@ -104,6 +112,12 @@ const (
 // answering its questions (quiz or survey) through submit-quiz.
 func StepAsksQuestions(stepType string) bool {
 	return stepType == StepTypeQuiz || stepType == StepTypeSurvey
+}
+
+// CountsTowardGrade reports whether the step weighs in the session's grade:
+// a survey never does, and an author can leave any other step out.
+func (s ScenarioStep) CountsTowardGrade() bool {
+	return s.StepType != StepTypeSurvey && !s.Ungraded
 }
 
 // AsksQuestions is StepAsksQuestions for this step's type.

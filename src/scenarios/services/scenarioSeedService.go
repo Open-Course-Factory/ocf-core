@@ -67,6 +67,8 @@ func buildSeedScenario(input dto.SeedScenarioInput) (*models.Scenario, error) {
 			Title:                    st.Title,
 			StepType:                 stepType,
 			ShowImmediateFeedback:    st.ShowImmediateFeedback,
+			Ungraded:                 st.Ungraded,
+			ShowTerminal:             st.ShowTerminal,
 			QuizScoringMode:          st.QuizScoringMode,
 			QuizWrongPenalty:         st.QuizWrongPenalty,
 			TextContent:              st.TextContent,
@@ -132,6 +134,7 @@ func buildSeedQuestions(inputs []dto.SeedQuestionInput) []models.ScenarioStepQue
 			CorrectAnswer: q.CorrectAnswer,
 			Explanation:   q.Explanation,
 			Points:        q.Points,
+			OptionPoints:  q.OptionPoints,
 		}
 	}
 	return questions

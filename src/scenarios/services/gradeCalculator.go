@@ -56,7 +56,7 @@ func ComputeWeightedGrade(db *gorm.DB, sessionID uuid.UUID) (float64, error) {
 //	terminal/flag/info → 1.0 if the step's progress status == "completed",
 //	                     else 0.0
 //	quiz               → progress.QuizScore (0 if nil)
-//	survey             → left out: it neither adds to the sum nor counts
+//	survey, ungraded   → left out: it neither adds to the sum nor counts
 //	                     among the steps it is divided by
 //
 // Legacy rows with an empty step_type are treated as "terminal" so older
@@ -71,7 +71,7 @@ func ComputeWeightedGrade(db *gorm.DB, sessionID uuid.UUID) (float64, error) {
 func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []models.ScenarioStepProgress, currentStepOverride *QuizScoreOverride) float64 {
 	totalSteps := 0
 	for _, step := range steps {
-		if step.StepType != models.StepTypeSurvey {
+		if step.CountsTowardGrade() {
 			totalSteps++
 		}
 	}
@@ -87,12 +87,12 @@ func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []mode
 
 	var sum float64
 	for _, step := range steps {
-		stepType := step.StepType
+		if !step.CountsTowardGrade() {
+			continue
+		}
 		p, hasProgress := progressByOrder[step.Order]
 
-		switch stepType {
-		case models.StepTypeSurvey:
-			// Opinion, not achievement: never graded.
+		switch step.StepType {
 		case models.StepTypeQuiz:
 			// Apply override if it targets this step.
 			if currentStepOverride != nil && currentStepOverride.StepOrder == step.Order {
@@ -115,11 +115,11 @@ func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []mode
 }
 
 // HasGradableStep reports whether any step counts towards the weighted grade.
-// A scenario made only of surveys has none: its runs get no grade at all
+// A scenario made only of surveys or ungraded steps has none: its runs get no grade at all
 // rather than a 0% that reads as a failed learner.
 func HasGradableStep(steps []models.ScenarioStep) bool {
 	for _, step := range steps {
-		if step.StepType != models.StepTypeSurvey {
+		if step.CountsTowardGrade() {
 			return true
 		}
 	}
@@ -138,6 +138,7 @@ func HasGradableStep(steps []models.ScenarioStep) bool {
 //   - flag-bearing step: 1 if a ScenarioFlag row for that step exists with
 //     IsCorrect=true; 0 otherwise (including missing row).
 //   - terminal/info/survey steps: ignored entirely.
+//   - ungraded steps: ignored entirely, whatever their type.
 //
 // Denominator semantics:
 //   - quiz step: + questionCountByStepID[step.ID]
@@ -169,6 +170,9 @@ func ComputeCorrectCountsFromLoaded(
 	}
 
 	for _, step := range steps {
+		if !step.CountsTowardGrade() {
+			continue
+		}
 		stepType := step.StepType
 		switch {
 		case stepType == models.StepTypeQuiz:

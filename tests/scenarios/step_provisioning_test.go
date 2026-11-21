@@ -611,7 +611,11 @@ func TestSubmitQuiz_NextStepProvisioning_ReportsTheNextStepsScript(t *testing.T)
 	require.NoError(t, err)
 	assert.True(t, result.NextStepProvisioning)
 	assert.Equal(t, "active", waitForSetupDone(t, db, session.ID))
-	require.Len(t, verifySvc.execCalls, 1)
+	// The answer just submitted is written for the next step's scripts first,
+	// then the next step's background script runs, once.
+	require.Len(t, verifySvc.execCalls, 2)
+	assert.Contains(t, verifySvc.execCalls[0].command[2], services.QuizAnswersContainerPath)
+	assert.Contains(t, verifySvc.execCalls[1].command[2], "post-quiz setup")
 }
 
 func TestGetCurrentStep_WhileProvisioning_ReportsTheRealStepOrder(t *testing.T) {

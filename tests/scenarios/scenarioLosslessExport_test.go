@@ -88,14 +88,16 @@ func fullyPopulatedScenarioInput() dto.SeedScenarioInput {
 				Title:                 "Check",
 				StepType:              "quiz",
 				ShowImmediateFeedback: true,
+				ShowTerminal:          true,
 				Questions: []dto.SeedQuestionInput{
 					{Order: 0, QuestionText: "Where?", QuestionType: "multiple_choice",
-						Options: `["Attic","Cellar"]`, CorrectAnswer: "1", Explanation: "Down", Points: 2},
+						Options: `["Attic","Cellar"]`, CorrectAnswer: "1", Explanation: "Down", Points: 2,
+						OptionPoints: "[1,3]"},
 					{Order: 1, QuestionText: "Root?", QuestionType: "true_false", CorrectAnswer: "false", Points: 1},
 					{Order: 2, QuestionText: "Command?", QuestionType: "free_text", CorrectAnswer: "cd", Points: 1},
 				},
 			},
-			{Title: "Read me", StepType: "info", TextContent: "That is all"},
+			{Title: "Read me", StepType: "info", TextContent: "That is all", Ungraded: true},
 		},
 	}
 }

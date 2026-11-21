@@ -191,6 +191,8 @@ func copyStepInto(tx *gorm.DB, src models.ScenarioStep, scenarioID uuid.UUID, or
 		ShowImmediateFeedback:    src.ShowImmediateFeedback,
 		QuizScoringMode:          src.QuizScoringMode,
 		QuizWrongPenalty:         src.QuizWrongPenalty,
+		Ungraded:                 src.Ungraded,
+		ShowTerminal:             src.ShowTerminal,
 		TextContent:              src.TextContent,
 		HintContent:              src.HintContent,
 		VerifyScript:             src.VerifyScript,
@@ -228,6 +230,7 @@ func copyStepInto(tx *gorm.DB, src models.ScenarioStep, scenarioID uuid.UUID, or
 			CorrectAnswer: srcQuestion.CorrectAnswer,
 			Explanation:   srcQuestion.Explanation,
 			Points:        srcQuestion.Points,
+			OptionPoints:  srcQuestion.OptionPoints,
 		}
 		if err := tx.Create(&question).Error; err != nil {
 			return step, fmt.Errorf("failed to create question copy: %w", err)

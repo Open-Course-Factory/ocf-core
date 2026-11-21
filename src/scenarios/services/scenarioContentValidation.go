@@ -101,9 +101,15 @@ func questionProblem(q models.ScenarioStepQuestion) string {
 	if strings.TrimSpace(q.QuestionText) == "" {
 		return "question_text is empty"
 	}
+	if q.OptionPoints != "" && q.QuestionType != "multiple_choice" {
+		return "option_points is only for multiple_choice questions"
+	}
 	switch q.QuestionType {
 	case "multiple_choice":
-		return optionAnswerProblem(q.Options, q.CorrectAnswer, singleOptionIndex)
+		if problem := optionAnswerProblem(q.Options, q.CorrectAnswer, singleOptionIndex); problem != "" {
+			return problem
+		}
+		return optionPointsProblem(q)
 	case "multi_answer":
 		return optionAnswerProblem(q.Options, q.CorrectAnswer, sortedOptionIndexes)
 	case "true_false":
@@ -116,6 +122,34 @@ func questionProblem(q models.ScenarioStepQuestion) string {
 		}
 	default:
 		return fmt.Sprintf("question_type %q is not one of %s", q.QuestionType, strings.Join(knownQuestionTypes, ", "))
+	}
+	return ""
+}
+
+// optionPointsProblem checks a multiple_choice question's per-option points,
+// once its options and correct_answer are known good. correct_answer must name
+// a best option: it is what the correction shows as the answer.
+func optionPointsProblem(q models.ScenarioStepQuestion) string {
+	points, err := q.ParsedOptionPoints()
+	if err != nil {
+		return fmt.Sprintf("option_points must be a JSON array of integers encoded as a string, like \"[3,1,0,2]\" (got %q)", q.OptionPoints)
+	}
+	if points == nil {
+		return ""
+	}
+	options, _ := optionCount(q.Options)
+	if len(points) != options {
+		return fmt.Sprintf("option_points has %d values for %d options", len(points), options)
+	}
+	if slices.Min(points) < 0 {
+		return "option_points must not be negative"
+	}
+	best := slices.Max(points)
+	if best == 0 {
+		return "option_points needs at least one option worth more than 0"
+	}
+	if correct, _ := strconv.Atoi(q.CorrectAnswer); points[correct] != best {
+		return fmt.Sprintf("correct_answer %q is worth %d points, but the best option is worth %d", q.CorrectAnswer, points[correct], best)
 	}
 	return ""
 }

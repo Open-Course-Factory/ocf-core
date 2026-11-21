@@ -642,6 +642,7 @@ func (s *ScenarioSessionService) buildWorld(job buildJob) error {
 	if err := s.runScenarioSetup(job); err != nil {
 		return err
 	}
+	s.writeQuizAnswers(job.sessionID, job.terminalID)
 	for i := range job.scenario.Steps {
 		step := &job.scenario.Steps[i]
 		if step.Order > job.throughOrder {
@@ -1034,6 +1035,7 @@ func (s *ScenarioSessionService) adoptScriptChosenAnswer(stdout string, flags []
 //
 // The foreground script runs last, after the environment it acts on exists.
 func (s *ScenarioSessionService) runStepProvisioning(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep, locale string) error {
+	s.writeQuizAnswers(sessionID, terminalSessionID)
 	stdout, scriptErr := s.executeBackgroundScript(terminalSessionID, scenario, step, stepProvisioningEnv(scenario, flags, step.Order, locale))
 	s.adoptScriptChosenAnswer(stdout, flags, step)
 	flagErr := s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, step.Order)
@@ -1600,6 +1602,7 @@ func (s *ScenarioSessionService) buildStepResponse(session *models.ScenarioSessi
 		ShowImmediateFeedback: step.ShowImmediateFeedback,
 		QuizScoringMode:       step.ScoringMode(),
 		QuizWrongPenalty:      step.WrongPenalty(),
+		ShowTerminal:          step.ShowTerminal,
 	}
 
 	// Quiz and survey steps: populate the sanitized question list (no
@@ -2065,6 +2068,9 @@ func quizQuestionResults(questions []models.ScenarioStepQuestion, graded QuizGra
 			Correct:       graded.Questions[i].Correct,
 			CorrectAnswer: q.CorrectAnswer,
 			Explanation:   q.Explanation,
+			OptionPoints:  q.OptionPoints,
+			EarnedPoints:  graded.Questions[i].Earned,
+			MaxPoints:     graded.Questions[i].Max,
 		})
 	}
 	return results

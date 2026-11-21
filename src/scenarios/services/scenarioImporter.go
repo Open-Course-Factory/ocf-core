@@ -84,6 +84,8 @@ type KillerCodaStep struct {
 	// step's setup off the advance request.
 	BackgroundTimeoutSeconds int  `json:"background_timeout_seconds,omitempty"`
 	BackgroundAsync          bool `json:"background_async,omitempty"`
+	// OCF extension: leave this step out of the grade, whatever its type.
+	Ungraded bool `json:"ungraded,omitempty"`
 }
 
 // KillerCodaBackend describes the backend image to use
@@ -429,6 +431,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			OutroText:        kcStep.OutroText,
 			BackgroundTimeoutSeconds: kcStep.BackgroundTimeoutSeconds,
 			BackgroundAsync:  kcStep.BackgroundAsync,
+			Ungraded:         kcStep.Ungraded,
 			HasFlag:          stepHasFlag,
 			FlagPath:         kcStep.FlagPath,
 		}
@@ -443,6 +446,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		} else if sidecar != nil {
 			step.StepType = sidecar.StepType
 			step.ShowImmediateFeedback = sidecar.ShowImmediateFeedback
+			step.ShowTerminal = sidecar.ShowTerminal
 			step.QuizScoringMode = sidecar.QuizScoringMode
 			step.QuizWrongPenalty = sidecar.QuizWrongPenalty
 			if len(sidecar.Questions) > 0 {
@@ -456,6 +460,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 						CorrectAnswer: q.CorrectAnswer,
 						Explanation:   q.Explanation,
 						Points:        q.Points,
+						OptionPoints:  q.OptionPoints,
 					}
 				}
 				step.Questions = questions
@@ -489,6 +494,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 type stepExtensions struct {
 	StepType              string                   `json:"step_type,omitempty"`
 	ShowImmediateFeedback bool                     `json:"show_immediate_feedback,omitempty"`
+	ShowTerminal          bool                     `json:"show_terminal,omitempty"`
 	QuizScoringMode       string                   `json:"quiz_scoring_mode,omitempty"`
 	QuizWrongPenalty      *float64                 `json:"quiz_wrong_penalty,omitempty"`
 	Questions             []stepExtensionsQuestion `json:"questions,omitempty"`
@@ -503,6 +509,7 @@ type stepExtensionsQuestion struct {
 	CorrectAnswer string `json:"correct_answer,omitempty"`
 	Explanation   string `json:"explanation,omitempty"`
 	Points        int    `json:"points,omitempty"`
+	OptionPoints  string `json:"option_points,omitempty"`
 }
 
 // stepDirFor resolves the directory holding a step's sidecar files.

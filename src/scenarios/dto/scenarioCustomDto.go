@@ -173,6 +173,7 @@ type CurrentStepResponse struct {
 	ShowImmediateFeedback bool                  `json:"show_immediate_feedback"`
 	QuizScoringMode       string                `json:"quiz_scoring_mode,omitempty"`
 	QuizWrongPenalty      float64               `json:"quiz_wrong_penalty"`
+	ShowTerminal          bool                  `json:"show_terminal,omitempty"`
 	// QuizAnswers and QuizResult replay a submitted quiz when the learner goes
 	// back to it: their answers and the correction they saw on submitting.
 	// Only where that correction was shown (immediate feedback, or a preview);
@@ -221,6 +222,11 @@ type QuizQuestionResult struct {
 	Correct       bool      `json:"correct"`
 	CorrectAnswer string    `json:"correct_answer,omitempty"`
 	Explanation   string    `json:"explanation,omitempty"`
+	// OptionPoints is set on a question scored by the option picked; the
+	// correction then shows EarnedPoints out of MaxPoints, not right/wrong.
+	OptionPoints string  `json:"option_points,omitempty"`
+	EarnedPoints float64 `json:"earned_points"`
+	MaxPoints    float64 `json:"max_points"`
 }
 
 // RevealHintResponse - DTO for revealing a progressive hint
@@ -327,6 +333,9 @@ type SeedQuestionInput struct {
 	CorrectAnswer string `json:"correct_answer,omitempty"`
 	Explanation   string `json:"explanation,omitempty"`
 	Points        int    `json:"points,omitempty"`
+	// OptionPoints gives a multiple_choice question's options their own
+	// points, as a JSON array of ints encoded as a string, like Options.
+	OptionPoints string `json:"option_points,omitempty"`
 }
 
 // SeedStepInput - DTO for a single step in a seed scenario. Steps are
@@ -337,6 +346,8 @@ type SeedStepInput struct {
 	ShowImmediateFeedback    bool                `json:"show_immediate_feedback,omitempty"`
 	QuizScoringMode          string              `json:"quiz_scoring_mode,omitempty"`
 	QuizWrongPenalty         *float64            `json:"quiz_wrong_penalty,omitempty"`
+	Ungraded                 bool                `json:"ungraded,omitempty"`
+	ShowTerminal             bool                `json:"show_terminal,omitempty"`
 	TextContent              string              `json:"text_content,omitempty" binding:"max=65536"`
 	HintContent              string              `json:"hint_content,omitempty" binding:"max=65536"`
 	VerifyScript             string              `json:"verify_script,omitempty"`

@@ -3,6 +3,8 @@ package services
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"slices"
+	"strconv"
 
 	"soli/formations/src/scenarios/models"
 
@@ -35,6 +37,11 @@ type QuizGrade struct {
 // multi_answer question and takes penalty × its share back per wrong tick;
 // the step total floors at 0. Partial-question-floor also floors each
 // question at 0.
+//
+// A multiple_choice question with option_points is scored by the option
+// picked, in every mode: it is worth its best option's points and earns the
+// chosen one's, never less than 0. A step holding one is scored by points,
+// like partial.
 func ScoreQuiz(step models.ScenarioStep, questions []models.ScenarioStepQuestion, answers map[uuid.UUID]string) QuizGrade {
 	result := QuizGrade{Questions: make([]QuestionScore, 0, len(questions))}
 	if len(questions) == 0 {
@@ -44,10 +51,14 @@ func ScoreQuiz(step models.ScenarioStep, questions []models.ScenarioStepQuestion
 	floorEachQuestion := step.ScoringMode() == models.QuizScoringPartialQuestionFloor
 	penalty := step.WrongPenalty()
 	earned, possible := 0.0, 0.0
+	scoredByPoints := partial
 	for _, q := range questions {
 		submitted := answers[q.ID]
 		qs := QuestionScore{Correct: answerIsExactlyRight(submitted, q.CorrectAnswer), Max: questionPoints(q)}
-		if partial {
+		if optionPoints := usableOptionPoints(q); optionPoints != nil {
+			scoredByPoints = true
+			qs = pickedOptionScore(optionPoints, submitted)
+		} else if partial {
 			qs.Earned = partialEarned(q, submitted, qs.Max, penalty)
 			if floorEachQuestion {
 				qs.Earned = max(0, qs.Earned)
@@ -63,7 +74,7 @@ func ScoreQuiz(step models.ScenarioStep, questions []models.ScenarioStepQuestion
 		result.Questions = append(result.Questions, qs)
 	}
 
-	if partial {
+	if scoredByPoints {
 		result.Score = min(1, max(0, earned)/possible)
 	} else {
 		result.Score = float64(result.CorrectCount) / float64(len(questions))
@@ -75,6 +86,32 @@ func ScoreQuiz(step models.ScenarioStep, questions []models.ScenarioStepQuestion
 // empty answer is never right, even against an empty correct_answer.
 func answerIsExactlyRight(submitted, correct string) bool {
 	return submitted != "" && subtle.ConstantTimeCompare([]byte(submitted), []byte(correct)) == 1
+}
+
+// usableOptionPoints returns a multiple_choice question's per-option points, or
+// nil when it has none worth scoring by (absent, unparseable, all zero).
+// Validation refuses those on import; this keeps a bad row from dividing by 0.
+func usableOptionPoints(q models.ScenarioStepQuestion) []int {
+	if q.QuestionType != "multiple_choice" {
+		return nil
+	}
+	points, err := q.ParsedOptionPoints()
+	if err != nil || len(points) == 0 || slices.Max(points) <= 0 {
+		return nil
+	}
+	return points
+}
+
+// pickedOptionScore credits the chosen option's points out of the best
+// option's. An empty, unparseable or out-of-range answer earns nothing.
+func pickedOptionScore(optionPoints []int, submitted string) QuestionScore {
+	best := float64(slices.Max(optionPoints))
+	qs := QuestionScore{Max: best}
+	if index, err := strconv.Atoi(submitted); err == nil && index >= 0 && index < len(optionPoints) {
+		qs.Earned = float64(max(0, optionPoints[index]))
+	}
+	qs.Correct = qs.Earned == best
+	return qs
 }
 
 func questionPoints(q models.ScenarioStepQuestion) float64 {
