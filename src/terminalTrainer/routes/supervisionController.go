@@ -123,6 +123,25 @@ func (tc *terminalController) GetGroupTerminalSessions(ctx *gin.Context) {
 // interpreted as a command (and no client bytes are forwarded upstream as control).
 type supervisionControlMsg struct {
 	Type string `json:"type"`
+	Cols int    `json:"cols,omitempty"`
+	Rows int    `json:"rows,omitempty"`
+}
+
+// maxSupervisorGrid bounds a supervisor's resize: a grid no screen draws is a
+// typo or an attack on the learner's shell, never a presentation.
+const maxSupervisorGrid = 500
+
+// SupervisorResizeFrame turns a supervisor's resize envelope into tt-backend's
+// binary resize frame, or reports false when the size is out of bounds. It lets
+// a trainer presenting a learner's terminal size it to their own screen, so a
+// zoom refits the grid instead of pushing it out of view. tt-backend applies it
+// only while that trainer holds the hand, as it does for any input.
+func SupervisorResizeFrame(cols, rows int) ([]byte, bool) {
+	if cols < 1 || rows < 1 || cols > maxSupervisorGrid || rows > maxSupervisorGrid {
+		return nil, false
+	}
+	frame, _ := json.Marshal(map[string]any{"type": "resize", "cols": cols, "rows": rows})
+	return frame, true
 }
 
 // bindSelfAttachmentID returns the attachment id the supervise proxy should be
@@ -431,7 +450,7 @@ func (b *superviseBroker) pumpUpstream() {
 
 // brokerClientFrames drives the trainer→upstream frame-aware allow-list. Binary
 // client frames are NEVER forwarded upstream; recognized supervision control
-// envelopes are brokered here; anything else is forwarded as terminal input (applied
+// envelopes (take/release hand, resize) are brokered here; anything else is forwarded as terminal input (applied
 // by tt-backend only once this attachment is interactive). It returns when either
 // side ends, leaving run() to tear down and close the audit window.
 func (b *superviseBroker) brokerClientFrames() {
@@ -446,6 +465,14 @@ func (b *superviseBroker) brokerClientFrames() {
 		var msg supervisionControlMsg
 		if json.Unmarshal(data, &msg) == nil && (msg.Type == "take_hand" || msg.Type == "release_hand") {
 			b.handleControl(msg.Type)
+			continue
+		}
+		if msg.Type == "resize" {
+			if frame, ok := SupervisorResizeFrame(msg.Cols, msg.Rows); ok {
+				if werr := b.upstream.WriteMessage(websocket.BinaryMessage, frame); werr != nil {
+					return
+				}
+			}
 			continue
 		}
 		if werr := b.upstream.WriteMessage(websocket.TextMessage, data); werr != nil {
