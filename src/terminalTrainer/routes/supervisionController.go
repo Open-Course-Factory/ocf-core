@@ -110,7 +110,7 @@ func (tc *terminalController) GetGroupTerminalSessions(ctx *gin.Context) {
 
 	sessions, ok := ListGroupSupervisionSessions(tc.db, groupID, userID, isAdmin)
 	if !ok {
-		errors.Respond(ctx, http.StatusForbidden, "You are not a manager of this group")
+		errors.Respond(ctx, http.StatusForbidden, GroupManagerRefusal(tc.db, groupID, userID))
 		return
 	}
 	// The wall says why it is empty, rather than showing tiles that cannot open.

@@ -57,6 +57,26 @@ func managedActiveGroupAmong(db *gorm.DB, candidateIDs []uuid.UUID, callerUserID
 	return managedIDs[0].String(), true
 }
 
+// GroupManagerRefusal is what a caller refused by a class-manager check is told.
+// A manager of an archived class is told it is archived — an archived class keeps
+// its results readable but grants no live view or control, and "you are not a
+// manager" is false for them. Anyone else gets the plain refusal, so the answer
+// still reveals nothing about a class the caller does not manage.
+func GroupManagerRefusal(db *gorm.DB, groupID, callerUserID string) string {
+	var archived []uuid.UUID
+	if id, err := uuid.Parse(groupID); err == nil {
+		db.Model(&groupModels.ClassGroup{}).
+			Where("class_groups.id = ? AND class_groups.archived_at IS NOT NULL", id).
+			Scopes(groupModels.ManagedByScope(callerUserID)).
+			Limit(1).
+			Pluck("id", &archived)
+	}
+	if len(archived) > 0 {
+		return "This class is archived: its live view and controls are closed"
+	}
+	return "You are not a manager of this group"
+}
+
 func callerManagesGroup(db *gorm.DB, groupID uuid.UUID, callerUserID string) bool {
 	_, ok := managedActiveGroupAmong(db, []uuid.UUID{groupID}, callerUserID)
 	return ok
