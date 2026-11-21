@@ -210,10 +210,8 @@ func (s *ScenarioSeedService) updateSeededScenario(existing models.Scenario, bui
 		).Delete(&models.ScenarioStepHint{}).Error; err != nil {
 			return fmt.Errorf("failed to delete old hints: %w", err)
 		}
-		if err := tx.Where("step_id IN (?)",
-			tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
-		).Delete(&models.ScenarioStepQuestion{}).Error; err != nil {
-			return fmt.Errorf("failed to delete old questions: %w", err)
+		if err := replaceQuestionsKeepingIDs(tx, existing.ID, newSteps); err != nil {
+			return err
 		}
 		var previous []models.ScenarioStep
 		if err := tx.Where("scenario_id = ?", existing.ID).

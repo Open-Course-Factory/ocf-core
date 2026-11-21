@@ -240,11 +240,10 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 			).Delete(&models.ScenarioStepHint{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old hints: %w", err)
 			}
-			// Delete old quiz questions before steps (soft-delete won't cascade)
-			if err := tx.Where("step_id IN (?)",
-				tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
-			).Delete(&models.ScenarioStepQuestion{}).Error; err != nil {
-				return fmt.Errorf("failed to delete old questions: %w", err)
+			// Delete old quiz questions before steps (soft-delete won't cascade),
+			// keeping the ids of those that are still the same question.
+			if err := replaceQuestionsKeepingIDs(tx, existing.ID, scenario.Steps); err != nil {
+				return err
 			}
 			// Delete old steps
 			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
