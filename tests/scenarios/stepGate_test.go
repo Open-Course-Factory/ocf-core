@@ -570,8 +570,19 @@ func TestStepGate_InactiveAssignment_IsNotHeld(t *testing.T) {
 	setAssignmentGate(t, db, run.assignment.ID, gateAt(1))
 	require.NoError(t, db.Model(&models.ScenarioAssignment{}).Where("id = ?", run.assignment.ID).Update("is_active", false).Error)
 
+	// An active, ungated assignment of the same scenario keeps the class view
+	// listing the learner: the inactive gate must not show them waiting there.
+	createScenarioAssignment(t, db, run.scenario.ID, &run.group.ID, nil, "group")
+
 	resp, err := gateSessionService(db).VerifyCurrentStep(run.session.ID)
 	require.NoError(t, err)
 	assert.False(t, resp.WaitingAtGate)
 	assert.Equal(t, 1, reloadSession(t, run.session.ID).CurrentStep)
+
+	rows, err := services.NewTeacherDashboardService(db, nil, nil).GetGroupLiveProgress(run.group.ID)
+	require.NoError(t, err)
+	assignments := liveProgressByUserID(rows)[gatedLearner].Assignments
+	require.Len(t, assignments, 1, "only the active assignment is listed")
+	assert.False(t, assignments[0].WaitingAtGate)
+	assert.Nil(t, assignments[0].StepGate)
 }
