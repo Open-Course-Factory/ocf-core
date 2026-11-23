@@ -55,8 +55,10 @@ func WithheldGradeSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[
 //
 // For each (scenario, learner) pair that has at least one, the value reports
 // whether any of those classes has published its results, and the strictest
-// (lowest) step gate among them. A pair with none is absent. One query
-// whatever the number of each.
+// (lowest) step gate among their ACTIVE assignments: a deactivated assignment
+// leaves the teacher's class view, so its gate could never be released there.
+// Grades and the exam lock still count inactive assignments. A pair with none
+// is absent. One query whatever the number of each.
 func learnerClassAssignments(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string) (map[learnerRun]learnerClasses, error) {
 	assigned := map[learnerRun]learnerClasses{}
 	if len(scenarioIDs) == 0 || len(userIDs) == 0 {
@@ -69,7 +71,7 @@ func learnerClassAssignments(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []str
 		StepGate       *int
 	}
 	if err := db.Table("scenario_assignments sa").
-		Select("sa.scenario_id AS scenario_id, gm.user_id AS user_id, COUNT(sa.results_published_at) AS published_count, MIN(sa.step_gate) AS step_gate").
+		Select("sa.scenario_id AS scenario_id, gm.user_id AS user_id, COUNT(sa.results_published_at) AS published_count, MIN(CASE WHEN sa.is_active THEN sa.step_gate END) AS step_gate").
 		Joins("JOIN group_members gm ON gm.group_id = sa.group_id AND gm.is_active = ? AND gm.deleted_at IS NULL", true).
 		Where("sa.scenario_id IN ? AND gm.user_id IN ? AND sa.deleted_at IS NULL", scenarioIDs, userIDs).
 		Group("sa.scenario_id, gm.user_id").

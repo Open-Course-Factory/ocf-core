@@ -561,3 +561,17 @@ func TestGetGroupLiveProgress_NotStarted_HasStepNumberZero(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, liveProgressByUserID(rows)[gatedLearner].Assignments[0].CurrentStepNumber)
 }
+
+// A teacher who deactivates an assignment no longer sees it in the class view,
+// so its gate must not hold anyone.
+func TestStepGate_InactiveAssignment_IsNotHeld(t *testing.T) {
+	db := freshTestDB(t)
+	run := gatedRunFixture(t, db, "terminal", "terminal")
+	setAssignmentGate(t, db, run.assignment.ID, gateAt(1))
+	require.NoError(t, db.Model(&models.ScenarioAssignment{}).Where("id = ?", run.assignment.ID).Update("is_active", false).Error)
+
+	resp, err := gateSessionService(db).VerifyCurrentStep(run.session.ID)
+	require.NoError(t, err)
+	assert.False(t, resp.WaitingAtGate)
+	assert.Equal(t, 1, reloadSession(t, run.session.ID).CurrentStep)
+}
