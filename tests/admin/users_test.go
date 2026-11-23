@@ -211,6 +211,19 @@ func TestBuildUserListings_UserWithNoMemberships_ReturnsEmptyArrays(t *testing.T
 	assert.Len(t, got.Groups, 0)
 }
 
+func TestBuildUserListings_PassesRegistrationDateThrough(t *testing.T) {
+	db := freshTestDB(t)
+
+	alice := fakeUser(uidAlice, "alice", "Alice", "alice@example.com", "")
+	alice.CreatedTime = "2026-11-20T09:15:00+01:00"
+
+	listings, err := adminUsersRoutes.BuildUserListings([]*casdoorsdk.User{alice}, db, noAdminFn())
+	require.NoError(t, err)
+
+	assert.Equal(t, "2026-11-20T09:15:00+01:00", findListing(t, listings, uidAlice).CreatedAt,
+		"the admin page sorts users by Casdoor's registration time")
+}
+
 func TestBuildUserListings_UserWithOrgMembership_IncludesOrg(t *testing.T) {
 	db := freshTestDB(t)
 

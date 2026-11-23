@@ -24,6 +24,7 @@ func BuildUserListings(users []*casdoorsdk.User, db *gorm.DB, isAdminFn func(str
 			IsActive:      !u.IsForbidden && !u.IsDeleted,
 			IsAdmin:       isAdminFn(u.Id),
 			EmailVerified: u.EmailVerified,
+			CreatedAt:     u.CreatedTime,
 			Organizations: []OrgMembership{},
 			Groups:        []GroupMembership{},
 		}

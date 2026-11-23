@@ -37,6 +37,8 @@ type UserListing struct {
 	IsActive      bool              `json:"is_active"`
 	IsAdmin       bool              `json:"is_admin"`
 	EmailVerified bool              `json:"email_verified"`
+	// CreatedAt is Casdoor's registration time, passed through as-is (RFC 3339).
+	CreatedAt     string            `json:"created_at"`
 	Organizations []OrgMembership   `json:"organizations"`
 	Groups        []GroupMembership `json:"groups"`
 }
