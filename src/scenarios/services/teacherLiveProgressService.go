@@ -107,6 +107,10 @@ type LearnerAssignmentProgress struct {
 	// UI to display.
 	SessionStatus    string `json:"session_status,omitempty"`
 	CurrentStep      int    `json:"current_step"`
+	// CurrentStepNumber is the 1-based position of CurrentStep among the
+	// scenario's steps (StepPosition), 0 when not started. Clients display
+	// it; CurrentStep is a raw order that may start at 0 or 1.
+	CurrentStepNumber int `json:"current_step_number"`
 	CurrentStepTitle string `json:"current_step_title,omitempty"`
 	TotalSteps       int    `json:"total_steps"`
 	// CurrentStepElapsedSeconds is how long the learner has been on the step they
@@ -116,8 +120,8 @@ type LearnerAssignmentProgress struct {
 	Grade                     *float64   `json:"grade,omitempty"`
 	StartedAt                 *time.Time `json:"started_at,omitempty"`
 	CompletedAt               *time.Time `json:"completed_at,omitempty"`
-	// StepGate is this assignment's gate: the first step the class may not
-	// enter yet, nil when open.
+	// StepGate is this assignment's gate as the 1-based number of the first
+	// step the class may not enter yet, nil when open.
 	StepGate *int `json:"step_gate,omitempty"`
 	// WaitingAtGate: the learner finished their current step and a gate of
 	// one of their classes keeps them out of the next one.
@@ -522,7 +526,7 @@ func buildLearnerAssignmentProgress(assignment groupAssignmentRow, attempt *lear
 		Deadline:      assignment.Deadline,
 		TotalSteps:    steps.total,
 		Status:        LearnerStatusNotStarted,
-		StepGate:      assignment.StepGate,
+		StepGate:      gateStepNumber(steps.steps, assignment.StepGate),
 	}
 	if attempt == nil {
 		return progress
@@ -532,6 +536,7 @@ func buildLearnerAssignmentProgress(assignment groupAssignmentRow, attempt *lear
 	progress.SessionStatus = attempt.Status
 	progress.Status = learnerStatusFor(attempt.Status)
 	progress.CurrentStep = attempt.CurrentStep
+	progress.CurrentStepNumber = StepPosition(steps.steps, attempt.CurrentStep)
 	progress.CurrentStepTitle = steps.titleByOrder[attempt.CurrentStep]
 	progress.HintsUsed = attempt.HintsUsed
 	progress.Grade = attempt.Grade

@@ -784,14 +784,14 @@ func (tc *TeacherController) UnpublishScenarioResults(c *gin.Context) {
 
 // SetStepGateInput is the body of PUT /teacher/groups/:groupId/scenarios/:scenarioId/step-gate.
 type SetStepGateInput struct {
-	// StepOrder is the order of the first step the class may not enter; null
-	// releases the gate.
-	StepOrder *int `json:"step_order"`
+	// StepNumber is the 1-based position, among the scenario's steps, of the
+	// first step the class may not enter; null releases the gate.
+	StepNumber *int `json:"step_number"`
 }
 
 // SetStepGate godoc
 // @Summary Lock or release a class's runs of a scenario at a step
-// @Description Learners of the class who finish the step before step_order wait there until the gate moves or is released (step_order null). Finishing the scenario is never gated. Applies to every assignment of the scenario to the class.
+// @Description Learners of the class who finish the step before step_number (1-based position among the scenario's steps) wait there until the gate moves or is released (step_number null). The response's step_gate is that step number too. Finishing the scenario is never gated. Applies to every assignment of the scenario to the class.
 // @Tags scenario-teacher
 // @Accept json
 // @Produce json
@@ -815,10 +815,10 @@ func (tc *TeacherController) SetStepGate(c *gin.Context) {
 		return
 	}
 
-	err := tc.dashboardService.SetStepGate(groupID, scenarioID, input.StepOrder)
+	err := tc.dashboardService.SetStepGate(groupID, scenarioID, input.StepNumber)
 	switch {
 	case err == nil:
-		c.JSON(http.StatusOK, gin.H{"step_gate": input.StepOrder})
+		c.JSON(http.StatusOK, gin.H{"step_gate": input.StepNumber})
 	case errors.Is(err, services.ErrStepNotInScenario):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrScenarioNotAssignedToGroup):

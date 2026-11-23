@@ -38,10 +38,17 @@ type gatedRun struct {
 // steps have the given types (orders 0..n-1), assigned to the learner's class.
 func gatedRunFixture(t *testing.T, db *gorm.DB, stepTypes ...string) gatedRun {
 	t.Helper()
+	return gatedRunFixtureFrom(t, db, 0, stepTypes...)
+}
+
+// gatedRunFixtureFrom is gatedRunFixture with step orders starting at
+// firstOrder: imported scenarios start at 0, editor-made ones at 1.
+func gatedRunFixtureFrom(t *testing.T, db *gorm.DB, firstOrder int, stepTypes ...string) gatedRun {
+	t.Helper()
 	scenario := models.Scenario{Name: "gated-" + uuid.NewString(), Title: "Gated", InstanceType: "ubuntu:22.04", CreatedByID: "teacher-1"}
 	require.NoError(t, db.Create(&scenario).Error)
 	for i, stepType := range stepTypes {
-		step := models.ScenarioStep{ScenarioID: scenario.ID, Order: i, Title: "Step", StepType: stepType, ShowImmediateFeedback: true}
+		step := models.ScenarioStep{ScenarioID: scenario.ID, Order: firstOrder + i, Title: "Step", StepType: stepType, ShowImmediateFeedback: true}
 		require.NoError(t, db.Create(&step).Error)
 		if stepType == models.StepTypeQuiz {
 			require.NoError(t, db.Create(&models.ScenarioStepQuestion{
@@ -55,7 +62,7 @@ func gatedRunFixture(t *testing.T, db *gorm.DB, stepTypes ...string) gatedRun {
 
 	terminalID := "terminal-" + uuid.NewString()
 	session := models.ScenarioSession{
-		ScenarioID: scenario.ID, UserID: gatedLearner, Status: "active",
+		ScenarioID: scenario.ID, UserID: gatedLearner, Status: "active", CurrentStep: firstOrder,
 		StartedAt: time.Now(), TerminalSessionID: &terminalID,
 	}
 	require.NoError(t, db.Create(&session).Error)
@@ -64,7 +71,7 @@ func gatedRunFixture(t *testing.T, db *gorm.DB, stepTypes ...string) gatedRun {
 		if i == 0 {
 			status = "active"
 		}
-		require.NoError(t, db.Create(&models.ScenarioStepProgress{SessionID: session.ID, StepOrder: i, Status: status}).Error)
+		require.NoError(t, db.Create(&models.ScenarioStepProgress{SessionID: session.ID, StepOrder: firstOrder + i, Status: status}).Error)
 	}
 	return gatedRun{scenario: scenario, group: group, assignment: assignment, session: session}
 }
@@ -359,13 +366,13 @@ func TestStepGateRoute_ClassManager_SetsThenClearsEveryAssignment(t *testing.T) 
 	addGroupMember(t, db, run.group.ID, "manager-1", groupModels.GroupMemberRoleManager)
 	router := setupRealTeacherRouter(t, db, "manager-1", []string{"member"})
 
-	w := stepGateRequest(t, router, run.group.ID, run.scenario.ID, `{"step_order": 2}`)
+	w := stepGateRequest(t, router, run.group.ID, run.scenario.ID, `{"step_number": 3}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.JSONEq(t, `{"step_gate": 2}`, w.Body.String())
-	assert.Equal(t, gateAt(2), storedGate(t, db, run.assignment.ID))
+	assert.JSONEq(t, `{"step_gate": 3}`, w.Body.String())
+	assert.Equal(t, gateAt(2), storedGate(t, db, run.assignment.ID), "step 3 of orders 0,1,2 is order 2")
 	assert.Equal(t, gateAt(2), storedGate(t, db, second.ID))
 
-	w = stepGateRequest(t, router, run.group.ID, run.scenario.ID, `{"step_order": null}`)
+	w = stepGateRequest(t, router, run.group.ID, run.scenario.ID, `{"step_number": null}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.JSONEq(t, `{"step_gate": null}`, w.Body.String())
 	assert.Nil(t, storedGate(t, db, run.assignment.ID))
@@ -377,7 +384,9 @@ func TestStepGateRoute_StepNotInScenario_Returns400(t *testing.T) {
 	addGroupMember(t, db, run.group.ID, "manager-1", groupModels.GroupMemberRoleManager)
 	router := setupRealTeacherRouter(t, db, "manager-1", []string{"member"})
 
-	assert.Equal(t, http.StatusBadRequest, stepGateRequest(t, router, run.group.ID, run.scenario.ID, `{"step_order": 7}`).Code)
+	for _, number := range []string{"0", "3", "-1"} {
+		assert.Equal(t, http.StatusBadRequest, stepGateRequest(t, router, run.group.ID, run.scenario.ID, `{"step_number": `+number+`}`).Code, "step %s of 2", number)
+	}
 	assert.Nil(t, storedGate(t, db, run.assignment.ID))
 }
 
@@ -388,9 +397,9 @@ func TestStepGateRoute_LearnerAndOtherClassManager_AreForbidden(t *testing.T) {
 	addGroupMember(t, db, other.ID, "manager-2", groupModels.GroupMemberRoleManager)
 
 	learner := setupRealTeacherRouter(t, db, gatedLearner, []string{"member"})
-	assert.Equal(t, http.StatusForbidden, stepGateRequest(t, learner, run.group.ID, run.scenario.ID, `{"step_order": 1}`).Code)
+	assert.Equal(t, http.StatusForbidden, stepGateRequest(t, learner, run.group.ID, run.scenario.ID, `{"step_number": 1}`).Code)
 	stranger := setupRealTeacherRouter(t, db, "manager-2", []string{"member"})
-	assert.Equal(t, http.StatusForbidden, stepGateRequest(t, stranger, run.group.ID, run.scenario.ID, `{"step_order": 1}`).Code)
+	assert.Equal(t, http.StatusForbidden, stepGateRequest(t, stranger, run.group.ID, run.scenario.ID, `{"step_number": 1}`).Code)
 	assert.Nil(t, storedGate(t, db, run.assignment.ID))
 }
 
@@ -497,7 +506,8 @@ func TestGetGroupLiveProgress_ReportsGateAndWaitingLearners(t *testing.T) {
 	rows, err := dashboard.GetGroupLiveProgress(run.group.ID)
 	require.NoError(t, err)
 	progress := liveProgressByUserID(rows)[gatedLearner].Assignments[0]
-	assert.Equal(t, gateAt(1), progress.StepGate)
+	assert.Equal(t, gateAt(2), progress.StepGate, "order 1 is step 2 when orders start at 0")
+	assert.Equal(t, 1, progress.CurrentStepNumber)
 	assert.False(t, progress.WaitingAtGate, "still working on the step")
 
 	_, err = gateSessionService(db).VerifyCurrentStep(run.session.ID)
@@ -514,6 +524,40 @@ func TestGetGroupLiveProgress_ReportsGateAndWaitingLearners(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Len(t, body, 1)
 	assignment := body[0]["assignments"].([]any)[0].(map[string]any)
-	assert.EqualValues(t, 1, assignment["step_gate"])
+	assert.EqualValues(t, 2, assignment["step_gate"])
+	assert.EqualValues(t, 1, assignment["current_step_number"])
 	assert.Equal(t, true, assignment["waiting_at_gate"])
+}
+
+// Editor-made scenarios number their orders from 1: step 2 is order 2 there.
+func TestStepGateRoute_OrdersStartingAtOne_ConvertsBothWays(t *testing.T) {
+	db := freshTestDB(t)
+	run := gatedRunFixtureFrom(t, db, 1, "terminal", "terminal", "terminal")
+	router := managerRouterFor(t, db, run)
+
+	w := stepGateRequest(t, router, run.group.ID, run.scenario.ID, `{"step_number": 2}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, `{"step_gate": 2}`, w.Body.String())
+	assert.Equal(t, gateAt(2), storedGate(t, db, run.assignment.ID))
+	assert.Equal(t, http.StatusBadRequest, stepGateRequest(t, router, run.group.ID, run.scenario.ID, `{"step_number": 4}`).Code)
+
+	_, err := gateSessionService(db).VerifyCurrentStep(run.session.ID)
+	require.NoError(t, err)
+	rows, err := services.NewTeacherDashboardService(db, nil, nil).GetGroupLiveProgress(run.group.ID)
+	require.NoError(t, err)
+	progress := liveProgressByUserID(rows)[gatedLearner].Assignments[0]
+	assert.Equal(t, gateAt(2), progress.StepGate)
+	assert.Equal(t, 1, progress.CurrentStepNumber, "order 1 is step 1 here")
+	assert.Equal(t, 1, progress.CurrentStep, "the raw order is kept")
+	assert.True(t, progress.WaitingAtGate)
+}
+
+func TestGetGroupLiveProgress_NotStarted_HasStepNumberZero(t *testing.T) {
+	db := freshTestDB(t)
+	run := gatedRunFixtureFrom(t, db, 1, "terminal", "terminal")
+	require.NoError(t, db.Delete(&run.session).Error)
+
+	rows, err := services.NewTeacherDashboardService(db, nil, nil).GetGroupLiveProgress(run.group.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, liveProgressByUserID(rows)[gatedLearner].Assignments[0].CurrentStepNumber)
 }

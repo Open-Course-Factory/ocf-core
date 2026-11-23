@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
@@ -146,26 +147,21 @@ func (s *ScenarioSessionService) loadRunForAdvance(sessionID uuid.UUID) (*models
 	return &session, nil
 }
 
-// ErrStepNotInScenario refuses a gate at a step order the scenario does not have.
-var ErrStepNotInScenario = errors.New("step_order is not a step of this scenario")
+// ErrStepNotInScenario refuses a gate at a step number the scenario does not have.
+var ErrStepNotInScenario = errors.New("step_number is not a step of this scenario")
 
-// SetStepGate locks the class's runs of the scenario at stepOrder, or releases
-// them (nil), on every assignment of the scenario to the class.
-func (s *TeacherDashboardService) SetStepGate(groupID, scenarioID uuid.UUID, stepOrder *int) error {
-	if stepOrder != nil {
-		var count int64
-		if err := s.db.Model(&models.ScenarioStep{}).
-			Where("scenario_id = ? AND \"order\" = ?", scenarioID, *stepOrder).
-			Count(&count).Error; err != nil {
-			return err
-		}
-		if count == 0 {
-			return ErrStepNotInScenario
-		}
+// SetStepGate locks the class's runs of the scenario at the step with the
+// given 1-based number, or releases them (nil), on every assignment of the
+// scenario to the class. The gate is stored as that step's raw order, which
+// is what advances compare against.
+func (s *TeacherDashboardService) SetStepGate(groupID, scenarioID uuid.UUID, stepNumber *int) error {
+	gateOrder, err := s.stepOrderOfNumber(scenarioID, stepNumber)
+	if err != nil {
+		return err
 	}
 	result := s.db.Model(&models.ScenarioAssignment{}).
 		Where("group_id = ? AND scenario_id = ?", groupID, scenarioID).
-		Update("step_gate", stepOrder)
+		Update("step_gate", gateOrder)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -173,4 +169,40 @@ func (s *TeacherDashboardService) SetStepGate(groupID, scenarioID uuid.UUID, ste
 		return ErrScenarioNotAssignedToGroup
 	}
 	return nil
+}
+
+// stepOrderOfNumber converts a 1-based step number into the raw order of that
+// step among the scenario's steps sorted by order. Orders start at 0 or 1
+// depending on how the scenario was made, so clients only ever see numbers.
+// nil stays nil.
+func (s *TeacherDashboardService) stepOrderOfNumber(scenarioID uuid.UUID, stepNumber *int) (*int, error) {
+	if stepNumber == nil {
+		return nil, nil
+	}
+	var orders []int
+	if err := s.db.Model(&models.ScenarioStep{}).
+		Where("scenario_id = ?", scenarioID).
+		Order("\"order\" ASC, id ASC").
+		Pluck("order", &orders).Error; err != nil {
+		return nil, err
+	}
+	if *stepNumber < 1 || *stepNumber > len(orders) {
+		return nil, ErrStepNotInScenario
+	}
+	return &orders[*stepNumber-1], nil
+}
+
+// gateStepNumber is the 1-based number of the first step a gate locks, among
+// steps sorted by order: the inverse of stepOrderOfNumber. nil when there is
+// no gate, or when the gate lies past the last step (it then locks nothing).
+func gateStepNumber(steps []models.ScenarioStep, gate *int) *int {
+	if gate == nil {
+		return nil
+	}
+	i := slices.IndexFunc(steps, func(step models.ScenarioStep) bool { return step.Order >= *gate })
+	if i < 0 {
+		return nil
+	}
+	number := i + 1
+	return &number
 }
