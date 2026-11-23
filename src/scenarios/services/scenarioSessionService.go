@@ -1447,7 +1447,16 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 		}
 	}
 
-	return s.buildStepResponse(&session, currentStep, stepStatus)
+	response, err := s.buildStepResponse(&session, currentStep, stepStatus)
+	if err != nil || stepStatus != "completed" {
+		return response, err
+	}
+	gate, err := stepGateOf(s.db, &session)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the step gate: %w", err)
+	}
+	response.WaitingAtGate = gateHoldsAfter(session.Scenario.Steps, session.CurrentStep, gate)
+	return response, nil
 }
 
 // StepPosition returns the 1-based display position of the step with the given
@@ -1639,6 +1648,9 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	if err := requireActiveSession(&session); err != nil {
 		return nil, err
 	}
+	if currentStepCompleted(&session) {
+		return nil, ErrWaitingAtGate
+	}
 
 	DropForeignTerminal(s.db, &session)
 	if session.TerminalSessionID == nil {
@@ -1668,7 +1680,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, ErrVerifyQuizStep
 	case "info":
 		// Info steps have no script — clicking "next" advances the session.
-		return s.completeInfoStep(&session)
+		return s.passCurrentStep(&session)
 	}
 
 	// Steps without a verify script auto-pass when the user clicks verify
@@ -1704,11 +1716,11 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 
 		if passed {
 			now := time.Now()
-			nextStep, err := s.advanceToNextStep(tx, &session, now)
+			nextStep, held, err := s.advanceToNextStep(tx, &session, now)
 			if err != nil {
 				return err
 			}
-			response.NextStep = nextStep
+			response.NextStep, response.WaitingAtGate = nextStep, held
 		}
 
 		return nil
@@ -1831,10 +1843,10 @@ func (s *ScenarioSessionService) TestVerifyScript(session *models.ScenarioSessio
 	}, nil
 }
 
-// completeInfoStep auto-marks an info step as completed and advances the
-// session to the next step. Info steps have no verification script — the
-// "verify" call is the equivalent of clicking "next".
-func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSession) (*dto.VerifyStepResponse, error) {
+// passCurrentStep marks the current step completed as passed and advances the
+// run, with no check: an info step has none (its "verify" is clicking
+// "next"), and a teacher's validation stands in for one.
+func (s *ScenarioSessionService) passCurrentStep(session *models.ScenarioSession) (*dto.VerifyStepResponse, error) {
 	now := time.Now()
 	response := &dto.VerifyStepResponse{Passed: true}
 
@@ -1843,11 +1855,11 @@ func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSessio
 	// the transaction session.CurrentStep is already the step just entered.
 	leftStep := session.CurrentStep
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		nextStep, err := s.advanceToNextStep(tx, session, now)
+		nextStep, held, err := s.advanceToNextStep(tx, session, now)
 		if err != nil {
 			return err
 		}
-		response.NextStep = nextStep
+		response.NextStep, response.WaitingAtGate = nextStep, held
 		return nil
 	})
 	if txErr != nil {
@@ -1889,6 +1901,9 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 
 	if err := requireActiveSession(&session); err != nil {
 		return nil, err
+	}
+	if currentStepCompleted(&session) {
+		return nil, ErrWaitingAtGate
 	}
 
 	// Find the current step
@@ -1996,11 +2011,11 @@ func (s *ScenarioSessionService) recordQuizProgress(session *models.ScenarioSess
 			}
 		}
 
-		nextStep, err := s.advanceToNextStep(tx, session, now)
+		nextStep, held, err := s.advanceToNextStep(tx, session, now)
 		if err != nil {
 			return err
 		}
-		response.NextStep = nextStep
+		response.NextStep, response.WaitingAtGate = nextStep, held
 		return nil
 	})
 	if txErr != nil {
@@ -2093,6 +2108,9 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 	if err := requireActiveSession(&session); err != nil {
 		return nil, err
 	}
+	if currentStepCompleted(&session) {
+		return nil, ErrWaitingAtGate
+	}
 
 	flag := findFlagByStepOrder(session.Flags, session.CurrentStep)
 	if flag == nil {
@@ -2149,11 +2167,11 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 			return fmt.Errorf("failed to update flag: %w", err)
 		}
 
-		nextStep, err := s.advanceToNextStep(tx, &session, now)
+		nextStep, held, err := s.advanceToNextStep(tx, &session, now)
 		if err != nil {
 			return err
 		}
-		response.NextStep = nextStep
+		response.NextStep, response.WaitingAtGate = nextStep, held
 
 		return nil
 	})
@@ -2537,15 +2555,37 @@ func (s *ScenarioSessionService) RevealHint(sessionID uuid.UUID, stepOrder int, 
 	}, nil
 }
 
-// advanceToNextStep handles step completion and session advancement logic.
-// It marks the current step as completed, calculates time spent, and either
-// completes the session (if last step) or advances to the next step.
-// Returns the next step order (nil if session completed).
-func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.ScenarioSession, now time.Time) (*int, error) {
-	// Calculate time spent on this step and mark as completed.
-	// Time is measured from when the student started this step:
-	// - Step 0: from session start
-	// - Other steps: from when the previous step was completed
+// advanceToNextStep is the one way a run moves forward: it marks the current
+// step completed, then either completes the session (last step), holds the run
+// on the step it just finished (the class's step gate covers the next step), or
+// enters the next step. It returns the step entered, nil when the session
+// completed or when held; held tells those two apart.
+func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.ScenarioSession, now time.Time) (next *int, held bool, err error) {
+	if err := markCurrentStepCompleted(tx, session, now); err != nil {
+		return nil, false, err
+	}
+	nextOrder, hasNext := nextStepOrder(session.Scenario.Steps, session.CurrentStep)
+	if !hasNext {
+		return nil, false, completeSession(tx, session, now)
+	}
+	gate, err := stepGateOf(tx, session)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to read the step gate: %w", err)
+	}
+	if gateHoldsAfter(session.Scenario.Steps, session.CurrentStep, gate) {
+		return nil, true, nil
+	}
+	if err := enterStep(tx, session, nextOrder); err != nil {
+		return nil, false, err
+	}
+	return &nextOrder, false, nil
+}
+
+// markCurrentStepCompleted marks the run's current step completed with the
+// time spent on it, measured from when the learner started it:
+//   - Step 0: from session start
+//   - Other steps: from when the previous step was completed (or skipped)
+func markCurrentStepCompleted(tx *gorm.DB, session *models.ScenarioSession, now time.Time) error {
 	var stepProgress models.ScenarioStepProgress
 	if err := tx.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
 		stepStartTime := session.StartedAt
@@ -2564,7 +2604,7 @@ func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.
 				"completed_at":       now,
 				"time_spent_seconds": timeSpent,
 			}).Error; err != nil {
-			return nil, fmt.Errorf("failed to mark step completed: %w", err)
+			return fmt.Errorf("failed to mark step completed: %w", err)
 		}
 	} else {
 		// Fallback: update without time calculation
@@ -2574,72 +2614,71 @@ func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.
 				"status":       "completed",
 				"completed_at": now,
 			}).Error; err != nil {
-			return nil, fmt.Errorf("failed to mark step completed: %w", err)
+			return fmt.Errorf("failed to mark step completed: %w", err)
 		}
 	}
+	return nil
+}
 
-	// Check if this was the last step
-	isLastStep := true
-	nextStepOrder := -1
-	for _, step := range session.Scenario.Steps {
-		if step.Order > session.CurrentStep {
-			isLastStep = false
-			if nextStepOrder == -1 || step.Order < nextStepOrder {
-				nextStepOrder = step.Order
+// completeSession ends the run on its last step, with its weighted grade.
+func completeSession(tx *gorm.DB, session *models.ScenarioSession, now time.Time) error {
+	// Calculate weighted grade: each step contributes its own weight.
+	//   terminal/flag/info → 1.0 if completed else 0.0
+	//   quiz               → progress.QuizScore (0 if nil)
+	//   survey             → not graded
+	// Mirror the just-applied "completed" status onto the in-memory
+	// session.StepProgress slice for the current step so the helper
+	// counts it as completed. Quiz scores must be set on the in-memory
+	// slice by the caller (SubmitQuiz) before reaching here.
+	for i := range session.StepProgress {
+		if session.StepProgress[i].StepOrder == session.CurrentStep {
+			session.StepProgress[i].Status = "completed"
+			if session.StepProgress[i].CompletedAt == nil {
+				completedAt := now
+				session.StepProgress[i].CompletedAt = &completedAt
 			}
+			break
 		}
 	}
-
-	if isLastStep {
-		// Calculate weighted grade: each step contributes its own weight.
-		//   terminal/flag/info → 1.0 if completed else 0.0
-		//   quiz               → progress.QuizScore (0 if nil)
-		//   survey             → not graded
-		// Mirror the just-applied "completed" status onto the in-memory
-		// session.StepProgress slice for the current step so the helper
-		// counts it as completed. Quiz scores must be set on the in-memory
-		// slice by the caller (SubmitQuiz) before reaching here.
-		for i := range session.StepProgress {
-			if session.StepProgress[i].StepOrder == session.CurrentStep {
-				session.StepProgress[i].Status = "completed"
-				if session.StepProgress[i].CompletedAt == nil {
-					completedAt := now
-					session.StepProgress[i].CompletedAt = &completedAt
-				}
-				break
-			}
-		}
-		// A run with nothing gradable (only surveys) stores no grade.
-		var grade *float64
-		if HasGradableStep(session.Scenario.Steps) {
-			weighted := ComputeWeightedGradeFromLoaded(session.Scenario.Steps, session.StepProgress, nil)
-			grade = &weighted
-		}
-
-		// Mark session as completed with grade
-		if err := tx.Model(session).Updates(map[string]any{
-			"status":       "completed",
-			"completed_at": now,
-			"grade":        grade,
-		}).Error; err != nil {
-			return nil, fmt.Errorf("failed to mark session completed: %w", err)
-		}
-		return nil, nil
+	// A run with nothing gradable (only surveys) stores no grade.
+	var grade *float64
+	if HasGradableStep(session.Scenario.Steps) {
+		weighted := ComputeWeightedGradeFromLoaded(session.Scenario.Steps, session.StepProgress, nil)
+		grade = &weighted
 	}
 
-	// Advance to next step
-	if err := tx.Model(session).Update("current_step", nextStepOrder).Error; err != nil {
-		return nil, fmt.Errorf("failed to advance step: %w", err)
+	// Mark session as completed with grade
+	if err := tx.Model(session).Updates(map[string]any{
+		"status":       "completed",
+		"completed_at": now,
+		"grade":        grade,
+	}).Error; err != nil {
+		return fmt.Errorf("failed to mark session completed: %w", err)
 	}
+	return nil
+}
 
-	// Unlock next step
+// enterStep moves the run from its current step to nextOrder and unlocks it.
+// The move is conditional on the step the caller read, so two concurrent
+// advances cannot both move the run: the loser gets ErrSkipRaced.
+func enterStep(tx *gorm.DB, session *models.ScenarioSession, nextOrder int) error {
+	moved := tx.Model(&models.ScenarioSession{}).
+		Where("id = ? AND current_step = ?", session.ID, session.CurrentStep).
+		Update("current_step", nextOrder)
+	if moved.Error != nil {
+		return fmt.Errorf("failed to advance step: %w", moved.Error)
+	}
+	if moved.RowsAffected == 0 {
+		return ErrSkipRaced
+	}
+	session.CurrentStep = nextOrder
+
 	if err := tx.Model(&models.ScenarioStepProgress{}).
-		Where("session_id = ? AND step_order = ?", session.ID, nextStepOrder).
+		Where("session_id = ? AND step_order = ?", session.ID, nextOrder).
 		Update("status", "active").Error; err != nil {
-		return nil, fmt.Errorf("failed to unlock next step: %w", err)
+		return fmt.Errorf("failed to unlock next step: %w", err)
 	}
-
-	return &nextStepOrder, nil
+	return nil
 }
 
 // deploySingleFlagToContainer pushes the flag for a specific step into the student's container.

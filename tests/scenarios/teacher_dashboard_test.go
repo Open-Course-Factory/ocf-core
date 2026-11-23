@@ -431,6 +431,8 @@ func setupRealTeacherRouter(t *testing.T, db *gorm.DB, userID string, roles []st
 	teacher.POST("/groups/:groupId/scenarios/:scenarioId/results/publish", ctrl.PublishScenarioResults)
 	teacher.DELETE("/groups/:groupId/scenarios/:scenarioId/results/publish", ctrl.UnpublishScenarioResults)
 	teacher.POST("/groups/:groupId/sessions/:sessionId/allow-retake", ctrl.AllowRetake)
+	teacher.PUT("/groups/:groupId/scenarios/:scenarioId/step-gate", ctrl.SetStepGate)
+	teacher.POST("/groups/:groupId/sessions/:sessionId/validate-step", ctrl.ValidateStep)
 
 	return r
 }

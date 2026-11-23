@@ -39,8 +39,8 @@ func WithheldGradeSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[
 		return nil, err
 	}
 	for _, s := range sessions {
-		published, hasClass := classes[learnerRun{ScenarioID: s.ScenarioID, UserID: s.UserID}]
-		if !s.IsPreview && hasClass && !published {
+		class, hasClass := classes[learnerRun{ScenarioID: s.ScenarioID, UserID: s.UserID}]
+		if !s.IsPreview && hasClass && !class.Published {
 			withheld[s.ID] = true
 		}
 	}
@@ -49,14 +49,16 @@ func WithheldGradeSessions(db *gorm.DB, sessions []models.ScenarioSession) (map[
 
 // learnerClassAssignments is the one definition of "the learner's classes
 // assigning the scenario": classes the learner is an active member of that
-// carry an assignment of it. Grade withholding and the exam lock only exist
-// for such pairs, because only their teachers can publish or allow a retake.
+// carry an assignment of it. Grade withholding, the exam lock and the step gate
+// only exist for such pairs, because only their teachers can publish, allow a
+// retake or release the gate.
 //
 // For each (scenario, learner) pair that has at least one, the value reports
-// whether any of those classes has published its results. A pair with none is
-// absent. One query whatever the number of each.
-func learnerClassAssignments(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string) (map[learnerRun]bool, error) {
-	assigned := map[learnerRun]bool{}
+// whether any of those classes has published its results, and the strictest
+// (lowest) step gate among them. A pair with none is absent. One query
+// whatever the number of each.
+func learnerClassAssignments(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []string) (map[learnerRun]learnerClasses, error) {
+	assigned := map[learnerRun]learnerClasses{}
 	if len(scenarioIDs) == 0 || len(userIDs) == 0 {
 		return assigned, nil
 	}
@@ -64,9 +66,10 @@ func learnerClassAssignments(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []str
 		ScenarioID     uuid.UUID
 		UserID         string
 		PublishedCount int
+		StepGate       *int
 	}
 	if err := db.Table("scenario_assignments sa").
-		Select("sa.scenario_id AS scenario_id, gm.user_id AS user_id, COUNT(sa.results_published_at) AS published_count").
+		Select("sa.scenario_id AS scenario_id, gm.user_id AS user_id, COUNT(sa.results_published_at) AS published_count, MIN(sa.step_gate) AS step_gate").
 		Joins("JOIN group_members gm ON gm.group_id = sa.group_id AND gm.is_active = ? AND gm.deleted_at IS NULL", true).
 		Where("sa.scenario_id IN ? AND gm.user_id IN ? AND sa.deleted_at IS NULL", scenarioIDs, userIDs).
 		Group("sa.scenario_id, gm.user_id").
@@ -74,9 +77,16 @@ func learnerClassAssignments(db *gorm.DB, scenarioIDs []uuid.UUID, userIDs []str
 		return nil, err
 	}
 	for _, r := range rows {
-		assigned[learnerRun{ScenarioID: r.ScenarioID, UserID: r.UserID}] = r.PublishedCount > 0
+		assigned[learnerRun{ScenarioID: r.ScenarioID, UserID: r.UserID}] = learnerClasses{Published: r.PublishedCount > 0, StepGate: r.StepGate}
 	}
 	return assigned, nil
+}
+
+// learnerClasses is what a learner's classes assigning one scenario decide
+// together: whether results are published, and the gate their runs stop at.
+type learnerClasses struct {
+	Published bool
+	StepGate  *int
 }
 
 // learnerRun is one learner's runs of one scenario, whatever the attempt.

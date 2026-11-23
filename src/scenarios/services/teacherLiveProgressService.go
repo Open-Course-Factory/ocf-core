@@ -21,6 +21,7 @@ package services
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -115,15 +116,21 @@ type LearnerAssignmentProgress struct {
 	Grade                     *float64   `json:"grade,omitempty"`
 	StartedAt                 *time.Time `json:"started_at,omitempty"`
 	CompletedAt               *time.Time `json:"completed_at,omitempty"`
+	// StepGate is this assignment's gate: the first step the class may not
+	// enter yet, nil when open.
+	StepGate *int `json:"step_gate,omitempty"`
+	// WaitingAtGate: the learner finished their current step and a gate of
+	// one of their classes keeps them out of the next one.
+	WaitingAtGate bool `json:"waiting_at_gate"`
 }
 
 // GetGroupLiveProgress returns one row per ACTIVE APPRENANT of groupID, joining
 // supervision presence, scenario position and assignment results. Staff
 // memberships get no row — a teacher does not invigilate themselves (#480).
 //
-// Cost is a constant seven queries regardless of class size: the group, its
+// Cost is a constant eight queries regardless of class size: the group, its
 // learners, its assignments, live terminals, learner attempts, those attempts'
-// step progress, and the assigned scenarios' steps. Identity resolution adds no
+// step progress, the assigned scenarios' steps, and the learners' step gates. Identity resolution adds no
 // SQL (cached Casdoor lookups).
 //
 // An unknown group, a group with no apprenant (a staff-only class included), and
@@ -176,7 +183,9 @@ type liveProgressSources struct {
 	presenceByUser         map[string]string
 	sessionsByUserScenario map[learnerScenarioKey]learnerSessionRow
 	stepsByScenario        map[uuid.UUID]scenarioStepIndex
-	now                    time.Time
+	// classesByRun gives each learner's effective step gate per scenario.
+	classesByRun map[learnerRun]learnerClasses
+	now          time.Time
 }
 
 // learnerScenarioKey identifies one learner's standing on one scenario.
@@ -185,11 +194,13 @@ type learnerScenarioKey struct {
 	scenarioID uuid.UUID
 }
 
-// scenarioStepIndex is a scenario's step list in the two views the class view
-// needs: how many steps there are, and the title at each order.
+// scenarioStepIndex is a scenario's step list in the views the class view
+// needs: how many steps there are, the title at each order, and the steps
+// themselves in order, to find the step after the current one.
 type scenarioStepIndex struct {
 	total        int
 	titleByOrder map[int]string
+	steps        []models.ScenarioStep
 }
 
 // learnerSessionRow is one learner attempt at one scenario, with the aggregates
@@ -208,6 +219,9 @@ type learnerSessionRow struct {
 	// i.e. when they entered the one they are on now.
 	LastStepCompletedAt *time.Time
 	LastActivityAt      *time.Time
+	// CurrentStepCompleted: the step the run is on is done; on a run still
+	// going, the learner is waiting at a gate.
+	CurrentStepCompleted bool
 }
 
 // loadLiveProgressSources runs the whole batched query plan behind one class
@@ -233,12 +247,17 @@ func (s *TeacherDashboardService) loadLiveProgressSources(group groupModels.Clas
 	if err != nil {
 		return liveProgressSources{}, err
 	}
+	classes, err := learnerClassAssignments(s.db, scenarioIDs, learnerIDs)
+	if err != nil {
+		return liveProgressSources{}, fmt.Errorf("failed to load step gates: %w", err)
+	}
 
 	return liveProgressSources{
 		assignments:            assignments,
 		presenceByUser:         presence,
 		sessionsByUserScenario: sessions,
 		stepsByScenario:        steps,
+		classesByRun:           classes,
 		now:                    time.Now(),
 	}, nil
 }
@@ -370,6 +389,9 @@ func (s *TeacherDashboardService) attachProgressTimestamps(attempts map[learnerS
 	}
 	for key, attempt := range attempts {
 		attempt.LastStepCompletedAt, attempt.LastActivityAt = summarizeProgressTimestamps(progressBySession[attempt.SessionID])
+		attempt.CurrentStepCompleted = slices.ContainsFunc(progressBySession[attempt.SessionID], func(p models.ScenarioStepProgress) bool {
+			return p.StepOrder == attempt.CurrentStep && p.Status == "completed"
+		})
 		attempts[key] = attempt
 	}
 	return nil
@@ -450,6 +472,7 @@ func (s *TeacherDashboardService) stepIndexByScenario(scenarioIDs []uuid.UUID) (
 			entry = scenarioStepIndex{titleByOrder: make(map[int]string)}
 		}
 		entry.total++
+		entry.steps = append(entry.steps, step)
 		if _, duplicate := entry.titleByOrder[step.Order]; !duplicate {
 			entry.titleByOrder[step.Order] = step.Title
 		}
@@ -477,8 +500,9 @@ func buildLearnerLiveProgress(userID string, src liveProgressSources) LearnerLiv
 			attempt = &found
 			row.LastActivityAt = laterTime(row.LastActivityAt, found.LastActivityAt)
 		}
+		gate := src.classesByRun[learnerRun{ScenarioID: assignment.ScenarioID, UserID: userID}].StepGate
 		row.Assignments = append(row.Assignments,
-			buildLearnerAssignmentProgress(assignment, attempt, src.stepsByScenario[assignment.ScenarioID], src.now))
+			buildLearnerAssignmentProgress(assignment, attempt, src.stepsByScenario[assignment.ScenarioID], gate, src.now))
 	}
 
 	row.Idle = isLearnerIdle(row.Connected, row.LastActivityAt, src.now)
@@ -488,7 +512,9 @@ func buildLearnerLiveProgress(userID string, src liveProgressSources) LearnerLiv
 // buildLearnerAssignmentProgress states where one learner stands on one
 // assignment. A nil attempt means they never opened it — a reported state
 // (not_started), not a reason to omit the entry.
-func buildLearnerAssignmentProgress(assignment groupAssignmentRow, attempt *learnerSessionRow, steps scenarioStepIndex, now time.Time) LearnerAssignmentProgress {
+// gate is the learner's effective gate on the scenario, which may come from
+// another of their classes than this assignment's.
+func buildLearnerAssignmentProgress(assignment groupAssignmentRow, attempt *learnerSessionRow, steps scenarioStepIndex, gate *int, now time.Time) LearnerAssignmentProgress {
 	progress := LearnerAssignmentProgress{
 		AssignmentID:  assignment.AssignmentID,
 		ScenarioID:    assignment.ScenarioID,
@@ -496,6 +522,7 @@ func buildLearnerAssignmentProgress(assignment groupAssignmentRow, attempt *lear
 		Deadline:      assignment.Deadline,
 		TotalSteps:    steps.total,
 		Status:        LearnerStatusNotStarted,
+		StepGate:      assignment.StepGate,
 	}
 	if attempt == nil {
 		return progress
@@ -512,6 +539,8 @@ func buildLearnerAssignmentProgress(assignment groupAssignmentRow, attempt *lear
 	progress.CompletedAt = attempt.CompletedAt
 	if progress.Status == LearnerStatusInProgress {
 		progress.CurrentStepElapsedSeconds = elapsedOnCurrentStep(*attempt, now)
+		runGoesOn := attempt.Status == statusActive || attempt.Status == statusInProgress
+		progress.WaitingAtGate = runGoesOn && attempt.CurrentStepCompleted && gateHoldsAfter(steps.steps, attempt.CurrentStep, gate)
 	}
 	return progress
 }

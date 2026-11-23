@@ -29,6 +29,7 @@ func RegisterScenarioAssignment(service *ems.EntityRegistrationService) {
 						IsActive:       model.IsActive,
 						Backend:        model.Backend,
 						ResultsPublishedAt: model.ResultsPublishedAt,
+						StepGate:       model.StepGate,
 						CreatedAt:      model.CreatedAt,
 						UpdatedAt:      model.UpdatedAt,
 					}

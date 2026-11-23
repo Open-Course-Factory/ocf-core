@@ -42,6 +42,8 @@ type ScenarioAssignmentOutput struct {
 	// ResultsPublishedAt is read-only here: only the teacher publish route
 	// writes it.
 	ResultsPublishedAt *time.Time  `json:"results_published_at"`
+	// StepGate is read-only here too: only the teacher step-gate route writes it.
+	StepGate       *int            `json:"step_gate"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
 	Scenario       *ScenarioOutput `json:"scenario,omitempty"`

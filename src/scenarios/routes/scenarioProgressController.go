@@ -24,6 +24,7 @@ type ScenarioProgressController interface {
 	GetCurrentStep(ctx *gin.Context)
 	GetStepByOrder(ctx *gin.Context)
 	VerifyStep(ctx *gin.Context)
+	ContinueAfterGate(ctx *gin.Context)
 	TestVerifyScript(ctx *gin.Context)
 	SubmitFlag(ctx *gin.Context)
 	SubmitQuiz(ctx *gin.Context)
@@ -173,6 +174,42 @@ func (pc *scenarioProgressController) VerifyStep(ctx *gin.Context) {
 		}
 		slog.Error("failed to verify step", "err", err)
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to verify step")
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+// ContinueAfterGate godoc
+// @Summary Continue past a released step gate
+// @Description Moves the caller's run into its next step once the class's step gate no longer covers it. While the gate still holds it answers 200 with waiting_at_gate true and changes nothing. 409 when the current step is not completed (including a repeated call after the run moved on).
+// @Tags scenario-sessions
+// @Produce json
+// @Param id path string true "Session ID"
+// @Success 200 {object} dto.VerifyStepResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 409 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/continue [post]
+// @Security BearerAuth
+func (pc *scenarioProgressController) ContinueAfterGate(ctx *gin.Context) {
+	session, err := pc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+
+	result, err := pc.sessionService.ContinueAfterGate(session.ID)
+	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
+		if stderrors.Is(err, services.ErrStepNotCompleted) || stderrors.Is(err, services.ErrSkipRaced) {
+			errors.Respond(ctx, http.StatusConflict, err.Error())
+			return
+		}
+		slog.Error("failed to continue after the step gate", "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to continue")
 		return
 	}
 

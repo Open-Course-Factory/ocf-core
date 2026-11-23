@@ -388,6 +388,7 @@ type groupAssignmentRow struct {
 	ScenarioTitle string
 	StartDate     *time.Time
 	Deadline      *time.Time
+	StepGate      *int
 }
 
 // activeAssignmentsByGroup loads the active group-scoped assignments of every
@@ -403,7 +404,7 @@ func (s *TeacherDashboardService) activeAssignmentsByGroup(groupIDs []uuid.UUID)
 	}
 	var rows []groupAssignmentRow
 	err := s.db.Table("scenario_assignments sa").
-		Select("sa.group_id as group_id, sa.id as assignment_id, sa.scenario_id as scenario_id, sc.title as scenario_title, sa.start_date as start_date, sa.deadline as deadline").
+		Select("sa.group_id as group_id, sa.id as assignment_id, sa.scenario_id as scenario_id, sc.title as scenario_title, sa.start_date as start_date, sa.deadline as deadline, sa.step_gate as step_gate").
 		Joins("LEFT JOIN scenarios sc ON sc.id = sa.scenario_id AND sc.deleted_at IS NULL").
 		Where("sa.group_id IN ? AND sa.is_active = ? AND sa.deleted_at IS NULL", groupIDs, true).
 		Order("(sa.deadline IS NULL), sa.deadline ASC, sc.title ASC").

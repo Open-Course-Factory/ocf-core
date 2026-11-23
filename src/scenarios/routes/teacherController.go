@@ -371,33 +371,13 @@ func (tc *TeacherController) GetSessionDetail(c *gin.Context) {
 // @Router /teacher/groups/{groupId}/sessions/{sessionId}/skip-to-step [post]
 // @Security BearerAuth
 func (tc *TeacherController) SkipToStep(c *gin.Context) {
-	groupID, err := uuid.Parse(c.Param("groupId"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
-		return
-	}
-	sessionID, err := uuid.Parse(c.Param("sessionId"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
+	_, sessionID, ok := tc.parseGroupSessionOfGroup(c)
+	if !ok {
 		return
 	}
 	var input dto.SkipToStepInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body: " + err.Error()})
-		return
-	}
-
-	// Layer 2 proves the caller manages :groupId; this proves the session is
-	// one of that group's (member + assigned scenario), the same IDOR check as
-	// the detail view.
-	if _, err := tc.dashboardService.GetSessionDetail(groupID, sessionID); err != nil {
-		errStr := err.Error()
-		if strings.Contains(errStr, "session not found") || strings.Contains(errStr, "does not belong") || strings.Contains(errStr, "scenario is not assigned") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": errStr})
-			return
-		}
-		slog.Error("failed to check session before skip", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
 		return
 	}
 
@@ -412,6 +392,70 @@ func (tc *TeacherController) SkipToStep(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// ValidateStep godoc
+// @Summary Pass a learner's current step by hand
+// @Description Marks an active session's current step completed as passed and advances it like any passed step: the class's step gate still applies, and on the last step the run completes with its grade. Quiz steps are refused (their grade comes from answers); survey steps are fine. Group managers (and platform admins) only.
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param sessionId path string true "Session ID (UUID)"
+// @Success 200 {object} dto.VerifyStepResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/sessions/{sessionId}/validate-step [post]
+// @Security BearerAuth
+func (tc *TeacherController) ValidateStep(c *gin.Context) {
+	groupID, sessionID, ok := tc.parseGroupSessionOfGroup(c)
+	if !ok {
+		return
+	}
+
+	result, err := tc.sessionService.ValidateCurrentStep(sessionID)
+	switch {
+	case errors.Is(err, services.ErrSessionNotActive), errors.Is(err, services.ErrSkipRaced):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	case errors.Is(err, services.ErrValidateQuizStep):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	case err != nil:
+		slog.Error("failed to validate step", "group_id", groupID, "session_id", sessionID, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate step"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// parseGroupSessionOfGroup reads :groupId and :sessionId and checks the
+// session is one of that group's (member + assigned scenario), the same IDOR
+// check as the detail view: Layer 2 only proves the caller manages :groupId.
+// It answers the request itself when it returns false.
+func (tc *TeacherController) parseGroupSessionOfGroup(c *gin.Context) (uuid.UUID, uuid.UUID, bool) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return uuid.Nil, uuid.Nil, false
+	}
+	sessionID, err := uuid.Parse(c.Param("sessionId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
+		return uuid.Nil, uuid.Nil, false
+	}
+	if _, err := tc.dashboardService.GetSessionDetail(groupID, sessionID); err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "session not found") || strings.Contains(errStr, "does not belong") || strings.Contains(errStr, "scenario is not assigned") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errStr})
+			return uuid.Nil, uuid.Nil, false
+		}
+		slog.Error("failed to check session of group", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
+		return uuid.Nil, uuid.Nil, false
+	}
+	return groupID, sessionID, true
 }
 
 // GetSessionDetailsBulkRequest is the body of POST /teacher/groups/:groupId/sessions/details.
@@ -736,6 +780,53 @@ func (tc *TeacherController) UnpublishScenarioResults(c *gin.Context) {
 		return
 	}
 	respondResultsPublication(c, nil, tc.dashboardService.UnpublishScenarioResults(groupID, scenarioID))
+}
+
+// SetStepGateInput is the body of PUT /teacher/groups/:groupId/scenarios/:scenarioId/step-gate.
+type SetStepGateInput struct {
+	// StepOrder is the order of the first step the class may not enter; null
+	// releases the gate.
+	StepOrder *int `json:"step_order"`
+}
+
+// SetStepGate godoc
+// @Summary Lock or release a class's runs of a scenario at a step
+// @Description Learners of the class who finish the step before step_order wait there until the gate moves or is released (step_order null). Finishing the scenario is never gated. Applies to every assignment of the scenario to the class.
+// @Tags scenario-teacher
+// @Accept json
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param scenarioId path string true "Scenario ID (UUID)"
+// @Param body body SetStepGateInput true "First locked step, or null"
+// @Success 200 {object} map[string]any "step_gate"
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /teacher/groups/{groupId}/scenarios/{scenarioId}/step-gate [put]
+// @Security BearerAuth
+func (tc *TeacherController) SetStepGate(c *gin.Context) {
+	groupID, scenarioID, ok := parseGroupScenarioParams(c)
+	if !ok {
+		return
+	}
+	var input SetStepGateInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	err := tc.dashboardService.SetStepGate(groupID, scenarioID, input.StepOrder)
+	switch {
+	case err == nil:
+		c.JSON(http.StatusOK, gin.H{"step_gate": input.StepOrder})
+	case errors.Is(err, services.ErrStepNotInScenario):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, services.ErrScenarioNotAssignedToGroup):
+		c.JSON(http.StatusNotFound, gin.H{"error": "scenario is not assigned to this group"})
+	default:
+		slog.Error("failed to set step gate", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set step gate"})
+	}
 }
 
 func parseGroupScenarioParams(c *gin.Context) (uuid.UUID, uuid.UUID, bool) {

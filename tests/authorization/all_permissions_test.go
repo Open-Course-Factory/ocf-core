@@ -408,6 +408,7 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/scenario-sessions/:id/current-step", "GET"},
 		{"/api/v1/scenario-sessions/:id/step/:stepOrder", "GET"},
 		{"/api/v1/scenario-sessions/:id/verify", "POST"},
+		{"/api/v1/scenario-sessions/:id/continue", "POST"},
 		{"/api/v1/scenario-sessions/:id/test-verify", "POST"},
 		{"/api/v1/scenario-sessions/:id/submit-flag", "POST"},
 		{"/api/v1/scenario-sessions/:id/abandon", "POST"},
@@ -429,6 +430,8 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results/publish", "POST"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results/publish", "DELETE"},
 		{"/api/v1/teacher/groups/:groupId/sessions/:sessionId/allow-retake", "POST"},
+		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/step-gate", "PUT"},
+		{"/api/v1/teacher/groups/:groupId/sessions/:sessionId/validate-step", "POST"},
 		// Group scenario routes (existing)
 		{"/api/v1/groups/:groupId/scenarios/upload", "POST"},
 		{"/api/v1/groups/:groupId/scenarios/import-json", "POST"},

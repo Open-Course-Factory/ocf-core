@@ -88,6 +88,9 @@ type VerifyStepResponse struct {
 	Passed   bool   `json:"passed"`
 	Output   string `json:"output,omitempty"`
 	NextStep *int   `json:"next_step,omitempty"`
+	// WaitingAtGate: the step is done, but the class's step gate keeps the
+	// learner from entering the next one until the teacher releases it.
+	WaitingAtGate bool `json:"waiting_at_gate"`
 	StepProvisioningStatus
 }
 
@@ -141,6 +144,8 @@ type SubmitFlagResponse struct {
 	Correct  bool   `json:"correct"`
 	Message  string `json:"message,omitempty"`
 	NextStep *int   `json:"next_step,omitempty"`
+	// WaitingAtGate: see VerifyStepResponse.
+	WaitingAtGate bool `json:"waiting_at_gate"`
 	StepProvisioningStatus
 }
 
@@ -180,6 +185,9 @@ type CurrentStepResponse struct {
 	// an exam step never sends them.
 	QuizAnswers map[uuid.UUID]string `json:"quiz_answers,omitempty"`
 	QuizResult  *SubmitQuizResponse  `json:"quiz_result,omitempty"`
+	// WaitingAtGate: the current step is completed and the class's step gate
+	// still keeps the learner from the next one.
+	WaitingAtGate bool `json:"waiting_at_gate"`
 }
 
 // CurrentStepQuestion - sanitized public DTO for a quiz question.
@@ -210,6 +218,8 @@ type SubmitQuizResponse struct {
 	Total              int                  `json:"total"`
 	PerQuestionResults []QuizQuestionResult `json:"per_question_results,omitempty"`
 	NextStep           *int                 `json:"next_step,omitempty"`
+	// WaitingAtGate: see VerifyStepResponse.
+	WaitingAtGate bool `json:"waiting_at_gate"`
 	StepProvisioningStatus
 }
 

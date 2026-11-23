@@ -55,6 +55,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Verify step completion (must own the session)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/scenario-sessions/:id/continue", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Description: "Move one's run past a released step gate (must own the session)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/test-verify", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Test a candidate verify script on a preview session without changing it (must own the session; controller requires a preview and scenario management rights)",
@@ -171,6 +176,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Move a learner's active scenario session forward to a later step",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/validate-step", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "Pass a learner's current step by hand (not a quiz); the class's step gate still applies",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/bulk-start", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Bulk-start scenario sessions for group members",
@@ -189,6 +199,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results/publish", Method: "DELETE",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Withhold a class's exam grades on a scenario from its learners again",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/step-gate", Method: "PUT",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "Lock a class's runs of a scenario at a step, or release them (null)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/allow-retake", Method: "POST",

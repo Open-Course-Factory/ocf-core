@@ -27,6 +27,10 @@ type ScenarioAssignment struct {
 	// only by the teacher publish route: the entity DTOs deliberately do not
 	// carry it, so no entity create or PATCH can reach it.
 	ResultsPublishedAt *time.Time `json:"results_published_at,omitempty"`
+	// StepGate is the order of the first step this class may not enter yet;
+	// nil leaves the scenario open (services.stepGateOf). Set only by the
+	// teacher step-gate route, for the same reason as ResultsPublishedAt.
+	StepGate *int `json:"step_gate,omitempty"`
 
 	// Relations
 	Scenario Scenario `gorm:"foreignKey:ScenarioID" json:"scenario,omitempty"`
