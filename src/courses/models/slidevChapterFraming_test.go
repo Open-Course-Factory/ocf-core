@@ -60,7 +60,7 @@ func isChapterCover(number int) func(slide) bool {
 // ("- **<section title>** <intro>"). The chapter conclusion (also a maintoc slide) is not matched.
 func isChapterToc(sectionTitle string) func(slide) bool {
 	return func(s slide) bool {
-		return s.layout == "maintoc" && strings.Contains(s.body, "- **"+sectionTitle+"** ")
+		return s.layout == "maintoc" && strings.Contains(s.body, "**"+sectionTitle+"** ")
 	}
 }
 

@@ -155,12 +155,11 @@ func (scow *SlidevCourseWriter) SetToc() string {
 			tocBuilder.WriteString("# Thèmes abordés dans le cours - Suite\n\n")
 			usedLines = 0
 		}
-		tocBuilder.WriteString("- Chapitre **")
-		tocBuilder.WriteString(strconv.Itoa(chapter.Number))
-		tocBuilder.WriteString("** : ")
-		tocBuilder.WriteString(chapter.Title)
+		alias := chapterRouteAlias(chapter.Number)
+		tocBuilder.WriteString("- ")
+		tocBuilder.WriteString(tocLink(alias, "Chapitre **"+strconv.Itoa(chapter.Number)+"** : "+chapter.Title))
 		tocBuilder.WriteString("\n  - ")
-		tocBuilder.WriteString(chapter.Introduction)
+		tocBuilder.WriteString(tocLink(alias, chapter.Introduction))
 		tocBuilder.WriteString("\n")
 		usedLines += entryLines
 	}

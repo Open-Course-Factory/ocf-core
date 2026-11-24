@@ -12,7 +12,8 @@ type SlidevSectionWriter struct {
 }
 
 func (ssw *SlidevSectionWriter) SetFrontMatter() string {
-	frontMatter := "\n---\nlayout: cover\nchapter: " + ssw.Chapter.Title + "\n---\n\n"
+	frontMatter := "\n---\nlayout: cover\nchapter: " + ssw.Chapter.Title +
+		"\nrouteAlias: " + sectionRouteAlias(ssw.Chapter.Number, ssw.Section.Number) + "\n---\n\n"
 	return frontMatter
 }
 
@@ -25,9 +26,9 @@ func (ssw *SlidevSectionWriter) SetToc() string {
 	if len(ssw.Section.Pages) < 1 {
 		log.Default().Println("Page should not be empty")
 	} else {
-		for _, lineOfToc := range ssw.Section.Pages[0].Toc {
+		for index, lineOfToc := range ssw.Section.Pages[0].Toc {
 			tocBuilder.WriteString("- ")
-			tocBuilder.WriteString(lineOfToc)
+			tocBuilder.WriteString(sectionTocLine(ssw.Chapter, index, lineOfToc))
 			tocBuilder.WriteString("\n")
 		}
 	}

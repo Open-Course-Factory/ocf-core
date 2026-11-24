@@ -35,9 +35,9 @@ func (spw *SlidevPageWriter) SetTitle() string {
 func (spw *SlidevPageWriter) SetToc() string {
 	var tocBuilder strings.Builder
 	tocBuilder.WriteString("<div class=\"toc\">\n\n")
-	for _, lineOfToc := range spw.Page.Toc {
+	for index, lineOfToc := range spw.Page.Toc {
 		tocBuilder.WriteString("- ")
-		tocBuilder.WriteString(lineOfToc)
+		tocBuilder.WriteString(sectionTocLine(spw.Chapter, index, lineOfToc))
 		tocBuilder.WriteString("\n")
 	}
 	tocBuilder.WriteString("\n</div>\n\n")

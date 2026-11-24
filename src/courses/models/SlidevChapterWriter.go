@@ -13,6 +13,7 @@ func (scw *SlidevChapterWriter) SetFrontMatter() string {
 	firstLine := "---\n"
 	firstLine = firstLine + "layout: cover\n"
 	firstLine = firstLine + "chapter: " + scw.Chapter.Title + "\n"
+	firstLine = firstLine + "routeAlias: " + chapterRouteAlias(scw.Chapter.Number) + "\n"
 	firstLine = firstLine + "---\n\n"
 	return firstLine
 }
@@ -33,10 +34,8 @@ func (scw *SlidevChapterWriter) SetTitle() string {
 func (scw *SlidevChapterWriter) SetToc() string {
 	var tocBuilder strings.Builder
 	for _, section := range scw.Chapter.Sections {
-		tocBuilder.WriteString("- **")
-		tocBuilder.WriteString(section.Title)
-		tocBuilder.WriteString("** ")
-		tocBuilder.WriteString(section.Intro)
+		tocBuilder.WriteString("- ")
+		tocBuilder.WriteString(tocLink(sectionRouteAlias(scw.Chapter.Number, section.Number), "**"+section.Title+"** "+section.Intro))
 		tocBuilder.WriteString("\n")
 	}
 	tocBuilder.WriteString("\n")
