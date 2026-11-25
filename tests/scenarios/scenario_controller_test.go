@@ -404,6 +404,37 @@ func TestGetSessionByTerminal_Success(t *testing.T) {
 	assert.Equal(t, "active", response["status"])
 }
 
+// A machine in the learner's browser opens its console itself: it reads the
+// uid the console runs as here, as tt-backend gets it for a container.
+func TestGetSessionByTerminal_SaysWhichUserTheConsoleRunsAs(t *testing.T) {
+	db := freshTestDB(t)
+	router := setupTestRouter(db)
+	uid := 1000
+	for name, sessionUser := range map[string]*int{"a learner uid": &uid, "root": nil} {
+		t.Run(name, func(t *testing.T) {
+			scenario := models.Scenario{Name: "console-user-" + uuid.NewString(), Title: "Console User", InstanceType: "debian",
+				CreatedByID: "creator-1", SessionUser: sessionUser}
+			require.NoError(t, db.Create(&scenario).Error)
+			terminalID := "local-" + uuid.NewString()
+			require.NoError(t, db.Create(&models.ScenarioSession{ScenarioID: scenario.ID, UserID: "test-user-123",
+				TerminalSessionID: &terminalID, Status: "active", StartedAt: time.Now()}).Error)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/by-terminal/"+terminalID, nil)
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+
+			var response map[string]any
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			if sessionUser == nil {
+				assert.NotContains(t, response, "session_user", "no uid: the console runs as root")
+			} else {
+				assert.EqualValues(t, 1000, response["session_user"])
+			}
+		})
+	}
+}
+
 func TestGetSessionByTerminal_NotFound(t *testing.T) {
 	db := freshTestDB(t)
 	router := setupTestRouter(db)

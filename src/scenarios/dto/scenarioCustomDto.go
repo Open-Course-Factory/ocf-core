@@ -23,9 +23,12 @@ type SessionResponse struct {
 	ProvisioningTimeoutSeconds int `json:"provisioning_timeout_seconds,omitempty"`
 	// ResumeMode says how the run is resumed, with the same values as
 	// MySessionResponse.ResumeMode; empty when it cannot be.
-	ResumeMode string    `json:"resume_mode,omitempty"`
-	IsPreview  bool      `json:"is_preview,omitempty"`
-	Grade      *float64  `json:"grade,omitempty"`
+	ResumeMode string `json:"resume_mode,omitempty"`
+	// SessionUser is the uid the learner's console runs as; absent, root.
+	// A machine in the learner's browser opens its console with it.
+	SessionUser *int     `json:"session_user,omitempty"`
+	IsPreview   bool     `json:"is_preview,omitempty"`
+	Grade       *float64 `json:"grade,omitempty"`
 	// GradeWithheld means Grade was left out until the teacher publishes the
 	// class's exam results.
 	GradeWithheld bool      `json:"grade_withheld,omitempty"`

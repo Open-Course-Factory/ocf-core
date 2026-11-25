@@ -143,6 +143,7 @@ func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) d
 	var scenario models.Scenario
 	if err := sc.db.First(&scenario, "id = ?", session.ScenarioID).Error; err == nil {
 		response.ResumeMode = string(sc.sessionService.ResumeModeGiven(session, scenario.CrashTraps))
+		response.SessionUser = scenario.SessionUser
 		prose := services.ResolveScenarioText(sc.db, scenario, session.Locale)
 		response.ScenarioText = &dto.SessionScenarioText{
 			Title:       prose.Title,
