@@ -40,6 +40,10 @@ type ScenarioSession struct {
 	ScenarioID        uuid.UUID  `gorm:"type:uuid;not null;index" json:"scenario_id"`
 	UserID            string     `gorm:"type:varchar(255);not null;index" json:"user_id"`
 	TerminalSessionID *string    `gorm:"type:varchar(255);index" json:"terminal_session_id,omitempty"`
+	// Machine is where the run runs (ScenarioMachineIncus or
+	// ScenarioMachineLocal), decided once when it starts: a rebuild gets the
+	// same, whatever the switch, the plan or the scenario say by then.
+	Machine string `gorm:"type:varchar(20);default:'incus'" json:"machine"`
 	CurrentStep       int        `gorm:"default:0" json:"current_step"`
 	Status            string     `gorm:"type:varchar(50);default:'active'" json:"status"` // provisioning, active, completed, abandoned, setup_failed
 	ProvisioningPhase string     `gorm:"type:varchar(50);default:''" json:"provisioning_phase,omitempty"`

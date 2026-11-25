@@ -616,9 +616,13 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		errors.Respond(ctx, http.StatusConflict, "This scenario runs on server "+backend+" for your class")
 		return
 	}
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, plan, backend)
-	if distErr != nil {
-		respondProvisioningFailure(ctx, scenario.Name, distErr)
+	_, assigned := assignedServers[scenarioID]
+	machine, ok := sc.decideMachine(ctx, &scenario, plan, assigned)
+	if !ok {
+		return
+	}
+	provisioning, ok := sc.resolveProvisioning(ctx, scenario, machine, orgID, plan, backend)
+	if !ok {
 		return
 	}
 
@@ -664,6 +668,9 @@ func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, 
 	if !sc.ensureTerminalKey(ctx, userID) {
 		return nil, false
 	}
+	if provisioning.IsLocal() {
+		return sc.provisionLocalTerminal(ctx, userID, scenario, provisioning, orgID, plan, namePrefix)
+	}
 
 	// Fetch terms from tt-backend
 	terms, termsErr := sc.terminalService.GetTerms()
@@ -688,6 +695,55 @@ func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, 
 		return nil, false
 	}
 	return terminalResp, true
+}
+
+// provisionLocalTerminal starts the session of a machine in the learner's
+// browser: the same request as a container's, less the terms, which only
+// tt-backend asks for. On failure it has answered the request, and reports false.
+func (sc *scenarioLaunchController) provisionLocalTerminal(ctx *gin.Context, userID string, scenario *models.Scenario, provisioning services.ScenarioProvisioning, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, namePrefix string) (*terminalDto.TerminalSessionResponse, bool) {
+	input, err := provisioning.ComposedSessionInput(sc.db, userID, scenario, "", orgID, plan, namePrefix)
+	if err != nil {
+		slog.Error("failed to compose the scenario terminal", "scenario", scenario.Name, "userID", userID, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start terminal session. Please try again or contact support.")
+		return nil, false
+	}
+	terminalResp, err := sc.terminalService.StartLocalSession(userID, input, plan)
+	if err != nil {
+		respondTerminalStartFailure(ctx, userID, scenario.Name, err)
+		return nil, false
+	}
+	return terminalResp, true
+}
+
+// decideMachine asks services.RunMachine where a new run goes. On a refusal
+// it has answered the request, and reports false.
+func (sc *scenarioLaunchController) decideMachine(ctx *gin.Context, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool) (string, bool) {
+	machine, err := services.RunMachine(sc.db, scenario, plan, assigned)
+	if stderrors.Is(err, services.ErrScenarioNeedsContainer) {
+		errors.Respond(ctx, http.StatusUnprocessableEntity, err.Error())
+		return "", false
+	}
+	if err != nil {
+		slog.Error("failed to decide where a scenario run goes", "scenario", scenario.Name, "err", err)
+		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start the scenario run")
+		return "", false
+	}
+	return machine, true
+}
+
+// resolveProvisioning is how the run's machine is built: in the learner's
+// browser, or a container Resolve places on backend. On failure it has
+// answered the request, and reports false.
+func (sc *scenarioLaunchController) resolveProvisioning(ctx *gin.Context, scenario models.Scenario, machine string, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, backend string) (services.ScenarioProvisioning, bool) {
+	if machine == models.ScenarioMachineLocal {
+		return services.LocalProvisioning(scenario), true
+	}
+	provisioning, err := sc.provisioningService.Resolve(scenario, orgID, plan, backend)
+	if err != nil {
+		respondProvisioningFailure(ctx, scenario.Name, err)
+		return services.ScenarioProvisioning{}, false
+	}
+	return provisioning, true
 }
 
 // ensureTerminalKey gives userID a terminal key if they have none: every
@@ -751,6 +807,7 @@ func respondTerminalStartFailure(ctx *gin.Context, userID, scenarioName string, 
 func (sc *scenarioLaunchController) launchResponse(session *models.ScenarioSession) dto.LaunchScenarioResponse {
 	resp := dto.LaunchScenarioResponse{
 		ScenarioSessionID:          session.ID.String(),
+		Machine:                    session.Machine,
 		Status:                     session.Status,
 		ProvisioningPhase:          session.ProvisioningPhase,
 		ProvisioningTimeoutSeconds: sc.sessionService.CurrentStepProvisioningTimeout(session),
@@ -967,9 +1024,13 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 
 	// A preview builds the same machine the learners will get, so it asks the
 	// same question of the same owner rather than composing one of its own.
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, previewOrgID, planResult.Plan, backend)
-	if distErr != nil {
-		respondProvisioningFailure(ctx, scenario.Name, distErr)
+	// The author previews as a learner launching on their own would.
+	machine, ok := sc.decideMachine(ctx, &scenario, planResult.Plan, false)
+	if !ok {
+		return
+	}
+	provisioning, ok := sc.resolveProvisioning(ctx, scenario, machine, previewOrgID, planResult.Plan, backend)
+	if !ok {
 		return
 	}
 
@@ -1205,9 +1266,9 @@ func (sc *scenarioLaunchController) rebuildRun(ctx *gin.Context, run *models.Sce
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to rebuild the scenario run")
 		return
 	}
-	provisioning, distErr := sc.provisioningService.Resolve(scenario, orgID, planResult.Plan, assignedServers[scenario.ID])
-	if distErr != nil {
-		respondProvisioningFailure(ctx, scenario.Name, distErr)
+	// The run keeps the machine it started on (plan rule 6).
+	provisioning, ok := sc.resolveProvisioning(ctx, scenario, run.Machine, orgID, planResult.Plan, assignedServers[scenario.ID])
+	if !ok {
 		return
 	}
 	terminalResp, ok := sc.provisionScenarioTerminal(ctx, run.UserID, &scenario, provisioning, orgID, planResult.Plan, "scenario-")

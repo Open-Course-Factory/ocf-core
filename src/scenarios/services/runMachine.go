@@ -5,6 +5,7 @@ import (
 
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"github.com/google/uuid"
@@ -88,4 +89,13 @@ func RunMachine(db *gorm.DB, scenario *models.Scenario, plan *paymentModels.Subs
 		ctx.Exam = exams[scenario.ID]
 	}
 	return ScenarioMachine(ctx)
+}
+
+// MachineOfTerminal is where a run on terminalSessionID runs: the host that
+// created the session named it.
+func MachineOfTerminal(terminalSessionID string) string {
+	if terminalModels.IsLocalSessionID(terminalSessionID) {
+		return models.ScenarioMachineLocal
+	}
+	return models.ScenarioMachineIncus
 }

@@ -419,6 +419,9 @@ type LaunchScenarioInput struct {
 type LaunchScenarioResponse struct {
 	TerminalSessionID string `json:"terminal_session_id"`
 	ScenarioSessionID string `json:"scenario_session_id"`
+	// Machine is where the run runs: "incus", or "local" for a machine the
+	// learner's browser boots.
+	Machine string `json:"machine"`
 	Status            string `json:"status"`
 	ProvisioningPhase string `json:"provisioning_phase,omitempty"`
 	// ProvisioningTimeoutSeconds is how long the build may take, set only

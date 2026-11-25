@@ -315,6 +315,7 @@ func (s *ScenarioSessionService) startRun(userID string, scenario *models.Scenar
 		ScenarioID:        scenarioID,
 		UserID:            userID,
 		TerminalSessionID: &terminalSessionID,
+		Machine:           MachineOfTerminal(terminalSessionID),
 		CurrentStep:       startOrder,
 		Status:            "active",
 		StartedAt:         now,

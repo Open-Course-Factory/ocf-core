@@ -2,10 +2,12 @@ package services
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"soli/formations/src/payment/catalog"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	ttDto "soli/formations/src/terminalTrainer/dto"
@@ -50,6 +52,26 @@ type ScenarioProvisioning struct {
 	// moment setup reports it is done. A scenario whose setup installs packages
 	// declares "network" here so the learner's machine is not left online.
 	BuildFeatures map[string]bool
+}
+
+// localDistribution names what a local machine boots, for the terminal row:
+// the learner's tab picks the image itself.
+const localDistribution = "debian"
+
+// LocalProvisioning is the machine a run gets in the learner's browser: the
+// scenario's size, which the budget counts as for a container, and nothing
+// else — no host to place it on, no network, no build features.
+func LocalProvisioning(scenario models.Scenario) ScenarioProvisioning {
+	size := strings.ToLower(scenario.InstanceType)
+	if _, known := catalog.LookupSize(size); !known {
+		size = "s"
+	}
+	return ScenarioProvisioning{Backend: terminalModels.LocalBackend, Distribution: localDistribution, Size: size}
+}
+
+// IsLocal reports whether this provisioning is a machine in the learner's browser.
+func (p ScenarioProvisioning) IsLocal() bool {
+	return p.Backend == terminalModels.LocalBackend
 }
 
 // CreatesTerminal reports whether this provisioning asks for a container.

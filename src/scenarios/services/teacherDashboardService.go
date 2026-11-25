@@ -536,6 +536,7 @@ type bulkStartRun struct {
 type memberOutcome struct {
 	replaced bool
 	created  bool
+	local    bool // left to the learner: their run goes to their own browser
 	noKey    *UserKeyMissing
 	failure  string // non-empty: the error to report for this learner
 	userID   string
@@ -552,6 +553,9 @@ func (r *BulkStartResult) record(o memberOutcome) {
 		r.NoKeyUsers = append(r.NoKeyUsers, *o.noKey)
 	case o.failure != "":
 		r.Errors = append(r.Errors, BulkStartError{UserID: o.userID, Error: o.failure})
+	case o.local:
+		r.Skipped++
+		r.SkippedUsers = append(r.SkippedUsers, SkippedLearner{UserID: o.userID, Reason: LocalMachineReason})
 	case o.created:
 		r.Created++
 	}
@@ -565,6 +569,16 @@ func (r *BulkStartResult) record(o memberOutcome) {
 // the one call site and this reads top to bottom.
 func (s *TeacherDashboardService) startScenarioForMember(run bulkStartRun, userID string) memberOutcome {
 	out := memberOutcome{userID: userID}
+
+	machine, err := s.memberMachine(run, userID)
+	if err != nil {
+		out.failure = err.Error()
+		return out
+	}
+	if machine == models.ScenarioMachineLocal {
+		out.local = true
+		return out
+	}
 
 	replaced, err := s.abandonExistingRun(run.scenarioID, userID)
 	if err != nil {
@@ -603,6 +617,25 @@ func (s *TeacherDashboardService) startScenarioForMember(run bulkStartRun, userI
 
 	out.created = true
 	return out
+}
+
+// LocalMachineReason skips a learner whose run goes to their own browser: a
+// machine there cannot be built ahead, so they launch the run themselves.
+const LocalMachineReason = "local_machine"
+
+// memberMachine is where one learner's run of a class assignment goes, with
+// the plan they get in the class's organization.
+func (s *TeacherDashboardService) memberMachine(run bulkStartRun, userID string) (string, error) {
+	// An Incus scenario never runs locally: no plan is read for it here, so a
+	// class start of one behaves exactly as before local machines existed.
+	if run.scenario.Machine == "" || run.scenario.Machine == models.ScenarioMachineIncus {
+		return models.ScenarioMachineIncus, nil
+	}
+	planResult, err := paymentServices.NewEffectivePlanService(s.db).GetUserEffectivePlan(userID, run.orgID)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve subscription plan: %w", err)
+	}
+	return RunMachine(s.db, &run.scenario, planResult.Plan, true)
 }
 
 // ClassRunOrganization is the organization a class's runs live in: the
