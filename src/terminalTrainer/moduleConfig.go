@@ -37,6 +37,14 @@ func (t *TerminalTrainerModuleConfig) GetFeatures() []models.FeatureDefinition {
 			Module:      "terminals",
 		},
 		{
+			Key:         services.LocalMachinesFeatureKey,
+			Name:        "Local machines",
+			Description: "Let scenarios run on a machine inside the learner's browser tab instead of a container, for plans and scenarios that allow it. Off: every new run goes to a container; runs in progress finish where they started.",
+			Enabled:     false,
+			Category:    "modules",
+			Module:      "terminals",
+		},
+		{
 			// Not a toggle: the value carries the curation. tt-backend answers
 			// with every image it can run, including scenario base images that
 			// were never meant to be offered when starting a terminal.
