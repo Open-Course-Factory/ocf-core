@@ -12,6 +12,7 @@ import (
 	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -256,4 +257,25 @@ func TestRunMachines_DispatchesByTerminal(t *testing.T) {
 	_, out, _, err = machines.ExecInContainer("incus-sess", []string{"x"}, nil, 5)
 	require.NoError(t, err)
 	assert.Equal(t, "from-tt", out)
+}
+
+// A foreground script staged while the console was held is typed when the
+// learner's shell opens. tt-backend reports that for a container; for a local
+// machine the agent does, and the same observer delivers the script.
+func TestLocalAgent_ReportsTheLearnersConsoleOpening(t *testing.T) {
+	f := newAgentFixture(t)
+	attached := make(chan string, 1)
+	terminalServices.SetConsoleAttachedObserver(func(terminalID string) { attached <- terminalID })
+	t.Cleanup(func() { terminalServices.SetConsoleAttachedObserver(nil) })
+
+	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
+	require.NotNil(t, conn)
+	require.NoError(t, conn.WriteJSON(map[string]any{"event": "console_attached"}))
+
+	select {
+	case got := <-attached:
+		assert.Equal(t, f.terminal, got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the console opening was not reported")
+	}
 }

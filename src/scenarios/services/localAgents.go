@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	terminalServices "soli/formations/src/terminalTrainer/services"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -17,6 +19,10 @@ import (
 //	  -> {"id":1,"exit_code":0,"stdout":"...","stderr":"..."}
 //	{"id":2,"op":"console","data":"text\n"}
 //	  -> {"id":2} or {"id":2,"error":"no_console"}
+//
+// and one event from the tab, when the learner's shell opens:
+//
+//	{"event":"console_attached"}
 //
 // Everything an agent sends is untrusted input: the learner owns the tab.
 
@@ -53,6 +59,7 @@ type agentReply struct {
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
 	Error    string `json:"error"`
+	Event    string `json:"event"`
 }
 
 // LocalAgents holds the connected agents, one per terminal session.
@@ -184,6 +191,13 @@ func (a *localAgent) Serve() {
 			return
 		}
 		alive()
+		if reply.Event == "console_attached" {
+			// What tt-backend reports for a container's console: a foreground
+			// script left pending by the build is typed now. In its own
+			// goroutine, because typing it is a request this loop must answer.
+			go terminalServices.ReportConsoleAttach(a.terminalID)
+			continue
+		}
 		a.mu.Lock()
 		waiting := a.pending[reply.ID]
 		a.mu.Unlock()
