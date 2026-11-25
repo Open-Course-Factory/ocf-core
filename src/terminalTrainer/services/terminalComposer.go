@@ -468,6 +468,26 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 		return nil, fmt.Errorf("custom packages require network access, which is not enabled for this session")
 	}
 
+	// Budget enforcement happens reserve-first inside startComposedSession:
+	// the row is inserted in StateStarting within a locked transaction
+	// (QuotaService.EnforceBudgetTx) BEFORE the container is provisioned,
+	// so concurrent starts serialise on the scope and cannot overshoot.
+	// The TerminalBudgetHook stays a no-op on this path — the composed flow
+	// persists directly via the repository, bypassing the generic Create
+	// hook chain.
+	applyPlanLimits(&input, plan)
+
+	// Resolve effective idle window from the org override (if any). nil means
+	// "let tt-backend fall back to its global default".
+	input.IdleWindowSeconds = c.resolveIdleWindowSeconds(orgID, input.PersistenceMode)
+
+	return c.startComposedSession(userID, orgID, plan, input)
+}
+
+// applyPlanLimits stamps on a session about to start what its plan decides:
+// the size's footprint the budget counts, the duration cap, the command
+// history retention and the plan itself.
+func applyPlanLimits(input *dto.CreateComposedSessionInput, plan *paymentModels.SubscriptionPlan) {
 	// Snapshot the size catalog footprint onto the input so the persisted
 	// Terminal row carries SizeCPU / SizeMemoryMB even in count-mode. The
 	// budget sum query reads from these columns, so leaving them at zero
@@ -479,18 +499,6 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 		input.SizeMemoryMB = cataSize.MemoryMB
 	}
 
-	// Budget enforcement happens reserve-first inside startComposedSession:
-	// the row is inserted in StateStarting within a locked transaction
-	// (QuotaService.EnforceBudgetTx) BEFORE the container is provisioned,
-	// so concurrent starts serialise on the scope and cannot overshoot.
-	// The TerminalBudgetHook stays a no-op on this path — the composed flow
-	// persists directly via the repository, bypassing the generic Create
-	// hook chain.
-
-	// Resolve effective idle window from the org override (if any). nil means
-	// "let tt-backend fall back to its global default".
-	input.IdleWindowSeconds = c.resolveIdleWindowSeconds(orgID, input.PersistenceMode)
-
 	// Enforce max session duration. resolvePlanExpirySeconds is the SSOT
 	// for this conversion — the resume path (StartSession) reads from it too,
 	// so a single plan-cap rule covers both create and resume.
@@ -499,11 +507,8 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 		input.Expiry = maxDurationSeconds
 	}
 
-	// Set plan-derived fields
 	input.HistoryRetentionDays = plan.CommandHistoryRetentionDays
 	input.SubscriptionPlanID = &plan.ID
-
-	return c.startComposedSession(userID, orgID, plan, input)
 }
 
 // resolveIdleWindowSeconds returns the org-level idle window override for the
