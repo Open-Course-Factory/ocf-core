@@ -24,10 +24,12 @@ import (
 type LocalAgentController struct {
 	db     *gorm.DB
 	agents *services.LocalAgents
+	// end ends a terminal the way the platform does.
+	end func(terminalID string) error
 }
 
-func NewLocalAgentController(db *gorm.DB, agents *services.LocalAgents) *LocalAgentController {
-	return &LocalAgentController{db: db, agents: agents}
+func NewLocalAgentController(db *gorm.DB, agents *services.LocalAgents, end func(terminalID string) error) *LocalAgentController {
+	return &LocalAgentController{db: db, agents: agents, end: end}
 }
 
 // Browsers cannot set headers on a WebSocket: the token comes in the
@@ -50,7 +52,8 @@ var agentUpgrader = websocket.Upgrader{
 //	@Summary		Connect the agent of a local machine
 //	@Description	WebSocket for the tab running a scenario run's machine in the learner's browser. The run's owner only, for an open run on a local machine, one tab at a time.
 //	@Tags			scenario-sessions
-//	@Param			id	path	string	true	"Scenario session ID"
+//	@Param			id		path	string	true	"Scenario session ID"
+//	@Param			boot	query	string	true	"ID of the machine the tab booted"
 //	@Success		101
 //	@Failure		403	{object}	errors.APIError
 //	@Failure		404	{object}	errors.APIError
@@ -80,22 +83,51 @@ func (c *LocalAgentController) ConnectAgent(ctx *gin.Context) {
 		errors.Respond(ctx, http.StatusConflict, "This run has no machine in the browser")
 		return
 	}
-	terminalID := *run.TerminalSessionID
-	if c.agents.Connected(terminalID) {
-		errors.Respond(ctx, http.StatusConflict, services.ErrAgentAlreadyConnected.Error())
+	boot := ctx.Query("boot")
+	if boot == "" {
+		errors.Respond(ctx, http.StatusBadRequest, "Missing machine boot ID")
 		return
 	}
+	terminalID := *run.TerminalSessionID
 
+	// A browser cannot read why an upgrade was refused, so from here every
+	// refusal the tab acts on is a close code on an upgraded connection.
+	code, reason := c.refusal(terminalID, boot)
 	conn, err := agentUpgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
 		return // the upgrader has answered
 	}
-	agent, err := c.agents.Attach(terminalID, conn)
+	if code != 0 {
+		services.CloseConn(conn, code, reason)
+		return
+	}
+	agent, err := c.agents.Attach(terminalID, boot, conn)
 	if err != nil {
 		// Lost a race with another tab between the check and the upgrade.
-		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(4409, err.Error()))
-		_ = conn.Close()
+		services.CloseConn(conn, services.AgentCloseOtherTab, err.Error())
 		return
 	}
 	agent.Serve()
+}
+
+// refusal says why the machine boot may not serve terminalID, as a close
+// code, 0 when it may. A machine other than the terminal's own means the
+// tab was reloaded and booted an empty one: the terminal ends, so the run is
+// rebuilt at its step (plan rule 10).
+func (c *LocalAgentController) refusal(terminalID, boot string) (int, string) {
+	var terminal terminalModels.Terminal
+	if err := c.db.Where("session_id = ?", terminalID).First(&terminal).Error; err != nil || !terminal.IsLive() {
+		return services.AgentCloseEnded, "this run's machine has ended"
+	}
+	switch err := c.agents.Admits(terminalID, boot); err {
+	case nil:
+		return 0, ""
+	case services.ErrMachineLost:
+		if endErr := c.end(terminalID); endErr != nil {
+			utils.Error("ending the lost machine of %s: %v", terminalID, endErr)
+		}
+		return services.AgentCloseMachineLost, err.Error()
+	default:
+		return services.AgentCloseOtherTab, err.Error()
+	}
 }

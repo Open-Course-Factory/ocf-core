@@ -33,6 +33,21 @@ var ErrNoMachineAgent = errors.New("the machine in the learner's browser is not 
 // ErrAgentAlreadyConnected: a run's machine is open in one tab at a time.
 var ErrAgentAlreadyConnected = errors.New("this run's machine is already open in another tab")
 
+// ErrMachineLost: the tab booted a new machine (a reload), so the run's
+// machine and everything built in it are gone.
+var ErrMachineLost = errors.New("the machine of this run was lost")
+
+// Close codes the tab acts on.
+const (
+	// AgentCloseEnded: the run's terminal has ended; the machine stops.
+	AgentCloseEnded = 4000
+	// AgentCloseOtherTab: the run's machine is open in another tab.
+	AgentCloseOtherTab = 4409
+	// AgentCloseMachineLost: the run's terminal was ended because its
+	// machine was lost; the tab rebuilds the run.
+	AgentCloseMachineLost = 4410
+)
+
 const (
 	// MaxAgentOutput bounds each of stdout and stderr kept from an answer.
 	MaxAgentOutput = 64 << 10
@@ -65,20 +80,22 @@ type agentReply struct {
 // LocalAgents holds the connected agents, one per terminal session.
 //
 // ponytail: in memory, so one ocf-core replica (or sticky routing on the run);
-// a shared hub when there are several. `seen` and `arrivals` keep one small
-// entry per local terminal for the process's life.
+// a shared hub when there are several. A restart forgets which machine each
+// terminal ran on, so a reload during one is not seen as a lost machine.
 type LocalAgents struct {
 	mu       sync.Mutex
 	agents   map[string]*localAgent
 	arrivals map[string]chan struct{} // closed when the terminal's agent connects
-	seen     map[string]bool          // terminals whose agent connected once
+	boots    map[string]string        // the machine each terminal's agent came from
+	away     map[string]time.Time     // since when each terminal has had no agent
 }
 
 func NewLocalAgents() *LocalAgents {
 	return &LocalAgents{
 		agents:   map[string]*localAgent{},
 		arrivals: map[string]chan struct{}{},
-		seen:     map[string]bool{},
+		boots:    map[string]string{},
+		away:     map[string]time.Time{},
 	}
 }
 
@@ -94,19 +111,38 @@ func (h *LocalAgents) Connected(terminalID string) bool {
 	return h.agents[terminalID] != nil
 }
 
-// Attach takes conn as terminalID's agent. Serve it next.
-func (h *LocalAgents) Attach(terminalID string, conn *websocket.Conn) (*localAgent, error) {
+// Admits reports whether the machine boot may serve terminalID: not while
+// another tab serves it, and not when the terminal ran on another machine.
+func (h *LocalAgents) Admits(terminalID, boot string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	return h.admits(terminalID, boot)
+}
+
+func (h *LocalAgents) admits(terminalID, boot string) error {
 	if h.agents[terminalID] != nil {
-		return nil, ErrAgentAlreadyConnected
+		return ErrAgentAlreadyConnected
+	}
+	if known := h.boots[terminalID]; known != "" && known != boot {
+		return ErrMachineLost
+	}
+	return nil
+}
+
+// Attach takes conn, from the machine boot, as terminalID's agent. Serve it next.
+func (h *LocalAgents) Attach(terminalID, boot string, conn *websocket.Conn) (*localAgent, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err := h.admits(terminalID, boot); err != nil {
+		return nil, err
 	}
 	agent := &localAgent{
 		hub: h, terminalID: terminalID, conn: conn,
 		pending: map[int]chan agentReply{}, done: make(chan struct{}),
 	}
 	h.agents[terminalID] = agent
-	h.seen[terminalID] = true
+	h.boots[terminalID] = boot
+	delete(h.away, terminalID)
 	if arrived, ok := h.arrivals[terminalID]; ok {
 		close(arrived)
 		delete(h.arrivals, terminalID)
@@ -123,7 +159,7 @@ func (h *LocalAgents) await(terminalID string, bootWait time.Duration) (*localAg
 		h.mu.Unlock()
 		return agent, nil
 	}
-	if h.seen[terminalID] {
+	if h.boots[terminalID] != "" {
 		h.mu.Unlock()
 		return nil, ErrNoMachineAgent
 	}
@@ -152,7 +188,59 @@ func (h *LocalAgents) detach(agent *localAgent) {
 	defer h.mu.Unlock()
 	if h.agents[agent.terminalID] == agent {
 		delete(h.agents, agent.terminalID)
+		h.away[agent.terminalID] = time.Now()
 	}
+}
+
+// awaySince returns since when terminalID has had no agent, zero while one
+// is connected. A terminal the hub has not seen is counted from now.
+func (h *LocalAgents) awaySince(terminalID string) time.Time {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.agents[terminalID] != nil {
+		return time.Time{}
+	}
+	since, ok := h.away[terminalID]
+	if !ok {
+		since = time.Now()
+		h.away[terminalID] = since
+	}
+	return since
+}
+
+// connectedTerminals lists the terminals with an agent now.
+func (h *LocalAgents) connectedTerminals() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ids := make([]string, 0, len(h.agents))
+	for id := range h.agents {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// forget drops what the hub knows of an ended terminal.
+func (h *LocalAgents) forget(terminalID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.boots, terminalID)
+	delete(h.away, terminalID)
+}
+
+// Close tells terminalID's agent, if connected, why it is closed, and closes it.
+func (h *LocalAgents) Close(terminalID string, code int, reason string) {
+	h.mu.Lock()
+	agent := h.agents[terminalID]
+	h.mu.Unlock()
+	if agent != nil {
+		agent.close(code, reason)
+	}
+}
+
+// CloseConn closes a connection that was never taken as an agent.
+func CloseConn(conn *websocket.Conn, code int, reason string) {
+	_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason), time.Now().Add(agentWriteWait))
+	_ = conn.Close()
 }
 
 type localAgent struct {
@@ -208,6 +296,12 @@ func (a *localAgent) Serve() {
 			}
 		}
 	}
+}
+
+func (a *localAgent) close(code int, reason string) {
+	a.writeMu.Lock()
+	defer a.writeMu.Unlock()
+	CloseConn(a.conn, code, reason)
 }
 
 func (a *localAgent) ping(stop <-chan struct{}) {

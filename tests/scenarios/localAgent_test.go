@@ -2,6 +2,7 @@ package scenarios_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,6 +53,10 @@ func newAgentFixture(t *testing.T) agentFixture {
 	run := models.ScenarioSession{ScenarioID: scenario.ID, UserID: learner, TerminalSessionID: &terminal,
 		Machine: models.ScenarioMachineLocal, Status: "active", StartedAt: time.Now()}
 	require.NoError(t, db.Create(&run).Error)
+	key := terminalModels.UserTerminalKey{UserID: learner, APIKey: "key-" + terminal, KeyName: "k-" + terminal, IsActive: true}
+	require.NoError(t, db.Create(&key).Error)
+	require.NoError(t, db.Create(&terminalModels.Terminal{SessionID: terminal, UserID: learner, State: terminalModels.StateRunning,
+		ExpiresAt: time.Now().Add(time.Hour), InstanceType: "debian", UserTerminalKeyID: key.ID, Backend: terminalModels.LocalBackend}).Error)
 
 	agents := services.NewLocalAgents()
 	gin.SetMode(gin.TestMode)
@@ -61,17 +66,28 @@ func newAgentFixture(t *testing.T) agentFixture {
 		c.Set("userRoles", strings.Split(c.GetHeader("X-Test-Roles"), ","))
 		c.Next()
 	})
-	router.GET("/api/v1/scenario-sessions/:id/agent", scenarioController.NewLocalAgentController(db, agents).ConnectAgent)
+	router.GET("/api/v1/scenario-sessions/:id/agent", scenarioController.NewLocalAgentController(db, agents, endTerminal(db)).ConnectAgent)
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 	return agentFixture{db: db, learner: learner, run: run, terminal: terminal, agents: agents, server: server}
 }
 
-// dial opens the agent connection of runID as userID; the response carries the
-// refusal when there is one.
+// endTerminal ends a terminal the way the platform does.
+func endTerminal(db *gorm.DB) func(string) error {
+	return terminalServices.NewTerminalTrainerService(db).DeleteSession
+}
+
+// dial opens the agent connection of runID as userID, from the tab's first
+// machine; the response carries the refusal when there is one.
 func (f agentFixture) dial(t *testing.T, runID uuid.UUID, userID string, roles string) (*websocket.Conn, *http.Response) {
 	t.Helper()
-	url := "ws" + strings.TrimPrefix(f.server.URL, "http") + "/api/v1/scenario-sessions/" + runID.String() + "/agent"
+	return f.dialBoot(t, runID, userID, roles, "boot-1")
+}
+
+// dialBoot is dial from the machine the tab booted as boot.
+func (f agentFixture) dialBoot(t *testing.T, runID uuid.UUID, userID string, roles string, boot string) (*websocket.Conn, *http.Response) {
+	t.Helper()
+	url := "ws" + strings.TrimPrefix(f.server.URL, "http") + "/api/v1/scenario-sessions/" + runID.String() + "/agent?boot=" + boot
 	conn, resp, _ := websocket.DefaultDialer.Dial(url, http.Header{"X-Test-User": {userID}, "X-Test-Roles": {roles}})
 	if conn != nil {
 		t.Cleanup(func() { _ = conn.Close() })
@@ -195,7 +211,7 @@ func TestLocalAgent_OutputIsCapped(t *testing.T) {
 	assert.LessOrEqual(t, len(stdout), services.MaxAgentOutput)
 
 	conn2, _ := f.dial(t, f.run.ID, f.learner, "member")
-	assert.Nil(t, conn2, "still one agent per run")
+	assert.Equal(t, services.AgentCloseOtherTab, closeCode(t, conn2), "still one agent per run")
 }
 
 func TestLocalAgent_PushFileGoesThroughExec(t *testing.T) {
@@ -278,4 +294,150 @@ func TestLocalAgent_ReportsTheLearnersConsoleOpening(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the console opening was not reported")
 	}
+}
+
+// closeCode waits for the server to close conn and returns its close code.
+func closeCode(t *testing.T, conn *websocket.Conn) int {
+	t.Helper()
+	require.NotNil(t, conn)
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			var closeErr *websocket.CloseError
+			if errors.As(err, &closeErr) {
+				return closeErr.Code
+			}
+			t.Fatalf("connection ended without a close code: %v", err)
+		}
+	}
+}
+
+func (f agentFixture) terminalState(t *testing.T) terminalModels.TerminalState {
+	t.Helper()
+	var row terminalModels.Terminal
+	require.NoError(t, f.db.Unscoped().Where("session_id = ?", f.terminal).First(&row).Error)
+	return row.State
+}
+
+func (f agentFixture) connectAndLeave(t *testing.T, boot string) {
+	t.Helper()
+	conn, _ := f.dialBoot(t, f.run.ID, f.learner, "member", boot)
+	require.NotNil(t, conn)
+	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+	require.NoError(t, conn.Close())
+	require.Eventually(t, func() bool { return !f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+}
+
+// A reload boots a new machine, empty: the run's machine is lost. Its
+// terminal ends, so the run is rebuilt at its step, and the tab is told so.
+func TestLocalAgent_ANewMachineEndsTheLostOne(t *testing.T) {
+	f := newAgentFixture(t)
+	f.connectAndLeave(t, "boot-1")
+
+	conn, _ := f.dialBoot(t, f.run.ID, f.learner, "member", "boot-2")
+	assert.Equal(t, services.AgentCloseMachineLost, closeCode(t, conn))
+	assert.Equal(t, terminalModels.StateDeleted, f.terminalState(t))
+	assert.False(t, f.agents.Connected(f.terminal))
+}
+
+// The same machine coming back (a network blip, the learner back on the page)
+// takes its run up again.
+func TestLocalAgent_TheSameMachineReconnects(t *testing.T) {
+	f := newAgentFixture(t)
+	f.connectAndLeave(t, "boot-1")
+
+	conn, _ := f.dialBoot(t, f.run.ID, f.learner, "member", "boot-1")
+	require.NotNil(t, conn)
+	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t))
+}
+
+// A second tab is told the run is open elsewhere, and the first keeps it.
+func TestLocalAgent_ASecondTabIsToldTheRunIsOpenElsewhere(t *testing.T) {
+	f := newAgentFixture(t)
+	first, _ := f.dialBoot(t, f.run.ID, f.learner, "member", "boot-1")
+	require.NotNil(t, first)
+	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+
+	second, _ := f.dialBoot(t, f.run.ID, f.learner, "member", "boot-2")
+	assert.Equal(t, services.AgentCloseOtherTab, closeCode(t, second))
+	assert.True(t, f.agents.Connected(f.terminal))
+	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t))
+}
+
+// A run whose terminal has ended has no machine to serve: the tab is told.
+func TestLocalAgent_AnEndedTerminalIsToldSo(t *testing.T) {
+	f := newAgentFixture(t)
+	require.NoError(t, endTerminal(f.db)(f.terminal))
+
+	conn, _ := f.dialBoot(t, f.run.ID, f.learner, "member", "boot-1")
+	assert.Equal(t, services.AgentCloseEnded, closeCode(t, conn))
+}
+
+// Rule 9: a tab gone for the grace delay ends its run's terminal, which frees
+// the plan's budget; reopening the run rebuilds it.
+func TestSweepLocalMachines_EndsAMachineGoneForTheGraceDelay(t *testing.T) {
+	f := newAgentFixture(t)
+	f.connectAndLeave(t, "boot-1")
+	grace := 200 * time.Millisecond
+
+	services.SweepLocalMachines(f.db, f.agents, grace, endTerminal(f.db))
+	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t), "within the grace delay")
+
+	time.Sleep(grace)
+	services.SweepLocalMachines(f.db, f.agents, grace, endTerminal(f.db))
+	assert.Equal(t, terminalModels.StateDeleted, f.terminalState(t))
+}
+
+// A tab never opened, or one lost while ocf-core restarted, has its grace
+// delay counted from the first sweep that sees it gone.
+func TestSweepLocalMachines_CountsAnUnseenTabFromTheFirstSweep(t *testing.T) {
+	f := newAgentFixture(t)
+	grace := 200 * time.Millisecond
+
+	services.SweepLocalMachines(f.db, f.agents, grace, endTerminal(f.db))
+	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t))
+
+	time.Sleep(grace)
+	services.SweepLocalMachines(f.db, f.agents, grace, endTerminal(f.db))
+	assert.Equal(t, terminalModels.StateDeleted, f.terminalState(t))
+}
+
+// A connected tab is never ended for being away.
+func TestSweepLocalMachines_KeepsAConnectedMachine(t *testing.T) {
+	f := newAgentFixture(t)
+	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
+	require.NotNil(t, conn)
+	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+
+	services.SweepLocalMachines(f.db, f.agents, 0, endTerminal(f.db))
+	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t))
+	assert.True(t, f.agents.Connected(f.terminal))
+}
+
+// A run ended on the server (expiry, a trainer's stop, a block, an erasure)
+// reaches the tab: its agent is closed, so the machine stops answering.
+func TestSweepLocalMachines_ClosesTheTabOfAnEndedTerminal(t *testing.T) {
+	f := newAgentFixture(t)
+	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
+	require.NotNil(t, conn)
+	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+	require.NoError(t, endTerminal(f.db)(f.terminal))
+
+	services.SweepLocalMachines(f.db, f.agents, time.Hour, endTerminal(f.db))
+	assert.Equal(t, services.AgentCloseEnded, closeCode(t, conn))
+}
+
+// An expired local terminal ends, and its tab is told.
+func TestSweepLocalMachines_EndsAnExpiredMachine(t *testing.T) {
+	f := newAgentFixture(t)
+	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
+	require.NotNil(t, conn)
+	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+	require.NoError(t, f.db.Model(&terminalModels.Terminal{}).Where("session_id = ?", f.terminal).
+		Update("expires_at", time.Now().Add(-time.Minute)).Error)
+
+	services.SweepLocalMachines(f.db, f.agents, time.Hour, endTerminal(f.db))
+	assert.Equal(t, services.AgentCloseEnded, closeCode(t, conn))
+	assert.Equal(t, terminalModels.StateDeleted, f.terminalState(t))
 }

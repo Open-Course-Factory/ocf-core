@@ -197,6 +197,7 @@ func main() {
 	cron.StartAuditLogCleanupJob(sqldb.DB) // Start audit log cleanup (retention management)
 	cron.StartEmailVerificationCleanupJob(sqldb.DB)    // Clean up expired email verification tokens
 	cron.StartScenarioSessionCleanupJob(sqldb.DB)      // Abandon zombie scenario sessions with dead terminals
+	cron.StartLocalMachineSweepJob(sqldb.DB)           // End local machines whose tab is gone or whose time is up
 	cron.StartParticipationArchiveJob(sqldb.DB)        // Freeze reports of finished classes, delete expired copies (#560)
 	cron.StartClassAutoArchiveJob(sqldb.DB)            // Archive classes past their expires_at (#491)
 	cron.StartExposedPortReconcileJob(sqldb.DB)        // Drop exposed ports whose container is gone on tt-backend
