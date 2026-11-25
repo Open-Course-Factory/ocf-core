@@ -47,7 +47,7 @@ type scenarioController struct {
 func NewScenarioController(db *gorm.DB) ScenarioController {
 	return &scenarioController{
 		scenarioControllerBase: newScenarioControllerBase(db),
-		sessionService:         services.NewScenarioSessionService(db, services.NewFlagService(), services.NewVerificationService()),
+		sessionService:         services.NewScenarioSessionService(db, services.NewFlagService(), services.PlatformRunMachines()),
 	}
 }
 

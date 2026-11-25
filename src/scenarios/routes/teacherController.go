@@ -34,7 +34,7 @@ type TeacherController struct {
 // NewTeacherController creates a new teacher controller
 func NewTeacherController(db *gorm.DB) *TeacherController {
 	flagService := services.NewFlagService()
-	verificationService := services.NewVerificationService()
+	verificationService := services.PlatformRunMachines()
 	terminalService := ttServices.NewTerminalTrainerService(db)
 	sessionService := services.NewScenarioSessionService(db, flagService, verificationService)
 	return &TeacherController{

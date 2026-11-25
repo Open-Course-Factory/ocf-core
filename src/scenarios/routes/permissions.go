@@ -100,6 +100,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Resume a session: start its paused terminal, or rebuild its environment when the container is gone (must own the session)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/scenario-sessions/:id/agent", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Description: "Connect the browser tab running one's own run's local machine (must own the session; controller refuses any other user, administrators included)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/launch", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Launch a scenario with auto-provisioned terminal",

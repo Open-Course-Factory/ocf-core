@@ -52,7 +52,7 @@ func NewScenarioProgressController(db *gorm.DB) ScenarioProgressController {
 // learner action does to the container without reaching tt-backend.
 func NewScenarioProgressControllerWithTerminalService(db *gorm.DB, terminalService terminalServices.TerminalTrainerService) ScenarioProgressController {
 	flagService := services.NewFlagService()
-	verificationService := services.NewVerificationService()
+	verificationService := services.PlatformRunMachines()
 	sessionService := services.NewScenarioSessionService(db, flagService, verificationService)
 
 	// Stop-on-failure and close-the-build-window, wired in one place so no

@@ -140,11 +140,16 @@ func (s *VerificationService) WriteToConsole(sessionID string, text string) erro
 // so the learner cannot inspect it.
 // Exit code 0 = passed, non-zero = failed. Returns stdout as output.
 func (s *VerificationService) VerifyStep(terminalSessionID string, step *models.ScenarioStep) (passed bool, output string, err error) {
+	return verifyStep(s, terminalSessionID, step)
+}
+
+// verifyStep is the one judgement of a step's check, whatever runs it.
+func verifyStep(execer containerExecer, terminalSessionID string, step *models.ScenarioStep) (passed bool, output string, err error) {
 	if step.VerifyScript == "" {
 		return false, "", fmt.Errorf("step %d has no verify script", step.Order)
 	}
 
-	exitCode, output, err := RunVerifyScript(s, terminalSessionID, step.VerifyScript)
+	exitCode, output, err := RunVerifyScript(execer, terminalSessionID, step.VerifyScript)
 	if err != nil {
 		return false, "", err
 	}

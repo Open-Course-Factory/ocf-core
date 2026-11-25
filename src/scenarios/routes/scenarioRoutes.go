@@ -7,6 +7,7 @@ import (
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	scenarioMiddleware "soli/formations/src/scenarios/middleware"
+	"soli/formations/src/scenarios/services"
 
 	"gorm.io/gorm"
 )
@@ -66,6 +67,7 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	// No plan chain: the plan is resolved in the handler for the run's own
 	// organization, never the one the request claims.
 	sessionRoutes.POST("/:id/resume", middleware.AuthManagement(), launchController.ResumeScenario)
+	sessionRoutes.GET("/:id/agent", middleware.AuthManagement(), NewLocalAgentController(db, services.Agents()).ConnectAgent)
 	// Budget enforcement is performed inside LaunchScenario via
 	// QuotaService.CheckBudget; no middleware-level slot counter is needed.
 	//

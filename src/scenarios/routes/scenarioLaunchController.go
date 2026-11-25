@@ -53,7 +53,7 @@ type scenarioLaunchController struct {
 // dependencies wired to the given database handle.
 func NewScenarioLaunchController(db *gorm.DB) *scenarioLaunchController {
 	flagService := services.NewFlagService()
-	verificationService := services.NewVerificationService()
+	verificationService := services.PlatformRunMachines()
 	sessionService := services.NewScenarioSessionService(db, flagService, verificationService)
 	terminalService := terminalServices.NewTerminalTrainerService(db)
 
