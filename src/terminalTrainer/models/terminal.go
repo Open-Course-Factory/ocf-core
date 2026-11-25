@@ -96,7 +96,7 @@ func IsReservationPlaceholderSessionID(sessionID string) bool {
 // about it may be asked there. LocalBackend is the backend such a row names.
 const (
 	LocalSessionIDPrefix = "local-"
-	LocalBackend         = "local"
+	LocalBackend         = "browser" // not "local", a name a real host could have
 )
 
 // IsLocalSessionID reports whether a session's machine runs in the learner's

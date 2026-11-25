@@ -461,8 +461,12 @@ func (l *terminalLifecycleService) ValidateSessionAccess(sessionID string, check
 		return false, string(terminal.State), nil
 	}
 
+	// A machine in the learner's browser has no host and no record on
+	// tt-backend: there is nothing to ask it, and its 404 would read as gone.
+	local := models.IsLocalSessionID(sessionID)
+
 	// 3. Check backend online status
-	if terminal.Backend != "" {
+	if terminal.Backend != "" && !local {
 		online, err := l.proxy.IsBackendOnline(terminal.Backend)
 		if err != nil {
 			utils.Warn("failed to check backend status: %v", err)
@@ -495,7 +499,7 @@ func (l *terminalLifecycleService) ValidateSessionAccess(sessionID string, check
 	}
 
 	// 4. Optional API verification (for critical operations)
-	if checkAPI {
+	if checkAPI && !local {
 		apiInfo, err := l.proxy.GetSessionInfoFromAPI(sessionID)
 		if err != nil {
 			// Handle 404 = session doesn't exist in Terminal Trainer

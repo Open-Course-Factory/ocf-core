@@ -121,3 +121,23 @@ func TestSyncUserSessions_LeavesLocalRowsAlone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.StateRunning, row.State)
 }
+
+// Opening, stopping or deleting one's own local session goes through the same
+// access gate as a container's. tt-backend has no host for it and no record of
+// it, so the gate must not ask: a "backend offline" answer turned the
+// learner's Stop into a 503, and an API check would mark the live row deleted.
+func TestValidateSessionAccess_LocalSessionAsksTTBackendNothing(t *testing.T) {
+	svc, rec, userID, plan := localSessionFixture(t)
+	started, err := svc.StartLocalSession(userID, dto.CreateComposedSessionInput{Size: "S"}, plan)
+	require.NoError(t, err)
+
+	for _, checkAPI := range []bool{false, true} {
+		ok, state, err := svc.ValidateSessionAccess(started.SessionID, checkAPI)
+		require.NoError(t, err)
+		assert.True(t, ok, "checkAPI=%v: state %q", checkAPI, state)
+	}
+	row, err := svc.GetSessionInfo(started.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StateRunning, row.State)
+	assert.Empty(t, sessionCalls(rec))
+}
