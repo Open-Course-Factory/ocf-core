@@ -57,6 +57,7 @@ func fullyPopulatedPlan() *models.SubscriptionPlan {
 		NetworkAccessEnabled:      true,
 		PortExposureEnabled:       true,
 		PortExposureTTLMinutes:    90,
+		LocalMachines:             models.LocalMachinesAllowed,
 		DataPersistenceEnabled:    true,
 		SessionSupervisionEnabled: true,
 

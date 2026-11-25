@@ -44,6 +44,7 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						NetworkAccessEnabled:        input.NetworkAccessEnabled,
 						PortExposureEnabled:         input.PortExposureEnabled,
 						PortExposureTTLMinutes:      input.PortExposureTTLMinutes,
+						LocalMachines:               input.LocalMachines,
 						DataPersistenceEnabled:      input.DataPersistenceEnabled,
 						SessionSupervisionEnabled:   input.SessionSupervisionEnabled,
 						GroupManagementEnabled:      input.GroupManagementEnabled,

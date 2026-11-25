@@ -80,7 +80,39 @@ func (h *SubscriptionPlanValidationHook) Execute(ctx *hooks.HookContext) error {
 		}
 	}
 
+	// An unknown value would read as off at launch, so the plan silently would
+	// not do what the admin typed: refused here instead. Empty is the column
+	// default, off.
+	if value, stated := localMachinesField(ctx.NewEntity); stated {
+		switch value {
+		case "", models.LocalMachinesOff, models.LocalMachinesAllowed, models.LocalMachinesByAccountDefault:
+		default:
+			return entityErrors.NewValidationError("local_machines",
+				`must be "off", "allowed" or "by_account_default"`)
+		}
+	}
+
 	return nil
+}
+
+// localMachinesField reads the stated local_machines value from either shape
+// the generic service supplies: always on create (the struct), only when the
+// patch map carries the key on update.
+func localMachinesField(entity any) (string, bool) {
+	switch v := entity.(type) {
+	case *models.SubscriptionPlan:
+		return v.LocalMachines, true
+	case map[string]any:
+		switch s := v["local_machines"].(type) {
+		case string:
+			return s, true
+		case *string:
+			if s != nil {
+				return *s, true
+			}
+		}
+	}
+	return "", false
 }
 
 // taxBehaviorField reads a stated tax behaviour from either shape the generic

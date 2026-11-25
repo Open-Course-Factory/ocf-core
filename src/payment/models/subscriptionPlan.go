@@ -71,6 +71,10 @@ type SubscriptionPlan struct {
 	// is for looking at one's own work during the training, not for handing
 	// out links. 0 means the service default (an hour).
 	PortExposureTTLMinutes    int  `gorm:"default:60" json:"port_exposure_ttl_minutes"`
+	// LocalMachines says whether the plan's holders may run a scenario on a
+	// machine in their own browser tab instead of a container: one of the
+	// LocalMachines* values. Off unless the plan says so.
+	LocalMachines string `gorm:"default:'off'" json:"local_machines" mapstructure:"local_machines"`
 	DataPersistenceEnabled    bool `gorm:"default:false" json:"data_persistence_enabled"`                                         // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)
 	SessionSupervisionEnabled bool `gorm:"default:false" json:"session_supervision_enabled"`                                      // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
 	GroupManagementEnabled    bool `gorm:"default:false" json:"group_management_enabled" mapstructure:"group_management_enabled"` // Typed entitlement: plan grants group management (replaces the legacy features[] "group_management" string)
@@ -131,6 +135,15 @@ type PricingTier struct {
 	UnitAmount  int64  `json:"unit_amount"`           // Price per license in cents
 	Description string `json:"description,omitempty"` // e.g., "Great for small classes"
 }
+
+// What a plan allows of machines that run in the learner's browser tab.
+// Off: never. Allowed: for scenarios set to Local. ByAccountDefault: also for
+// scenarios set to By account, which run on Incus for any other plan.
+const (
+	LocalMachinesOff              = "off"
+	LocalMachinesAllowed          = "allowed"
+	LocalMachinesByAccountDefault = "by_account_default"
+)
 
 // Seat units. One purchased unit of a seat product buys either a seat for a
 // billing period, or one learner for one day — the prepaid pack's quantity is
