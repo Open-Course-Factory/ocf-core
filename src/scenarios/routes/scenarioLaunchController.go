@@ -661,26 +661,8 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 // the three cannot drift apart on any of it. On failure it has answered the
 // request, and reports false.
 func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, userID string, scenario *models.Scenario, provisioning services.ScenarioProvisioning, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, namePrefix string) (*terminalDto.TerminalSessionResponse, bool) {
-	// Auto-provision terminal key if missing
-	_, keyErr := sc.terminalService.GetUserKey(userID)
-	if keyErr != nil {
-		user, userErr := casdoorsdk.GetUserByUserId(userID)
-		keyName := "auto-" + userID
-		if userErr == nil && user != nil && user.Email != "" {
-			keyName = "auto-" + user.Email
-		}
-		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
-			if stderrors.Is(createErr, authModels.ErrAccountBlocked) {
-				errors.Respond(ctx, http.StatusForbidden, createErr.Error())
-				return nil, false
-			}
-			if httperrors.WriteSessionStartBlocked(ctx, createErr) {
-				return nil, false
-			}
-			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
-			errors.Respond(ctx, http.StatusInternalServerError, "Failed to provision terminal access")
-			return nil, false
-		}
+	if !sc.ensureTerminalKey(ctx, userID) {
+		return nil, false
 	}
 
 	// Fetch terms from tt-backend
@@ -702,33 +684,66 @@ func (sc *scenarioLaunchController) provisionScenarioTerminal(ctx *gin.Context, 
 	// QuotaService.CheckBudget.
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, plan)
 	if termErr != nil {
-		slog.Error("failed to create terminal session for scenario", "scenario", scenario.Name, "userID", userID, "err", termErr)
-		// Budget exhaustion answers the same structured 403 the terminal
-		// creation route emits — the launcher renders honest budget copy
-		// from it instead of a generic failure.
-		if httperrors.WriteSessionStartBlocked(ctx, termErr) {
-			return nil, false
-		}
-		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
-			return nil, false
-		}
-		if httperrors.WriteHostUnavailable(ctx, termErr) {
-			return nil, false
-		}
-		// The upstream text names hosts and endpoints: the learner gets a
-		// fixed answer, the log keeps the detail.
-		if httperrors.IsPlanRefusal(termErr) {
-			ctx.JSON(http.StatusForbidden, gin.H{
-				"error_code":    http.StatusForbidden,
-				"error_message": "Your plan does not cover the machine this scenario needs.",
-				"reason":        blockReasonNotInPlan,
-			})
-			return nil, false
-		}
-		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start terminal session. Please try again or contact support.")
+		respondTerminalStartFailure(ctx, userID, scenario.Name, termErr)
 		return nil, false
 	}
 	return terminalResp, true
+}
+
+// ensureTerminalKey gives userID a terminal key if they have none: every
+// terminal row, a local machine's included, belongs to one. On failure it has
+// answered the request, and reports false.
+func (sc *scenarioLaunchController) ensureTerminalKey(ctx *gin.Context, userID string) bool {
+	_, keyErr := sc.terminalService.GetUserKey(userID)
+	if keyErr != nil {
+		user, userErr := casdoorsdk.GetUserByUserId(userID)
+		keyName := "auto-" + userID
+		if userErr == nil && user != nil && user.Email != "" {
+			keyName = "auto-" + user.Email
+		}
+		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
+			if stderrors.Is(createErr, authModels.ErrAccountBlocked) {
+				errors.Respond(ctx, http.StatusForbidden, createErr.Error())
+				return false
+			}
+			if httperrors.WriteSessionStartBlocked(ctx, createErr) {
+				return false
+			}
+			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
+			errors.Respond(ctx, http.StatusInternalServerError, "Failed to provision terminal access")
+			return false
+		}
+	}
+	return true
+}
+
+// respondTerminalStartFailure answers a scenario terminal that could not be
+// started, with the structured refusals the terminal creation route emits.
+func respondTerminalStartFailure(ctx *gin.Context, userID, scenarioName string, err error) {
+	slog.Error("failed to create terminal session for scenario", "scenario", scenarioName, "userID", userID, "err", err)
+	// Budget exhaustion answers the same structured 403 the terminal
+	// creation route emits — the launcher renders honest budget copy
+	// from it instead of a generic failure.
+	if httperrors.WriteSessionStartBlocked(ctx, err) {
+		return
+	}
+	if httperrors.WriteBudgetRejection(ctx, err, userID) {
+		return
+	}
+	if httperrors.WriteHostUnavailable(ctx, err) {
+		return
+	}
+	// The upstream text names hosts and endpoints: the learner gets a
+	// fixed answer, the log keeps the detail.
+	if httperrors.IsPlanRefusal(err) {
+		ctx.JSON(http.StatusForbidden, gin.H{
+			"error_code":    http.StatusForbidden,
+			"error_message": "Your plan does not cover the machine this scenario needs.",
+			"reason":        blockReasonNotInPlan,
+		})
+		return
+	}
+	errors.Respond(ctx, http.StatusInternalServerError, "Failed to start terminal session. Please try again or contact support.")
 }
 
 // launchResponse is what a launch, a preview or a resume answers: the run, its
