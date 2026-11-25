@@ -223,7 +223,7 @@ func TestStartSession_Success(t *testing.T) {
 // "Session expirée" on a successfully-resumed terminal until the next sync poll.
 //
 // Fix shape: the new response body (tt-backend MR for #108) includes expires_at
-// (unix seconds). startSessionInAPI now decodes it, StartSession mirrors it
+// (unix seconds). startSession now decodes it, StartSession mirrors it
 // into the local row. This test seeds an already-past ExpiresAt, has the fake
 // tt-backend return a future expires_at, and asserts the row was updated.
 func TestStartSession_SyncsExpiresAtFromResponse(t *testing.T) {

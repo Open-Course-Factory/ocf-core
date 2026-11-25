@@ -271,7 +271,7 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 				sessionID, localSession.State, apiSession.Status, apiStateName)
 
 			if previousState == models.StateDeleted && apiSession.Status == 0 && apiSession.State != models.StateDeleted {
-				if err := s.proxy.deleteSessionInAPI(sessionID, userKey.APIKey); err != nil {
+				if err := s.proxy.deleteSession(sessionID, userKey.APIKey); err != nil {
 					utils.Warn("SyncUserSessions - retrying tt delete of tombstone %s failed: %v", sessionID, err)
 				}
 			}

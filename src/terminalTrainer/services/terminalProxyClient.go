@@ -76,13 +76,79 @@ func (p *terminalProxyClient) buildAPIPath(endpoint string, instanceType string)
 	return path
 }
 
-// stopSessionInAPI appelle POST /sessions/{id}/stop sur tt-backend.
+// sessionCreateTimeout bounds the one call that provisions a container, rather
+// than leaving it on the 30s default meant for ordinary API traffic. It matches
+// the 180s the frontend allows a scenario launch, so the two ends of the same
+// request agree on how long provisioning may take.
+const sessionCreateTimeout = 3 * time.Minute
+
+// createSession calls POST /sessions on tt-backend, which provisions the
+// container and answers once it is up. A budget refusal for the key comes back
+// as a *BudgetRejection, so the caller can repair the key and ask again.
+//
+// This call builds a container: tt-backend pulls or copies an image, boots
+// the instance, waits for it, and only then answers. The shared default is
+// 30s, which is a sensible bound for an API call and far too short for
+// provisioning — a Debian image on a cold host takes longer than that
+// routinely.
+//
+// Timing out here is worse than slow. tt-backend keeps building and the
+// container comes up; only our side has given up, so the reservation is
+// released, the learner is told the launch failed, and the instance is left
+// running with nothing referencing it. Every retry leaks another one.
+func (p *terminalProxyClient) createSession(backend string, body map[string]any, userAPIKey string) (*dto.TerminalTrainerSessionResponse, error) {
+	url := fmt.Sprintf("%s/%s/sessions", p.baseURL, p.apiVersion)
+	if backend != "" {
+		url += fmt.Sprintf("?backend=%s", backend)
+	}
+
+	utils.Debug("createSession - POST %s", url)
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey), utils.WithTimeout(sessionCreateTimeout))
+
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, body, opts)
+	if refusal := keyBudgetRefusalIn(resp); refusal != nil {
+		return nil, refusal
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// tt-backend may stream NDJSON progress before the final answer.
+	var created dto.TerminalTrainerSessionResponse
+	if err := resp.DecodeLastJSON(&created); err != nil {
+		return nil, utils.ExternalAPIError("Terminal Trainer", "decode response", err)
+	}
+	return &created, nil
+}
+
+// keyBudgetRefusalIn reads tt-backend's budget refusal, nil for any other answer.
+// Its 429 can also mean rate limiting, which the body tells apart.
+func keyBudgetRefusalIn(resp *utils.HTTPResponse) *BudgetRejection {
+	if resp == nil || resp.StatusCode != http.StatusTooManyRequests {
+		return nil
+	}
+	var refusal struct {
+		Error string `json:"error"`
+		Axis  string `json:"axis"`
+	}
+	if err := json.Unmarshal(resp.Body, &refusal); err != nil || refusal.Error != "budget_exhausted" {
+		return nil
+	}
+	if refusal.Axis == "memory" {
+		return &BudgetRejection{Reason: "budget_memory_exceeded"}
+	}
+	return &BudgetRejection{Reason: "budget_cpu_exceeded"}
+}
+
+// stopSession appelle POST /sessions/{id}/stop sur tt-backend.
 // Retourne idle_until (unix seconds côté tt-backend) pour un stop persistant ;
 // nil pour un stop éphémère, qui répond {"state":"deleted"} sans idle_until.
-func (p *terminalProxyClient) stopSessionInAPI(sessionID, userAPIKey string) (*time.Time, error) {
+func (p *terminalProxyClient) stopSession(sessionID, userAPIKey string) (*time.Time, error) {
 	url := fmt.Sprintf("%s/%s/sessions/%s/stop", p.baseURL, p.apiVersion, sessionID)
 
-	utils.Debug("stopSessionInAPI - calling %s", url)
+	utils.Debug("stopSession - calling %s", url)
 
 	opts := utils.DefaultHTTPClientOptions()
 	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
@@ -100,7 +166,7 @@ func (p *terminalProxyClient) stopSessionInAPI(sessionID, userAPIKey string) (*t
 	return &idleUntil, nil
 }
 
-// startSessionInAPI appelle POST /sessions/{id}/start sur tt-backend.
+// startSession appelle POST /sessions/{id}/start sur tt-backend.
 // Retourne le nouveau expires_at (unix seconds) tel que tt-backend l'a recalculé
 // au redémarrage de l'instance. Retourne 0 si le champ est absent (instance
 // sans expiry fini côté backend) — l'appelant doit alors conserver la valeur
@@ -113,10 +179,10 @@ func (p *terminalProxyClient) stopSessionInAPI(sessionID, userAPIKey string) (*t
 //
 // Un 404 de tt-backend veut dire que le conteneur n'existe plus : l'erreur
 // porte alors ErrContainerGone.
-func (p *terminalProxyClient) startSessionInAPI(sessionID, userAPIKey string, expirySeconds int) (int64, error) {
+func (p *terminalProxyClient) startSession(sessionID, userAPIKey string, expirySeconds int) (int64, error) {
 	url := fmt.Sprintf("%s/%s/sessions/%s/start", p.baseURL, p.apiVersion, sessionID)
 
-	utils.Debug("startSessionInAPI - calling %s (expiry=%d)", url, expirySeconds)
+	utils.Debug("startSession - calling %s (expiry=%d)", url, expirySeconds)
 
 	opts := utils.DefaultHTTPClientOptions()
 	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
@@ -144,11 +210,11 @@ func (p *terminalProxyClient) startSessionInAPI(sessionID, userAPIKey string, ex
 	return started.ExpiresAt, nil
 }
 
-// deleteSessionInAPI appelle DELETE /sessions/{id} sur tt-backend.
-func (p *terminalProxyClient) deleteSessionInAPI(sessionID, userAPIKey string) error {
+// deleteSession appelle DELETE /sessions/{id} sur tt-backend.
+func (p *terminalProxyClient) deleteSession(sessionID, userAPIKey string) error {
 	url := fmt.Sprintf("%s/%s/sessions/%s", p.baseURL, p.apiVersion, sessionID)
 
-	utils.Debug("deleteSessionInAPI - calling %s", url)
+	utils.Debug("deleteSession - calling %s", url)
 
 	opts := utils.DefaultHTTPClientOptions()
 	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))

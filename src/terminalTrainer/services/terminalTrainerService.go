@@ -217,7 +217,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 	// Constructed last: the composer takes the facade's CreateUserKey as a
 	// callback so the bulk flow can auto-provision keys without owning the
 	// key-management concern.
-	tts.terminalComposer = newTerminalComposer(proxy, catalog, repository, quotaService, enumService, db, baseURL, apiVersion, tts.CreateUserKey, tts.SyncUserKeyBudget)
+	tts.terminalComposer = newTerminalComposer(proxy, catalog, repository, quotaService, enumService, db, baseURL, tts.CreateUserKey, tts.SyncUserKeyBudget)
 
 	return tts
 }

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -40,7 +39,7 @@ import (
 // to it.
 //
 // Collaborators: catalog supplies the session-options used for validation;
-// proxy owns the tt-backend HTTP layer (server metrics, console path,
+// proxy owns the tt-backend HTTP layer (session create, server metrics, console path,
 // system default backend); repository persists the local Terminal row and
 // reads user keys; quotaService backs the budget gate; enumService maps
 // tt-backend status codes to messages; db is read for org-level backend
@@ -55,7 +54,6 @@ type terminalComposer struct {
 	enumService   TerminalTrainerEnumService
 	db            *gorm.DB
 	baseURL       string
-	apiVersion    string
 	createUserKey func(userID, keyName string) error
 	syncKeyBudget func(userID string) error
 }
@@ -72,7 +70,7 @@ func newTerminalComposer(
 	quotaService paymentServices.QuotaService,
 	enumService TerminalTrainerEnumService,
 	db *gorm.DB,
-	baseURL, apiVersion string,
+	baseURL string,
 	createUserKey func(userID, keyName string) error,
 	syncKeyBudget func(userID string) error,
 ) *terminalComposer {
@@ -84,7 +82,6 @@ func newTerminalComposer(
 		enumService:   enumService,
 		db:            db,
 		baseURL:       baseURL,
-		apiVersion:    apiVersion,
 		createUserKey: createUserKey,
 		syncKeyBudget: syncKeyBudget,
 	}
@@ -367,12 +364,6 @@ func (c *terminalComposer) provisionMissingKeys(members []groupModels.GroupMembe
 }
 
 // StartComposedSession validates inputs against the plan and starts a composed session
-// sessionCreateTimeout bounds the one call that provisions a container, rather
-// than leaving it on the 30s default meant for ordinary API traffic. It matches
-// the 180s the frontend allows a scenario launch, so the two ends of the same
-// request agree on how long provisioning may take.
-const sessionCreateTimeout = 3 * time.Minute
-
 func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
 	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
 	if !ok {
@@ -638,45 +629,22 @@ func (c *terminalComposer) releaseReservation(reservationID uuid.UUID) {
 // frees the budget quickly without a background sweeper.
 const reservationTTL = 3 * time.Minute
 
-// postComposedSession asks tt-backend for the session. ocf-core has already
-// approved the budget by now, so a refusal from tt-backend means the key's own
-// budget fell behind the plan: not every plan change reaches the key (#496, #531).
+// createSession asks the host for the session. ocf-core has already approved
+// the budget by now, so a refusal from tt-backend means the key's own budget
+// fell behind the plan: not every plan change reaches the key (#496, #531).
 // The key is refreshed and the request tried once more. A second refusal is a
 // budget refusal for the caller, not a server error.
-func (c *terminalComposer) postComposedSession(userID, url string, body map[string]any, opts utils.HTTPClientOptions) (*utils.HTTPResponse, error) {
-	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, body, opts)
-	refusal := keyBudgetRefusalIn(resp)
-	if refusal == nil {
-		return resp, err
+func (c *terminalComposer) createSession(userID, backend string, body map[string]any, userAPIKey string) (*dto.TerminalTrainerSessionResponse, error) {
+	created, err := c.proxy.createSession(backend, body, userAPIKey)
+	var refusal *BudgetRejection
+	if !errors.As(err, &refusal) {
+		return created, err
 	}
 	if syncErr := c.syncKeyBudget(userID); syncErr != nil {
 		utils.Warn("terminal key budget refresh failed after a tt-backend refusal: user %s: %v", userID, syncErr)
 		return nil, refusal
 	}
-	resp, err = utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, body, opts)
-	if refusal := keyBudgetRefusalIn(resp); refusal != nil {
-		return nil, refusal
-	}
-	return resp, err
-}
-
-// keyBudgetRefusalIn reads tt-backend's budget refusal, nil for any other answer.
-// Its 429 can also mean rate limiting, which the body tells apart.
-func keyBudgetRefusalIn(resp *utils.HTTPResponse) *BudgetRejection {
-	if resp == nil || resp.StatusCode != http.StatusTooManyRequests {
-		return nil
-	}
-	var refusal struct {
-		Error string `json:"error"`
-		Axis  string `json:"axis"`
-	}
-	if err := json.Unmarshal(resp.Body, &refusal); err != nil || refusal.Error != "budget_exhausted" {
-		return nil
-	}
-	if refusal.Axis == "memory" {
-		return &BudgetRejection{Reason: "budget_memory_exceeded"}
-	}
-	return &BudgetRejection{Reason: "budget_cpu_exceeded"}
+	return c.proxy.createSession(backend, body, userAPIKey)
 }
 
 // startComposedSession reserves budget atomically, then provisions the
@@ -774,43 +742,14 @@ func (c *terminalComposer) startComposedSession(
 		ttReqBody["persistence_size_gb"] = plan.DataPersistenceGB
 	}
 
-	// Build URL
-	url := fmt.Sprintf("%s/%s/sessions", c.baseURL, c.apiVersion)
-	if input.Backend != "" {
-		url += fmt.Sprintf("?backend=%s", input.Backend)
-	}
-
-	utils.Debug("StartComposedSession - POST %s", url)
-
-	// This call builds a container: tt-backend pulls or copies an image, boots
-	// the instance, waits for it, and only then answers. The shared default is
-	// 30s, which is a sensible bound for an API call and far too short for
-	// provisioning — a Debian image on a cold host takes longer than that
-	// routinely.
-	//
-	// Timing out here is worse than slow. tt-backend keeps building and the
-	// container comes up; only our side has given up, so the reservation is
-	// released, the learner is told the launch failed, and the instance is left
-	// running with nothing referencing it. Every retry leaks another one.
-	//
-	// Three minutes matches what the frontend already allows the launch call.
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userKey.APIKey), utils.WithTimeout(sessionCreateTimeout))
-
-	// tt-backend may stream NDJSON, use the same pattern as startSession.
 	// Any failure from here on releases the reservation so its budget is
 	// returned to the scope (the placeholder row never backed a container).
-	resp, err := c.postComposedSession(userID, url, ttReqBody, opts)
+	created, err := c.createSession(userID, input.Backend, ttReqBody, userKey.APIKey)
 	if err != nil {
 		c.releaseReservation(reservation.ID)
 		return nil, err
 	}
-
-	var sessionResp dto.TerminalTrainerSessionResponse
-	if err := resp.DecodeLastJSON(&sessionResp); err != nil {
-		c.releaseReservation(reservation.ID)
-		return nil, utils.ExternalAPIError("Terminal Trainer", "decode response", err)
-	}
+	sessionResp := *created
 
 	if sessionResp.Status != 0 {
 		c.releaseReservation(reservation.ID)
