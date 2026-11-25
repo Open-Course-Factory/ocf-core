@@ -39,8 +39,8 @@ import (
 // to it.
 //
 // Collaborators: catalog supplies the session-options used for validation;
-// proxy owns the tt-backend HTTP layer (session create, server metrics, console path,
-// system default backend); repository persists the local Terminal row and
+// proxy owns the tt-backend HTTP layer (server metrics, console path,
+// system default backend); host runs the session's machine; repository persists the local Terminal row and
 // reads user keys; quotaService backs the budget gate; enumService maps
 // tt-backend status codes to messages; db is read for org-level backend
 // and idle-window overrides. createUserKey is the facade's CreateUserKey,
@@ -48,6 +48,7 @@ import (
 // composer duplicating the key-management concern.
 type terminalComposer struct {
 	proxy         *terminalProxyClient
+	host          sessionHost
 	catalog       *terminalCatalogService
 	repository    repositories.TerminalRepository
 	quotaService  paymentServices.QuotaService
@@ -76,6 +77,7 @@ func newTerminalComposer(
 ) *terminalComposer {
 	return &terminalComposer{
 		proxy:         proxy,
+		host:          proxy,
 		catalog:       catalog,
 		repository:    repository,
 		quotaService:  quotaService,
@@ -635,7 +637,7 @@ const reservationTTL = 3 * time.Minute
 // The key is refreshed and the request tried once more. A second refusal is a
 // budget refusal for the caller, not a server error.
 func (c *terminalComposer) createSession(userID, backend string, body map[string]any, userAPIKey string) (*dto.TerminalTrainerSessionResponse, error) {
-	created, err := c.proxy.createSession(backend, body, userAPIKey)
+	created, err := c.host.createSession(backend, body, userAPIKey)
 	var refusal *BudgetRejection
 	if !errors.As(err, &refusal) {
 		return created, err
@@ -644,7 +646,7 @@ func (c *terminalComposer) createSession(userID, backend string, body map[string
 		utils.Warn("terminal key budget refresh failed after a tt-backend refusal: user %s: %v", userID, syncErr)
 		return nil, refusal
 	}
-	return c.proxy.createSession(backend, body, userAPIKey)
+	return c.host.createSession(backend, body, userAPIKey)
 }
 
 // startComposedSession reserves budget atomically, then provisions the

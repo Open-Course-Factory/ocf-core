@@ -37,6 +37,7 @@ import (
 // auto-abandon updates.
 type terminalLifecycleService struct {
 	proxy        *terminalProxyClient
+	host         sessionHost
 	sync         *terminalSyncService
 	repository   repositories.TerminalRepository
 	quotaService paymentServices.QuotaService
@@ -44,12 +45,14 @@ type terminalLifecycleService struct {
 }
 
 // newTerminalLifecycleService returns a lifecycle service driving local-row
-// transitions through the supplied proxy (tt-backend calls) and sync
+// transitions through the supplied proxy (tt-backend calls; it is also the
+// host that stops, starts and deletes the machines) and sync
 // (markSessionStopped SSOT). The proxy, sync, repository and db are shared
 // with the facade so all reuse the same HTTP configuration and DB.
 func newTerminalLifecycleService(proxy *terminalProxyClient, sync *terminalSyncService, repository repositories.TerminalRepository, quotaService paymentServices.QuotaService, db *gorm.DB) *terminalLifecycleService {
 	return &terminalLifecycleService{
 		proxy:        proxy,
+		host:         proxy,
 		sync:         sync,
 		repository:   repository,
 		quotaService: quotaService,
@@ -110,7 +113,7 @@ func (l *terminalLifecycleService) StopSession(sessionID string) error {
 		sessionID, terminal.State, terminal.PersistenceMode)
 
 	// 1. Appeler le nouvel endpoint /sessions/{id}/stop de tt-backend.
-	idleUntil, err := l.proxy.stopSession(sessionID, terminal.UserTerminalKey.APIKey)
+	idleUntil, err := l.host.stopSession(sessionID, terminal.UserTerminalKey.APIKey)
 	if err != nil {
 		// Log mais on continue : la ligne locale doit refléter l'intention
 		// même si tt-backend est temporairement injoignable. Pour une session
@@ -244,7 +247,7 @@ func (l *terminalLifecycleService) StartSession(sessionID string, plan *paymentM
 		}
 	}
 
-	expiresAtUnix, err := l.proxy.startSession(sessionID, terminal.UserTerminalKey.APIKey, expirySeconds)
+	expiresAtUnix, err := l.host.startSession(sessionID, terminal.UserTerminalKey.APIKey, expirySeconds)
 	if err != nil {
 		// Released first, even for a lost container: should the deleted
 		// write below fail, the row must read paused again, not live.
@@ -343,7 +346,7 @@ func (l *terminalLifecycleService) DeleteSession(sessionID string) error {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	if err := l.proxy.deleteSession(sessionID, terminal.UserTerminalKey.APIKey); err != nil {
+	if err := l.host.deleteSession(sessionID, terminal.UserTerminalKey.APIKey); err != nil {
 		// Log mais on continue : la session locale doit être marquée StateDeleted
 		// même si tt-backend est injoignable, sinon l'utilisateur reste bloqué
 		// avec un slot consommé.
