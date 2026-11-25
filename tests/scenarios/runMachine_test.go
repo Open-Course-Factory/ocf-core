@@ -82,15 +82,14 @@ func TestScenarioMachine_AssignmentKeepsByAccountOnIncus(t *testing.T) {
 	assert.Equal(t, local, got)
 }
 
-// Rule 5, and what the learner owning the machine breaks: a scenario whose
-// result must not be in the learner's hands (an exam, crash traps, flags) never
-// runs locally. Set to Local, it is refused with a reason; set to By account, it
-// goes to Incus, which that setting allows.
+// Rule 5, and what the learner owning the machine breaks: an exam, and a
+// crash-trap scenario (its config holds every flag of the run), never run
+// locally. Set to Local, it is refused with a reason; set to By account, it goes
+// to Incus, which that setting allows.
 func TestScenarioMachine_RefusesWhatTheLearnerCouldFake(t *testing.T) {
 	for name, ctx := range map[string]services.MachineContext{
 		"exam":        {Exam: true},
 		"crash traps": {CrashTraps: true},
-		"flags":       {Flags: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx.SwitchOn, ctx.PlanSetting = true, paymentModels.LocalMachinesByAccountDefault
@@ -114,8 +113,22 @@ func TestScenarioMachine_RefusesWhatTheLearnerCouldFake(t *testing.T) {
 	assert.Equal(t, incus, got)
 }
 
+// Flag steps run locally (decided 2026-11-25): a step's flag is as readable to
+// a root learner in a container, and a verify step is as fakeable.
+func TestRunMachine_FlagScenarioRunsLocally(t *testing.T) {
+	db := freshTestDB(t)
+	require.NoError(t, db.Create(&configModels.Feature{Key: terminalServices.LocalMachinesFeatureKey, Name: "x", Enabled: true}).Error)
+	scenario := models.Scenario{Name: "flags-local", Title: "Flags Local", InstanceType: "debian",
+		CreatedByID: "author", Machine: models.ScenarioMachineLocal, FlagsEnabled: true}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	got, err := services.RunMachine(db, &scenario, &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}, false)
+	require.NoError(t, err)
+	assert.Equal(t, local, got)
+}
+
 // The reading from the database: the switch fails closed, a nil plan is off,
-// and the exam, crash-trap and flag facts come from the scenario itself.
+// and the exam and crash-trap facts come from the scenario itself.
 func TestRunMachine_ReadsTheSwitchPlanAndScenario(t *testing.T) {
 	db := freshTestDB(t)
 	scenario := models.Scenario{Name: "runs-here", Title: "Runs Here", InstanceType: "debian",
