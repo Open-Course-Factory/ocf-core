@@ -169,6 +169,10 @@ func (m *capturingTTService) GetSessionOptions(*paymentModels.SubscriptionPlan, 
 }
 func (m *capturingTTService) EnrichSessionOptionsBudget(*ttDto.SessionOptionsResponse, *paymentModels.SubscriptionPlan, string) {
 }
+func (m *capturingTTService) StartLocalSession(string, ttDto.CreateComposedSessionInput, *paymentModels.SubscriptionPlan) (*ttDto.TerminalSessionResponse, error) {
+	return nil, nil
+}
+
 func (m *capturingTTService) StartComposedSession(userID string, input ttDto.CreateComposedSessionInput, _ any) (*ttDto.TerminalSessionResponse, error) {
 	m.capturedUserIDs = append(m.capturedUserIDs, userID)
 	m.capturedInputs = append(m.capturedInputs, input)

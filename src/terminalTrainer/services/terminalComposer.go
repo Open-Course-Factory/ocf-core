@@ -77,7 +77,7 @@ func newTerminalComposer(
 ) *terminalComposer {
 	return &terminalComposer{
 		proxy:         proxy,
-		host:          proxy,
+		host:          newSessionHosts(proxy),
 		catalog:       catalog,
 		repository:    repository,
 		quotaService:  quotaService,
@@ -509,6 +509,30 @@ func applyPlanLimits(input *dto.CreateComposedSessionInput, plan *paymentModels.
 
 	input.HistoryRetentionDays = plan.CommandHistoryRetentionDays
 	input.SubscriptionPlanID = &plan.ID
+}
+
+// StartLocalSession starts a session whose machine runs in the learner's
+// browser tab. Everything the platform decides is decided as for a container —
+// blocks, budget reservation, the plan's duration cap — but no server is asked
+// for anything: the row is the whole session. The machine keeps no files and
+// has no network or build features (plan rules 8 and 11).
+func (c *terminalComposer) StartLocalSession(userID string, input dto.CreateComposedSessionInput, plan *paymentModels.SubscriptionPlan) (*dto.TerminalSessionResponse, error) {
+	// Only a plan allows a local machine, so there is always one here.
+	if plan == nil {
+		return nil, fmt.Errorf("a local machine needs a subscription plan")
+	}
+	orgID, err := parseOrgID(input.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	if err := models.SessionStartRefusal(c.db, userID, orgID); err != nil {
+		return nil, err
+	}
+	input.Backend = models.LocalBackend
+	input.PersistenceMode = PersistenceModeEphemeral
+	input.Features, input.BuildFeatures, input.Packages = nil, nil, nil
+	applyPlanLimits(&input, plan)
+	return c.startComposedSession(userID, orgID, plan, input)
 }
 
 // resolveIdleWindowSeconds returns the org-level idle window override for the

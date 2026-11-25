@@ -91,6 +91,20 @@ func IsReservationPlaceholderSessionID(sessionID string) bool {
 	return strings.HasPrefix(sessionID, TerminalReservationSessionIDPrefix)
 }
 
+// LocalSessionIDPrefix marks a session whose machine runs in the learner's
+// browser tab, not in a container: tt-backend knows nothing of it, so nothing
+// about it may be asked there. LocalBackend is the backend such a row names.
+const (
+	LocalSessionIDPrefix = "local-"
+	LocalBackend         = "local"
+)
+
+// IsLocalSessionID reports whether a session's machine runs in the learner's
+// browser tab (see LocalSessionIDPrefix).
+func IsLocalSessionID(sessionID string) bool {
+	return strings.HasPrefix(sessionID, LocalSessionIDPrefix)
+}
+
 // OccupiesSlotScope is a GORM scope that filters terminals which consume
 // the plan's CPU/RAM budget. Single source of truth for every counting
 // surface that needs to know "is this row consuming the user's plan?".

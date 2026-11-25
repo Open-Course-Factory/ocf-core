@@ -25,5 +25,8 @@ type sessionHost interface {
 	deleteSession(sessionID, userAPIKey string) error
 }
 
-// tt-backend's Incus containers.
-var _ sessionHost = (*terminalProxyClient)(nil)
+var (
+	_ sessionHost = (*terminalProxyClient)(nil) // tt-backend's Incus containers
+	_ sessionHost = localHost{}                 // the learner's browser tab
+	_ sessionHost = sessionHosts{}              // either, by session
+)

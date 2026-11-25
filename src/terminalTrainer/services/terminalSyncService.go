@@ -151,6 +151,11 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 	localSessionsMap := make(map[string]*models.Terminal)
 	for i := range *localSessions {
 		session := &(*localSessions)[i]
+		// tt-backend lists only its containers: a machine in the learner's
+		// browser missing from that list has not vanished.
+		if models.IsLocalSessionID(session.SessionID) {
+			continue
+		}
 		localSessionsMap[session.SessionID] = session
 	}
 

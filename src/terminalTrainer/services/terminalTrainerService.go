@@ -137,6 +137,9 @@ type TerminalTrainerService interface {
 	// The budget is the user's own, whatever plan resolved for them.
 	EnrichSessionOptionsBudget(opts *dto.SessionOptionsResponse, plan *paymentModels.SubscriptionPlan, userID string)
 	StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error)
+	// StartLocalSession starts a session whose machine runs in the learner's
+	// browser tab: the row and its budget, nothing on tt-backend.
+	StartLocalSession(userID string, input dto.CreateComposedSessionInput, plan *paymentModels.SubscriptionPlan) (*dto.TerminalSessionResponse, error)
 	// BuildComplete removes the features a session held only while it was
 	// being provisioned. Called once the scenario's setup has run.
 	BuildComplete(sessionID string) error

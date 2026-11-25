@@ -52,7 +52,7 @@ type terminalLifecycleService struct {
 func newTerminalLifecycleService(proxy *terminalProxyClient, sync *terminalSyncService, repository repositories.TerminalRepository, quotaService paymentServices.QuotaService, db *gorm.DB) *terminalLifecycleService {
 	return &terminalLifecycleService{
 		proxy:        proxy,
-		host:         proxy,
+		host:         newSessionHosts(proxy),
 		sync:         sync,
 		repository:   repository,
 		quotaService: quotaService,
@@ -566,6 +566,10 @@ func (l *terminalLifecycleService) ValidateSessionAccess(sessionID string, check
 // than a broken session, so the error is returned for the caller to log and
 // retry, never swallowed.
 func (l *terminalLifecycleService) BuildComplete(sessionID string) error {
+	// A machine in the browser was given no build features to take back.
+	if models.IsLocalSessionID(sessionID) {
+		return nil
+	}
 	terminal, err := l.repository.GetTerminalSessionByID(sessionID)
 	if err != nil {
 		return fmt.Errorf("session not found: %w", err)

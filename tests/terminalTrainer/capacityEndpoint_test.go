@@ -180,6 +180,10 @@ func (m *metricsAwareMockService) GetSessionOptions(plan *paymentModels.Subscrip
 }
 func (m *metricsAwareMockService) EnrichSessionOptionsBudget(opts *dto.SessionOptionsResponse, plan *paymentModels.SubscriptionPlan, userID string) {
 }
+func (m *metricsAwareMockService) StartLocalSession(string, dto.CreateComposedSessionInput, *paymentModels.SubscriptionPlan) (*dto.TerminalSessionResponse, error) {
+	return nil, nil
+}
+
 func (m *metricsAwareMockService) StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
 	panic("not implemented")
 }

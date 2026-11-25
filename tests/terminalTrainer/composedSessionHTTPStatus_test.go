@@ -32,6 +32,10 @@ type mockTerminalTrainerService struct {
 	mock.Mock
 }
 
+func (m *mockTerminalTrainerService) StartLocalSession(string, dto.CreateComposedSessionInput, *paymentModels.SubscriptionPlan) (*dto.TerminalSessionResponse, error) {
+	return nil, nil
+}
+
 func (m *mockTerminalTrainerService) StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
 	args := m.Called(userID, input, planInterface)
 	if args.Get(0) == nil {
