@@ -86,6 +86,13 @@ func InitScenarioHooks(db *gorm.DB) {
 		log.Println("Scenario step quiz scoring hook registered")
 	}
 
+	machineHook := NewScenarioMachineHook()
+	if err := hooks.GlobalHookRegistry.RegisterHook(machineHook); err != nil {
+		log.Printf("Failed to register scenario machine hook: %v", err)
+	} else {
+		log.Println("Scenario machine hook registered")
+	}
+
 	hintSyncHook := NewScenarioStepHintSyncHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(hintSyncHook); err != nil {
 		log.Printf("Failed to register scenario step hint sync hook: %v", err)

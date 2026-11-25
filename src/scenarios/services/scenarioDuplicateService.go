@@ -86,6 +86,7 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			// gets its own at its first run (ensureFlagSecret).
 			CrashTraps:     source.CrashTraps,
 			PortExposureAllowed: source.PortExposureAllowed,
+			Machine:        source.Machine,
 			Objectives:     source.Objectives,
 			Prerequisites:  source.Prerequisites,
 			IntroText:      source.IntroText,

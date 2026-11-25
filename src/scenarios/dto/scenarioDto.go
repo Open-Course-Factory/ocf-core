@@ -25,6 +25,7 @@ type CreateScenarioInput struct {
 	AllowedFlagPaths string     `json:"allowed_flag_paths,omitempty" mapstructure:"allowed_flag_paths"`
 	CrashTraps     bool       `json:"crash_traps,omitempty" mapstructure:"crash_traps"`
 	PortExposureAllowed bool  `json:"port_exposure_allowed,omitempty" mapstructure:"port_exposure_allowed"`
+	Machine        string     `json:"machine,omitempty" mapstructure:"machine"`
 	DefaultLocale  string     `json:"default_locale,omitempty" mapstructure:"default_locale"`
 	Locales        string     `json:"locales,omitempty" mapstructure:"locales"`
 	Objectives     string     `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
@@ -56,6 +57,7 @@ type EditScenarioInput struct {
 	AllowedFlagPaths *string    `json:"allowed_flag_paths,omitempty" mapstructure:"allowed_flag_paths"`
 	CrashTraps     *bool      `json:"crash_traps,omitempty" mapstructure:"crash_traps"`
 	PortExposureAllowed *bool `json:"port_exposure_allowed,omitempty" mapstructure:"port_exposure_allowed"`
+	Machine        *string    `json:"machine,omitempty" mapstructure:"machine"`
 	DefaultLocale  *string    `json:"default_locale,omitempty" mapstructure:"default_locale"`
 	Locales        *string    `json:"locales,omitempty" mapstructure:"locales"`
 	Objectives     *string    `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
@@ -92,6 +94,8 @@ type ScenarioOutput struct {
 	// No omitempty: the learner view reads this to decide whether to show
 	// the exposed-ports panel, and a missing key must not read as "unknown".
 	PortExposureAllowed bool          `json:"port_exposure_allowed"`
+	// No omitempty: the learner's page opens the console on the machine it names.
+	Machine        string             `json:"machine"`
 	// Which languages this scenario is offered in, and which one its own
 	// fields are written in. Without these on the output an editor cannot
 	// know a scenario is translatable at all.

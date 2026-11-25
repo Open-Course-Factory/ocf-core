@@ -206,6 +206,7 @@ func TestDuplicateScenario_ScenarioIsFieldCompleteAgainstSource(t *testing.T) {
 		"locales":               `["en","fr"]`,
 		"allowed_flag_paths":    "/srv",
 		"port_exposure_allowed": true,
+		"machine":               models.ScenarioMachineByAccount,
 		"git_repository":        "https://example.org/lab.git",
 		"git_branch":            "main",
 		"source_path":           "labs/one",

@@ -275,6 +275,10 @@ type SeedScenarioInput struct {
 	// PortExposureAllowed is a pointer so that absent keeps: a re-seed that
 	// does not mention it must not switch exposure off.
 	PortExposureAllowed *bool `json:"port_exposure_allowed,omitempty"`
+	// Machine is where runs of the scenario run (models.ScenarioMachine*).
+	// A pointer so that absent keeps on a re-seed, and absent on a new
+	// scenario means Incus.
+	Machine *string `json:"machine,omitempty"`
 	// SessionUser is the uid the learner's console runs as. Absent means the
 	// distribution decides, which is root — fine for every scenario whose
 	// lesson is not "the kernel said no". On a re-seed, absent keeps the

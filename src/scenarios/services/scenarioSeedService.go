@@ -107,6 +107,7 @@ func buildSeedScenario(input dto.SeedScenarioInput) (*models.Scenario, error) {
 		BuildFeatures:           buildFeatures,
 		CrashTraps:              input.CrashTraps,
 		PortExposureAllowed:     input.PortExposureAllowed != nil && *input.PortExposureAllowed,
+		Machine:                 seedMachine(input.Machine),
 		SessionUser:             input.SessionUser,
 		Objectives:              input.Objectives,
 		Prerequisites:           input.Prerequisites,
@@ -321,6 +322,9 @@ func seedScenarioUpdates(built *models.Scenario, input dto.SeedScenarioInput) ma
 	if input.PortExposureAllowed != nil {
 		updates["port_exposure_allowed"] = built.PortExposureAllowed
 	}
+	if input.Machine != nil {
+		updates["machine"] = built.Machine
+	}
 	if input.SessionUser != nil {
 		updates["session_user"] = built.SessionUser
 	}
@@ -436,4 +440,13 @@ func recreateStepChildren(tx *gorm.DB, step *models.ScenarioStep) error {
 		}
 	}
 	return nil
+}
+
+// seedMachine is where a seeded scenario runs: what the file says, Incus when
+// it says nothing.
+func seedMachine(machine *string) string {
+	if machine == nil {
+		return models.ScenarioMachineIncus
+	}
+	return *machine
 }

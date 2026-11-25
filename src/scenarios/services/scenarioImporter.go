@@ -133,6 +133,9 @@ type KillerCodaOCF struct {
 	// URL, when their plan allows it too. Absent keeps the scenario's current
 	// setting on re-import, as for SessionUser.
 	PortExposureAllowed *bool `json:"port_exposure_allowed,omitempty"`
+	// Machine is where runs of the scenario run. Absent keeps on re-import,
+	// and means Incus on a new scenario.
+	Machine *string `json:"machine,omitempty"`
 }
 
 // hostnamePattern is an RFC 1123 host label: lowercase letters, digits and
@@ -228,6 +231,9 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				}
 				if ocf.OCF.PortExposureAllowed != nil {
 					updates["port_exposure_allowed"] = scenario.PortExposureAllowed
+				}
+				if ocf.OCF.Machine != nil {
+					updates["machine"] = scenario.Machine
 				}
 			}
 			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
@@ -336,6 +342,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	flagsEnabled := false
 	crashTraps := false
 	portExposureAllowed := false
+	machine := models.ScenarioMachineIncus
 	var sessionUser *int
 	var compatibleInstanceTypes []models.ScenarioInstanceType
 	requiredFeatures := ""
@@ -351,6 +358,9 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		flagsEnabled = index.Extensions.OCF.Flags
 		crashTraps = index.Extensions.OCF.CrashTraps
 		portExposureAllowed = index.Extensions.OCF.PortExposureAllowed != nil && *index.Extensions.OCF.PortExposureAllowed
+		if index.Extensions.OCF.Machine != nil {
+			machine = *index.Extensions.OCF.Machine
+		}
 		sessionUser = index.Extensions.OCF.SessionUser
 		compatibleInstanceTypes = BuildCompatibleInstanceTypes(index.Extensions.OCF.CompatibleInstanceTypes)
 
@@ -397,6 +407,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		FlagsEnabled:   flagsEnabled,
 		CrashTraps:     crashTraps,
 		PortExposureAllowed: portExposureAllowed,
+		Machine:        machine,
 		SessionUser:    sessionUser,
 		Hostname:       hostname,
 		IntroText:      introText,

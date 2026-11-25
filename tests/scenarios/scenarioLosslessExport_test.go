@@ -25,6 +25,7 @@ import (
 func fullyPopulatedScenarioInput() dto.SeedScenarioInput {
 	sessionUser := 1000
 	portExposure := true
+	machine := models.ScenarioMachineLocal
 	return dto.SeedScenarioInput{
 		Title:                   "Lossless Castle",
 		Description:             "Every field, once",
@@ -37,6 +38,7 @@ func fullyPopulatedScenarioInput() dto.SeedScenarioInput {
 		AllowedFlagPaths:        "/home,/srv",
 		CrashTraps:              true,
 		PortExposureAllowed:     &portExposure,
+		Machine:                 &machine,
 		SessionUser:             &sessionUser,
 		IntroText:               "# Welcome to {{W_CELLAR}}",
 		FinishText:              "# Well done",
@@ -200,7 +202,7 @@ func TestScenarioJSONReimport_WithoutOptionalFields_KeepsThem(t *testing.T) {
 	bare := full
 	bare.Hostname, bare.Objectives, bare.Prerequisites, bare.DefaultLocale = "", "", "", ""
 	bare.Locales, bare.PortExposureAllowed, bare.Translations, bare.Lexicon = nil, nil, nil, nil
-	bare.SessionUser = nil
+	bare.SessionUser, bare.Machine = nil, nil
 	bare.Steps = append([]dto.SeedStepInput(nil), full.Steps...)
 	bare.Steps[0].Translations = nil
 	_, isUpdate, err := seeder.SeedScenario(bare, "author", &org)
@@ -295,7 +297,8 @@ func TestScenarioArchiveReimport_WithoutSessionUserOrExposure_KeepsThem(t *testi
 	org := uuid.New()
 	sessionUser := 1000
 	existing := models.Scenario{Name: "keeps-console-settings", Title: "Keeps Console Settings", InstanceType: "debian",
-		CreatedByID: "author", OrganizationID: &org, SessionUser: &sessionUser, PortExposureAllowed: true}
+		CreatedByID: "author", OrganizationID: &org, SessionUser: &sessionUser, PortExposureAllowed: true,
+		Machine: models.ScenarioMachineByAccount}
 	require.NoError(t, db.Create(&existing).Error)
 
 	dir := t.TempDir()
@@ -316,4 +319,5 @@ func TestScenarioArchiveReimport_WithoutSessionUserOrExposure_KeepsThem(t *testi
 	require.NotNil(t, stored.SessionUser)
 	assert.Equal(t, 1000, *stored.SessionUser)
 	assert.True(t, stored.PortExposureAllowed)
+	assert.Equal(t, models.ScenarioMachineByAccount, stored.Machine)
 }

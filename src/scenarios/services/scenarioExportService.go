@@ -150,6 +150,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*d
 
 	declaredImages := declaredImageNames(scenario)
 	portExposureAllowed := scenario.PortExposureAllowed
+	machine := scenario.Machine
 
 	return &dto.SeedScenarioInput{
 		Title:                   scenario.Title,
@@ -163,6 +164,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*d
 		AllowedFlagPaths:        scenario.AllowedFlagPaths,
 		CrashTraps:              scenario.CrashTraps,
 		PortExposureAllowed:     &portExposureAllowed,
+		Machine:                 &machine,
 		SessionUser:             scenario.SessionUser,
 		IntroText:               scenario.IntroText,
 		FinishText:              scenario.FinishText,
@@ -467,13 +469,19 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 	if scenario.PortExposureAllowed {
 		ocf.PortExposureAllowed = &scenario.PortExposureAllowed
 	}
+	// Only when it is not the default, so an Incus scenario's archive reads as before.
+	runsElsewhere := scenario.Machine != "" && scenario.Machine != models.ScenarioMachineIncus
+	if runsElsewhere {
+		machine := scenario.Machine
+		ocf.Machine = &machine
+	}
 	// Export the hostname so an exported archive re-imports with the same
 	// terminal name instead of falling back to the generated one.
 	if scenario.Hostname != "" {
 		hostname := scenario.Hostname
 		ocf.Hostname = &hostname
 	}
-	if scenario.FlagsEnabled || scenario.CrashTraps || scenario.PortExposureAllowed ||
+	if scenario.FlagsEnabled || scenario.CrashTraps || scenario.PortExposureAllowed || runsElsewhere ||
 		scenario.SessionUser != nil || scenario.Hostname != "" ||
 		len(declaredImages) > 0 || len(requiredFeatures) > 0 || len(buildFeatures) > 0 {
 		index.Extensions = &KillerCodaExtensions{OCF: ocf}

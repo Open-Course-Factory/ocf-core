@@ -37,6 +37,10 @@ type Scenario struct {
 	// the lab at a public URL, when their plan allows it too. Off by default:
 	// a lab is not a hosting account.
 	PortExposureAllowed bool  `gorm:"default:false" json:"port_exposure_allowed"`
+	// Machine says where a run of this scenario runs: one of the
+	// ScenarioMachine* values. The platform switch, the learner's plan and the
+	// run's assignment decide the rest at launch.
+	Machine string `gorm:"type:varchar(20);default:'incus'" json:"machine" mapstructure:"machine"`
 	Objectives     string     `gorm:"type:text" json:"objectives,omitempty"`
 	Prerequisites  string     `gorm:"type:text" json:"prerequisites,omitempty"`
 	IntroText      string     `gorm:"type:text" json:"intro_text,omitempty"`
@@ -175,4 +179,23 @@ func featureNamesToMap(features []string, err error) (map[string]bool, error) {
 // TableName specifies the table name
 func (Scenario) TableName() string {
 	return "scenarios"
+}
+
+// Where a scenario runs. Incus: a container, always. Local: a machine in the
+// learner's browser tab, for plans that allow it. ByAccount: a machine in the
+// browser for plans that make it their default, a container for the others.
+const (
+	ScenarioMachineIncus     = "incus"
+	ScenarioMachineLocal     = "local"
+	ScenarioMachineByAccount = "by_account"
+)
+
+// ScenarioMachineProblem says what is wrong with a scenario's machine value,
+// "" when nothing is. Empty is the column default, Incus.
+func ScenarioMachineProblem(machine string) string {
+	switch machine {
+	case "", ScenarioMachineIncus, ScenarioMachineLocal, ScenarioMachineByAccount:
+		return ""
+	}
+	return fmt.Sprintf("machine %q is not one of %s, %s, %s", machine, ScenarioMachineIncus, ScenarioMachineLocal, ScenarioMachineByAccount)
 }
