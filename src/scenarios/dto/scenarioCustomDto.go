@@ -33,6 +33,9 @@ type SessionResponse struct {
 	// MachineDisplay is what that machine shows: "terminal" or "desktop"
 	// (models.ScenarioMachineDisplay*); empty means terminal.
 	MachineDisplay string `json:"machine_display,omitempty"`
+	// MachineMemoryMiB is that machine's memory, from the scenario's size
+	// (services.LocalMachineMemoryMiB).
+	MachineMemoryMiB int `json:"machine_memory_mib,omitempty"`
 	IsPreview   bool     `json:"is_preview,omitempty"`
 	Grade       *float64 `json:"grade,omitempty"`
 	// GradeWithheld means Grade was left out until the teacher publishes the

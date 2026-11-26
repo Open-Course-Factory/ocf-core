@@ -491,6 +491,33 @@ func TestGetSessionByTerminal_GivesTheMachineDisplay(t *testing.T) {
 	}
 }
 
+// A machine in the learner's browser gets the memory of the size the scenario
+// asks for, from the size catalog: at least 1 GiB (smaller sizes cannot run a
+// Debian lab), at most 2 GiB (a learner's laptop), and 2 GiB without a size.
+func TestGetSessionByTerminal_GivesTheMachineMemoryOfTheScenarioSize(t *testing.T) {
+	db := freshTestDB(t)
+	router := setupTestRouter(db)
+	for size, want := range map[string]float64{"xs": 1024, "s": 1024, "M": 1024, "l": 2048, "xl": 2048, "": 2048, "debian": 2048} {
+		t.Run("size "+size, func(t *testing.T) {
+			scenario := models.Scenario{Name: "machine-memory-" + uuid.NewString(), Title: "Machine Memory", InstanceType: size,
+				CreatedByID: "creator-1", Machine: models.ScenarioMachineLocal}
+			require.NoError(t, db.Create(&scenario).Error)
+			terminalID := "local-" + uuid.NewString()
+			require.NoError(t, db.Create(&models.ScenarioSession{ScenarioID: scenario.ID, UserID: "test-user-123",
+				TerminalSessionID: &terminalID, Status: "active", StartedAt: time.Now()}).Error)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/by-terminal/"+terminalID, nil)
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+
+			var response map[string]any
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			assert.Equal(t, want, response["machine_memory_mib"])
+		})
+	}
+}
+
 func TestGetSessionByTerminal_NotFound(t *testing.T) {
 	db := freshTestDB(t)
 	router := setupTestRouter(db)

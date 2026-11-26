@@ -148,6 +148,7 @@ func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) d
 		// Unparseable reads as none: the hooks refuse it on save.
 		response.MachineApps, _ = scenario.GetMachineApps()
 		response.MachineDisplay = scenario.MachineDisplay
+		response.MachineMemoryMiB = services.LocalMachineMemoryMiB(scenario)
 		prose := services.ResolveScenarioText(sc.db, scenario, session.Locale)
 		response.ScenarioText = &dto.SessionScenarioText{
 			Title:       prose.Title,
