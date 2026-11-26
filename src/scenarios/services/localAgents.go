@@ -88,6 +88,7 @@ type LocalAgents struct {
 	arrivals map[string]chan struct{} // closed when the terminal's agent connects
 	boots    map[string]string        // the machine each terminal's agent came from
 	away     map[string]time.Time     // since when each terminal has had no agent
+	building map[string]int           // terminals whose world is being built
 }
 
 func NewLocalAgents() *LocalAgents {
@@ -96,6 +97,7 @@ func NewLocalAgents() *LocalAgents {
 		arrivals: map[string]chan struct{}{},
 		boots:    map[string]string{},
 		away:     map[string]time.Time{},
+		building: map[string]int{},
 	}
 }
 
@@ -127,6 +129,57 @@ func (h *LocalAgents) admits(terminalID, boot string) error {
 		return ErrMachineLost
 	}
 	return nil
+}
+
+// Building reports whether terminalID's world is being built: a machine lost
+// meanwhile (a reload) is taken in its place, and the build starts over on it.
+func (h *LocalAgents) Building(terminalID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.building[terminalID] > 0
+}
+
+// ReplaceMachine makes the next machine to connect terminalID's own.
+func (h *LocalAgents) ReplaceMachine(terminalID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.boots, terminalID)
+}
+
+// startBuild marks terminalID as being built until the returned func is called.
+func (h *LocalAgents) startBuild(terminalID string) func() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.building[terminalID]++
+	return func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if h.building[terminalID]--; h.building[terminalID] <= 0 {
+			delete(h.building, terminalID)
+		}
+	}
+}
+
+// awaitReturn waits up to wait for terminalID to have an agent, one that
+// connected before included.
+func (h *LocalAgents) awaitReturn(terminalID string, wait time.Duration) bool {
+	h.mu.Lock()
+	if h.agents[terminalID] != nil {
+		h.mu.Unlock()
+		return true
+	}
+	arrived, ok := h.arrivals[terminalID]
+	if !ok {
+		arrived = make(chan struct{})
+		h.arrivals[terminalID] = arrived
+	}
+	h.mu.Unlock()
+	select {
+	case <-arrived:
+		return h.Connected(terminalID)
+	case <-time.After(wait):
+		return false
+	}
 }
 
 // Attach takes conn, from the machine boot, as terminalID's agent. Serve it next.

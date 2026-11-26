@@ -441,3 +441,42 @@ func TestSweepLocalMachines_EndsAnExpiredMachine(t *testing.T) {
 	assert.Equal(t, services.AgentCloseEnded, closeCode(t, conn))
 	assert.Equal(t, terminalModels.StateDeleted, f.terminalState(t))
 }
+
+// A reload while the run is first being built boots an empty machine: the
+// build starts over on it, and the run comes up there, instead of failing
+// its setup.
+func TestLocalBuild_StartsOverOnTheMachineOfAReloadedTab(t *testing.T) {
+	f := newAgentFixture(t)
+	scenario := models.Scenario{Name: "rebuilt-" + uuid.NewString(), Title: "Rebuilt", CreatedByID: "author",
+		Machine: models.ScenarioMachineLocal, SetupScript: "echo setting-up"}
+	require.NoError(t, f.db.Create(&scenario).Error)
+	require.NoError(t, f.db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Do", StepType: "terminal"}).Error)
+	require.NoError(t, f.db.Unscoped().Delete(&f.run).Error) // this run binds its own terminal
+
+	machines := services.NewRunMachines(&mockVerificationService{}, services.NewLocalMachineService(f.agents, 5*time.Second, time.Second))
+	run, err := services.NewScenarioSessionService(f.db, &mockFlagService{}, machines).StartScenario(f.learner, scenario.ID, f.terminal, "")
+	require.NoError(t, err)
+	require.NoError(t, f.db.Model(&models.ScenarioSession{}).Where("id = ?", run.ID).Update("machine", models.ScenarioMachineLocal).Error)
+
+	// The first machine is lost while it runs the setup: the tab reloads.
+	first, _ := f.dialBoot(t, run.ID, f.learner, "member", "boot-1")
+	require.NotNil(t, first)
+	var req agentRequest
+	require.NoError(t, first.ReadJSON(&req))
+	require.NoError(t, first.Close())
+
+	second, _ := f.dialBoot(t, run.ID, f.learner, "member", "boot-2")
+	require.NotNil(t, second)
+	ran := make(chan string, 16)
+	serveAgent(second, func(req agentRequest) any {
+		ran <- strings.Join(req.Command, " ")
+		return map[string]any{"id": req.ID, "exit_code": 0}
+	})
+
+	require.Eventually(t, func() bool {
+		var got models.ScenarioSession
+		return f.db.First(&got, "id = ?", run.ID).Error == nil && got.Status == "active"
+	}, 10*time.Second, 50*time.Millisecond, "the run comes up on the new machine")
+	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t), "the terminal is kept")
+	assert.NotEmpty(t, ran, "the build ran again on the new machine")
+}

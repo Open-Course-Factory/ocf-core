@@ -93,6 +93,9 @@ func (c *LocalAgentController) ConnectAgent(ctx *gin.Context) {
 	// A browser cannot read why an upgrade was refused, so from here every
 	// refusal the tab acts on is a close code on an upgraded connection.
 	code, reason := c.refusal(terminalID, boot)
+	if code == services.AgentCloseMachineLost {
+		code = c.replaceLostMachine(terminalID)
+	}
 	conn, err := agentUpgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
 		return // the upgrader has answered
@@ -110,6 +113,22 @@ func (c *LocalAgentController) ConnectAgent(ctx *gin.Context) {
 	agent.Serve()
 }
 
+// replaceLostMachine deals with a tab that booted another machine than the
+// terminal's: a reload, so the terminal's machine is lost. While its world is
+// built, the new machine takes its place and the build starts over on it
+// (0: admitted). Otherwise the terminal ends, so the run is rebuilt at its
+// step (plan rule 10), and the tab is told.
+func (c *LocalAgentController) replaceLostMachine(terminalID string) int {
+	if c.agents.Building(terminalID) {
+		c.agents.ReplaceMachine(terminalID)
+		return 0
+	}
+	if err := c.end(terminalID); err != nil {
+		utils.Error("ending the lost machine of %s: %v", terminalID, err)
+	}
+	return services.AgentCloseMachineLost
+}
+
 // refusal says why the machine boot may not serve terminalID, as a close
 // code, 0 when it may. A machine other than the terminal's own means the
 // tab was reloaded and booted an empty one: the terminal ends, so the run is
@@ -123,9 +142,6 @@ func (c *LocalAgentController) refusal(terminalID, boot string) (int, string) {
 	case nil:
 		return 0, ""
 	case services.ErrMachineLost:
-		if endErr := c.end(terminalID); endErr != nil {
-			utils.Error("ending the lost machine of %s: %v", terminalID, endErr)
-		}
 		return services.AgentCloseMachineLost, err.Error()
 	default:
 		return services.AgentCloseOtherTab, err.Error()

@@ -578,7 +578,7 @@ func (s *ScenarioSessionService) runLaunchBuild(job buildJob) {
 		}
 	}()
 
-	if err := s.buildWorld(job); err != nil {
+	if err := s.buildWorldOnMachine(job); err != nil {
 		if errors.Is(err, errBuildAbandoned) {
 			slog.Warn("scenario session setup stopped: row no longer in provisioning (likely abandoned mid-setup)", "session_id", job.sessionID)
 			return
@@ -658,6 +658,40 @@ func (s *ScenarioSessionService) buildWorld(job buildJob) error {
 	// cannot draw them. The symptom is otherwise just "nothing happens".
 	s.warnIfEffectsUnsupported(job.terminalID, job.scenario, job.sessionID)
 	return nil
+}
+
+// lostMachines are machines a build can lose and get back: one in the
+// learner's browser comes back empty when the tab is reloaded.
+type lostMachines interface {
+	// BuildOn marks terminalID as being built until done is called: a machine
+	// lost meanwhile is taken back, not ended.
+	BuildOn(terminalID string) (done func())
+	// AwaitMachine waits for terminalID's machine to be back.
+	AwaitMachine(terminalID string) bool
+}
+
+// maxBuildRestarts bounds the builds started over for one run: a tab reloaded
+// again and again does not keep a build going.
+const maxBuildRestarts = 3
+
+// buildWorldOnMachine is buildWorld, started over on the machine that comes
+// back when the learner's tab is reloaded mid-build: a machine in the
+// browser comes back empty.
+func (s *ScenarioSessionService) buildWorldOnMachine(job buildJob) error {
+	machines, ok := s.verificationService.(lostMachines)
+	if !ok {
+		return s.buildWorld(job)
+	}
+	defer machines.BuildOn(job.terminalID)()
+	err := s.buildWorld(job)
+	for restarts := 0; restarts < maxBuildRestarts && errors.Is(err, ErrNoMachineAgent); restarts++ {
+		if !machines.AwaitMachine(job.terminalID) {
+			return err
+		}
+		slog.Info("the learner's machine came back empty mid-build: building again", "session_id", job.sessionID)
+		err = s.buildWorld(job)
+	}
+	return err
 }
 
 // buildRunsScripts reports whether buildWorld(job) would run anything in the

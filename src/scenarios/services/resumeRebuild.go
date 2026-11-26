@@ -94,7 +94,7 @@ func (s *ScenarioSessionService) runRebuild(job buildJob) {
 		}
 	}()
 
-	if err := s.buildWorld(job); err != nil {
+	if err := s.buildWorldOnMachine(job); err != nil {
 		if errors.Is(err, errBuildAbandoned) {
 			slog.Warn("scenario rebuild stopped: run no longer provisioning (likely abandoned)", "session_id", job.sessionID)
 		} else {

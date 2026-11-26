@@ -85,6 +85,17 @@ func (s *LocalMachineService) WriteToConsole(sessionID string, text string) erro
 	return fmt.Errorf("write to console failed: %s", capped(reply.Error, 200))
 }
 
+// BuildOn marks terminalID's machine as being built until done is called.
+func (s *LocalMachineService) BuildOn(terminalID string) (done func()) {
+	return s.agents.startBuild(terminalID)
+}
+
+// AwaitMachine waits for terminalID's machine to be back, as long as for a
+// booting one.
+func (s *LocalMachineService) AwaitMachine(terminalID string) bool {
+	return s.agents.awaitReturn(terminalID, s.bootWait)
+}
+
 func (s *LocalMachineService) VerifyStep(terminalSessionID string, step *models.ScenarioStep) (bool, string, error) {
 	return verifyStep(s, terminalSessionID, step)
 }
@@ -130,6 +141,20 @@ func (m *RunMachines) PushFile(sessionID string, targetPath string, content stri
 
 func (m *RunMachines) WriteToConsole(sessionID string, text string) error {
 	return m.of(sessionID).WriteToConsole(sessionID, text)
+}
+
+// BuildOn and AwaitMachine are the local machine's (lostMachines); a
+// container is never lost to a reload.
+func (m *RunMachines) BuildOn(terminalID string) (done func()) {
+	if local, ok := m.of(terminalID).(lostMachines); ok {
+		return local.BuildOn(terminalID)
+	}
+	return func() {}
+}
+
+func (m *RunMachines) AwaitMachine(terminalID string) bool {
+	local, ok := m.of(terminalID).(lostMachines)
+	return ok && local.AwaitMachine(terminalID)
 }
 
 func (m *RunMachines) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
