@@ -1,6 +1,7 @@
 package terminalTrainer_tests
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +13,10 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
+	terminalController "soli/formations/src/terminalTrainer/routes"
 	"soli/formations/src/terminalTrainer/services"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -72,6 +75,41 @@ func TestStartLocalSession_KeepsTheRowAndAsksTTBackendNothing(t *testing.T) {
 	assert.Equal(t, services.PersistenceModeEphemeral, row.PersistenceMode, "no files kept after the session")
 	assert.Equal(t, &plan.ID, row.SubscriptionPlanID)
 	assert.Empty(t, sessionCalls(rec), "tt-backend is never asked to build a local machine")
+	assert.Empty(t, started.ConsoleURL, "no console on a server: the tab opens its own")
+}
+
+// A local session's status is the platform's row: tt-backend does not know it,
+// and that is no reason to sync it.
+func TestGetSessionStatus_LocalSessionIsItsOwnRow(t *testing.T) {
+	rec := &recorder{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r.Method, r.URL.Path)
+		_, _ = w.Write([]byte(`{"sessions":[],"count":0}`))
+	}))
+	t.Cleanup(srv.Close)
+	configureTTServer(t, srv.URL)
+	db := freshTestDB(t)
+	userID := "local-learner-" + uuid.NewString()
+	_, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+	plan := &paymentModels.SubscriptionPlan{BaseModel: entityManagementModels.BaseModel{ID: uuid.New()}, Name: "local",
+		MaxCPU: 4000, MaxMemoryMB: 4096, MaxSessionDurationMinutes: 90}
+	started, err := services.NewTerminalTrainerService(db).StartLocalSession(userID, dto.CreateComposedSessionInput{Size: "S"}, plan)
+	require.NoError(t, err)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("userId", userID); c.Next() })
+	router.GET("/terminals/:id/status", terminalController.NewTerminalController(db).GetSessionStatus)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest("GET", "/terminals/"+started.SessionID+"/status", nil))
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var status map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
+	assert.Equal(t, "running", status["status"])
+	assert.Equal(t, false, status["sync_recommended"])
+	assert.Empty(t, sessionCalls(rec), "tt-backend is not asked about a local session")
 }
 
 func TestLocalSession_StopDeleteAndBuildCompleteAskTTBackendNothing(t *testing.T) {

@@ -819,14 +819,17 @@ func (c *terminalComposer) startComposedSession(
 		return nil, fmt.Errorf("failed to finalize terminal session: %w", err)
 	}
 
-	// Build console URL
-	consolePath := c.proxy.buildAPIPath("/console", input.DistributionPrefix)
 	response := &dto.TerminalSessionResponse{
-		SessionID:  sessionResp.SessionID,
-		ExpiresAt:  expiresAt,
-		ConsoleURL: fmt.Sprintf("%s%s?id=%s", c.baseURL, consolePath, sessionResp.SessionID),
-		Status:     "active",
-		Backend:    sessionResp.Backend,
+		SessionID: sessionResp.SessionID,
+		ExpiresAt: expiresAt,
+		Status:    "active",
+		Backend:   sessionResp.Backend,
+	}
+	// A machine in the learner's browser has no console on a server: the tab
+	// opens its own.
+	if !models.IsLocalSessionID(sessionResp.SessionID) {
+		consolePath := c.proxy.buildAPIPath("/console", input.DistributionPrefix)
+		response.ConsoleURL = fmt.Sprintf("%s%s?id=%s", c.baseURL, consolePath, sessionResp.SessionID)
 	}
 
 	return response, nil

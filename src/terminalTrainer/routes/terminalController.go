@@ -910,6 +910,16 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 		}
 	}
 
+	// A machine in the learner's browser is not tt-backend's: its row is all
+	// there is, and nothing to sync.
+	if models.IsLocalSessionID(sessionID) {
+		ctx.JSON(http.StatusOK, dto.ExtendedSessionStatusResponse{
+			SessionID: sessionID, Status: string(terminal.State), ExpiresAt: terminal.ExpiresAt,
+			LastChecked: time.Now(), LocalStatus: string(terminal.State), ExistsLocally: true,
+		})
+		return
+	}
+
 	// Récupérer TOUTES les sessions depuis l'API pour ce user
 	userKey, err := tc.service.GetUserKey(terminal.UserID)
 	if err != nil {
