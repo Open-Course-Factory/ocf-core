@@ -68,7 +68,11 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	// No plan chain: the plan is resolved in the handler for the run's own
 	// organization, never the one the request claims.
 	sessionRoutes.POST("/:id/resume", middleware.AuthManagement(), launchController.ResumeScenario)
-	sessionRoutes.GET("/:id/agent", middleware.AuthManagement(), NewLocalAgentController(db, services.Agents(), terminalServices.NewTerminalTrainerService(db).DeleteSession).ConnectAgent)
+	agentController := NewLocalAgentController(db, services.Agents(), terminalServices.NewTerminalTrainerService(db).DeleteSession)
+	sessionRoutes.GET("/:id/agent", middleware.AuthManagement(), agentController.ConnectAgent)
+	// Asked by the front's nginx, which has no learner token: the answer
+	// depends on the machine alone.
+	router.GET("/local-machines/:terminal/mirror-access", agentController.MirrorAccess)
 	// Budget enforcement is performed inside LaunchScenario via
 	// QuotaService.CheckBudget; no middleware-level slot counter is needed.
 	//

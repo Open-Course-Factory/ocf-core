@@ -10,6 +10,7 @@ import (
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
@@ -146,4 +147,32 @@ func (c *LocalAgentController) refusal(terminalID, boot string) (int, string) {
 	default:
 		return services.AgentCloseOtherTab, err.Error()
 	}
+}
+
+// MirrorAccess godoc
+//
+//	@Summary		May a machine in a browser use the Debian mirror
+//	@Description	Asked by the front's nginx before it serves the Debian mirror to a machine in a learner's browser (auth_request): 204 while the machine's run is open and its tab connected, with the platform switch on; 403 otherwise.
+//	@Tags			scenario-sessions
+//	@Param			terminal	path	string	true	"Terminal session ID of the machine"
+//	@Success		204
+//	@Failure		403
+//	@Router			/local-machines/{terminal}/mirror-access [get]
+//
+// ponytail: the machine is named by its terminal id, which is no secret: whoever
+// knows it may use the mirror while that learner's tab is connected. The
+// mirror only serves Debian; a run token in the URL closes it if it matters.
+func (c *LocalAgentController) MirrorAccess(ctx *gin.Context) {
+	terminalID := ctx.Param("terminal")
+	var terminal terminalModels.Terminal
+	allowed := terminalModels.IsLocalSessionID(terminalID) &&
+		terminalServices.LocalMachinesEnabled(c.db) &&
+		c.db.Where("session_id = ?", terminalID).First(&terminal).Error == nil &&
+		terminal.IsLive() &&
+		c.agents.Connected(terminalID)
+	if !allowed {
+		ctx.Status(http.StatusForbidden)
+		return
+	}
+	ctx.Status(http.StatusNoContent)
 }

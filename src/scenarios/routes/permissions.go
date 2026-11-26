@@ -370,6 +370,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "List project files for a scenario (admin only)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/local-machines/:terminal/mirror-access", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
+			Description: "May a machine in a learner's browser use the Debian mirror (asked by the front's nginx; the handler checks the machine)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/project-files/image/:scenarioId/*", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
 			Description: "Get scenario image (the handler checks who may see the scenario)",

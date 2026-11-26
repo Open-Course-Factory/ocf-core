@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	configModels "soli/formations/src/configuration/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
@@ -479,4 +480,45 @@ func TestLocalBuild_StartsOverOnTheMachineOfAReloadedTab(t *testing.T) {
 	}, 10*time.Second, 50*time.Millisecond, "the run comes up on the new machine")
 	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t), "the terminal is kept")
 	assert.NotEmpty(t, ran, "the build ran again on the new machine")
+}
+
+// mirrorAccess asks what nginx asks before serving the Debian mirror to a
+// machine in a browser.
+func (f agentFixture) mirrorAccess(t *testing.T, terminalID string) int {
+	t.Helper()
+	router := gin.New()
+	router.GET("/api/v1/local-machines/:terminal/mirror-access", scenarioController.NewLocalAgentController(f.db, f.agents, endTerminal(f.db)).MirrorAccess)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/local-machines/"+terminalID+"/mirror-access", nil))
+	return w.Code
+}
+
+func switchLocalMachines(t *testing.T, db *gorm.DB, on bool) {
+	t.Helper()
+	feature := configModels.Feature{Key: terminalServices.LocalMachinesFeatureKey, Name: "x"}
+	require.NoError(t, db.Where("key = ?", feature.Key).FirstOrCreate(&feature).Error)
+	require.NoError(t, db.Model(&feature).Update("enabled", on).Error)
+}
+
+// Plan rule 11: the Debian mirror serves a machine in a browser while its
+// run's tab is connected, the switch on; anything else is refused at once.
+func TestMirrorAccess_OnlyAConnectedLocalMachineWhileTheSwitchIsOn(t *testing.T) {
+	f := newAgentFixture(t)
+	switchLocalMachines(t, f.db, true)
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal), "no tab connected")
+
+	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
+	require.NotNil(t, conn)
+	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+	assert.Equal(t, http.StatusNoContent, f.mirrorAccess(t, f.terminal))
+
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, "local-"+uuid.NewString()), "an unknown machine")
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, "incus-session"), "not a machine in a browser")
+
+	switchLocalMachines(t, f.db, false)
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal), "the switch off refuses at once, even an open run")
+
+	switchLocalMachines(t, f.db, true)
+	require.NoError(t, endTerminal(f.db)(f.terminal))
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal), "an ended run")
 }
