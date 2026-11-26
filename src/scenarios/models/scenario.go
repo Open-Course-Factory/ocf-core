@@ -42,10 +42,13 @@ type Scenario struct {
 	// run's assignment decide the rest at launch.
 	Machine string `gorm:"type:varchar(20);default:'incus'" json:"machine" mapstructure:"machine"`
 	// MachineApps is the JSON array of the apps a run's machine in the
-	// learner's browser offers to install, from LocalMachineApps. A scenario
-	// that offers any shows unkernel's desktop, whose launcher lists them;
-	// one that offers none keeps the console.
+	// learner's browser offers to install, from LocalMachineApps, in the
+	// launcher of unkernel's desktop (see MachineDisplay).
 	MachineApps string `gorm:"type:text" json:"machine_apps,omitempty" mapstructure:"machine_apps"`
+	// MachineDisplay says what a run's machine in the learner's browser shows:
+	// one of the ScenarioMachineDisplay* values. MachineApps matter only on a
+	// desktop; a terminal scenario keeps them and ignores them.
+	MachineDisplay string `gorm:"type:varchar(20);default:'terminal'" json:"machine_display,omitempty" mapstructure:"machine_display"`
 	Objectives    string     `gorm:"type:text" json:"objectives,omitempty"`
 	Prerequisites  string     `gorm:"type:text" json:"prerequisites,omitempty"`
 	IntroText      string     `gorm:"type:text" json:"intro_text,omitempty"`
@@ -203,6 +206,24 @@ func ScenarioMachineProblem(machine string) string {
 		return ""
 	}
 	return fmt.Sprintf("machine %q is not one of %s, %s, %s", machine, ScenarioMachineIncus, ScenarioMachineLocal, ScenarioMachineByAccount)
+}
+
+// What a run's machine in the learner's browser shows: a terminal, or
+// unkernel's desktop with the scenario's MachineApps in its launcher.
+const (
+	ScenarioMachineDisplayTerminal = "terminal"
+	ScenarioMachineDisplayDesktop  = "desktop"
+)
+
+// ScenarioMachineDisplayProblem says what is wrong with a scenario's
+// machine_display value, "" when nothing is. Empty is the column default, a
+// terminal.
+func ScenarioMachineDisplayProblem(display string) string {
+	switch display {
+	case "", ScenarioMachineDisplayTerminal, ScenarioMachineDisplayDesktop:
+		return ""
+	}
+	return fmt.Sprintf("machine_display %q is not one of %s, %s", display, ScenarioMachineDisplayTerminal, ScenarioMachineDisplayDesktop)
 }
 
 // LocalMachineApps is every app a scenario may offer on a machine in the

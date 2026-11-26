@@ -64,6 +64,9 @@ func ScenarioContentProblems(scenario *models.Scenario) []string {
 	if problem := models.ScenarioMachineAppsProblem(scenario.MachineApps); problem != "" {
 		problems = append(problems, problem)
 	}
+	if problem := models.ScenarioMachineDisplayProblem(scenario.MachineDisplay); problem != "" {
+		problems = append(problems, problem)
+	}
 	if len(scenario.Steps) == 0 {
 		problems = append(problems, "the scenario has no steps")
 	}

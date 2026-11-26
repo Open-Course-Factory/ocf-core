@@ -88,6 +88,7 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			PortExposureAllowed: source.PortExposureAllowed,
 			Machine:        source.Machine,
 			MachineApps:    source.MachineApps,
+			MachineDisplay: source.MachineDisplay,
 			Objectives:     source.Objectives,
 			Prerequisites:  source.Prerequisites,
 			IntroText:      source.IntroText,

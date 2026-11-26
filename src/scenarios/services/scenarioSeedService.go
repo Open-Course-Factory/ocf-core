@@ -113,6 +113,7 @@ func buildSeedScenario(input dto.SeedScenarioInput) (*models.Scenario, error) {
 		PortExposureAllowed:     input.PortExposureAllowed != nil && *input.PortExposureAllowed,
 		Machine:                 seedMachine(input.Machine),
 		MachineApps:             machineApps,
+		MachineDisplay:          seedMachineDisplay(input.MachineDisplay),
 		SessionUser:             input.SessionUser,
 		Objectives:              input.Objectives,
 		Prerequisites:           input.Prerequisites,
@@ -333,6 +334,9 @@ func seedScenarioUpdates(built *models.Scenario, input dto.SeedScenarioInput) ma
 	if input.MachineApps != nil {
 		updates["machine_apps"] = built.MachineApps
 	}
+	if input.MachineDisplay != nil {
+		updates["machine_display"] = built.MachineDisplay
+	}
 	if input.SessionUser != nil {
 		updates["session_user"] = built.SessionUser
 	}
@@ -457,4 +461,11 @@ func seedMachine(machine *string) string {
 		return models.ScenarioMachineIncus
 	}
 	return *machine
+}
+
+func seedMachineDisplay(display *string) string {
+	if display == nil {
+		return models.ScenarioMachineDisplayTerminal
+	}
+	return *display
 }

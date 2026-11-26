@@ -140,6 +140,9 @@ type KillerCodaOCF struct {
 	// (models.LocalMachineApps). Absent keeps on re-import, and means none on
 	// a new scenario.
 	MachineApps []string `json:"machine_apps,omitempty"`
+	// MachineDisplay is what that machine shows (models.ScenarioMachineDisplay*).
+	// Absent keeps on re-import, and means a terminal on a new scenario.
+	MachineDisplay *string `json:"machine_display,omitempty"`
 }
 
 // hostnamePattern is an RFC 1123 host label: lowercase letters, digits and
@@ -241,6 +244,9 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				}
 				if ocf.OCF.MachineApps != nil {
 					updates["machine_apps"] = scenario.MachineApps
+				}
+				if ocf.OCF.MachineDisplay != nil {
+					updates["machine_display"] = scenario.MachineDisplay
 				}
 			}
 			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
@@ -350,6 +356,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	crashTraps := false
 	portExposureAllowed := false
 	machine := models.ScenarioMachineIncus
+	machineDisplay := models.ScenarioMachineDisplayTerminal
 	var sessionUser *int
 	var compatibleInstanceTypes []models.ScenarioInstanceType
 	requiredFeatures := ""
@@ -368,6 +375,9 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		portExposureAllowed = index.Extensions.OCF.PortExposureAllowed != nil && *index.Extensions.OCF.PortExposureAllowed
 		if index.Extensions.OCF.Machine != nil {
 			machine = *index.Extensions.OCF.Machine
+		}
+		if index.Extensions.OCF.MachineDisplay != nil {
+			machineDisplay = *index.Extensions.OCF.MachineDisplay
 		}
 		sessionUser = index.Extensions.OCF.SessionUser
 		compatibleInstanceTypes = BuildCompatibleInstanceTypes(index.Extensions.OCF.CompatibleInstanceTypes)
@@ -422,6 +432,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		PortExposureAllowed: portExposureAllowed,
 		Machine:        machine,
 		MachineApps:    machineApps,
+		MachineDisplay: machineDisplay,
 		SessionUser:    sessionUser,
 		Hostname:       hostname,
 		IntroText:      introText,

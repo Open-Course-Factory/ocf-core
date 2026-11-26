@@ -100,3 +100,53 @@ func TestScenarioMachineApps_SeedKeepsWhenAbsentAndRefusesUnknown(t *testing.T) 
 	_, _, err = seeder.SeedScenario(input, "author", &org)
 	require.Error(t, err, "an app outside the platform's list is refused at import")
 }
+
+func TestScenarioMachineDisplayProblem_ClosedSet(t *testing.T) {
+	for _, value := range []string{"", models.ScenarioMachineDisplayTerminal, models.ScenarioMachineDisplayDesktop} {
+		assert.Empty(t, models.ScenarioMachineDisplayProblem(value), "%q is a display", value)
+	}
+	assert.NotEmpty(t, models.ScenarioMachineDisplayProblem("fullscreen"))
+}
+
+func TestScenarioMachineHook_RefusesUnknownDisplay(t *testing.T) {
+	h := scenarioHooks.NewScenarioMachineHook()
+	run := func(hookType hooks.HookType, entity any) error {
+		return h.Execute(&hooks.HookContext{EntityName: "Scenario", HookType: hookType, NewEntity: entity})
+	}
+	require.NoError(t, run(hooks.BeforeCreate, &models.Scenario{MachineDisplay: models.ScenarioMachineDisplayDesktop}))
+	require.Error(t, run(hooks.BeforeCreate, &models.Scenario{MachineDisplay: "fullscreen"}))
+
+	require.NoError(t, run(hooks.BeforeUpdate, map[string]any{"machine_display": models.ScenarioMachineDisplayDesktop}))
+	require.Error(t, run(hooks.BeforeUpdate, map[string]any{"machine_display": "fullscreen"}))
+}
+
+func TestScenarioMachineDisplay_SeedDefaultsToTerminalKeepsWhenAbsentAndRefusesUnknown(t *testing.T) {
+	db := freshTestDB(t)
+	seeder := services.NewScenarioSeedService(db)
+	org := uuid.New()
+	stored := func(id uuid.UUID) string {
+		var s models.Scenario
+		require.NoError(t, db.First(&s, "id = ?", id).Error)
+		return s.MachineDisplay
+	}
+
+	input := fullyPopulatedScenarioInput()
+	input.MachineDisplay = nil
+	seeded, _, err := seeder.SeedScenario(input, "author", &org)
+	require.NoError(t, err)
+	assert.Equal(t, models.ScenarioMachineDisplayTerminal, stored(seeded.ID), "a scenario that says nothing shows a terminal")
+
+	desktop := models.ScenarioMachineDisplayDesktop
+	input.MachineDisplay = &desktop
+	_, _, err = seeder.SeedScenario(input, "author", &org)
+	require.NoError(t, err)
+	input.MachineDisplay = nil
+	_, _, err = seeder.SeedScenario(input, "author", &org)
+	require.NoError(t, err)
+	assert.Equal(t, models.ScenarioMachineDisplayDesktop, stored(seeded.ID), "a re-seed that says nothing keeps the display")
+
+	fullscreen := "fullscreen"
+	input.Title, input.MachineDisplay = "Fullscreen", &fullscreen
+	_, _, err = seeder.SeedScenario(input, "author", &org)
+	require.Error(t, err, "an unknown display is refused at import")
+}

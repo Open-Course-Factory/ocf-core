@@ -435,8 +435,8 @@ func TestGetSessionByTerminal_SaysWhichUserTheConsoleRunsAs(t *testing.T) {
 	}
 }
 
-// A scenario that offers apps shows unkernel's desktop in the learner's tab,
-// and its launcher lists those apps: the tab reads them with the run.
+// A desktop scenario lists the apps it offers in unkernel's launcher,
+// which the learner's tab reads with the run.
 func TestGetSessionByTerminal_GivesTheAppsTheMachineOffers(t *testing.T) {
 	db := freshTestDB(t)
 	router := setupTestRouter(db)
@@ -461,6 +461,32 @@ func TestGetSessionByTerminal_GivesTheAppsTheMachineOffers(t *testing.T) {
 			} else {
 				assert.Equal(t, []any{"python", "nvim"}, response["machine_apps"])
 			}
+		})
+	}
+}
+
+// The scenario, not its apps, says whether the learner's tab shows a terminal
+// or unkernel's desktop: apps on a terminal scenario are ignored.
+func TestGetSessionByTerminal_GivesTheMachineDisplay(t *testing.T) {
+	db := freshTestDB(t)
+	router := setupTestRouter(db)
+	for _, display := range []string{models.ScenarioMachineDisplayTerminal, models.ScenarioMachineDisplayDesktop} {
+		t.Run(display, func(t *testing.T) {
+			scenario := models.Scenario{Name: "machine-display-" + uuid.NewString(), Title: "Machine Display", InstanceType: "debian",
+				CreatedByID: "creator-1", Machine: models.ScenarioMachineLocal, MachineApps: `["nvim"]`, MachineDisplay: display}
+			require.NoError(t, db.Create(&scenario).Error)
+			terminalID := "local-" + uuid.NewString()
+			require.NoError(t, db.Create(&models.ScenarioSession{ScenarioID: scenario.ID, UserID: "test-user-123",
+				TerminalSessionID: &terminalID, Status: "active", StartedAt: time.Now()}).Error)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/by-terminal/"+terminalID, nil)
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+
+			var response map[string]any
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			assert.Equal(t, display, response["machine_display"])
 		})
 	}
 }

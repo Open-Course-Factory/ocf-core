@@ -27,6 +27,7 @@ type CreateScenarioInput struct {
 	PortExposureAllowed bool  `json:"port_exposure_allowed,omitempty" mapstructure:"port_exposure_allowed"`
 	Machine        string     `json:"machine,omitempty" mapstructure:"machine"`
 	MachineApps    string     `json:"machine_apps,omitempty" mapstructure:"machine_apps"`
+	MachineDisplay string     `json:"machine_display,omitempty" mapstructure:"machine_display"`
 	DefaultLocale  string     `json:"default_locale,omitempty" mapstructure:"default_locale"`
 	Locales        string     `json:"locales,omitempty" mapstructure:"locales"`
 	Objectives     string     `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
@@ -60,6 +61,7 @@ type EditScenarioInput struct {
 	PortExposureAllowed *bool `json:"port_exposure_allowed,omitempty" mapstructure:"port_exposure_allowed"`
 	Machine        *string    `json:"machine,omitempty" mapstructure:"machine"`
 	MachineApps    *string    `json:"machine_apps,omitempty" mapstructure:"machine_apps"`
+	MachineDisplay *string    `json:"machine_display,omitempty" mapstructure:"machine_display"`
 	DefaultLocale  *string    `json:"default_locale,omitempty" mapstructure:"default_locale"`
 	Locales        *string    `json:"locales,omitempty" mapstructure:"locales"`
 	Objectives     *string    `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
@@ -100,6 +102,8 @@ type ScenarioOutput struct {
 	Machine        string             `json:"machine"`
 	// The apps the learner's machine offers; the page shows only those.
 	MachineApps    string             `json:"machine_apps,omitempty"`
+	// Terminal or desktop; on a terminal the apps are ignored.
+	MachineDisplay string             `json:"machine_display,omitempty"`
 	// Which languages this scenario is offered in, and which one its own
 	// fields are written in. Without these on the output an editor cannot
 	// know a scenario is translatable at all.

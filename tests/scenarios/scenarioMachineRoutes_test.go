@@ -50,7 +50,7 @@ func TestOrgCreateScenario_AppsNotAJSONList_Refused(t *testing.T) {
 	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
 	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
-	for _, field := range []map[string]any{{"machine_apps": "nvim"}, {"machine": "bogus"}} {
+	for _, field := range []map[string]any{{"machine_apps": "nvim"}, {"machine": "bogus"}, {"machine_display": "fullscreen"}} {
 		payload := map[string]any{"name": "bad-machine", "title": "Bad machine", "instance_type": "ubuntu:22.04"}
 		for k, v := range field {
 			payload[k] = v
@@ -87,4 +87,28 @@ func TestPATCHScenario_MachineApps(t *testing.T) {
 
 	require.Equal(t, http.StatusNoContent, sendJSON(t, r, http.MethodPatch, url, map[string]any{"machine_apps": ""}).Code)
 	assert.Empty(t, stored(), "empty clears")
+}
+
+func TestPATCHScenario_MachineDisplay(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := &models.Scenario{Name: "display", Title: "Display", InstanceType: "S", SourceType: "builtin", CreatedByID: "creator"}
+	require.NoError(t, db.Create(scenario).Error)
+	r := setupScenarioPatchRouter(t, db, "creator", []string{"administrator"})
+	withScenarioHooks(t, db)
+	url := "/scenarios/" + scenario.ID.String()
+	stored := func() string {
+		var s models.Scenario
+		require.NoError(t, db.First(&s, "id = ?", scenario.ID).Error)
+		return s.MachineDisplay
+	}
+	assert.Equal(t, models.ScenarioMachineDisplayTerminal, stored(), "a new scenario shows a terminal")
+
+	require.Equal(t, http.StatusNoContent, sendJSON(t, r, http.MethodPatch, url, map[string]any{"machine_display": models.ScenarioMachineDisplayDesktop}).Code)
+	assert.Equal(t, models.ScenarioMachineDisplayDesktop, stored(), "set")
+
+	require.Equal(t, http.StatusNoContent, sendJSON(t, r, http.MethodPatch, url, map[string]any{"title": "renamed"}).Code)
+	assert.Equal(t, models.ScenarioMachineDisplayDesktop, stored(), "absent keeps")
+
+	assert.Equal(t, http.StatusBadRequest, sendJSON(t, r, http.MethodPatch, url, map[string]any{"machine_display": "fullscreen"}).Code)
+	assert.Equal(t, models.ScenarioMachineDisplayDesktop, stored(), "refused keeps")
 }

@@ -27,9 +27,12 @@ type SessionResponse struct {
 	// SessionUser is the uid the learner's console runs as; absent, root.
 	// A machine in the learner's browser opens its console with it.
 	SessionUser *int     `json:"session_user,omitempty"`
-	// MachineApps are the apps a machine in the learner's browser offers;
-	// with any, it shows unkernel's desktop instead of the console.
+	// MachineApps are the apps a machine in the learner's browser offers in
+	// unkernel's desktop launcher.
 	MachineApps []string `json:"machine_apps,omitempty"`
+	// MachineDisplay is what that machine shows: "terminal" or "desktop"
+	// (models.ScenarioMachineDisplay*); empty means terminal.
+	MachineDisplay string `json:"machine_display,omitempty"`
 	IsPreview   bool     `json:"is_preview,omitempty"`
 	Grade       *float64 `json:"grade,omitempty"`
 	// GradeWithheld means Grade was left out until the teacher publishes the
@@ -288,6 +291,9 @@ type SeedScenarioInput struct {
 	// MachineApps names the apps a run's machine in the learner's browser
 	// offers to install (models.LocalMachineApps). Absent keeps.
 	MachineApps []string `json:"machine_apps,omitempty"`
+	// MachineDisplay is what that machine shows (models.ScenarioMachineDisplay*).
+	// Absent keeps on a re-seed, and means a terminal on a new scenario.
+	MachineDisplay *string `json:"machine_display,omitempty"`
 	// SessionUser is the uid the learner's console runs as. Absent means the
 	// distribution decides, which is root — fine for every scenario whose
 	// lesson is not "the kernel said no". On a re-seed, absent keeps the

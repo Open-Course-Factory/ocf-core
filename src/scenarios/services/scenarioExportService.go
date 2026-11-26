@@ -155,6 +155,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*d
 	declaredImages := declaredImageNames(scenario)
 	portExposureAllowed := scenario.PortExposureAllowed
 	machine := scenario.Machine
+	machineDisplay := scenario.MachineDisplay
 
 	return &dto.SeedScenarioInput{
 		Title:                   scenario.Title,
@@ -170,6 +171,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*d
 		PortExposureAllowed:     &portExposureAllowed,
 		Machine:                 &machine,
 		MachineApps:             machineApps,
+		MachineDisplay:          &machineDisplay,
 		SessionUser:             scenario.SessionUser,
 		IntroText:               scenario.IntroText,
 		FinishText:              scenario.FinishText,
@@ -487,6 +489,12 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		machineApps = nil
 	}
 	ocf.MachineApps = machineApps
+	// Only a desktop, so a terminal scenario's archive reads as before.
+	showsDesktop := scenario.MachineDisplay == models.ScenarioMachineDisplayDesktop
+	if showsDesktop {
+		display := scenario.MachineDisplay
+		ocf.MachineDisplay = &display
+	}
 	// Export the hostname so an exported archive re-imports with the same
 	// terminal name instead of falling back to the generated one.
 	if scenario.Hostname != "" {
@@ -495,7 +503,7 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 	}
 	if scenario.FlagsEnabled || scenario.CrashTraps || scenario.PortExposureAllowed || runsElsewhere ||
 		scenario.SessionUser != nil || scenario.Hostname != "" ||
-		len(declaredImages) > 0 || len(requiredFeatures) > 0 || len(buildFeatures) > 0 || len(machineApps) > 0 {
+		len(declaredImages) > 0 || len(requiredFeatures) > 0 || len(buildFeatures) > 0 || len(machineApps) > 0 || showsDesktop {
 		index.Extensions = &KillerCodaExtensions{OCF: ocf}
 	}
 
