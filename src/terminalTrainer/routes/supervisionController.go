@@ -22,6 +22,7 @@ import (
 	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 )
 
 // supervisionReauthInterval is how often a live supervise stream re-checks that
@@ -243,6 +244,13 @@ func (tc *terminalController) prepareSupervision(ctx *gin.Context, sessionID str
 	groupID, ok := HasSupervisionAccess(tc.db, userID, isAdmin, sessionID)
 	if !ok {
 		errors.Respond(ctx, http.StatusForbidden, "You are not authorized to supervise this session")
+		return nil, false
+	}
+
+	// A machine in the learner's browser has no console on any server to
+	// watch: refused before anything is audited or dialled.
+	if terminalModels.IsLocalSessionID(sessionID) {
+		errors.Respond(ctx, http.StatusConflict, "This learner's machine runs in their browser: it cannot be watched")
 		return nil, false
 	}
 
