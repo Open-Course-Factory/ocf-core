@@ -465,6 +465,9 @@ func TestLocalBuild_StartsOverOnTheMachineOfAReloadedTab(t *testing.T) {
 	var req agentRequest
 	require.NoError(t, first.ReadJSON(&req))
 	require.NoError(t, first.Close())
+	// The reloaded tab connects once the old connection is seen gone; before,
+	// it is told the run is open elsewhere and tries again (localMachine.ts).
+	require.Eventually(t, func() bool { return !f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
 
 	second, _ := f.dialBoot(t, run.ID, f.learner, "member", "boot-2")
 	require.NotNil(t, second)
