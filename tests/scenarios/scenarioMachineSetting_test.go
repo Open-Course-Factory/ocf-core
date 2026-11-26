@@ -33,9 +33,7 @@ func TestScenarioMachineHook_RefusesUnknownValues(t *testing.T) {
 	require.Error(t, run(hooks.BeforeCreate, &models.Scenario{Machine: "cloud"}))
 
 	local, cloud := models.ScenarioMachineLocal, "cloud"
-	require.NoError(t, run(hooks.BeforeUpdate, map[string]any{"machine": &local}))
 	require.NoError(t, run(hooks.BeforeUpdate, map[string]any{"machine": local}))
-	require.Error(t, run(hooks.BeforeUpdate, map[string]any{"machine": &cloud}))
 	require.Error(t, run(hooks.BeforeUpdate, map[string]any{"machine": cloud}))
 	require.NoError(t, run(hooks.BeforeUpdate, map[string]any{"title": "renamed"}), "a patch without machine")
 }
@@ -77,10 +75,8 @@ func TestScenarioMachineHook_RefusesAppsOutsideTheList(t *testing.T) {
 	require.NoError(t, run(hooks.BeforeCreate, &models.Scenario{MachineApps: `["nvim"]`}))
 	require.Error(t, run(hooks.BeforeCreate, &models.Scenario{MachineApps: `["doom"]`}))
 
-	doom := `["doom"]`
 	require.NoError(t, run(hooks.BeforeUpdate, map[string]any{"machine_apps": `["nvim"]`}))
-	require.Error(t, run(hooks.BeforeUpdate, map[string]any{"machine_apps": &doom}))
-	require.Error(t, run(hooks.BeforeUpdate, map[string]any{"machine_apps": doom}))
+	require.Error(t, run(hooks.BeforeUpdate, map[string]any{"machine_apps": `["doom"]`}))
 }
 
 func TestScenarioMachineApps_SeedKeepsWhenAbsentAndRefusesUnknown(t *testing.T) {

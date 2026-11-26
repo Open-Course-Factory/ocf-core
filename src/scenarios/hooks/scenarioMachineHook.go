@@ -31,7 +31,9 @@ func (h *ScenarioMachineHook) Execute(ctx *hooks.HookContext) error {
 	case *models.Scenario:
 		machine, machineApps = v.Machine, v.MachineApps
 	case map[string]any:
-		machine, machineApps = stringField(v, "machine"), stringField(v, "machine_apps")
+		// DtoToMap dereferences the EditDto's pointers, so a patched value is a string.
+		machine, _ = v["machine"].(string)
+		machineApps, _ = v["machine_apps"].(string)
 	default:
 		return nil
 	}
@@ -42,18 +44,4 @@ func (h *ScenarioMachineHook) Execute(ctx *hooks.HookContext) error {
 		return entityErrors.NewValidationError("machine_apps", problem)
 	}
 	return nil
-}
-
-// stringField reads an update map's string value, given as a string or a
-// *string; absent reads as "", which both checks accept.
-func stringField(updates map[string]any, key string) string {
-	switch v := updates[key].(type) {
-	case string:
-		return v
-	case *string:
-		if v != nil {
-			return *v
-		}
-	}
-	return ""
 }
