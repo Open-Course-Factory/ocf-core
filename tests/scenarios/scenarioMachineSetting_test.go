@@ -58,3 +58,49 @@ func TestScenarioMachine_ImportRefusesUnknownAndDefaultsToIncus(t *testing.T) {
 	_, _, err = seeder.SeedScenario(input, "author", &org)
 	require.Error(t, err, "an unknown machine is refused at import")
 }
+
+// A scenario names the apps its machine in the browser offers to install, from
+// the platform's list only: games and the like are not in it, and an unknown id
+// is refused at every door rather than silently dropped.
+func TestScenarioMachineAppsProblem_OnlyThePlatformList(t *testing.T) {
+	assert.Empty(t, models.ScenarioMachineAppsProblem(""), "none offers nothing")
+	assert.Empty(t, models.ScenarioMachineAppsProblem(`["python","postgres"]`))
+	assert.NotEmpty(t, models.ScenarioMachineAppsProblem(`["python","doom"]`))
+	assert.NotEmpty(t, models.ScenarioMachineAppsProblem(`python`), "not a JSON array")
+}
+
+func TestScenarioMachineHook_RefusesAppsOutsideTheList(t *testing.T) {
+	h := scenarioHooks.NewScenarioMachineHook()
+	run := func(hookType hooks.HookType, entity any) error {
+		return h.Execute(&hooks.HookContext{EntityName: "Scenario", HookType: hookType, NewEntity: entity})
+	}
+	require.NoError(t, run(hooks.BeforeCreate, &models.Scenario{MachineApps: `["nvim"]`}))
+	require.Error(t, run(hooks.BeforeCreate, &models.Scenario{MachineApps: `["doom"]`}))
+
+	doom := `["doom"]`
+	require.NoError(t, run(hooks.BeforeUpdate, map[string]any{"machine_apps": `["nvim"]`}))
+	require.Error(t, run(hooks.BeforeUpdate, map[string]any{"machine_apps": &doom}))
+	require.Error(t, run(hooks.BeforeUpdate, map[string]any{"machine_apps": doom}))
+}
+
+func TestScenarioMachineApps_SeedKeepsWhenAbsentAndRefusesUnknown(t *testing.T) {
+	db := freshTestDB(t)
+	seeder := services.NewScenarioSeedService(db)
+	org := uuid.New()
+
+	input := fullyPopulatedScenarioInput()
+	input.MachineApps = []string{"python"}
+	seeded, _, err := seeder.SeedScenario(input, "author", &org)
+	require.NoError(t, err)
+
+	input.MachineApps = nil
+	_, _, err = seeder.SeedScenario(input, "author", &org)
+	require.NoError(t, err)
+	var stored models.Scenario
+	require.NoError(t, db.First(&stored, "id = ?", seeded.ID).Error)
+	assert.JSONEq(t, `["python"]`, stored.MachineApps, "a re-seed that says nothing keeps the list")
+
+	input.Title, input.MachineApps = "With a game", []string{"doom"}
+	_, _, err = seeder.SeedScenario(input, "author", &org)
+	require.Error(t, err, "an app outside the platform's list is refused at import")
+}

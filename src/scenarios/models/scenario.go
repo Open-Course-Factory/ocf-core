@@ -41,7 +41,11 @@ type Scenario struct {
 	// ScenarioMachine* values. The platform switch, the learner's plan and the
 	// run's assignment decide the rest at launch.
 	Machine string `gorm:"type:varchar(20);default:'incus'" json:"machine" mapstructure:"machine"`
-	Objectives     string     `gorm:"type:text" json:"objectives,omitempty"`
+	// MachineApps is the JSON array of the apps a run's machine in the
+	// learner's browser offers to install, from LocalMachineApps. Empty
+	// offers none: only the terminal.
+	MachineApps string `gorm:"type:text" json:"machine_apps,omitempty" mapstructure:"machine_apps"`
+	Objectives    string     `gorm:"type:text" json:"objectives,omitempty"`
 	Prerequisites  string     `gorm:"type:text" json:"prerequisites,omitempty"`
 	IntroText      string     `gorm:"type:text" json:"intro_text,omitempty"`
 	FinishText     string     `gorm:"type:text" json:"finish_text,omitempty"`
@@ -198,4 +202,42 @@ func ScenarioMachineProblem(machine string) string {
 		return ""
 	}
 	return fmt.Sprintf("machine %q is not one of %s, %s, %s", machine, ScenarioMachineIncus, ScenarioMachineLocal, ScenarioMachineByAccount)
+}
+
+// LocalMachineApps is every app a scenario may offer on a machine in the
+// learner's browser: ids of the launcher of unkernel's desktop page. Only
+// tools a lab may need, and only those that install from Debian alone, since
+// the machine reaches nothing but our Debian mirror. Never games, browsers,
+// media or agents.
+var LocalMachineApps = []string{
+	"nvim", "tmux", "go", "rust", "python",
+	"nginx", "postgres", "sqlite", "valkey",
+	"htop", "mc", "thunar", "l3afpad", "galculator",
+}
+
+// GetMachineApps parses the MachineApps JSON array. None means none.
+func (s Scenario) GetMachineApps() ([]string, error) {
+	if s.MachineApps == "" {
+		return nil, nil
+	}
+	var apps []string
+	if err := json.Unmarshal([]byte(s.MachineApps), &apps); err != nil {
+		return nil, fmt.Errorf("invalid machine_apps format (must be JSON array): %w", err)
+	}
+	return apps, nil
+}
+
+// ScenarioMachineAppsProblem says what is wrong with a scenario's
+// machine_apps value, "" when nothing is.
+func ScenarioMachineAppsProblem(machineApps string) string {
+	apps, err := Scenario{MachineApps: machineApps}.GetMachineApps()
+	if err != nil {
+		return err.Error()
+	}
+	for _, app := range apps {
+		if !slices.Contains(LocalMachineApps, app) {
+			return fmt.Sprintf("machine_apps: %q is not an app a scenario may offer", app)
+		}
+	}
+	return ""
 }

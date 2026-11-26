@@ -403,6 +403,7 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		method string
 	}{
 		// Session routes (existing)
+		{"/api/v1/scenarios/local-machine-apps", "GET"},
 		{"/api/v1/scenario-sessions/my", "GET"},
 		{"/api/v1/scenario-sessions/by-terminal/:terminalId", "GET"},
 		{"/api/v1/scenario-sessions/:id/current-step", "GET"},

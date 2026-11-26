@@ -83,6 +83,9 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					if input.Machine != nil {
 						updates["machine"] = *input.Machine
 					}
+					if input.MachineApps != nil {
+						updates["machine_apps"] = *input.MachineApps
+					}
 					if input.Objectives != nil {
 						updates["objectives"] = *input.Objectives
 					}
@@ -189,6 +192,7 @@ func ScenarioFromCreateInput(input dto.CreateScenarioInput) *models.Scenario {
 		CrashTraps:           input.CrashTraps,
 		PortExposureAllowed:  input.PortExposureAllowed,
 		Machine:              input.Machine,
+		MachineApps:          input.MachineApps,
 		DefaultLocale:        input.DefaultLocale,
 		Locales:              input.Locales,
 		Objectives:           input.Objectives,
@@ -225,6 +229,7 @@ func ScenarioToOutput(model *models.Scenario) dto.ScenarioOutput {
 		CrashTraps:     model.CrashTraps,
 		PortExposureAllowed: model.PortExposureAllowed,
 		Machine:        model.Machine,
+		MachineApps:    model.MachineApps,
 		DefaultLocale:  model.DefaultLocale,
 		Locales:        model.Locales,
 		Objectives:     model.Objectives,

@@ -106,6 +106,10 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*d
 	if err != nil {
 		return nil, err
 	}
+	machineApps, err := scenario.GetMachineApps()
+	if err != nil {
+		return nil, err
+	}
 	translations, err := s.exportScenarioTranslations(scenario.ID)
 	if err != nil {
 		return nil, err
@@ -165,6 +169,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*d
 		CrashTraps:              scenario.CrashTraps,
 		PortExposureAllowed:     &portExposureAllowed,
 		Machine:                 &machine,
+		MachineApps:             machineApps,
 		SessionUser:             scenario.SessionUser,
 		IntroText:               scenario.IntroText,
 		FinishText:              scenario.FinishText,
@@ -475,6 +480,13 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		machine := scenario.Machine
 		ocf.Machine = &machine
 	}
+	machineApps, appsErr := scenario.GetMachineApps()
+	if appsErr != nil {
+		slog.Warn("scenario has unparseable machine_apps, exporting without them",
+			"scenario_id", scenario.ID, "err", appsErr)
+		machineApps = nil
+	}
+	ocf.MachineApps = machineApps
 	// Export the hostname so an exported archive re-imports with the same
 	// terminal name instead of falling back to the generated one.
 	if scenario.Hostname != "" {
@@ -483,7 +495,7 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 	}
 	if scenario.FlagsEnabled || scenario.CrashTraps || scenario.PortExposureAllowed || runsElsewhere ||
 		scenario.SessionUser != nil || scenario.Hostname != "" ||
-		len(declaredImages) > 0 || len(requiredFeatures) > 0 || len(buildFeatures) > 0 {
+		len(declaredImages) > 0 || len(requiredFeatures) > 0 || len(buildFeatures) > 0 || len(machineApps) > 0 {
 		index.Extensions = &KillerCodaExtensions{OCF: ocf}
 	}
 

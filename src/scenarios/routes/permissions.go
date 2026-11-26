@@ -335,6 +335,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Report translation coverage per locale (controller verifies CanManageScenario: creator, org manager, or admin)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/scenarios/local-machine-apps", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
+			Description: "List the apps a scenario may offer on a machine in the learner's browser (the same list for everyone)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/health", Method: "GET",
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Report what every scenario claims but cannot deliver (platform operators)",

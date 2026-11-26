@@ -282,6 +282,9 @@ type SeedScenarioInput struct {
 	// A pointer so that absent keeps on a re-seed, and absent on a new
 	// scenario means Incus.
 	Machine *string `json:"machine,omitempty"`
+	// MachineApps names the apps a run's machine in the learner's browser
+	// offers to install (models.LocalMachineApps). Absent keeps.
+	MachineApps []string `json:"machine_apps,omitempty"`
 	// SessionUser is the uid the learner's console runs as. Absent means the
 	// distribution decides, which is root — fine for every scenario whose
 	// lesson is not "the kernel said no". On a re-seed, absent keeps the

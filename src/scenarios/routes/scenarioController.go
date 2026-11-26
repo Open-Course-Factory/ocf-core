@@ -31,6 +31,7 @@ type ScenarioController interface {
 	DuplicateScenario(ctx *gin.Context)
 	GetTranslationCoverage(ctx *gin.Context)
 	GetScenarioHealth(ctx *gin.Context)
+	GetLocalMachineApps(ctx *gin.Context)
 	GetOneScenarioHealth(ctx *gin.Context)
 	GetLexicon(ctx *gin.Context)
 	ReplaceLexicon(ctx *gin.Context)
@@ -553,4 +554,16 @@ func (sc *scenarioController) GetOneScenarioHealth(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, health)
+}
+
+// GetLocalMachineApps godoc
+// @Summary List the apps a scenario may offer on a machine in the browser
+// @Description The scenario editor's choices for machine_apps. Any other id is refused on save.
+// @Tags scenarios
+// @Produce json
+// @Success 200 {object} map[string][]string
+// @Router /scenarios/local-machine-apps [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetLocalMachineApps(ctx *gin.Context) {
+	ctx.JSON(http.StatusOK, gin.H{"apps": models.LocalMachineApps})
 }

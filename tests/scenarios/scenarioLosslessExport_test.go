@@ -39,6 +39,7 @@ func fullyPopulatedScenarioInput() dto.SeedScenarioInput {
 		CrashTraps:              true,
 		PortExposureAllowed:     &portExposure,
 		Machine:                 &machine,
+		MachineApps:             []string{"python", "postgres"},
 		SessionUser:             &sessionUser,
 		IntroText:               "# Welcome to {{W_CELLAR}}",
 		FinishText:              "# Well done",
@@ -202,7 +203,7 @@ func TestScenarioJSONReimport_WithoutOptionalFields_KeepsThem(t *testing.T) {
 	bare := full
 	bare.Hostname, bare.Objectives, bare.Prerequisites, bare.DefaultLocale = "", "", "", ""
 	bare.Locales, bare.PortExposureAllowed, bare.Translations, bare.Lexicon = nil, nil, nil, nil
-	bare.SessionUser, bare.Machine = nil, nil
+	bare.SessionUser, bare.Machine, bare.MachineApps = nil, nil, nil
 	bare.Steps = append([]dto.SeedStepInput(nil), full.Steps...)
 	bare.Steps[0].Translations = nil
 	_, isUpdate, err := seeder.SeedScenario(bare, "author", &org)
@@ -298,7 +299,7 @@ func TestScenarioArchiveReimport_WithoutSessionUserOrExposure_KeepsThem(t *testi
 	sessionUser := 1000
 	existing := models.Scenario{Name: "keeps-console-settings", Title: "Keeps Console Settings", InstanceType: "debian",
 		CreatedByID: "author", OrganizationID: &org, SessionUser: &sessionUser, PortExposureAllowed: true,
-		Machine: models.ScenarioMachineByAccount}
+		Machine: models.ScenarioMachineByAccount, MachineApps: `["nvim"]`}
 	require.NoError(t, db.Create(&existing).Error)
 
 	dir := t.TempDir()
@@ -320,4 +321,5 @@ func TestScenarioArchiveReimport_WithoutSessionUserOrExposure_KeepsThem(t *testi
 	assert.Equal(t, 1000, *stored.SessionUser)
 	assert.True(t, stored.PortExposureAllowed)
 	assert.Equal(t, models.ScenarioMachineByAccount, stored.Machine)
+	assert.JSONEq(t, `["nvim"]`, stored.MachineApps)
 }

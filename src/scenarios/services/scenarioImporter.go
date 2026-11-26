@@ -136,6 +136,10 @@ type KillerCodaOCF struct {
 	// Machine is where runs of the scenario run. Absent keeps on re-import,
 	// and means Incus on a new scenario.
 	Machine *string `json:"machine,omitempty"`
+	// MachineApps names the apps that machine offers to install
+	// (models.LocalMachineApps). Absent keeps on re-import, and means none on
+	// a new scenario.
+	MachineApps []string `json:"machine_apps,omitempty"`
 }
 
 // hostnamePattern is an RFC 1123 host label: lowercase letters, digits and
@@ -234,6 +238,9 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				}
 				if ocf.OCF.Machine != nil {
 					updates["machine"] = scenario.Machine
+				}
+				if ocf.OCF.MachineApps != nil {
+					updates["machine_apps"] = scenario.MachineApps
 				}
 			}
 			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
@@ -347,6 +354,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	var compatibleInstanceTypes []models.ScenarioInstanceType
 	requiredFeatures := ""
 	buildFeatures := ""
+	machineApps := ""
 	hostname := ""
 	if index.Extensions != nil && index.Extensions.OCF != nil {
 		if index.Extensions.OCF.Hostname != nil {
@@ -371,6 +379,11 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		}
 
 		buildFeatures, featErr = EncodeNameList(index.Extensions.OCF.BuildFeatures)
+		if featErr != nil {
+			return nil, featErr
+		}
+
+		machineApps, featErr = EncodeNameList(index.Extensions.OCF.MachineApps)
 		if featErr != nil {
 			return nil, featErr
 		}
@@ -408,6 +421,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		CrashTraps:     crashTraps,
 		PortExposureAllowed: portExposureAllowed,
 		Machine:        machine,
+		MachineApps:    machineApps,
 		SessionUser:    sessionUser,
 		Hostname:       hostname,
 		IntroText:      introText,
