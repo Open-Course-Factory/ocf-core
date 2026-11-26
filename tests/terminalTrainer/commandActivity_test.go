@@ -111,3 +111,21 @@ func TestCommandTimes_NoSessions_AsksNothing(t *testing.T) {
 	assert.Empty(t, times)
 	assert.Empty(t, *requests)
 }
+
+// A machine in the learner's browser records no commands: tt-backend is not
+// asked about it, and a report of local runs alone asks nothing.
+func TestCommandTimes_AsksNothingAboutLocalMachines(t *testing.T) {
+	from := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)
+	requests := newFakeHistoryAPI(t, []historyCommand{{"s-1", from.Unix()}}, 10)
+
+	times, err := services.NewCommandActivityReader().CommandTimes([]string{"s-1", "local-abc"}, from, from.AddDate(0, 0, 1))
+	require.NoError(t, err)
+	assert.Len(t, times["s-1"], 1)
+	require.Len(t, *requests, 1)
+	assert.Equal(t, []string{"s-1"}, (*requests)[0].SessionUUIDs)
+
+	*requests = nil
+	_, err = services.NewCommandActivityReader().CommandTimes([]string{"local-abc"}, from, from.AddDate(0, 0, 1))
+	require.NoError(t, err)
+	assert.Empty(t, *requests)
+}

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 )
 
@@ -39,8 +40,10 @@ func NewCommandActivityReader() *CommandActivityReader {
 	}
 }
 
-// CommandTimes returns when each session's commands ran within [from, to).
+// CommandTimes returns when each session's commands ran within [from, to). A
+// machine in the learner's browser records none: tt-backend is not asked.
 func (r *CommandActivityReader) CommandTimes(sessionUUIDs []string, from, to time.Time) (map[string][]time.Time, error) {
+	sessionUUIDs = slices.DeleteFunc(slices.Clone(sessionUUIDs), models.IsLocalSessionID)
 	times := make(map[string][]time.Time, len(sessionUUIDs))
 	for sessions := range slices.Chunk(sessionUUIDs, maxSessionsPerHistoryRequest) {
 		if err := r.collectCommandTimes(sessions, from, to, times); err != nil {
