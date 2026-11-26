@@ -487,13 +487,14 @@ func TestLocalBuild_StartsOverOnTheMachineOfAReloadedTab(t *testing.T) {
 
 // mirrorAccess asks what nginx asks before serving the Debian mirror to a
 // machine in a browser.
-func (f agentFixture) mirrorAccess(t *testing.T, terminalID string) int {
+func (f agentFixture) mirrorAccess(t *testing.T, terminalID, key string) int {
 	t.Helper()
 	router := gin.New()
 	router.GET("/api/v1/local-machines/mirror-access", scenarioController.NewLocalAgentController(f.db, f.agents, endTerminal(f.db)).MirrorAccess)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v1/local-machines/mirror-access", nil)
 	req.Header.Set("X-Local-Machine", terminalID)
+	req.Header.Set("X-Local-Machine-Key", key)
 	router.ServeHTTP(w, req)
 	return w.Code
 }
@@ -510,21 +511,45 @@ func switchLocalMachines(t *testing.T, db *gorm.DB, on bool) {
 func TestMirrorAccess_OnlyAConnectedLocalMachineWhileTheSwitchIsOn(t *testing.T) {
 	f := newAgentFixture(t)
 	switchLocalMachines(t, f.db, true)
-	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal), "no tab connected")
+	key := uuid.NewString()
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal, key), "no tab connected")
 
 	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
 	require.NotNil(t, conn)
-	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
-	assert.Equal(t, http.StatusNoContent, f.mirrorAccess(t, f.terminal))
+	require.NoError(t, conn.WriteJSON(map[string]string{"event": "mirror_key", "key": key}))
+	require.Eventually(t, func() bool { return f.mirrorAccess(t, f.terminal, key) == http.StatusNoContent }, time.Second, 10*time.Millisecond)
 
-	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, "local-"+uuid.NewString()), "an unknown machine")
-	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, "incus-session"), "not a machine in a browser")
-	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, ""), "no machine named")
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, "local-"+uuid.NewString(), key), "an unknown machine")
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, "incus-session", key), "not a machine in a browser")
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, "", key), "no machine named")
 
 	switchLocalMachines(t, f.db, false)
-	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal), "the switch off refuses at once, even an open run")
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal, key), "the switch off refuses at once, even an open run")
 
 	switchLocalMachines(t, f.db, true)
 	require.NoError(t, endTerminal(f.db)(f.terminal))
-	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal), "an ended run")
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal, key), "an ended run")
+}
+
+// The terminal id is no secret (it shows in URLs and logs): the mirror also
+// wants the key the machine's tab chose and told core over its agent, which
+// only that tab knows, and which a reload replaces.
+func TestMirrorAccess_WantsTheKeyTheConnectedTabAnnounced(t *testing.T) {
+	f := newAgentFixture(t)
+	switchLocalMachines(t, f.db, true)
+	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
+	require.NotNil(t, conn)
+	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal, ""), "a tab that announced no key")
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal, uuid.NewString()), "a key nobody announced")
+
+	key := uuid.NewString()
+	require.NoError(t, conn.WriteJSON(map[string]string{"event": "mirror_key", "key": key}))
+	require.Eventually(t, func() bool { return f.mirrorAccess(t, f.terminal, key) == http.StatusNoContent }, time.Second, 10*time.Millisecond)
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal, uuid.NewString()), "another key")
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal, ""), "no key")
+
+	require.NoError(t, conn.Close())
+	require.Eventually(t, func() bool { return !f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal, key), "the tab is gone, its key with it")
 }

@@ -152,27 +152,29 @@ func (c *LocalAgentController) refusal(terminalID, boot string) (int, string) {
 // MirrorAccess godoc
 //
 //	@Summary		May a machine in a browser use the Debian mirror
-//	@Description	Asked by the front's nginx before it serves the Debian mirror to a machine in a learner's browser (auth_request): 204 while the machine's run is open and its tab connected, with the platform switch on; 403 otherwise.
+//	@Description	Asked by the front's nginx before it serves the Debian mirror to a machine in a learner's browser (auth_request): 204 while the machine's run is open, its tab connected and the key the one that tab announced, with the platform switch on; 403 otherwise.
 //	@Tags			scenario-sessions
 //	@Param			X-Local-Machine	header	string	true	"Terminal session ID of the machine"
+//	@Param			X-Local-Machine-Key	header	string	true	"The key the machine's tab announced over its agent"
 //	@Success		204
 //	@Failure		403
 //	@Router			/local-machines/mirror-access [get]
 //
-// ponytail: the machine is named by its terminal id, which is no secret: whoever
-// knows it may use the mirror while that learner's tab is connected. The
-// mirror only serves Debian; a run token in the URL closes it if it matters.
+// The terminal id is no secret, so the machine also gives the key its tab
+// chose at boot and told core over the agent: only that tab knows it, and a
+// reload replaces it.
 //
 // The machine comes in a header, not the path: nginx then asks a fixed URL,
 // which needs no resolver for core's host name.
 func (c *LocalAgentController) MirrorAccess(ctx *gin.Context) {
 	terminalID := ctx.GetHeader("X-Local-Machine")
+	key := ctx.GetHeader("X-Local-Machine-Key")
 	var terminal terminalModels.Terminal
 	allowed := terminalModels.IsLocalSessionID(terminalID) &&
 		terminalServices.LocalMachinesEnabled(c.db) &&
 		c.db.Where("session_id = ?", terminalID).First(&terminal).Error == nil &&
 		terminal.IsLive() &&
-		c.agents.Connected(terminalID)
+		c.agents.MirrorKeyMatches(terminalID, key)
 	if !allowed {
 		ctx.Status(http.StatusForbidden)
 		return

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"sync"
@@ -20,9 +21,11 @@ import (
 //	{"id":2,"op":"console","data":"text\n"}
 //	  -> {"id":2} or {"id":2,"error":"no_console"}
 //
-// and one event from the tab, when the learner's shell opens:
+// and two events from the tab: when the learner's shell opens, and the key
+// its machine asks the Debian mirror with (nginx.conf /local-machine/apt):
 //
 //	{"event":"console_attached"}
+//	{"event":"mirror_key","key":"..."}
 //
 // Everything an agent sends is untrusted input: the learner owns the tab.
 
@@ -75,7 +78,11 @@ type agentReply struct {
 	Stderr   string `json:"stderr"`
 	Error    string `json:"error"`
 	Event    string `json:"event"`
+	Key      string `json:"key"`
 }
+
+// maxMirrorKey bounds the key an agent announces; the tab sends a UUID.
+const maxMirrorKey = 128
 
 // LocalAgents holds the connected agents, one per terminal session.
 //
@@ -105,6 +112,22 @@ var platformAgents = NewLocalAgents()
 
 // Agents is the hub the platform serves agents from.
 func Agents() *LocalAgents { return platformAgents }
+
+// MirrorKeyMatches reports whether terminalID's tab is connected and
+// announced key as its machine's key for the Debian mirror. No key matches
+// an empty one.
+func (h *LocalAgents) MirrorKeyMatches(terminalID, key string) bool {
+	h.mu.Lock()
+	agent := h.agents[terminalID]
+	h.mu.Unlock()
+	if agent == nil || key == "" {
+		return false
+	}
+	agent.mu.Lock()
+	known := agent.mirrorKey
+	agent.mu.Unlock()
+	return known != "" && subtle.ConstantTimeCompare([]byte(known), []byte(key)) == 1
+}
 
 // Connected reports whether terminalID's agent is connected now.
 func (h *LocalAgents) Connected(terminalID string) bool {
@@ -302,10 +325,11 @@ type localAgent struct {
 	conn       *websocket.Conn
 	writeMu    sync.Mutex
 
-	mu      sync.Mutex
-	nextID  int
-	pending map[int]chan agentReply
-	done    chan struct{}
+	mu        sync.Mutex
+	nextID    int
+	pending   map[int]chan agentReply
+	done      chan struct{}
+	mirrorKey string // what its machine asks the Debian mirror with; "" until announced
 }
 
 // Serve reads the agent's answers until it goes, keeping it alive with pings,
@@ -337,6 +361,14 @@ func (a *localAgent) Serve() {
 			// script left pending by the build is typed now. In its own
 			// goroutine, because typing it is a request this loop must answer.
 			go terminalServices.ReportConsoleAttach(a.terminalID)
+			continue
+		}
+		if reply.Event == "mirror_key" {
+			if len(reply.Key) <= maxMirrorKey {
+				a.mu.Lock()
+				a.mirrorKey = reply.Key
+				a.mu.Unlock()
+			}
 			continue
 		}
 		a.mu.Lock()
