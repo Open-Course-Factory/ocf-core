@@ -7,6 +7,7 @@ import (
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/entityManagement/hooks"
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/dto"
 	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
@@ -285,6 +286,10 @@ func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 
 	scenario := scenarioRegistration.ScenarioFromCreateInput(input)
 	scenario.CreatedByID = userID
+	if err := runScenarioBeforeCreateHooks(ctx, scenario); err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if err := sc.db.Create(scenario).Error; err != nil {
 		slog.Error("failed to create org scenario", "err", err, "org_id", orgID)
@@ -293,6 +298,19 @@ func (sc *scenarioManagementController) OrgCreateScenario(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, scenarioRegistration.ScenarioToOutput(scenario))
+}
+
+// runScenarioBeforeCreateHooks runs the checks the generic POST /scenarios
+// runs before storing a scenario, so a create route of its own cannot skip them.
+func runScenarioBeforeCreateHooks(ctx *gin.Context, scenario *models.Scenario) error {
+	return hooks.GlobalHookRegistry.ExecuteHooks(&hooks.HookContext{
+		EntityName: "Scenario",
+		HookType:   hooks.BeforeCreate,
+		NewEntity:  scenario,
+		UserID:     ctx.GetString("userId"),
+		UserRoles:  ctx.GetStringSlice("userRoles"),
+		Context:    ctx.Request.Context(),
+	})
 }
 
 // GroupCreateScenario creates a blank scenario inside a group's organization
@@ -346,6 +364,10 @@ func (sc *scenarioManagementController) GroupCreateScenario(ctx *gin.Context) {
 
 	scenario := scenarioRegistration.ScenarioFromCreateInput(input)
 	scenario.CreatedByID = userID
+	if err := runScenarioBeforeCreateHooks(ctx, scenario); err != nil {
+		errors.Respond(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if err := sc.db.Create(scenario).Error; err != nil {
 		slog.Error("failed to create group scenario", "err", err, "group_id", groupID)
