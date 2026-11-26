@@ -487,9 +487,11 @@ func TestLocalBuild_StartsOverOnTheMachineOfAReloadedTab(t *testing.T) {
 func (f agentFixture) mirrorAccess(t *testing.T, terminalID string) int {
 	t.Helper()
 	router := gin.New()
-	router.GET("/api/v1/local-machines/:terminal/mirror-access", scenarioController.NewLocalAgentController(f.db, f.agents, endTerminal(f.db)).MirrorAccess)
+	router.GET("/api/v1/local-machines/mirror-access", scenarioController.NewLocalAgentController(f.db, f.agents, endTerminal(f.db)).MirrorAccess)
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/local-machines/"+terminalID+"/mirror-access", nil))
+	req := httptest.NewRequest("GET", "/api/v1/local-machines/mirror-access", nil)
+	req.Header.Set("X-Local-Machine", terminalID)
+	router.ServeHTTP(w, req)
 	return w.Code
 }
 
@@ -514,6 +516,7 @@ func TestMirrorAccess_OnlyAConnectedLocalMachineWhileTheSwitchIsOn(t *testing.T)
 
 	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, "local-"+uuid.NewString()), "an unknown machine")
 	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, "incus-session"), "not a machine in a browser")
+	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, ""), "no machine named")
 
 	switchLocalMachines(t, f.db, false)
 	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal), "the switch off refuses at once, even an open run")

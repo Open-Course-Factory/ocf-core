@@ -154,16 +154,19 @@ func (c *LocalAgentController) refusal(terminalID, boot string) (int, string) {
 //	@Summary		May a machine in a browser use the Debian mirror
 //	@Description	Asked by the front's nginx before it serves the Debian mirror to a machine in a learner's browser (auth_request): 204 while the machine's run is open and its tab connected, with the platform switch on; 403 otherwise.
 //	@Tags			scenario-sessions
-//	@Param			terminal	path	string	true	"Terminal session ID of the machine"
+//	@Param			X-Local-Machine	header	string	true	"Terminal session ID of the machine"
 //	@Success		204
 //	@Failure		403
-//	@Router			/local-machines/{terminal}/mirror-access [get]
+//	@Router			/local-machines/mirror-access [get]
 //
 // ponytail: the machine is named by its terminal id, which is no secret: whoever
 // knows it may use the mirror while that learner's tab is connected. The
 // mirror only serves Debian; a run token in the URL closes it if it matters.
+//
+// The machine comes in a header, not the path: nginx then asks a fixed URL,
+// which needs no resolver for core's host name.
 func (c *LocalAgentController) MirrorAccess(ctx *gin.Context) {
-	terminalID := ctx.Param("terminal")
+	terminalID := ctx.GetHeader("X-Local-Machine")
 	var terminal terminalModels.Terminal
 	allowed := terminalModels.IsLocalSessionID(terminalID) &&
 		terminalServices.LocalMachinesEnabled(c.db) &&
