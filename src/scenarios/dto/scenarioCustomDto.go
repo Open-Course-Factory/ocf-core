@@ -27,6 +27,9 @@ type SessionResponse struct {
 	// SessionUser is the uid the learner's console runs as; absent, root.
 	// A machine in the learner's browser opens its console with it.
 	SessionUser *int     `json:"session_user,omitempty"`
+	// MachineApps are the apps a machine in the learner's browser offers;
+	// with any, it shows unkernel's desktop instead of the console.
+	MachineApps []string `json:"machine_apps,omitempty"`
 	IsPreview   bool     `json:"is_preview,omitempty"`
 	Grade       *float64 `json:"grade,omitempty"`
 	// GradeWithheld means Grade was left out until the teacher publishes the

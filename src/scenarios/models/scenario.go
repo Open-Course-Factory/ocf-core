@@ -42,8 +42,9 @@ type Scenario struct {
 	// run's assignment decide the rest at launch.
 	Machine string `gorm:"type:varchar(20);default:'incus'" json:"machine" mapstructure:"machine"`
 	// MachineApps is the JSON array of the apps a run's machine in the
-	// learner's browser offers to install, from LocalMachineApps. Empty
-	// offers none: only the terminal.
+	// learner's browser offers to install, from LocalMachineApps. A scenario
+	// that offers any shows unkernel's desktop, whose launcher lists them;
+	// one that offers none keeps the console.
 	MachineApps string `gorm:"type:text" json:"machine_apps,omitempty" mapstructure:"machine_apps"`
 	Objectives    string     `gorm:"type:text" json:"objectives,omitempty"`
 	Prerequisites  string     `gorm:"type:text" json:"prerequisites,omitempty"`

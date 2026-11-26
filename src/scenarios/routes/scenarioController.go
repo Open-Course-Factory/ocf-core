@@ -145,6 +145,8 @@ func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) d
 	if err := sc.db.First(&scenario, "id = ?", session.ScenarioID).Error; err == nil {
 		response.ResumeMode = string(sc.sessionService.ResumeModeGiven(session, scenario.CrashTraps))
 		response.SessionUser = scenario.SessionUser
+		// Unparseable reads as none (the console): the hooks refuse it on save.
+		response.MachineApps, _ = scenario.GetMachineApps()
 		prose := services.ResolveScenarioText(sc.db, scenario, session.Locale)
 		response.ScenarioText = &dto.SessionScenarioText{
 			Title:       prose.Title,
