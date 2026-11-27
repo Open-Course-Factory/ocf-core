@@ -518,6 +518,33 @@ func TestGetSessionByTerminal_GivesTheMachineMemoryOfTheScenarioSize(t *testing.
 	}
 }
 
+// A machine in the learner's browser gets the vCPUs of the size the scenario
+// asks for, rounded up to whole CPUs (xs is half a vCPU, which still needs
+// one), and 2 without a size the catalog knows.
+func TestGetSessionByTerminal_GivesTheMachineCPUsOfTheScenarioSize(t *testing.T) {
+	db := freshTestDB(t)
+	router := setupTestRouter(db)
+	for size, want := range map[string]float64{"xs": 1, "s": 1, "M": 2, "l": 4, "": 2, "debian": 2} {
+		t.Run("size "+size, func(t *testing.T) {
+			scenario := models.Scenario{Name: "machine-cpus-" + uuid.NewString(), Title: "Machine CPUs", InstanceType: size,
+				CreatedByID: "creator-1", Machine: models.ScenarioMachineLocal}
+			require.NoError(t, db.Create(&scenario).Error)
+			terminalID := "local-" + uuid.NewString()
+			require.NoError(t, db.Create(&models.ScenarioSession{ScenarioID: scenario.ID, UserID: "test-user-123",
+				TerminalSessionID: &terminalID, Status: "active", StartedAt: time.Now()}).Error)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/by-terminal/"+terminalID, nil)
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+
+			var response map[string]any
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			assert.Equal(t, want, response["machine_cpus"])
+		})
+	}
+}
+
 func TestGetSessionByTerminal_NotFound(t *testing.T) {
 	db := freshTestDB(t)
 	router := setupTestRouter(db)

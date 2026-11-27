@@ -149,6 +149,7 @@ func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) d
 		response.MachineApps, _ = scenario.GetMachineApps()
 		response.MachineDisplay = scenario.MachineDisplay
 		response.MachineMemoryMiB = services.LocalMachineMemoryMiB(scenario)
+		response.MachineCPUs = services.LocalMachineCPUs(scenario)
 		prose := services.ResolveScenarioText(sc.db, scenario, session.Locale)
 		response.ScenarioText = &dto.SessionScenarioText{
 			Title:       prose.Title,

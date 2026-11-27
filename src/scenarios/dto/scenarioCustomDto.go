@@ -36,6 +36,9 @@ type SessionResponse struct {
 	// MachineMemoryMiB is that machine's memory, from the scenario's size
 	// (services.LocalMachineMemoryMiB).
 	MachineMemoryMiB int `json:"machine_memory_mib,omitempty"`
+	// MachineCPUs is that machine's vCPUs, from the scenario's size
+	// (services.LocalMachineCPUs); the browser may allow fewer.
+	MachineCPUs int `json:"machine_cpus,omitempty"`
 	IsPreview   bool     `json:"is_preview,omitempty"`
 	Grade       *float64 `json:"grade,omitempty"`
 	// GradeWithheld means Grade was left out until the teacher publishes the
