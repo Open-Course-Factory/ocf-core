@@ -487,6 +487,11 @@ type AvailableScenarioOutput struct {
 	// Both are empty when resolution failed; BlockReason says why.
 	ResolvedDistribution string `json:"resolved_distribution,omitempty"`
 	ResolvedSize         string `json:"resolved_size,omitempty"`
+	// LocalMachineMemoryMiB is the memory of the machine a run would get in
+	// the learner's browser (services.LocalMachineMemoryMiB); absent when a
+	// run would go to a container. The card warns, or refuses a computer too
+	// small, with it.
+	LocalMachineMemoryMiB int `json:"local_machine_memory_mib,omitempty"`
 	IsPublic             bool   `json:"is_public"`
 	AdminOnly            bool   `json:"admin_only,omitempty"`
 	// CanManage says whether the caller may edit this scenario, by the rule

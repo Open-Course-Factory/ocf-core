@@ -6,20 +6,20 @@ import (
 )
 
 // Memory of a machine in the learner's browser, in MiB. Below 1 GiB a Debian
-// lab does not run; above 2 GiB the machine crowds a learner's 4 to 8 GB
-// laptop.
+// lab does not run.
 const (
 	localMachineMinMemoryMiB     = 1024
 	localMachineDefaultMemoryMiB = 2048
 )
 
 // LocalMachineMemoryMiB is the memory a run of scenario gets on a machine in
-// the learner's browser: its size's, from the size catalog, within 1 to 2
-// GiB; 2 GiB when it asks for no size the catalog knows.
+// the learner's browser: its size's, from the size catalog, at least 1 GiB;
+// 2 GiB when it asks for no size the catalog knows. Above 2 GiB the page warns
+// that the learner's computer needs that much (the front's rule).
 func LocalMachineMemoryMiB(scenario models.Scenario) int {
 	size, ok := catalog.LookupSize(scenario.InstanceType)
 	if !ok {
 		return localMachineDefaultMemoryMiB
 	}
-	return min(max(size.MemoryMB, localMachineMinMemoryMiB), localMachineDefaultMemoryMiB)
+	return max(size.MemoryMB, localMachineMinMemoryMiB)
 }

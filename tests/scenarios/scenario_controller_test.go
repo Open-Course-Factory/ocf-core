@@ -493,11 +493,11 @@ func TestGetSessionByTerminal_GivesTheMachineDisplay(t *testing.T) {
 
 // A machine in the learner's browser gets the memory of the size the scenario
 // asks for, from the size catalog: at least 1 GiB (smaller sizes cannot run a
-// Debian lab), at most 2 GiB (a learner's laptop), and 2 GiB without a size.
+// Debian lab), and 2 GiB without a size the catalog knows.
 func TestGetSessionByTerminal_GivesTheMachineMemoryOfTheScenarioSize(t *testing.T) {
 	db := freshTestDB(t)
 	router := setupTestRouter(db)
-	for size, want := range map[string]float64{"xs": 1024, "s": 1024, "M": 1024, "l": 2048, "xl": 2048, "": 2048, "debian": 2048} {
+	for size, want := range map[string]float64{"xs": 1024, "s": 1024, "M": 1024, "l": 2048, "xl": 4096, "": 2048, "debian": 2048} {
 		t.Run("size "+size, func(t *testing.T) {
 			scenario := models.Scenario{Name: "machine-memory-" + uuid.NewString(), Title: "Machine Memory", InstanceType: size,
 				CreatedByID: "creator-1", Machine: models.ScenarioMachineLocal}

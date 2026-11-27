@@ -323,6 +323,11 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		item.Launchable = resolveErr == nil && provisioning.CreatesTerminal()
 		item.ResolvedDistribution = provisioning.Distribution
 		item.ResolvedSize = provisioning.Size
+		// Where a launch would put the run, by the rule the launch applies.
+		_, assigned := assignedServers[s.ID]
+		if machine, machineErr := services.RunMachine(sc.db, &s, resolvedPlan, assigned); machineErr == nil && machine == models.ScenarioMachineLocal {
+			item.LocalMachineMemoryMiB = services.LocalMachineMemoryMiB(s)
+		}
 		if resolveErr != nil {
 			// Separate reasons because they need different fixes: a missing
 			// declared image is "install it on this backend", while
