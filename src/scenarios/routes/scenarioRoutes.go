@@ -74,6 +74,9 @@ func ScenarioRoutes(router *gin.RouterGroup, db *gorm.DB) {
 	// Asked by the front's nginx, which has no learner token: the answer
 	// depends on the machine alone.
 	router.GET("/local-machines/mirror-access", agentController.MirrorAccess)
+	bootController := NewLocalMachineBootController(db)
+	router.GET("/local-machines/boot-defaults", middleware.AuthManagement(), bootController.GetBootDefaults)
+	router.PUT("/local-machines/boot-defaults", middleware.AuthManagement(), bootController.PutBootDefaults)
 	// Budget enforcement is performed inside LaunchScenario via
 	// QuotaService.CheckBudget; no middleware-level slot counter is needed.
 	//

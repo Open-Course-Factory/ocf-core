@@ -380,6 +380,16 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "May a machine in a learner's browser use the Debian mirror (asked by the front's nginx; the handler checks the machine)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/local-machines/boot-defaults", Method: "GET",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Read how machines in learners' browsers boot unless their scenario says otherwise (platform operators)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/local-machines/boot-defaults", Method: "PUT",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Set how machines in learners' browsers boot unless their scenario says otherwise (platform operators)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/project-files/image/:scenarioId/*", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
 			Description: "Get scenario image (the handler checks who may see the scenario)",

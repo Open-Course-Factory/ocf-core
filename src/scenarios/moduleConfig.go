@@ -1,6 +1,8 @@
 package scenarios
 
 import (
+	"soli/formations/src/scenarios/services"
+
 	configInterfaces "soli/formations/src/configuration/interfaces"
 	"soli/formations/src/configuration/models"
 )
@@ -44,6 +46,16 @@ func (s *ScenariosModuleConfig) GetFeatures() []models.FeatureDefinition {
 			Enabled:     false,
 			Category:    "modules",
 			Module:      "scenarios",
+		},
+		{
+			// Set through PUT /local-machines/boot-defaults, which validates it.
+			Key:         services.LocalMachineBootKey,
+			Name:        "Machines in the browser: boot defaults",
+			Description: "JSON object of how unkernel boots a machine in the learner's browser: jit, verbose, display, sound, append, console_hidden. A key left out keeps its built-in value; a scenario may override any key but append.",
+			Enabled:     true,
+			Category:    "settings",
+			Module:      "scenarios",
+			Value:       "",
 		},
 	}
 }

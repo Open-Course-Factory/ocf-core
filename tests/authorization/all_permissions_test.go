@@ -486,6 +486,8 @@ func TestSetupScenarioPermissions_AdminRoutes(t *testing.T) {
 		{"/api/v1/scenarios/:id/duplicate", "POST"},
 		// Project file admin routes (AdminOnly at Layer 2, now administrator at Layer 1).
 		{"/api/v1/project-files/by-scenario/:scenarioId", "GET"},
+		{"/api/v1/local-machines/boot-defaults", "GET"},
+		{"/api/v1/local-machines/boot-defaults", "PUT"},
 	}
 
 	for _, r := range adminRoutes {
