@@ -143,6 +143,9 @@ type KillerCodaOCF struct {
 	// MachineDisplay is what that machine shows (models.ScenarioMachineDisplay*).
 	// Absent keeps on re-import, and means a terminal on a new scenario.
 	MachineDisplay *string `json:"machine_display,omitempty"`
+	// MachineBoot is the boot keys that machine sets over the platform's
+	// defaults, never append. Absent keeps on re-import.
+	MachineBoot *models.LocalMachineBoot `json:"machine_boot,omitempty"`
 }
 
 // hostnamePattern is an RFC 1123 host label: lowercase letters, digits and
@@ -247,6 +250,9 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				}
 				if ocf.OCF.MachineDisplay != nil {
 					updates["machine_display"] = scenario.MachineDisplay
+				}
+				if ocf.OCF.MachineBoot != nil {
+					updates["machine_boot"] = scenario.MachineBoot
 				}
 			}
 			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
@@ -362,6 +368,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	requiredFeatures := ""
 	buildFeatures := ""
 	machineApps := ""
+	machineBoot := ""
 	hostname := ""
 	if index.Extensions != nil && index.Extensions.OCF != nil {
 		if index.Extensions.OCF.Hostname != nil {
@@ -394,6 +401,11 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		}
 
 		machineApps, featErr = EncodeNameList(index.Extensions.OCF.MachineApps)
+		if featErr != nil {
+			return nil, featErr
+		}
+
+		machineBoot, featErr = models.EncodeScenarioMachineBoot(index.Extensions.OCF.MachineBoot)
 		if featErr != nil {
 			return nil, featErr
 		}
@@ -433,6 +445,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		Machine:        machine,
 		MachineApps:    machineApps,
 		MachineDisplay: machineDisplay,
+		MachineBoot:    machineBoot,
 		SessionUser:    sessionUser,
 		Hostname:       hostname,
 		IntroText:      introText,

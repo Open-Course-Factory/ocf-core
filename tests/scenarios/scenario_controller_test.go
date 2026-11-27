@@ -18,6 +18,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
+	"soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"gorm.io/gorm"
@@ -543,6 +544,46 @@ func TestGetSessionByTerminal_GivesTheMachineCPUsOfTheScenarioSize(t *testing.T)
 			assert.Equal(t, want, response["machine_cpus"])
 		})
 	}
+}
+
+// A run's machine in the browser boots with the platform's defaults, each key
+// the scenario sets replacing the platform's, except the kernel command line,
+// which only the platform sets: a row that carries one anyway (written before
+// the rule, or by hand) does not reach the learner.
+func TestGetSessionByTerminal_GivesTheMachineBootOfThePlatformUnderTheScenario(t *testing.T) {
+	db := freshTestDB(t)
+	router := setupTestRouter(db)
+	require.NoError(t, services.SaveLocalMachineBootDefaults(db, mustParseBoot(t, `{"jit":false,"append":"quiet"}`)))
+	for overrides, want := range map[string]map[string]any{
+		"":                                {"jit": false, "verbose": false, "display": true, "sound": true, "append": "quiet", "console_hidden": false},
+		`{"sound":false}`:                 {"jit": false, "verbose": false, "display": true, "sound": false, "append": "quiet", "console_hidden": false},
+		`{"jit":true,"append":"init=/x"}`: {"jit": true, "verbose": false, "display": true, "sound": true, "append": "quiet", "console_hidden": false},
+	} {
+		t.Run("overrides "+overrides, func(t *testing.T) {
+			scenario := models.Scenario{Name: "machine-boot-" + uuid.NewString(), Title: "Machine Boot", InstanceType: "s",
+				CreatedByID: "creator-1", Machine: models.ScenarioMachineLocal, MachineBoot: overrides}
+			require.NoError(t, db.Create(&scenario).Error)
+			terminalID := "local-" + uuid.NewString()
+			require.NoError(t, db.Create(&models.ScenarioSession{ScenarioID: scenario.ID, UserID: "test-user-123",
+				TerminalSessionID: &terminalID, Status: "active", StartedAt: time.Now()}).Error)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/by-terminal/"+terminalID, nil)
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+
+			var response map[string]any
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			assert.Equal(t, want, response["machine_boot"])
+		})
+	}
+}
+
+func mustParseBoot(t *testing.T, raw string) models.LocalMachineBoot {
+	t.Helper()
+	boot, err := models.ParseLocalMachineBoot(raw)
+	require.NoError(t, err)
+	return boot
 }
 
 func TestGetSessionByTerminal_NotFound(t *testing.T) {

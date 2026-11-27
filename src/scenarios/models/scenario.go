@@ -49,6 +49,9 @@ type Scenario struct {
 	// one of the ScenarioMachineDisplay* values. MachineApps matter only on a
 	// desktop; a terminal scenario keeps them and ignores them.
 	MachineDisplay string `gorm:"type:varchar(20);default:'terminal'" json:"machine_display,omitempty" mapstructure:"machine_display"`
+	// MachineBoot is the JSON object of the LocalMachineBoot keys this
+	// scenario sets over the platform's boot defaults; empty sets none.
+	MachineBoot string `gorm:"type:text" json:"machine_boot,omitempty" mapstructure:"machine_boot"`
 	Objectives    string     `gorm:"type:text" json:"objectives,omitempty"`
 	Prerequisites  string     `gorm:"type:text" json:"prerequisites,omitempty"`
 	IntroText      string     `gorm:"type:text" json:"intro_text,omitempty"`

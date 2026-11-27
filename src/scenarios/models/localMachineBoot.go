@@ -98,3 +98,26 @@ func setOr[T any](value, fallback *T) *T {
 	}
 	return fallback
 }
+
+// EncodeScenarioMachineBoot is the machine_boot column for a scenario's
+// overrides; none is "".
+func EncodeScenarioMachineBoot(boot *LocalMachineBoot) (string, error) {
+	if boot == nil {
+		return "", nil
+	}
+	encoded, err := json.Marshal(boot)
+	return string(encoded), err
+}
+
+// DecodeScenarioMachineBoot reads a scenario's machine_boot column back; ""
+// or an unreadable value is no overrides.
+func DecodeScenarioMachineBoot(raw string) *LocalMachineBoot {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	boot, err := ParseLocalMachineBoot(raw)
+	if err != nil {
+		return nil
+	}
+	return &boot
+}

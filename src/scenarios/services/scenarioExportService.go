@@ -172,6 +172,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) (*d
 		Machine:                 &machine,
 		MachineApps:             machineApps,
 		MachineDisplay:          &machineDisplay,
+		MachineBoot:             models.DecodeScenarioMachineBoot(scenario.MachineBoot),
 		SessionUser:             scenario.SessionUser,
 		IntroText:               scenario.IntroText,
 		FinishText:              scenario.FinishText,
@@ -495,6 +496,7 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		display := scenario.MachineDisplay
 		ocf.MachineDisplay = &display
 	}
+	ocf.MachineBoot = models.DecodeScenarioMachineBoot(scenario.MachineBoot)
 	// Export the hostname so an exported archive re-imports with the same
 	// terminal name instead of falling back to the generated one.
 	if scenario.Hostname != "" {
@@ -503,7 +505,7 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 	}
 	if scenario.FlagsEnabled || scenario.CrashTraps || scenario.PortExposureAllowed || runsElsewhere ||
 		scenario.SessionUser != nil || scenario.Hostname != "" ||
-		len(declaredImages) > 0 || len(requiredFeatures) > 0 || len(buildFeatures) > 0 || len(machineApps) > 0 || showsDesktop {
+		len(declaredImages) > 0 || len(requiredFeatures) > 0 || len(buildFeatures) > 0 || len(machineApps) > 0 || showsDesktop || ocf.MachineBoot != nil {
 		index.Extensions = &KillerCodaExtensions{OCF: ocf}
 	}
 

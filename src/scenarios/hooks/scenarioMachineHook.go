@@ -6,8 +6,9 @@ import (
 	"soli/formations/src/scenarios/models"
 )
 
-// ScenarioMachineHook refuses an unknown machine or display, or an app no
-// scenario may offer on it, on the generic create and edit routes; the import paths check
+// ScenarioMachineHook refuses an unknown machine or display, an app no
+// scenario may offer on it, or a boot override a scenario may not set, on the
+// generic create and edit routes; the import paths check
 // the same rules in ScenarioContentProblems.
 type ScenarioMachineHook struct {
 	hooks.BaseHook
@@ -26,15 +27,16 @@ func NewScenarioMachineHook() hooks.Hook {
 }
 
 func (h *ScenarioMachineHook) Execute(ctx *hooks.HookContext) error {
-	var machine, machineApps, machineDisplay string
+	var machine, machineApps, machineDisplay, machineBoot string
 	switch v := ctx.NewEntity.(type) {
 	case *models.Scenario:
-		machine, machineApps, machineDisplay = v.Machine, v.MachineApps, v.MachineDisplay
+		machine, machineApps, machineDisplay, machineBoot = v.Machine, v.MachineApps, v.MachineDisplay, v.MachineBoot
 	case map[string]any:
 		// DtoToMap dereferences the EditDto's pointers, so a patched value is a string.
 		machine, _ = v["machine"].(string)
 		machineApps, _ = v["machine_apps"].(string)
 		machineDisplay, _ = v["machine_display"].(string)
+		machineBoot, _ = v["machine_boot"].(string)
 	default:
 		return nil
 	}
@@ -46,6 +48,9 @@ func (h *ScenarioMachineHook) Execute(ctx *hooks.HookContext) error {
 	}
 	if problem := models.ScenarioMachineDisplayProblem(machineDisplay); problem != "" {
 		return entityErrors.NewValidationError("machine_display", problem)
+	}
+	if problem := models.ScenarioMachineBootProblem(machineBoot); problem != "" {
+		return entityErrors.NewValidationError("machine_boot", problem)
 	}
 	return nil
 }

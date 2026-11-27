@@ -150,3 +150,38 @@ func TestScenarioMachineDisplay_SeedDefaultsToTerminalKeepsWhenAbsentAndRefusesU
 	_, _, err = seeder.SeedScenario(input, "author", &org)
 	require.Error(t, err, "an unknown display is refused at import")
 }
+
+// A scenario overrides some of the platform's boot keys, never the kernel
+// command line: that one belongs to the platform's administrators.
+func TestScenarioMachineBootProblem_PartialKeysOnlyAndNoAppend(t *testing.T) {
+	assert.Empty(t, models.ScenarioMachineBootProblem(""), "nothing overrides nothing")
+	assert.Empty(t, models.ScenarioMachineBootProblem(`{}`))
+	assert.Empty(t, models.ScenarioMachineBootProblem(`{"jit":false,"console_hidden":true}`))
+	assert.NotEmpty(t, models.ScenarioMachineBootProblem(`{"append":"quiet"}`), "append is the platform's")
+	assert.NotEmpty(t, models.ScenarioMachineBootProblem(`{"turbo":true}`), "unknown key")
+	assert.NotEmpty(t, models.ScenarioMachineBootProblem(`{"jit":"no"}`), "wrong type")
+	assert.NotEmpty(t, models.ScenarioMachineBootProblem(`[]`), "not an object")
+}
+
+func TestScenarioMachineHook_RefusesABadMachineBoot(t *testing.T) {
+	h := scenarioHooks.NewScenarioMachineHook()
+	run := func(hookType hooks.HookType, entity any) error {
+		return h.Execute(&hooks.HookContext{EntityName: "Scenario", HookType: hookType, NewEntity: entity})
+	}
+	require.NoError(t, run(hooks.BeforeCreate, &models.Scenario{MachineBoot: `{"sound":false}`}))
+	require.NoError(t, run(hooks.BeforeCreate, &models.Scenario{}))
+	require.Error(t, run(hooks.BeforeCreate, &models.Scenario{MachineBoot: `{"append":"quiet"}`}))
+
+	require.NoError(t, run(hooks.BeforeUpdate, map[string]any{"machine_boot": `{"sound":false}`}))
+	require.Error(t, run(hooks.BeforeUpdate, map[string]any{"machine_boot": `{"turbo":true}`}))
+}
+
+// The seed and archive paths refuse the same machine_boot the hooks do.
+func TestScenarioMachineBoot_ImportRefusesAppend(t *testing.T) {
+	db := freshTestDB(t)
+	input := fullyPopulatedScenarioInput()
+	kernel := "init=/bin/sh"
+	input.MachineBoot = &models.LocalMachineBoot{Append: &kernel}
+	_, _, err := services.NewScenarioSeedService(db).SeedScenario(input, "author", nil)
+	require.ErrorContains(t, err, "append")
+}

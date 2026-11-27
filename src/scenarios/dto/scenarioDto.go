@@ -28,6 +28,7 @@ type CreateScenarioInput struct {
 	Machine        string     `json:"machine,omitempty" mapstructure:"machine"`
 	MachineApps    string     `json:"machine_apps,omitempty" mapstructure:"machine_apps"`
 	MachineDisplay string     `json:"machine_display,omitempty" mapstructure:"machine_display"`
+	MachineBoot    string     `json:"machine_boot,omitempty" mapstructure:"machine_boot"`
 	DefaultLocale  string     `json:"default_locale,omitempty" mapstructure:"default_locale"`
 	Locales        string     `json:"locales,omitempty" mapstructure:"locales"`
 	Objectives     string     `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
@@ -62,6 +63,7 @@ type EditScenarioInput struct {
 	Machine        *string    `json:"machine,omitempty" mapstructure:"machine"`
 	MachineApps    *string    `json:"machine_apps,omitempty" mapstructure:"machine_apps"`
 	MachineDisplay *string    `json:"machine_display,omitempty" mapstructure:"machine_display"`
+	MachineBoot    *string    `json:"machine_boot,omitempty" mapstructure:"machine_boot"`
 	DefaultLocale  *string    `json:"default_locale,omitempty" mapstructure:"default_locale"`
 	Locales        *string    `json:"locales,omitempty" mapstructure:"locales"`
 	Objectives     *string    `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
@@ -104,6 +106,8 @@ type ScenarioOutput struct {
 	MachineApps    string             `json:"machine_apps,omitempty"`
 	// Terminal or desktop; on a terminal the apps are ignored.
 	MachineDisplay string             `json:"machine_display,omitempty"`
+	// JSON object of the boot keys set over the platform's defaults.
+	MachineBoot    string             `json:"machine_boot,omitempty"`
 	// Which languages this scenario is offered in, and which one its own
 	// fields are written in. Without these on the output an editor cannot
 	// know a scenario is translatable at all.

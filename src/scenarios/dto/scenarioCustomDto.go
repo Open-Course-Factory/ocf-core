@@ -3,6 +3,8 @@ package dto
 import (
 	"time"
 
+	"soli/formations/src/scenarios/models"
+
 	"github.com/google/uuid"
 )
 
@@ -39,6 +41,9 @@ type SessionResponse struct {
 	// MachineCPUs is that machine's vCPUs, from the scenario's size
 	// (services.LocalMachineCPUs); the browser may allow fewer.
 	MachineCPUs int `json:"machine_cpus,omitempty"`
+	// MachineBoot is how that machine boots: the platform's defaults with the
+	// scenario's overrides, every key set (services.LocalMachineBootFor).
+	MachineBoot *models.LocalMachineBoot `json:"machine_boot,omitempty"`
 	IsPreview   bool     `json:"is_preview,omitempty"`
 	Grade       *float64 `json:"grade,omitempty"`
 	// GradeWithheld means Grade was left out until the teacher publishes the
@@ -300,6 +305,9 @@ type SeedScenarioInput struct {
 	// MachineDisplay is what that machine shows (models.ScenarioMachineDisplay*).
 	// Absent keeps on a re-seed, and means a terminal on a new scenario.
 	MachineDisplay *string `json:"machine_display,omitempty"`
+	// MachineBoot is the boot keys that machine sets over the platform's
+	// defaults, never append. Absent keeps on a re-seed.
+	MachineBoot *models.LocalMachineBoot `json:"machine_boot,omitempty"`
 	// SessionUser is the uid the learner's console runs as. Absent means the
 	// distribution decides, which is root — fine for every scenario whose
 	// lesson is not "the kernel said no". On a re-seed, absent keeps the

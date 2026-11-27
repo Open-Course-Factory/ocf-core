@@ -209,6 +209,7 @@ func TestDuplicateScenario_ScenarioIsFieldCompleteAgainstSource(t *testing.T) {
 		"machine":               models.ScenarioMachineByAccount,
 		"machine_apps":          `["nvim"]`,
 		"machine_display":       models.ScenarioMachineDisplayDesktop,
+		"machine_boot":          `{"sound":false}`,
 		"git_repository":        "https://example.org/lab.git",
 		"git_branch":            "main",
 		"source_path":           "labs/one",

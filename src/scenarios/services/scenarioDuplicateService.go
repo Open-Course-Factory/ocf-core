@@ -89,6 +89,7 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			Machine:        source.Machine,
 			MachineApps:    source.MachineApps,
 			MachineDisplay: source.MachineDisplay,
+			MachineBoot:    source.MachineBoot,
 			Objectives:     source.Objectives,
 			Prerequisites:  source.Prerequisites,
 			IntroText:      source.IntroText,

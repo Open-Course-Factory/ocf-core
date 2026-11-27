@@ -41,3 +41,16 @@ func SaveLocalMachineBootDefaults(db *gorm.DB, boot models.LocalMachineBoot) err
 	}
 	return configRepositories.NewFeatureRepository(db).UpdateFeatureValue(LocalMachineBootKey, string(value))
 }
+
+// LocalMachineBootFor is how a run's machine in the learner's browser boots:
+// each key the scenario sets over the platform's defaults, except append,
+// which only the platform sets — even should a row carry one past the hooks.
+func LocalMachineBootFor(db *gorm.DB, scenario models.Scenario) models.LocalMachineBoot {
+	defaults := LocalMachineBootDefaults(db)
+	overrides := models.DecodeScenarioMachineBoot(scenario.MachineBoot)
+	if overrides == nil {
+		return defaults
+	}
+	overrides.Append = nil
+	return overrides.Over(defaults)
+}

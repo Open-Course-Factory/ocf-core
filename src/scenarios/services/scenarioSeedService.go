@@ -62,6 +62,10 @@ func buildSeedScenario(input dto.SeedScenarioInput) (*models.Scenario, error) {
 	if err != nil {
 		return nil, err
 	}
+	machineBoot, err := models.EncodeScenarioMachineBoot(input.MachineBoot)
+	if err != nil {
+		return nil, err
+	}
 
 	steps := make([]models.ScenarioStep, len(input.Steps))
 	for i, st := range input.Steps {
@@ -114,6 +118,7 @@ func buildSeedScenario(input dto.SeedScenarioInput) (*models.Scenario, error) {
 		Machine:                 seedMachine(input.Machine),
 		MachineApps:             machineApps,
 		MachineDisplay:          seedMachineDisplay(input.MachineDisplay),
+		MachineBoot:             machineBoot,
 		SessionUser:             input.SessionUser,
 		Objectives:              input.Objectives,
 		Prerequisites:           input.Prerequisites,
@@ -336,6 +341,9 @@ func seedScenarioUpdates(built *models.Scenario, input dto.SeedScenarioInput) ma
 	}
 	if input.MachineDisplay != nil {
 		updates["machine_display"] = built.MachineDisplay
+	}
+	if input.MachineBoot != nil {
+		updates["machine_boot"] = built.MachineBoot
 	}
 	if input.SessionUser != nil {
 		updates["session_user"] = built.SessionUser

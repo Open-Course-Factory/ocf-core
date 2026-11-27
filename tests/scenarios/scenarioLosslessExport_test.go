@@ -27,6 +27,7 @@ func fullyPopulatedScenarioInput() dto.SeedScenarioInput {
 	portExposure := true
 	machine := models.ScenarioMachineLocal
 	machineDisplay := models.ScenarioMachineDisplayDesktop
+	noSound := false
 	return dto.SeedScenarioInput{
 		Title:                   "Lossless Castle",
 		Description:             "Every field, once",
@@ -42,6 +43,7 @@ func fullyPopulatedScenarioInput() dto.SeedScenarioInput {
 		Machine:                 &machine,
 		MachineApps:             []string{"python", "postgres"},
 		MachineDisplay:          &machineDisplay,
+		MachineBoot:             &models.LocalMachineBoot{Sound: &noSound},
 		SessionUser:             &sessionUser,
 		IntroText:               "# Welcome to {{W_CELLAR}}",
 		FinishText:              "# Well done",
@@ -205,7 +207,7 @@ func TestScenarioJSONReimport_WithoutOptionalFields_KeepsThem(t *testing.T) {
 	bare := full
 	bare.Hostname, bare.Objectives, bare.Prerequisites, bare.DefaultLocale = "", "", "", ""
 	bare.Locales, bare.PortExposureAllowed, bare.Translations, bare.Lexicon = nil, nil, nil, nil
-	bare.SessionUser, bare.Machine, bare.MachineApps, bare.MachineDisplay = nil, nil, nil, nil
+	bare.SessionUser, bare.Machine, bare.MachineApps, bare.MachineDisplay, bare.MachineBoot = nil, nil, nil, nil, nil
 	bare.Steps = append([]dto.SeedStepInput(nil), full.Steps...)
 	bare.Steps[0].Translations = nil
 	_, isUpdate, err := seeder.SeedScenario(bare, "author", &org)
@@ -302,7 +304,7 @@ func TestScenarioArchiveReimport_WithoutSessionUserOrExposure_KeepsThem(t *testi
 	existing := models.Scenario{Name: "keeps-console-settings", Title: "Keeps Console Settings", InstanceType: "debian",
 		CreatedByID: "author", OrganizationID: &org, SessionUser: &sessionUser, PortExposureAllowed: true,
 		Machine: models.ScenarioMachineByAccount, MachineApps: `["nvim"]`,
-		MachineDisplay: models.ScenarioMachineDisplayDesktop}
+		MachineDisplay: models.ScenarioMachineDisplayDesktop, MachineBoot: `{"sound":false}`}
 	require.NoError(t, db.Create(&existing).Error)
 
 	dir := t.TempDir()
@@ -326,4 +328,5 @@ func TestScenarioArchiveReimport_WithoutSessionUserOrExposure_KeepsThem(t *testi
 	assert.Equal(t, models.ScenarioMachineByAccount, stored.Machine)
 	assert.JSONEq(t, `["nvim"]`, stored.MachineApps)
 	assert.Equal(t, models.ScenarioMachineDisplayDesktop, stored.MachineDisplay)
+	assert.JSONEq(t, `{"sound":false}`, stored.MachineBoot)
 }

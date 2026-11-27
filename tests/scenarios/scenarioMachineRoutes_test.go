@@ -112,3 +112,32 @@ func TestPATCHScenario_MachineDisplay(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, sendJSON(t, r, http.MethodPatch, url, map[string]any{"machine_display": "fullscreen"}).Code)
 	assert.Equal(t, models.ScenarioMachineDisplayDesktop, stored(), "refused keeps")
 }
+
+func TestPATCHScenario_MachineBoot(t *testing.T) {
+	db := freshTestDB(t)
+	scenario := &models.Scenario{Name: "boot", Title: "Boot", InstanceType: "S", SourceType: "builtin", CreatedByID: "creator"}
+	require.NoError(t, db.Create(scenario).Error)
+	r := setupScenarioPatchRouter(t, db, "creator", []string{"administrator"})
+	withScenarioHooks(t, db)
+	url := "/scenarios/" + scenario.ID.String()
+	stored := func() string {
+		var s models.Scenario
+		require.NoError(t, db.First(&s, "id = ?", scenario.ID).Error)
+		return s.MachineBoot
+	}
+	assert.Empty(t, stored(), "a new scenario overrides nothing")
+
+	require.Equal(t, http.StatusNoContent, sendJSON(t, r, http.MethodPatch, url, map[string]any{"machine_boot": `{"jit":false}`}).Code)
+	assert.JSONEq(t, `{"jit":false}`, stored(), "set")
+
+	require.Equal(t, http.StatusNoContent, sendJSON(t, r, http.MethodPatch, url, map[string]any{"title": "renamed"}).Code)
+	assert.JSONEq(t, `{"jit":false}`, stored(), "absent keeps")
+
+	for _, refused := range []string{`{"append":"init=/bin/sh"}`, `{"turbo":true}`, `jit`} {
+		assert.Equal(t, http.StatusBadRequest, sendJSON(t, r, http.MethodPatch, url, map[string]any{"machine_boot": refused}).Code, refused)
+	}
+	assert.JSONEq(t, `{"jit":false}`, stored(), "refused keeps")
+
+	require.Equal(t, http.StatusNoContent, sendJSON(t, r, http.MethodPatch, url, map[string]any{"machine_boot": ""}).Code)
+	assert.Empty(t, stored(), "empty clears")
+}
