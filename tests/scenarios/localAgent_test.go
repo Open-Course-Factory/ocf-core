@@ -574,3 +574,45 @@ func TestLocalAgent_TheSameMachineReplacesItsStaleConnection(t *testing.T) {
 	assert.True(t, f.agents.Connected(f.terminal))
 	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t))
 }
+
+// The tab is the learner's: a flood of messages ends its connection instead
+// of keeping the server busy.
+func TestLocalAgent_AFloodOfMessagesEndsTheConnection(t *testing.T) {
+	f := newAgentFixture(t)
+	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
+	require.NotNil(t, conn)
+	for i := 0; i < 500; i++ {
+		if conn.WriteJSON(map[string]any{"id": 999999, "exit_code": 0}) != nil {
+			break
+		}
+	}
+	assert.Equal(t, websocket.ClosePolicyViolation, closeCode(t, conn))
+	require.Eventually(t, func() bool { return !f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+}
+
+// One message is bounded: an answer is two outputs of MaxAgentOutput at most.
+func TestLocalAgent_AnOversizedMessageEndsTheConnection(t *testing.T) {
+	f := newAgentFixture(t)
+	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
+	require.NotNil(t, conn)
+	_ = conn.WriteJSON(map[string]any{"id": 1, "stdout": strings.Repeat("x", services.MaxAgentMessage)})
+	require.Eventually(t, func() bool { return !f.agents.Connected(f.terminal) }, 2*time.Second, 10*time.Millisecond)
+}
+
+// The console opening costs a database query: a tab repeating it is heard at
+// most once a second.
+func TestLocalAgent_RepeatedConsoleOpeningsAreReportedOnceASecond(t *testing.T) {
+	f := newAgentFixture(t)
+	attached := make(chan string, 100)
+	terminalServices.SetConsoleAttachedObserver(func(terminalID string) { attached <- terminalID })
+	t.Cleanup(func() { terminalServices.SetConsoleAttachedObserver(nil) })
+
+	conn, _ := f.dial(t, f.run.ID, f.learner, "member")
+	require.NotNil(t, conn)
+	for i := 0; i < 20; i++ {
+		require.NoError(t, conn.WriteJSON(map[string]any{"event": "console_attached"}))
+	}
+	time.Sleep(300 * time.Millisecond)
+	assert.Len(t, attached, 1)
+	assert.True(t, f.agents.Connected(f.terminal), "a few openings are normal use")
+}

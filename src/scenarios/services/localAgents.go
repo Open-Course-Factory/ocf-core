@@ -54,9 +54,18 @@ const (
 const (
 	// MaxAgentOutput bounds each of stdout and stderr kept from an answer.
 	MaxAgentOutput = 64 << 10
-	// maxAgentMessage bounds one message from an agent; a larger one ends
-	// the connection.
-	maxAgentMessage = 1 << 20
+	// MaxAgentMessage bounds one message from an agent; a larger one ends
+	// the connection. An answer carries two outputs of MaxAgentOutput, with
+	// room for JSON escaping.
+	MaxAgentMessage = 256 << 10
+	// An agent may send agentMessageBurst messages at once, then
+	// agentMessagesPerSecond: far above what answering the engine takes, so
+	// only a flood ends the connection.
+	agentMessageBurst      = 64
+	agentMessagesPerSecond = 16
+	// consoleAttachEvery: the console opening costs a database query, so a
+	// tab repeating it is heard at most this often.
+	consoleAttachEvery = time.Second
 	agentPingEvery  = 30 * time.Second
 	agentSilence    = 75 * time.Second // no message nor pong for this long: gone
 	agentWriteWait  = 10 * time.Second
@@ -353,7 +362,7 @@ func (a *localAgent) Serve() {
 		_ = a.conn.Close()
 	}()
 
-	a.conn.SetReadLimit(maxAgentMessage)
+	a.conn.SetReadLimit(MaxAgentMessage)
 	alive := func() { _ = a.conn.SetReadDeadline(time.Now().Add(agentSilence)) }
 	alive()
 	a.conn.SetPongHandler(func(string) error { alive(); return nil })
@@ -362,17 +371,27 @@ func (a *localAgent) Serve() {
 	defer close(stopPings)
 	go a.ping(stopPings)
 
+	allowance := newMessageAllowance(agentMessageBurst, agentMessagesPerSecond)
+	var consoleReported time.Time
 	for {
 		var reply agentReply
 		if err := a.conn.ReadJSON(&reply); err != nil {
+			return
+		}
+		if !allowance.take(time.Now()) {
+			a.close(websocket.ClosePolicyViolation, "too many messages")
 			return
 		}
 		alive()
 		if reply.Event == "console_attached" {
 			// What tt-backend reports for a container's console: a foreground
 			// script left pending by the build is typed now. In its own
-			// goroutine, because typing it is a request this loop must answer.
-			go terminalServices.ReportConsoleAttach(a.terminalID)
+			// goroutine, because typing it is a request this loop must answer;
+			// the throttle bounds those goroutines to one a second.
+			if time.Since(consoleReported) >= consoleAttachEvery {
+				consoleReported = time.Now()
+				go terminalServices.ReportConsoleAttach(a.terminalID)
+			}
 			continue
 		}
 		if reply.Event == "mirror_key" {
@@ -449,4 +468,26 @@ func (a *localAgent) call(req agentRequest, wait time.Duration) (agentReply, err
 	case <-time.After(wait):
 		return agentReply{}, fmt.Errorf("the machine in the learner's browser did not answer within %s", wait)
 	}
+}
+
+// messageAllowance is a token bucket: burst messages at once, refilled at
+// perSecond.
+type messageAllowance struct {
+	tokens, burst, perSecond float64
+	last                     time.Time
+}
+
+func newMessageAllowance(burst, perSecond float64) *messageAllowance {
+	return &messageAllowance{tokens: burst, burst: burst, perSecond: perSecond, last: time.Now()}
+}
+
+// take spends one message at now, false when none is left.
+func (m *messageAllowance) take(now time.Time) bool {
+	m.tokens = min(m.burst, m.tokens+now.Sub(m.last).Seconds()*m.perSecond)
+	m.last = now
+	if m.tokens < 1 {
+		return false
+	}
+	m.tokens--
+	return true
 }
