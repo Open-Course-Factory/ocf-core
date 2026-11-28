@@ -315,7 +315,7 @@ build-docker:
 # left to test (see .code_change_rules).
 .release:
   stage: release
-  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/alpine:3.22
+  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/alpine:3.24
   # The push below starts a new main pipeline, which would cancel this job.
   interruptible: false
   rules:
