@@ -197,8 +197,8 @@ func (s *ScenarioSessionService) SetTerminalStopFunc(fn TerminalStopFunc) {
 	s.stopTerminal = fn
 }
 
-// SetTerminalDeleteFunc sets the callback used to delete a terminal's container
-// when a crash trap ends the run.
+// SetTerminalDeleteFunc sets the callback used to delete a terminal when the
+// run is done with it (tryDeleteTerminal).
 func (s *ScenarioSessionService) SetTerminalDeleteFunc(fn TerminalDeleteFunc) {
 	s.deleteTerminal = fn
 }
@@ -1764,9 +1764,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, txErr
 	}
 
-	if response.Passed && response.NextStep != nil {
-		response.StepProvisioningStatus = s.runStepTransition(&session, leftStep, *response.NextStep)
-	}
+	response.StepProvisioningStatus = s.finishAdvance(&session, leftStep, response.NextStep)
 
 	return response, nil
 }
@@ -1901,9 +1899,7 @@ func (s *ScenarioSessionService) passCurrentStep(session *models.ScenarioSession
 		return nil, txErr
 	}
 
-	if response.NextStep != nil {
-		response.StepProvisioningStatus = s.runStepTransition(session, leftStep, *response.NextStep)
-	}
+	response.StepProvisioningStatus = s.finishAdvance(session, leftStep, response.NextStep)
 
 	return response, nil
 }
@@ -2057,9 +2053,7 @@ func (s *ScenarioSessionService) recordQuizProgress(session *models.ScenarioSess
 		return nil, txErr
 	}
 
-	if response.NextStep != nil {
-		response.StepProvisioningStatus = s.runStepTransition(session, leftStep, *response.NextStep)
-	}
+	response.StepProvisioningStatus = s.finishAdvance(session, leftStep, response.NextStep)
 
 	return response, nil
 }
@@ -2214,9 +2208,7 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 		return nil, txErr
 	}
 
-	if response.NextStep != nil {
-		response.StepProvisioningStatus = s.runStepTransition(&session, leftStep, *response.NextStep)
-	}
+	response.StepProvisioningStatus = s.finishAdvance(&session, leftStep, response.NextStep)
 
 	return response, nil
 }
@@ -2500,7 +2492,8 @@ func (s *ScenarioSessionService) EndCrashTrapRun(terminalSessionID string) {
 }
 
 // tryDeleteTerminal deletes a terminal session the run is done with — a crash
-// trap's, or a rebuild's that will not finish (best-effort, logs on failure).
+// trap's, a rebuild's that will not finish, or a completed run's machine in
+// the browser (best-effort, logs on failure).
 func (s *ScenarioSessionService) tryDeleteTerminal(terminalSessionID string, sessionID uuid.UUID) {
 	if s.deleteTerminal == nil {
 		slog.Error("terminal to delete but no delete callback is wired — container left running",
@@ -2690,7 +2683,33 @@ func completeSession(tx *gorm.DB, session *models.ScenarioSession, now time.Time
 	}).Error; err != nil {
 		return fmt.Errorf("failed to mark session completed: %w", err)
 	}
+	session.Status = "completed"
 	return nil
+}
+
+// finishAdvance does, once an advance is committed, what the run reached
+// needs: the transition into next, or, for a run that completed, the end of
+// its machine in the learner's browser.
+func (s *ScenarioSessionService) finishAdvance(session *models.ScenarioSession, leftStep int, next *int) dto.StepProvisioningStatus {
+	if next != nil {
+		return s.runStepTransition(session, leftStep, *next)
+	}
+	if session.Status == "completed" {
+		s.endLocalMachine(session)
+	}
+	return dto.StepProvisioningStatus{}
+}
+
+// endLocalMachine ends the terminal of a run in the learner's browser that is
+// over, so the learner, who has one live at a time, may launch the next lab
+// (plan rule 8). The sweep then closes the tab and forgets it. A container
+// is kept: the learner may still look around in it until it expires.
+func (s *ScenarioSessionService) endLocalMachine(session *models.ScenarioSession) {
+	if session.TerminalSessionID == nil || !terminalModels.IsLocalSessionID(*session.TerminalSessionID) ||
+		TerminalOfAnotherUser(s.db, session) {
+		return
+	}
+	s.tryDeleteTerminal(*session.TerminalSessionID, session.ID)
 }
 
 // enterStep moves the run from its current step to nextOrder and unlocks it.

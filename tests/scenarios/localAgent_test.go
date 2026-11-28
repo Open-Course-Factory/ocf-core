@@ -10,9 +10,12 @@ import (
 	"time"
 
 	configModels "soli/formations/src/configuration/models"
+	entityManagementModels "soli/formations/src/entityManagement/models"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
+	terminalDto "soli/formations/src/terminalTrainer/dto"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 
@@ -644,4 +647,42 @@ func TestLocalAgent_ARestartRemembersTheRunsMachine(t *testing.T) {
 	conn, _ = fresh.dialBoot(t, fresh.run.ID, fresh.learner, "member", "boot-2")
 	assert.Equal(t, services.AgentCloseMachineLost, closeCode(t, conn))
 	assert.Equal(t, terminalModels.StateDeleted, fresh.terminalState(t))
+}
+
+// completeRun finishes f's run through its last step, an info step.
+func (f agentFixture) completeRun(t *testing.T) {
+	t.Helper()
+	require.NoError(t, f.db.Create(&models.ScenarioStep{ScenarioID: f.run.ScenarioID, Order: 0, Title: "Read", StepType: "info"}).Error)
+	svc := services.NewScenarioSessionService(f.db, &mockFlagService{}, &mockVerificationService{})
+	svc.SetTerminalDeleteFunc(endTerminal(f.db))
+	_, err := svc.VerifyCurrentStep(f.run.ID)
+	require.NoError(t, err)
+	var run models.ScenarioSession
+	require.NoError(t, f.db.First(&run, "id = ?", f.run.ID).Error)
+	require.Equal(t, "completed", run.Status)
+}
+
+// A completed run in the browser ends its machine at once: the learner, who
+// may have one live at a time, can launch the next lab right away.
+func TestCompletingALocalRun_EndsItsMachine(t *testing.T) {
+	f := newAgentFixture(t)
+	f.completeRun(t)
+
+	assert.Equal(t, terminalModels.StateDeleted, f.terminalState(t))
+	plan := &paymentModels.SubscriptionPlan{BaseModel: entityManagementModels.BaseModel{ID: uuid.New()}, Name: "next",
+		MaxCPU: 4000, MaxMemoryMB: 4096, MaxSessionDurationMinutes: 60}
+	_, err := terminalServices.NewTerminalTrainerService(f.db).StartLocalSession(f.learner, terminalDto.CreateComposedSessionInput{Size: "S"}, plan)
+	assert.NoError(t, err, "the next local launch is admitted")
+}
+
+// A completed run in a container keeps its terminal, as before.
+func TestCompletingAnIncusRun_KeepsItsTerminal(t *testing.T) {
+	f := newAgentFixture(t)
+	incus := "incus-" + uuid.NewString()
+	require.NoError(t, f.db.Model(&terminalModels.Terminal{}).Where("session_id = ?", f.terminal).Update("session_id", incus).Error)
+	require.NoError(t, f.db.Model(&f.run).Updates(map[string]any{"terminal_session_id": incus, "machine": models.ScenarioMachineIncus}).Error)
+	f.terminal = incus
+	f.completeRun(t)
+
+	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t))
 }
