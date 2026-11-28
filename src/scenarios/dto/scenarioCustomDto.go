@@ -518,6 +518,10 @@ type AvailableScenarioOutput struct {
 	// launch would be refused before deciding.
 	Machine       string `json:"machine,omitempty"`
 	MachineReason string `json:"machine_reason,omitempty"`
+	// MachineSetting is the scenario's own Machine value ("incus", "local"
+	// or "by_account"): whether a browser that cannot run a machine blocks
+	// the card (local) or launches it in a container (by_account).
+	MachineSetting string `json:"machine_setting"`
 	IsPublic             bool   `json:"is_public"`
 	AdminOnly            bool   `json:"admin_only,omitempty"`
 	// CanManage says whether the caller may edit this scenario, by the rule

@@ -275,6 +275,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			IsPublic:             s.IsPublic,
 			CanManage:            manageable[s.ID],
 			CanRun:               runnable[s.ID],
+			MachineSetting:       s.MachineSetting(),
 		}
 
 		// A scenario offered in more than one language says so here, so the card

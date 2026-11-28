@@ -211,6 +211,15 @@ func ScenarioMachineProblem(machine string) string {
 	return fmt.Sprintf("machine %q is not one of %s, %s, %s", machine, ScenarioMachineIncus, ScenarioMachineLocal, ScenarioMachineByAccount)
 }
 
+// MachineSetting is the scenario's Machine value, empty read as Incus (the
+// column default).
+func (s Scenario) MachineSetting() string {
+	if s.Machine == "" {
+		return ScenarioMachineIncus
+	}
+	return s.Machine
+}
+
 // MachineMayRunLocally says a scenario whose machine value is machine may run
 // in the learner's browser, for some plan; an Incus scenario never does.
 func MachineMayRunLocally(machine string) bool {

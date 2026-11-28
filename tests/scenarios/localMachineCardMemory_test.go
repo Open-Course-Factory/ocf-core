@@ -118,3 +118,23 @@ func TestGetAvailableScenarios_ReadsTheSwitchesOncePerRequest(t *testing.T) {
 	require.Len(t, cards(t, db, userID), 5)
 	assert.LessOrEqual(t, featureReads, 3, "one read per switch, whatever the number of cards")
 }
+
+// The card always carries the scenario's own machine setting, so the page
+// knows before launch whether a browser that cannot run a machine blocks it
+// (Local) or launches it in a container (By account).
+func TestGetAvailableScenarios_CardCarriesTheMachineSetting(t *testing.T) {
+	for _, setting := range []string{models.ScenarioMachineIncus, models.ScenarioMachineLocal, models.ScenarioMachineByAccount} {
+		t.Run(setting, func(t *testing.T) {
+			db, userID, _, _ := localLaunchFixture(t, false, paymentModels.LocalMachinesOff, setting)
+			got := cards(t, db, userID)
+			require.Len(t, got, 1)
+			assert.Equal(t, setting, got[0]["machine_setting"])
+		})
+	}
+
+	t.Run("empty reads as incus", func(t *testing.T) {
+		db, userID, scenario, _ := localLaunchFixture(t, false, paymentModels.LocalMachinesOff, models.ScenarioMachineIncus)
+		require.NoError(t, db.Model(scenario).Update("machine", "").Error)
+		assert.Equal(t, models.ScenarioMachineIncus, cards(t, db, userID)[0]["machine_setting"])
+	})
+}
