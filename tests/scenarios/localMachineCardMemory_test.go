@@ -99,3 +99,23 @@ func TestLocalMachine_MemoryAndCPUsFollowTheChargedSize(t *testing.T) {
 		assert.Equal(t, max((size.CPU+999)/1000, 1), services.LocalMachineCPUs(scenario), instanceType)
 	}
 }
+
+// The platform switches are read once per catalogue, not once per card: an
+// administrator lists every scenario.
+func TestGetAvailableScenarios_ReadsTheSwitchesOncePerRequest(t *testing.T) {
+	db, userID, _, _ := localLaunchFixture(t, true, paymentModels.LocalMachinesAllowed, models.ScenarioMachineLocal)
+	for i := 0; i < 4; i++ {
+		extra := seedPersistenceScenario(t, db, userID, false)
+		require.NoError(t, db.Model(extra).Update("machine", models.ScenarioMachineLocal).Error)
+	}
+	featureReads := 0
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("count-feature-reads", func(tx *gorm.DB) {
+		if tx.Statement.Table == "features" {
+			featureReads++
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove("count-feature-reads") })
+
+	require.Len(t, cards(t, db, userID), 5)
+	assert.LessOrEqual(t, featureReads, 3, "one read per switch, whatever the number of cards")
+}

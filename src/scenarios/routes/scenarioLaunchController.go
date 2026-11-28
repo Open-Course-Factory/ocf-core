@@ -166,7 +166,8 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 	}
 
-	scenarios = services.LaunchableDisplays(sc.db, scenarios)
+	switches := services.ReadMachineSwitches(sc.db)
+	scenarios = switches.LaunchableDisplays(scenarios)
 
 	// For admins: determine which scenarios they'd see as a regular user
 	// so we can flag admin-only visibility
@@ -319,7 +320,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			item.RequiredFeatures = rf
 		}
 
-		provisioning, blockReason := sc.cardProvisioning(s, orgID, resolvedPlan, assignedServers)
+		provisioning, blockReason := sc.cardProvisioning(switches, s, orgID, resolvedPlan, assignedServers)
 		item.Launchable = blockReason == "" && provisioning.CreatesTerminal()
 		item.BlockReason = blockReason
 		item.ResolvedDistribution = provisioning.Distribution
@@ -372,9 +373,9 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 // launch judges it: where the run goes (services.RunMachine), then, for a
 // container, which host and image fit, on the host the assignment names when
 // it names one. The block reason says why it cannot be launched, "" when it can.
-func (sc *scenarioLaunchController) cardProvisioning(s models.Scenario, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, assignedServers map[uuid.UUID]string) (services.ScenarioProvisioning, string) {
+func (sc *scenarioLaunchController) cardProvisioning(switches services.MachineSwitches, s models.Scenario, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, assignedServers map[uuid.UUID]string) (services.ScenarioProvisioning, string) {
 	_, assigned := assignedServers[s.ID]
-	machine, err := services.RunMachine(sc.db, &s, plan, assigned, "")
+	machine, err := switches.RunMachine(sc.db, &s, plan, assigned, "")
 	if err != nil {
 		if reason := machineBlockReason(err); reason != "" {
 			return services.ScenarioProvisioning{}, reason
@@ -766,7 +767,7 @@ func (sc *scenarioLaunchController) decideMachine(ctx *gin.Context, scenario *mo
 		errors.Respond(ctx, http.StatusBadRequest, "Invalid local_machine_unavailable: one of "+strings.Join(services.LocalMachineUnavailableReasons, ", "))
 		return "", false
 	}
-	machine, err := services.RunMachine(sc.db, scenario, plan, assigned, localUnavailable)
+	machine, err := services.ReadMachineSwitches(sc.db).RunMachine(sc.db, scenario, plan, assigned, localUnavailable)
 	if stderrors.Is(err, services.ErrLocalMachineUnavailable) {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{
 			"error_code":    http.StatusUnprocessableEntity,

@@ -39,10 +39,23 @@ func ValidLocalMachineUnavailable(reason string) bool {
 	return reason == "" || slices.Contains(LocalMachineUnavailableReasons, reason)
 }
 
+// MachineSwitches are the platform switches where a run goes depends on,
+// read once per request: the catalogue judges every card with them.
+type MachineSwitches struct {
+	// Local is LocalMachinesEnabled, Desktop LocalMachineDesktopEnabled.
+	Local, Desktop bool
+}
+
+// ReadMachineSwitches reads the platform switches.
+func ReadMachineSwitches(db *gorm.DB) MachineSwitches {
+	local := terminalServices.LocalMachinesEnabled(db)
+	return MachineSwitches{Local: local, Desktop: local && terminalServices.LocalMachineDesktopEnabled(db)}
+}
+
 // LaunchableDisplays drops the scenarios no one may launch because their
 // desktop is switched off: the launcher never offers what RunMachine refuses.
-func LaunchableDisplays(db *gorm.DB, scenarios []models.Scenario) []models.Scenario {
-	if terminalServices.LocalMachineDesktopEnabled(db) {
+func (sw MachineSwitches) LaunchableDisplays(scenarios []models.Scenario) []models.Scenario {
+	if sw.Desktop {
 		return scenarios
 	}
 	kept := scenarios[:0]
@@ -121,12 +134,12 @@ func wantsLocal(ctx MachineContext) bool {
 // assignment brought it, localUnavailable why the learner's browser cannot
 // run a machine ("" when it can, or when no browser asks). A run keeps its
 // machine until it ends: this is for new runs only.
-func RunMachine(db *gorm.DB, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool, localUnavailable string) (string, error) {
-	if scenario.NeedsDesktop() && !terminalServices.LocalMachineDesktopEnabled(db) {
+func (sw MachineSwitches) RunMachine(db *gorm.DB, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool, localUnavailable string) (string, error) {
+	if scenario.NeedsDesktop() && !sw.Desktop {
 		return "", ErrScenarioNeedsDesktop
 	}
 	ctx := MachineContext{
-		SwitchOn:        terminalServices.LocalMachinesEnabled(db),
+		SwitchOn:        sw.Local,
 		ScenarioMachine: scenario.Machine,
 		Assigned:        assigned,
 		CrashTraps:      scenario.CrashTraps,

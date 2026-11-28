@@ -497,6 +497,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 		terms:             terms,
 		sessionExpirySecs: sessionExpirySecs,
 		trainerID:         trainerID,
+		switches:          ReadMachineSwitches(s.db),
 	}
 
 	var mu sync.Mutex
@@ -528,6 +529,7 @@ type bulkStartRun struct {
 	terms             string
 	sessionExpirySecs int
 	trainerID         string
+	switches          MachineSwitches // read once for the whole class
 }
 
 // memberOutcome is what starting one learner produced. Exactly one of its
@@ -637,7 +639,7 @@ func (s *TeacherDashboardService) memberMachine(run bulkStartRun, userID string)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve subscription plan: %w", err)
 	}
-	return RunMachine(s.db, &run.scenario, planResult.Plan, true, "")
+	return run.switches.RunMachine(s.db, &run.scenario, planResult.Plan, true, "")
 }
 
 // ClassRunOrganization is the organization a class's runs live in: the
