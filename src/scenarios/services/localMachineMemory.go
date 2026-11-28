@@ -9,7 +9,7 @@ import (
 const localMachineMinMemoryMiB = 1024
 
 // localMachineSize is the catalog size a run of scenario gets in the
-// learner's browser: the one the budget charges it for (LocalProvisioning).
+// learner's browser: the one LocalProvisioning gives it.
 // Zero if the catalog no longer has it.
 func localMachineSize(scenario models.Scenario) catalog.MachineSize {
 	size, _ := catalog.LookupSize(LocalProvisioning(scenario).Size)

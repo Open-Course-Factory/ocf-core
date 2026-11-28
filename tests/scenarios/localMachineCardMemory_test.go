@@ -87,10 +87,9 @@ func TestGetAvailableScenarios_CardOfALocalRunIsJudgedAsLocal(t *testing.T) {
 	})
 }
 
-// The machine a run gets in the browser is the size the budget charges it
-// for (LocalProvisioning): memory and vCPUs follow that size, an unsized
-// scenario included.
-func TestLocalMachine_MemoryAndCPUsFollowTheChargedSize(t *testing.T) {
+// The machine a run gets in the browser has the size LocalProvisioning gives
+// it: memory and vCPUs follow that size, an unsized scenario included.
+func TestLocalMachine_MemoryAndCPUsFollowItsSize(t *testing.T) {
 	for _, instanceType := range []string{"", "unknown", "XL", "xs"} {
 		scenario := models.Scenario{InstanceType: instanceType}
 		size, ok := catalog.LookupSize(services.LocalProvisioning(scenario).Size)

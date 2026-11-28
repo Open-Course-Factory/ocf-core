@@ -384,8 +384,8 @@ func TestLocalAgent_AnEndedTerminalIsToldSo(t *testing.T) {
 	assert.Equal(t, services.AgentCloseEnded, closeCode(t, conn))
 }
 
-// Rule 9: a tab gone for the grace delay ends its run's terminal, which frees
-// the plan's budget; reopening the run rebuilds it.
+// Rule 9: a tab gone for the grace delay ends its run's terminal; reopening
+// the run rebuilds it.
 func TestSweepLocalMachines_EndsAMachineGoneForTheGraceDelay(t *testing.T) {
 	f := newAgentFixture(t)
 	f.connectAndLeave(t, "boot-1")

@@ -10,7 +10,7 @@ import (
 )
 
 // LocalMachineGrace is how long a local run's tab may stay away before its
-// terminal ends and frees the plan's budget (plan rule 9). Reopening the run
+// terminal ends (plan rule 9), so the learner may start another. Reopening the run
 // after that rebuilds it.
 const LocalMachineGrace = 15 * time.Minute
 

@@ -63,9 +63,9 @@ const localDistribution = "debian"
 const localMachineDefaultSize = "s"
 
 // LocalProvisioning is the machine a run gets in the learner's browser: the
-// scenario's size, which the budget counts as for a container and which sets
-// the machine's memory and vCPUs (LocalMachineMemoryMiB, LocalMachineCPUs),
-// and nothing else — no host to place it on, no network, no build features.
+// scenario's size, which sets the machine's memory and vCPUs
+// (LocalMachineMemoryMiB, LocalMachineCPUs) but reserves no budget (plan
+// rule 8), and nothing else — no host to place it on, no network, no build features.
 func LocalProvisioning(scenario models.Scenario) ScenarioProvisioning {
 	size := strings.ToLower(scenario.InstanceType)
 	if _, known := catalog.LookupSize(size); !known {

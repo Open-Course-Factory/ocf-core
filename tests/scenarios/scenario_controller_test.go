@@ -494,8 +494,7 @@ func TestGetSessionByTerminal_GivesTheMachineDisplay(t *testing.T) {
 
 // A machine in the learner's browser gets the memory of the size the scenario
 // asks for, from the size catalog: at least 1 GiB (smaller sizes cannot run a
-// Debian lab); without a size the catalog knows, the size the run is charged
-// for (LocalProvisioning: S).
+// Debian lab); without a size the catalog knows, LocalProvisioning's default, S.
 func TestGetSessionByTerminal_GivesTheMachineMemoryOfTheScenarioSize(t *testing.T) {
 	db := freshTestDB(t)
 	router := setupTestRouter(db)
@@ -522,8 +521,7 @@ func TestGetSessionByTerminal_GivesTheMachineMemoryOfTheScenarioSize(t *testing.
 
 // A machine in the learner's browser gets the vCPUs of the size the scenario
 // asks for, rounded up to whole CPUs (xs is half a vCPU, which still needs
-// one); without a size the catalog knows, the size the run is charged for
-// (LocalProvisioning: S).
+// one); without a size the catalog knows, LocalProvisioning's default, S.
 func TestGetSessionByTerminal_GivesTheMachineCPUsOfTheScenarioSize(t *testing.T) {
 	db := freshTestDB(t)
 	router := setupTestRouter(db)
