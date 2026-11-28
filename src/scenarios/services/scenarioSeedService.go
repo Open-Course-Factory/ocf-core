@@ -115,9 +115,9 @@ func buildSeedScenario(input dto.SeedScenarioInput) (*models.Scenario, error) {
 		BuildFeatures:           buildFeatures,
 		CrashTraps:              input.CrashTraps,
 		PortExposureAllowed:     input.PortExposureAllowed != nil && *input.PortExposureAllowed,
-		Machine:                 seedMachine(input.Machine),
+		Machine:                 orDefault(input.Machine, models.ScenarioMachineIncus),
 		MachineApps:             machineApps,
-		MachineDisplay:          seedMachineDisplay(input.MachineDisplay),
+		MachineDisplay:          orDefault(input.MachineDisplay, models.ScenarioMachineDisplayTerminal),
 		MachineBoot:             machineBoot,
 		SessionUser:             input.SessionUser,
 		Objectives:              input.Objectives,
@@ -462,18 +462,11 @@ func recreateStepChildren(tx *gorm.DB, step *models.ScenarioStep) error {
 	return nil
 }
 
-// seedMachine is where a seeded scenario runs: what the file says, Incus when
-// it says nothing.
-func seedMachine(machine *string) string {
-	if machine == nil {
-		return models.ScenarioMachineIncus
+// orDefault is what a seed file says, fallback when it says nothing: a
+// seeded scenario runs on Incus and shows a terminal unless told otherwise.
+func orDefault(value *string, fallback string) string {
+	if value == nil {
+		return fallback
 	}
-	return *machine
-}
-
-func seedMachineDisplay(display *string) string {
-	if display == nil {
-		return models.ScenarioMachineDisplayTerminal
-	}
-	return *display
+	return *value
 }

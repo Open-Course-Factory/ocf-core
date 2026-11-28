@@ -43,6 +43,8 @@ type ScenarioSession struct {
 	// Machine is where the run runs (ScenarioMachineIncus or
 	// ScenarioMachineLocal), decided once when it starts: a rebuild gets the
 	// same, whatever the switch, the plan or the scenario say by then.
+	// It restates the terminal id's prefix (MachineOfTerminal), kept because
+	// clients read it on the session (json "machine"): dropping it changes the API.
 	Machine string `gorm:"type:varchar(20);default:'incus'" json:"machine"`
 	CurrentStep       int        `gorm:"default:0" json:"current_step"`
 	Status            string     `gorm:"type:varchar(50);default:'active'" json:"status"` // provisioning, active, completed, abandoned, setup_failed
