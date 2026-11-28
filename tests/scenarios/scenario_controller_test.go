@@ -494,11 +494,12 @@ func TestGetSessionByTerminal_GivesTheMachineDisplay(t *testing.T) {
 
 // A machine in the learner's browser gets the memory of the size the scenario
 // asks for, from the size catalog: at least 1 GiB (smaller sizes cannot run a
-// Debian lab), and 2 GiB without a size the catalog knows.
+// Debian lab); without a size the catalog knows, the size the run is charged
+// for (LocalProvisioning: S).
 func TestGetSessionByTerminal_GivesTheMachineMemoryOfTheScenarioSize(t *testing.T) {
 	db := freshTestDB(t)
 	router := setupTestRouter(db)
-	for size, want := range map[string]float64{"xs": 1024, "s": 1024, "M": 1024, "l": 2048, "xl": 4096, "": 2048, "debian": 2048} {
+	for size, want := range map[string]float64{"xs": 1024, "s": 1024, "M": 1024, "l": 2048, "xl": 4096, "": 1024, "debian": 1024} {
 		t.Run("size "+size, func(t *testing.T) {
 			scenario := models.Scenario{Name: "machine-memory-" + uuid.NewString(), Title: "Machine Memory", InstanceType: size,
 				CreatedByID: "creator-1", Machine: models.ScenarioMachineLocal}
@@ -521,11 +522,12 @@ func TestGetSessionByTerminal_GivesTheMachineMemoryOfTheScenarioSize(t *testing.
 
 // A machine in the learner's browser gets the vCPUs of the size the scenario
 // asks for, rounded up to whole CPUs (xs is half a vCPU, which still needs
-// one), and 2 without a size the catalog knows.
+// one); without a size the catalog knows, the size the run is charged for
+// (LocalProvisioning: S).
 func TestGetSessionByTerminal_GivesTheMachineCPUsOfTheScenarioSize(t *testing.T) {
 	db := freshTestDB(t)
 	router := setupTestRouter(db)
-	for size, want := range map[string]float64{"xs": 1, "s": 1, "M": 2, "l": 4, "": 2, "debian": 2} {
+	for size, want := range map[string]float64{"xs": 1, "s": 1, "M": 2, "l": 4, "": 1, "debian": 1} {
 		t.Run("size "+size, func(t *testing.T) {
 			scenario := models.Scenario{Name: "machine-cpus-" + uuid.NewString(), Title: "Machine CPUs", InstanceType: size,
 				CreatedByID: "creator-1", Machine: models.ScenarioMachineLocal}

@@ -5,32 +5,26 @@ import (
 	"soli/formations/src/scenarios/models"
 )
 
-// Memory of a machine in the learner's browser, in MiB. Below 1 GiB a Debian
-// lab does not run.
-const (
-	localMachineMinMemoryMiB     = 1024
-	localMachineDefaultMemoryMiB = 2048
-	localMachineDefaultCPUs      = 2
-)
+// localMachineMinMemoryMiB: below 1 GiB a Debian lab does not run.
+const localMachineMinMemoryMiB = 1024
 
-// LocalMachineMemoryMiB is the memory a run of scenario gets on a machine in
-// the learner's browser: its size's, from the size catalog, at least 1 GiB;
-// 2 GiB when it asks for no size the catalog knows. Above 2 GiB the page warns
-// that the learner's computer needs that much (the front's rule).
-func LocalMachineMemoryMiB(scenario models.Scenario) int {
-	size, ok := catalog.LookupSize(scenario.InstanceType)
-	if !ok {
-		return localMachineDefaultMemoryMiB
-	}
-	return max(size.MemoryMB, localMachineMinMemoryMiB)
+// localMachineSize is the catalog size a run of scenario gets in the
+// learner's browser: the one the budget charges it for (LocalProvisioning).
+// Zero if the catalog no longer has it.
+func localMachineSize(scenario models.Scenario) catalog.MachineSize {
+	size, _ := catalog.LookupSize(LocalProvisioning(scenario).Size)
+	return size
 }
 
-// LocalMachineCPUs is the scenario size's vCPUs, rounded up: the catalog
-// counts millicores, and half a vCPU still needs a whole one in the browser.
+// LocalMachineMemoryMiB is the memory, in MiB, a run of scenario gets on a
+// machine in the learner's browser: its size's, at least 1 GiB. Above 2 GiB
+// the page warns that the learner's computer needs that much (the front's rule).
+func LocalMachineMemoryMiB(scenario models.Scenario) int {
+	return max(localMachineSize(scenario).MemoryMB, localMachineMinMemoryMiB)
+}
+
+// LocalMachineCPUs is the size's vCPUs, rounded up: the catalog counts
+// millicores, and half a vCPU still needs a whole one in the browser.
 func LocalMachineCPUs(scenario models.Scenario) int {
-	size, ok := catalog.LookupSize(scenario.InstanceType)
-	if !ok {
-		return localMachineDefaultCPUs
-	}
-	return max((size.CPU+catalog.MilliCPUPerVCPU-1)/catalog.MilliCPUPerVCPU, 1)
+	return max((localMachineSize(scenario).CPU+catalog.MilliCPUPerVCPU-1)/catalog.MilliCPUPerVCPU, 1)
 }

@@ -6,11 +6,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"soli/formations/src/payment/catalog"
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/models"
+	"soli/formations/src/scenarios/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -83,4 +85,17 @@ func TestGetAvailableScenarios_CardOfALocalRunIsJudgedAsLocal(t *testing.T) {
 		assert.Equal(t, false, got[0]["launchable"])
 		assert.Equal(t, "needs_container", got[0]["block_reason"])
 	})
+}
+
+// The machine a run gets in the browser is the size the budget charges it
+// for (LocalProvisioning): memory and vCPUs follow that size, an unsized
+// scenario included.
+func TestLocalMachine_MemoryAndCPUsFollowTheChargedSize(t *testing.T) {
+	for _, instanceType := range []string{"", "unknown", "XL", "xs"} {
+		scenario := models.Scenario{InstanceType: instanceType}
+		size, ok := catalog.LookupSize(services.LocalProvisioning(scenario).Size)
+		require.True(t, ok, instanceType)
+		assert.Equal(t, max(size.MemoryMB, 1024), services.LocalMachineMemoryMiB(scenario), instanceType)
+		assert.Equal(t, max((size.CPU+999)/1000, 1), services.LocalMachineCPUs(scenario), instanceType)
+	}
 }
