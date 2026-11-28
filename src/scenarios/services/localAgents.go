@@ -66,9 +66,9 @@ const (
 	// consoleAttachEvery: the console opening costs a database query, so a
 	// tab repeating it is heard at most this often.
 	consoleAttachEvery = time.Second
-	agentPingEvery  = 30 * time.Second
-	agentSilence    = 75 * time.Second // no message nor pong for this long: gone
-	agentWriteWait  = 10 * time.Second
+	agentPingEvery     = 30 * time.Second
+	agentSilence       = 75 * time.Second // no message nor pong for this long: gone
+	agentWriteWait     = 10 * time.Second
 )
 
 type agentRequest struct {
@@ -95,9 +95,9 @@ const maxMirrorKey = 128
 
 // LocalAgents holds the connected agents, one per terminal session.
 //
-// ponytail: in memory, so one ocf-core replica (or sticky routing on the run);
-// a shared hub when there are several. A restart forgets which machine each
-// terminal ran on, so a reload during one is not seen as a lost machine.
+// ponytail: in memory, so exactly one ocf-core replica; a shared hub when
+// there are several. Which machine each terminal runs on outlives a restart
+// through the terminal row (Terminal.LocalBoot, RecallBoot).
 type LocalAgents struct {
 	mu       sync.Mutex
 	agents   map[string]*localAgent
@@ -163,6 +163,16 @@ func (h *LocalAgents) admits(terminalID, boot string) error {
 		return ErrMachineLost
 	}
 	return nil
+}
+
+// RecallBoot tells the hub the machine terminalID ran on before a restart
+// (recorded, its Terminal.LocalBoot), unless it knows better already.
+func (h *LocalAgents) RecallBoot(terminalID, recorded string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if recorded != "" && h.boots[terminalID] == "" {
+		h.boots[terminalID] = recorded
+	}
 }
 
 // Building reports whether terminalID's world is being built: a machine lost

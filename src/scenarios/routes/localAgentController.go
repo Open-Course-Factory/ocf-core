@@ -85,8 +85,8 @@ func (c *LocalAgentController) ConnectAgent(ctx *gin.Context) {
 		return
 	}
 	boot := ctx.Query("boot")
-	if boot == "" {
-		errors.Respond(ctx, http.StatusBadRequest, "Missing machine boot ID")
+	if boot == "" || len(boot) > maxBootID {
+		errors.Respond(ctx, http.StatusBadRequest, "Missing or invalid machine boot ID")
 		return
 	}
 	terminalID := *run.TerminalSessionID
@@ -111,7 +111,21 @@ func (c *LocalAgentController) ConnectAgent(ctx *gin.Context) {
 		services.CloseConn(conn, services.AgentCloseOtherTab, err.Error())
 		return
 	}
+	c.recordBoot(terminalID, boot)
 	agent.Serve()
+}
+
+// maxBootID bounds the boot ID a tab gives (Terminal.LocalBoot); the tab
+// sends a UUID.
+const maxBootID = 128
+
+// recordBoot keeps on terminalID's row the machine its agent came from, so a
+// restart does not forget it (LocalAgents.RecallBoot).
+func (c *LocalAgentController) recordBoot(terminalID, boot string) {
+	if err := c.db.Model(&terminalModels.Terminal{}).Where("session_id = ? AND local_boot <> ?", terminalID, boot).
+		Update("local_boot", boot).Error; err != nil {
+		utils.Error("recording the machine of %s: %v", terminalID, err)
+	}
 }
 
 // replaceLostMachine deals with a tab that booted another machine than the
@@ -139,6 +153,7 @@ func (c *LocalAgentController) refusal(terminalID, boot string) (int, string) {
 	if err := c.db.Where("session_id = ?", terminalID).First(&terminal).Error; err != nil || !terminal.IsLive() {
 		return services.AgentCloseEnded, "this run's machine has ended"
 	}
+	c.agents.RecallBoot(terminalID, terminal.LocalBoot)
 	switch err := c.agents.Admits(terminalID, boot); err {
 	case nil:
 		return 0, ""

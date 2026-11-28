@@ -59,6 +59,14 @@ func newAgentFixture(t *testing.T) agentFixture {
 	require.NoError(t, db.Create(&terminalModels.Terminal{SessionID: terminal, UserID: learner, State: terminalModels.StateRunning,
 		ExpiresAt: time.Now().Add(time.Hour), InstanceType: "debian", UserTerminalKeyID: key.ID, Backend: terminalModels.LocalBackend}).Error)
 
+	f := agentFixture{db: db, learner: learner, run: run, terminal: terminal}
+	return f.restarted(t)
+}
+
+// restarted is f served by a new ocf-core: same database, an empty hub.
+func (f agentFixture) restarted(t *testing.T) agentFixture {
+	t.Helper()
+	db := f.db
 	agents := services.NewLocalAgents()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -70,7 +78,8 @@ func newAgentFixture(t *testing.T) agentFixture {
 	router.GET("/api/v1/scenario-sessions/:id/agent", scenarioController.NewLocalAgentController(db, agents, endTerminal(db)).ConnectAgent)
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
-	return agentFixture{db: db, learner: learner, run: run, terminal: terminal, agents: agents, server: server}
+	f.agents, f.server = agents, server
+	return f
 }
 
 // endTerminal ends a terminal the way the platform does.
@@ -615,4 +624,24 @@ func TestLocalAgent_RepeatedConsoleOpeningsAreReportedOnceASecond(t *testing.T) 
 	time.Sleep(300 * time.Millisecond)
 	assert.Len(t, attached, 1)
 	assert.True(t, f.agents.Connected(f.terminal), "a few openings are normal use")
+}
+
+// The machine a run's tab booted outlives a restart of ocf-core: a fresh
+// machine coming back after it is still seen as a lost one, and the run's own
+// machine is still taken back.
+func TestLocalAgent_ARestartRemembersTheRunsMachine(t *testing.T) {
+	f := newAgentFixture(t)
+	f.connectAndLeave(t, "boot-1")
+
+	same := f.restarted(t)
+	conn, _ := same.dialBoot(t, same.run.ID, same.learner, "member", "boot-1")
+	require.NotNil(t, conn)
+	require.Eventually(t, func() bool { return same.agents.Connected(same.terminal) }, time.Second, 10*time.Millisecond)
+	require.NoError(t, conn.Close())
+	require.Eventually(t, func() bool { return !same.agents.Connected(same.terminal) }, time.Second, 10*time.Millisecond)
+
+	fresh := f.restarted(t)
+	conn, _ = fresh.dialBoot(t, fresh.run.ID, fresh.learner, "member", "boot-2")
+	assert.Equal(t, services.AgentCloseMachineLost, closeCode(t, conn))
+	assert.Equal(t, terminalModels.StateDeleted, fresh.terminalState(t))
 }

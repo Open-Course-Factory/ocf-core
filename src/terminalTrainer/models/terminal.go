@@ -413,6 +413,11 @@ type Terminal struct {
 	// access (the session was composed with the network feature, tt-backend
 	// detached its NIC). Mirrored from tt-backend's session list on sync.
 	NetworkDisabled bool `gorm:"column:network_disabled;default:false" json:"network_disabled" mapstructure:"network_disabled"`
+	// LocalBoot is the machine a local session's tab booted, recorded when
+	// its agent connects, so that after a restart of ocf-core a fresh machine
+	// is still told from the run's own. Empty for a container, and until the
+	// tab first connects.
+	LocalBoot string `gorm:"type:varchar(128);default:''" json:"-"`
 	// Denormalized resource footprint (MR-CORE-3). Populated by the
 	// BeforeCreate hook in a later MR from the size catalog so the budget
 	// quota counter can sum CPU/RAM without re-joining against tt-backend.
