@@ -38,16 +38,12 @@ func SweepLocalMachines(db *gorm.DB, agents *LocalAgents, grace time.Duration, e
 		if err := end(terminal.SessionID); err != nil {
 			utils.Error("local machine sweep: ending %s: %v", terminal.SessionID, err)
 			live[terminal.SessionID] = true // tried again next sweep
-			continue
-		}
-		if !agents.Connected(terminal.SessionID) {
-			agents.forget(terminal.SessionID)
 		}
 	}
 	for _, terminalID := range agents.connectedTerminals() {
 		if !live[terminalID] {
 			agents.Close(terminalID, AgentCloseEnded, "this run's machine has ended")
-			agents.forget(terminalID)
 		}
 	}
+	agents.forgetAllBut(live)
 }

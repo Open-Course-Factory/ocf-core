@@ -326,12 +326,33 @@ func (h *LocalAgents) connectedTerminals() []string {
 	return ids
 }
 
-// forget drops what the hub knows of an ended terminal.
-func (h *LocalAgents) forget(terminalID string) {
+// forgetAllBut drops what the hub knows of every terminal not in live, with
+// no agent connected and no build running: terminals ended here or elsewhere
+// (an abandon, a trainer's stop, a lost machine). A build is spared because
+// its terminal may have become live after live was read. A wait for such a
+// terminal's tab is released: it finds no agent.
+func (h *LocalAgents) forgetAllBut(live map[string]bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	delete(h.boots, terminalID)
-	delete(h.away, terminalID)
+	gone := func(terminalID string) bool {
+		return !live[terminalID] && h.agents[terminalID] == nil && h.building[terminalID] == 0
+	}
+	for terminalID := range h.boots {
+		if gone(terminalID) {
+			delete(h.boots, terminalID)
+		}
+	}
+	for terminalID := range h.away {
+		if gone(terminalID) {
+			delete(h.away, terminalID)
+		}
+	}
+	for terminalID, arrived := range h.arrivals {
+		if gone(terminalID) {
+			close(arrived)
+			delete(h.arrivals, terminalID)
+		}
+	}
 }
 
 // Close tells terminalID's agent, if connected, why it is closed, and closes it.
