@@ -166,6 +166,8 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 	}
 
+	scenarios = services.LaunchableDisplays(sc.db, scenarios)
+
 	// For admins: determine which scenarios they'd see as a regular user
 	// so we can flag admin-only visibility
 	assignedScenarioIDs := make(map[uuid.UUID]bool)
@@ -724,7 +726,7 @@ func (sc *scenarioLaunchController) provisionLocalTerminal(ctx *gin.Context, use
 // it has answered the request, and reports false.
 func (sc *scenarioLaunchController) decideMachine(ctx *gin.Context, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool) (string, bool) {
 	machine, err := services.RunMachine(sc.db, scenario, plan, assigned)
-	if stderrors.Is(err, services.ErrScenarioNeedsContainer) {
+	if stderrors.Is(err, services.ErrScenarioNeedsContainer) || stderrors.Is(err, services.ErrScenarioNeedsDesktop) {
 		errors.Respond(ctx, http.StatusUnprocessableEntity, err.Error())
 		return "", false
 	}

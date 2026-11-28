@@ -218,6 +218,12 @@ const (
 	ScenarioMachineDisplayDesktop  = "desktop"
 )
 
+// NeedsDesktop says a run of the scenario shows unkernel's desktop, which
+// the platform's desktop switch gates (LocalMachineDesktopEnabled).
+func (s *Scenario) NeedsDesktop() bool {
+	return s.MachineDisplay == ScenarioMachineDisplayDesktop
+}
+
 // ScenarioMachineDisplayProblem says what is wrong with a scenario's
 // machine_display value, "" when nothing is. Empty is the column default, a
 // terminal.

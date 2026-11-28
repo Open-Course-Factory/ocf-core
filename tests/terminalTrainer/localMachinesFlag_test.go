@@ -35,3 +35,13 @@ func TestLocalMachinesFlag_IsDeclaredOff(t *testing.T) {
 	}
 	t.Fatal("the local machines flag is not declared, so it is never seeded and never shown to the operator")
 }
+
+func TestLocalMachineDesktopFlag_IsDeclaredOff(t *testing.T) {
+	for _, f := range terminalTrainer.NewTerminalTrainerModuleConfig().GetFeatures() {
+		if f.Key == services.LocalMachineDesktopFeatureKey {
+			assert.False(t, f.Enabled, "seeded off: the desktop ships after the terminal")
+			return
+		}
+	}
+	t.Fatal("the desktop flag is not declared, so it is never seeded and never shown to the operator")
+}

@@ -628,7 +628,9 @@ const LocalMachineReason = "local_machine"
 func (s *TeacherDashboardService) memberMachine(run bulkStartRun, userID string) (string, error) {
 	// An Incus scenario never runs locally: no plan is read for it here, so a
 	// class start of one behaves exactly as before local machines existed.
-	if run.scenario.Machine == "" || run.scenario.Machine == models.ScenarioMachineIncus {
+	// A desktop scenario goes on to RunMachine, which refuses it while the
+	// desktop is off.
+	if !run.scenario.NeedsDesktop() && (run.scenario.Machine == "" || run.scenario.Machine == models.ScenarioMachineIncus) {
 		return models.ScenarioMachineIncus, nil
 	}
 	planResult, err := paymentServices.NewEffectivePlanService(s.db).GetUserEffectivePlan(userID, run.orgID)

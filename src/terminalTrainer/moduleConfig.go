@@ -45,6 +45,14 @@ func (t *TerminalTrainerModuleConfig) GetFeatures() []models.FeatureDefinition {
 			Module:      "terminals",
 		},
 		{
+			Key:         services.LocalMachineDesktopFeatureKey,
+			Name:        "Local machines: desktop",
+			Description: "Let scenarios show a desktop, not only a terminal, on a machine inside the learner's browser tab. Needs Local machines on too. Off: desktop scenarios are hidden from learners and cannot be launched; authors still edit them, and runs in progress finish.",
+			Enabled:     false,
+			Category:    "modules",
+			Module:      "terminals",
+		},
+		{
 			// Not a toggle: the value carries the curation. tt-backend answers
 			// with every image it can run, including scenario base images that
 			// were never meant to be offered when starting a terminal.

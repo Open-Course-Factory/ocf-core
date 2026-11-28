@@ -17,3 +17,17 @@ func LocalMachinesEnabled(db *gorm.DB) bool {
 	feature, err := configRepositories.NewFeatureRepository(db).GetFeatureByKey(LocalMachinesFeatureKey)
 	return err == nil && feature.Enabled
 }
+
+// LocalMachineDesktopFeatureKey hides unkernel's desktop until it is ready,
+// while terminals in the browser (LocalMachinesFeatureKey) already ship.
+const LocalMachineDesktopFeatureKey = "local_machine_desktop"
+
+// LocalMachineDesktopEnabled is the one owner of "the desktop is on": a
+// desktop is a machine in the browser, so it needs both switches.
+func LocalMachineDesktopEnabled(db *gorm.DB) bool {
+	if !LocalMachinesEnabled(db) {
+		return false
+	}
+	feature, err := configRepositories.NewFeatureRepository(db).GetFeatureByKey(LocalMachineDesktopFeatureKey)
+	return err == nil && feature.Enabled
+}

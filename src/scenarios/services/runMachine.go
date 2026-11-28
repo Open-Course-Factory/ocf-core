@@ -21,6 +21,25 @@ import (
 var ErrScenarioNeedsContainer = errors.New("this scenario must run in a container: its checks cannot be trusted on a machine in your browser")
 
 // MachineContext is everything that decides where a run goes.
+// ErrScenarioNeedsDesktop refuses a new run of a desktop scenario while the
+// platform's desktop switch is off.
+var ErrScenarioNeedsDesktop = errors.New("this scenario shows a desktop in your browser, which is not available yet")
+
+// LaunchableDisplays drops the scenarios no one may launch because their
+// desktop is switched off: the launcher never offers what RunMachine refuses.
+func LaunchableDisplays(db *gorm.DB, scenarios []models.Scenario) []models.Scenario {
+	if terminalServices.LocalMachineDesktopEnabled(db) {
+		return scenarios
+	}
+	kept := scenarios[:0]
+	for _, s := range scenarios {
+		if !s.NeedsDesktop() {
+			kept = append(kept, s)
+		}
+	}
+	return kept
+}
+
 type MachineContext struct {
 	// SwitchOn is the platform switch (LocalMachinesEnabled).
 	SwitchOn bool
@@ -73,6 +92,9 @@ func wantsLocal(ctx MachineContext) bool {
 // assignment brought it. A run keeps its machine until it ends: this is for
 // new runs only.
 func RunMachine(db *gorm.DB, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool) (string, error) {
+	if scenario.NeedsDesktop() && !terminalServices.LocalMachineDesktopEnabled(db) {
+		return "", ErrScenarioNeedsDesktop
+	}
 	ctx := MachineContext{
 		SwitchOn:        terminalServices.LocalMachinesEnabled(db),
 		ScenarioMachine: scenario.Machine,
