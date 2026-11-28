@@ -211,6 +211,34 @@ func ScenarioMachineProblem(machine string) string {
 	return fmt.Sprintf("machine %q is not one of %s, %s, %s", machine, ScenarioMachineIncus, ScenarioMachineLocal, ScenarioMachineByAccount)
 }
 
+// MachineMayRunLocally says a scenario whose machine value is machine may run
+// in the learner's browser, for some plan; an Incus scenario never does.
+func MachineMayRunLocally(machine string) bool {
+	return machine == ScenarioMachineLocal || machine == ScenarioMachineByAccount
+}
+
+// MachineFieldProblem is what is wrong with one of a scenario's machine fields.
+type MachineFieldProblem struct {
+	Field, Problem string
+}
+
+// MachineProblems checks the scenario's machine fields: machine,
+// machine_apps, machine_display and machine_boot. None when all are valid.
+func (s Scenario) MachineProblems() []MachineFieldProblem {
+	var problems []MachineFieldProblem
+	for _, check := range []MachineFieldProblem{
+		{"machine", ScenarioMachineProblem(s.Machine)},
+		{"machine_apps", ScenarioMachineAppsProblem(s.MachineApps)},
+		{"machine_display", ScenarioMachineDisplayProblem(s.MachineDisplay)},
+		{"machine_boot", ScenarioMachineBootProblem(s.MachineBoot)},
+	} {
+		if check.Problem != "" {
+			problems = append(problems, check)
+		}
+	}
+	return problems
+}
+
 // What a run's machine in the learner's browser shows: a terminal, or
 // unkernel's desktop with the scenario's MachineApps in its launcher.
 const (

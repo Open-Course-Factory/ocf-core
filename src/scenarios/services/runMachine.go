@@ -116,7 +116,7 @@ func localRefusal(ctx MachineContext) error {
 // organization assignment keeps a By account scenario on Incus, where it can be
 // supervised; a Local scenario stays local wherever it comes from.
 func wantsLocal(ctx MachineContext) bool {
-	if !ctx.SwitchOn {
+	if !ctx.SwitchOn || !models.MachineMayRunLocally(ctx.ScenarioMachine) {
 		return false
 	}
 	switch ctx.ScenarioMachine {

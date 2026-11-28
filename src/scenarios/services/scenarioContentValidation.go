@@ -58,17 +58,8 @@ func ScenarioContentProblems(scenario *models.Scenario) []string {
 			problems = append(problems, err.Error())
 		}
 	}
-	if problem := models.ScenarioMachineProblem(scenario.Machine); problem != "" {
-		problems = append(problems, problem)
-	}
-	if problem := models.ScenarioMachineAppsProblem(scenario.MachineApps); problem != "" {
-		problems = append(problems, problem)
-	}
-	if problem := models.ScenarioMachineDisplayProblem(scenario.MachineDisplay); problem != "" {
-		problems = append(problems, problem)
-	}
-	if problem := models.ScenarioMachineBootProblem(scenario.MachineBoot); problem != "" {
-		problems = append(problems, problem)
+	for _, problem := range scenario.MachineProblems() {
+		problems = append(problems, problem.Problem)
 	}
 	if len(scenario.Steps) == 0 {
 		problems = append(problems, "the scenario has no steps")

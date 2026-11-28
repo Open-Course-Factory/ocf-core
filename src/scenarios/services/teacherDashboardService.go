@@ -632,7 +632,7 @@ func (s *TeacherDashboardService) memberMachine(run bulkStartRun, userID string)
 	// class start of one behaves exactly as before local machines existed.
 	// A desktop scenario goes on to RunMachine, which refuses it while the
 	// desktop is off.
-	if !run.scenario.NeedsDesktop() && (run.scenario.Machine == "" || run.scenario.Machine == models.ScenarioMachineIncus) {
+	if !run.scenario.NeedsDesktop() && !models.MachineMayRunLocally(run.scenario.Machine) {
 		return models.ScenarioMachineIncus, nil
 	}
 	planResult, err := paymentServices.NewEffectivePlanService(s.db).GetUserEffectivePlan(userID, run.orgID)
