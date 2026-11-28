@@ -20,12 +20,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // A local session's machine runs in the learner's browser: the platform keeps
 // the row (budget, expiry, state) exactly as for a container, and never asks
 // tt-backend anything about it.
 func localSessionFixture(t *testing.T) (services.TerminalTrainerService, *recorder, string, *paymentModels.SubscriptionPlan) {
+	t.Helper()
+	svc, rec, userID, plan, _ := localSessionFixtureWithDB(t)
+	return svc, rec, userID, plan
+}
+
+func localSessionFixtureWithDB(t *testing.T) (services.TerminalTrainerService, *recorder, string, *paymentModels.SubscriptionPlan, *gorm.DB) {
 	t.Helper()
 	rec := &recorder{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +51,7 @@ func localSessionFixture(t *testing.T) (services.TerminalTrainerService, *record
 		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()}, Name: "local",
 		MaxCPU: 4000, MaxMemoryMB: 4096, MaxSessionDurationMinutes: 90, CommandHistoryRetentionDays: 7,
 	}
-	return services.NewTerminalTrainerService(db), rec, userID, plan
+	return services.NewTerminalTrainerService(db), rec, userID, plan, db
 }
 
 // sessionCalls is what tt-backend was asked, less the enum catalog the
@@ -178,4 +185,37 @@ func TestValidateSessionAccess_LocalSessionAsksTTBackendNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.StateRunning, row.State)
 	assert.Empty(t, sessionCalls(rec))
+}
+
+// A machine in the browser costs the platform no CPU or RAM (plan rule 8,
+// 2026-11-28): it starts on a plan whose budget could not hold a container of
+// its size, and charges nothing to the budget containers draw on.
+func TestStartLocalSession_ReservesNoBudget(t *testing.T) {
+	svc, _, userID, plan, db := localSessionFixtureWithDB(t)
+	plan.MaxCPU, plan.MaxMemoryMB = 100, 100 // no catalog size fits
+
+	started, err := svc.StartLocalSession(userID, dto.CreateComposedSessionInput{Size: "XL"}, plan)
+	require.NoError(t, err)
+
+	row, err := svc.GetSessionInfo(started.SessionID)
+	require.NoError(t, err)
+	assert.False(t, row.CountsTowardQuota(), "not charged to the budget")
+	occupied, err := models.CountUserOccupiedSlots(db, userID, nil)
+	require.NoError(t, err)
+	assert.Zero(t, occupied, "the budget sum does not count it")
+}
+
+// One machine in the browser at a time per learner: a second one is refused
+// while the first is live, and allowed once it has ended.
+func TestStartLocalSession_OneLiveLocalSessionPerLearner(t *testing.T) {
+	svc, _, userID, plan := localSessionFixture(t)
+	first, err := svc.StartLocalSession(userID, dto.CreateComposedSessionInput{Size: "S"}, plan)
+	require.NoError(t, err)
+
+	_, err = svc.StartLocalSession(userID, dto.CreateComposedSessionInput{Size: "S"}, plan)
+	require.ErrorIs(t, err, services.ErrLocalMachineBusy)
+
+	require.NoError(t, svc.DeleteSession(first.SessionID))
+	_, err = svc.StartLocalSession(userID, dto.CreateComposedSessionInput{Size: "S"}, plan)
+	require.NoError(t, err)
 }

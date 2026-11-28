@@ -228,3 +228,46 @@ func TestPreviewScenario_LocalMachineUnavailableLikeALaunch(t *testing.T) {
 	w = previewScenario(t, db, userID, scenario.ID, map[string]any{"local_machine_unavailable": "nope"})
 	assert.Equal(t, http.StatusBadRequest, w.Code, "body=%s", w.Body.String())
 }
+
+// fillBudget leaves userID's plan no room for any container.
+func fillBudget(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.Model(&paymentModels.SubscriptionPlan{}).Where("name = ?", "PersistencePlan").
+		Updates(map[string]any{"max_cpu": 100, "max_memory_mb": 100}).Error)
+}
+
+// A run in the browser reserves none of the plan's CPU/RAM budget (plan rule
+// 8, 2026-11-28): it starts on a budget no container fits in, and its card
+// says it can be launched.
+func TestLaunchScenario_LocalRunNeedsNoBudget(t *testing.T) {
+	db, userID, scenario, rec := localLaunchFixture(t, true, paymentModels.LocalMachinesAllowed, models.ScenarioMachineLocal)
+	fillBudget(t, db)
+
+	got := cards(t, db, userID)
+	require.Len(t, got, 1)
+	assert.Equal(t, true, got[0]["launchable"], "%v", got[0])
+
+	w := launchScenarioForTest(t, setupPersistenceRouter(t, db, userID), scenario.ID)
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	assert.Equal(t, models.ScenarioMachineLocal, decodeLaunch(t, w.Body.Bytes()).Machine)
+	assert.Equal(t, 0, rec.calls)
+}
+
+// One run in the browser at a time per learner: another local launch while
+// one is live is refused with a code the launcher maps.
+func TestLaunchScenario_SecondLocalRunIsRefused(t *testing.T) {
+	db, userID, scenario, _ := localLaunchFixture(t, true, paymentModels.LocalMachinesAllowed, models.ScenarioMachineLocal)
+	other := seedPersistenceScenario(t, db, userID, false)
+	require.NoError(t, db.Model(other).Update("machine", models.ScenarioMachineLocal).Error)
+	router := setupPersistenceRouter(t, db, userID)
+
+	require.Equal(t, http.StatusOK, launchScenarioForTest(t, router, scenario.ID).Code)
+	w := launchScenarioForTest(t, router, other.ID)
+	require.Equal(t, http.StatusConflict, w.Code, "body=%s", w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "local_machine_busy", body["reason"])
+	var runs int64
+	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("scenario_id = ?", other.ID).Count(&runs).Error)
+	assert.Zero(t, runs)
+}

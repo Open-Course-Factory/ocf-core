@@ -59,10 +59,9 @@ func (h sessionHosts) of(sessionID string) sessionHost {
 	return h.incus
 }
 
+// createSession creates a container: a local session is no host's to create
+// (StartLocalSession stores its row itself).
 func (h sessionHosts) createSession(backend string, body map[string]any, userAPIKey string) (*dto.TerminalTrainerSessionResponse, error) {
-	if backend == models.LocalBackend {
-		return h.local.createSession(backend, body, userAPIKey)
-	}
 	return h.incus.createSession(backend, body, userAPIKey)
 }
 

@@ -330,8 +330,8 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 
 		// Budget gate: the scenario's required size must fit in the user's
-		// remaining CPU/RAM budget.
-		if budgetGateActive && item.Launchable && provisioning.Size != "" {
+		// remaining CPU/RAM budget. A machine in the browser reserves none.
+		if budgetGateActive && item.Launchable && !provisioning.IsLocal() && provisioning.Size != "" {
 			fits, fitErr := quotaSvc.RemainingBudgetFits(userID, nil, resolvedPlan, provisioning.Size)
 			if fitErr != nil {
 				slog.Warn("budget fit check failed for scenario", "scenario", s.Name, "err", fitErr)
@@ -422,6 +422,8 @@ const (
 
 	// A Local scenario launched from a browser that cannot run its machine.
 	blockReasonLocalMachineUnavailable = "local_machine_unavailable"
+	// A second run in the browser while the learner has one live.
+	blockReasonLocalMachineBusy = "local_machine_busy"
 	// A Local exam or crash-trap scenario: its checks need a container.
 	blockReasonNeedsContainer = "needs_container"
 	// A desktop scenario while the platform's desktop switch is off.
@@ -844,6 +846,14 @@ func respondTerminalStartFailure(ctx *gin.Context, userID, scenarioName string, 
 		return
 	}
 	if httperrors.WriteHostUnavailable(ctx, err) {
+		return
+	}
+	if stderrors.Is(err, terminalServices.ErrLocalMachineBusy) {
+		ctx.JSON(http.StatusConflict, gin.H{
+			"error_code":    http.StatusConflict,
+			"error_message": err.Error(),
+			"reason":        blockReasonLocalMachineBusy,
+		})
 		return
 	}
 	// The upstream text names hosts and endpoints: the learner gets a

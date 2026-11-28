@@ -55,18 +55,24 @@ func TestCountsTowardQuota_MatchesOccupiesSlotScope(t *testing.T) {
 		state   models.TerminalState
 		expires time.Duration
 		want    bool
+		local   bool
 	}{
-		{"running and unexpired", models.StateRunning, time.Hour, true},
-		{"running but past expiry", models.StateRunning, -time.Hour, false},
-		{"starting and unexpired", models.StateStarting, time.Hour, true},
-		{"stopped and unexpired", models.StateStopped, time.Hour, false},
-		{"deleted and unexpired", models.StateDeleted, time.Hour, false},
-		{"revoked and unexpired", models.StateRevoked, time.Hour, false},
+		{"running and unexpired", models.StateRunning, time.Hour, true, false},
+		{"a machine in the browser, running", models.StateRunning, time.Hour, false, true},
+		{"running but past expiry", models.StateRunning, -time.Hour, false, false},
+		{"starting and unexpired", models.StateStarting, time.Hour, true, false},
+		{"stopped and unexpired", models.StateStopped, time.Hour, false, false},
+		{"deleted and unexpired", models.StateDeleted, time.Hour, false, false},
+		{"revoked and unexpired", models.StateRevoked, time.Hour, false, false},
 	}
 	wantBySessionID := map[string]bool{}
 	for _, c := range cases {
+		sessionID := "counts-" + c.name
+		if c.local {
+			sessionID = models.LocalSessionIDPrefix + sessionID
+		}
 		terminal := &models.Terminal{
-			SessionID:         "counts-" + c.name,
+			SessionID:         sessionID,
 			UserID:            "user-counts",
 			State:             c.state,
 			ExpiresAt:         time.Now().Add(c.expires),

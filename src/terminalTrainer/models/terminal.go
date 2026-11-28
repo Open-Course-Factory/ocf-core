@@ -121,8 +121,10 @@ func IsLocalSessionID(sessionID string) bool {
 //	state IN ('running', 'starting')  -- a stopped machine holds no CPU/RAM
 //	AND deleted_at IS NULL            -- gorm-soft-delete excluded
 //	AND expires_at > NOW()            -- past-expiry rows are "zombie" slots
+//	AND session_id NOT LIKE 'local-%' -- a machine in the browser uses none
 //
-// See TerminalStatesOccupyingSlot for why stopped sessions are not charged.
+// See TerminalStatesOccupyingSlot for why stopped sessions are not charged,
+// and plan rule 8 (2026-11-28) for machines in the learner's browser.
 // Terminal.CountsTowardQuota is this rule for a row in memory.
 //
 // The expires_at clause aligns the backend with the UI's
@@ -149,7 +151,9 @@ func IsLocalSessionID(sessionID string) bool {
 //	db.Table("terminals").Scopes(models.OccupiesSlotScope).
 //	    Where("terminals.user_id = ?", userID).Count(&count)
 func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
-	return liveInStates(tx, TerminalStatesOccupyingSlot)
+	return liveInStates(tx, TerminalStatesOccupyingSlot).
+		// COALESCE: a NULL id would make NOT LIKE NULL and drop the row.
+		Where("COALESCE(terminals.session_id, '') NOT LIKE ?", LocalSessionIDPrefix+"%")
 }
 
 // UsageListScope filters the sessions the usage panel lists: the ones
@@ -175,7 +179,8 @@ func (t *Terminal) CountsTowardQuota() bool {
 	if t == nil || t.DeletedAt.Valid {
 		return false
 	}
-	return slices.Contains(TerminalStatesOccupyingSlot, t.State) && t.ExpiresAt.After(time.Now())
+	return slices.Contains(TerminalStatesOccupyingSlot, t.State) && t.ExpiresAt.After(time.Now()) &&
+		!IsLocalSessionID(t.SessionID)
 }
 
 // RunningDisplayScope is a GORM scope that filters terminals currently

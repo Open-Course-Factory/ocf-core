@@ -511,11 +511,16 @@ func applyPlanLimits(input *dto.CreateComposedSessionInput, plan *paymentModels.
 	input.SubscriptionPlanID = &plan.ID
 }
 
+// ErrLocalMachineBusy refuses a learner a second machine in the browser
+// while one is live: one at a time, as a browser tab can hold only one.
+var ErrLocalMachineBusy = errors.New("you already have a machine running in your browser: end it before starting another")
+
 // StartLocalSession starts a session whose machine runs in the learner's
-// browser tab. Everything the platform decides is decided as for a container —
-// blocks, budget reservation, the plan's duration cap — but no server is asked
-// for anything: the row is the whole session. The machine keeps no files and
-// has no network or build features (plan rules 8 and 11).
+// browser tab. The platform decides what it decides for a container — blocks,
+// the plan's duration cap — but no server is asked for anything and no
+// CPU/RAM budget is reserved, since none is used (plan rule 8): the row is the
+// whole session. The machine keeps no files and has no network or build
+// features (plan rules 8 and 11).
 func (c *terminalComposer) StartLocalSession(userID string, input dto.CreateComposedSessionInput, plan *paymentModels.SubscriptionPlan) (*dto.TerminalSessionResponse, error) {
 	// Only a plan allows a local machine, so there is always one here.
 	if plan == nil {
@@ -528,11 +533,54 @@ func (c *terminalComposer) StartLocalSession(userID string, input dto.CreateComp
 	if err := models.SessionStartRefusal(c.db, userID, orgID); err != nil {
 		return nil, err
 	}
+	userKey, err := c.activeUserKey(userID)
+	if err != nil {
+		return nil, err
+	}
 	input.Backend = models.LocalBackend
 	input.PersistenceMode = PersistenceModeEphemeral
 	input.Features, input.BuildFeatures, input.Packages = nil, nil, nil
 	applyPlanLimits(&input, plan)
-	return c.startComposedSession(userID, orgID, plan, input)
+
+	created, err := localHost{}.createSession(input.Backend, map[string]any{"expiry": input.Expiry}, userKey.APIKey)
+	if err != nil {
+		return nil, err
+	}
+	session := newTerminalRow(userID, orgID, userKey, input)
+	session.SessionID = created.SessionID
+	session.State = models.StateRunning
+	session.ExpiresAt = time.Unix(created.ExpiresAt, 0)
+	session.Backend = created.Backend
+	if err := c.createLocalSession(session); err != nil {
+		return nil, err
+	}
+	return &dto.TerminalSessionResponse{
+		SessionID: session.SessionID,
+		ExpiresAt: session.ExpiresAt,
+		Status:    "active",
+		Backend:   session.Backend,
+	}, nil
+}
+
+// createLocalSession stores session unless its learner already has a live
+// machine in the browser (ErrLocalMachineBusy).
+//
+// ponytail: check and insert share a transaction, which SQLite serialises but
+// PostgreSQL does not: two launches in the same instant can both pass. Take
+// the user's advisory lock (as EnforceBudgetTx does) if that ever matters.
+func (c *terminalComposer) createLocalSession(session *models.Terminal) error {
+	return c.db.Transaction(func(tx *gorm.DB) error {
+		var live int64
+		if err := tx.Model(&models.Terminal{}).Scopes(models.RunningDisplayScope).
+			Where("terminals.user_id = ? AND terminals.session_id LIKE ?", session.UserID, models.LocalSessionIDPrefix+"%").
+			Count(&live).Error; err != nil {
+			return fmt.Errorf("count live local sessions: %w", err)
+		}
+		if live > 0 {
+			return ErrLocalMachineBusy
+		}
+		return tx.Create(session).Error
+	})
 }
 
 // resolveIdleWindowSeconds returns the org-level idle window override for the
@@ -594,27 +642,10 @@ func (c *terminalComposer) reserveBudget(
 	// shared or empty placeholder would collide between concurrent
 	// reservations and fail on the index instead of the budget gate. The
 	// real tt-backend id replaces this on finalize.
-	reservation := &models.Terminal{
-		SessionID:            models.TerminalReservationSessionIDPrefix + uuid.NewString(),
-		UserID:               userID,
-		Name:                 input.Name,
-		State:                models.StateStarting,
-		PersistenceMode:      input.PersistenceMode,
-		ExpiresAt:            time.Now().Add(reservationTTL),
-		InstanceType:         input.DistributionPrefix,
-		MachineSize:          strings.ToUpper(input.Size),
-		OrganizationID:       orgID,
-		SubscriptionPlanID:   input.SubscriptionPlanID,
-		UserTerminalKeyID:    userKey.ID,
-		ComposedDistribution: input.Distribution,
-		ComposedSize:         input.Size,
-		ComposedFeatures:     composedFeaturesJSON(input.Features),
-		SizeCPU:              input.SizeCPU,
-		SizeMemoryMB:         input.SizeMemoryMB,
-		// Only a session composed with the network feature has internet to
-		// cut; tt-backend ignores the flag on the others.
-		NetworkDisabled: input.NetworkDisabled && input.Features["network"],
-	}
+	reservation := newTerminalRow(userID, orgID, userKey, input)
+	reservation.SessionID = models.TerminalReservationSessionIDPrefix + uuid.NewString()
+	reservation.State = models.StateStarting
+	reservation.ExpiresAt = time.Now().Add(reservationTTL)
 
 	// The budget is the user's own, whatever plan resolved for them. The
 	// reservation row keeps orgID: that records where the session was launched,
@@ -638,6 +669,29 @@ func (c *terminalComposer) reserveBudget(
 		return nil, rejection, nil
 	}
 	return reservation, nil, nil
+}
+
+// newTerminalRow is the row of a session input composes for userID, less
+// what its host decides: id, state, expiry and backend.
+func newTerminalRow(userID string, orgID *uuid.UUID, userKey *models.UserTerminalKey, input dto.CreateComposedSessionInput) *models.Terminal {
+	return &models.Terminal{
+		UserID:               userID,
+		Name:                 input.Name,
+		PersistenceMode:      input.PersistenceMode,
+		InstanceType:         input.DistributionPrefix,
+		MachineSize:          strings.ToUpper(input.Size),
+		OrganizationID:       orgID,
+		SubscriptionPlanID:   input.SubscriptionPlanID,
+		UserTerminalKeyID:    userKey.ID,
+		ComposedDistribution: input.Distribution,
+		ComposedSize:         input.Size,
+		ComposedFeatures:     composedFeaturesJSON(input.Features),
+		SizeCPU:              input.SizeCPU,
+		SizeMemoryMB:         input.SizeMemoryMB,
+		// Only a session composed with the network feature has internet to
+		// cut; tt-backend ignores the flag on the others.
+		NetworkDisabled: input.NetworkDisabled && input.Features["network"],
+	}
 }
 
 // releaseReservation hard-deletes a reservation row, returning its budget
@@ -678,6 +732,18 @@ func (c *terminalComposer) createSession(userID, backend string, body map[string
 	return c.host.createSession(backend, body, userAPIKey)
 }
 
+// activeUserKey is userID's terminal key, which every session row belongs to.
+func (c *terminalComposer) activeUserKey(userID string) (*models.UserTerminalKey, error) {
+	userKey, err := c.repository.GetUserTerminalKeyByUserID(userID, true)
+	if err != nil {
+		return nil, fmt.Errorf("no terminal trainer key found for user: %w", err)
+	}
+	if !userKey.IsActive {
+		return nil, fmt.Errorf("user terminal trainer key is disabled")
+	}
+	return userKey, nil
+}
+
 // startComposedSession reserves budget atomically, then provisions the
 // container. It inserts a StateStarting row inside a locked transaction
 // (so the reservation counts under OccupiesSlotScope before any container
@@ -690,13 +756,9 @@ func (c *terminalComposer) startComposedSession(
 	plan *paymentModels.SubscriptionPlan,
 	input dto.CreateComposedSessionInput,
 ) (*dto.TerminalSessionResponse, error) {
-	// Get user key
-	userKey, err := c.repository.GetUserTerminalKeyByUserID(userID, true)
+	userKey, err := c.activeUserKey(userID)
 	if err != nil {
-		return nil, fmt.Errorf("no terminal trainer key found for user: %w", err)
-	}
-	if !userKey.IsActive {
-		return nil, fmt.Errorf("user terminal trainer key is disabled")
+		return nil, err
 	}
 
 	// Reserve budget before provisioning. The reservation row is inserted
@@ -819,18 +881,12 @@ func (c *terminalComposer) startComposedSession(
 		return nil, fmt.Errorf("failed to finalize terminal session: %w", err)
 	}
 
-	response := &dto.TerminalSessionResponse{
-		SessionID: sessionResp.SessionID,
-		ExpiresAt: expiresAt,
-		Status:    "active",
-		Backend:   sessionResp.Backend,
-	}
-	// A machine in the learner's browser has no console on a server: the tab
-	// opens its own.
-	if !models.IsLocalSessionID(sessionResp.SessionID) {
-		consolePath := c.proxy.buildAPIPath("/console", input.DistributionPrefix)
-		response.ConsoleURL = fmt.Sprintf("%s%s?id=%s", c.baseURL, consolePath, sessionResp.SessionID)
-	}
-
-	return response, nil
+	consolePath := c.proxy.buildAPIPath("/console", input.DistributionPrefix)
+	return &dto.TerminalSessionResponse{
+		SessionID:  sessionResp.SessionID,
+		ExpiresAt:  expiresAt,
+		Status:     "active",
+		Backend:    sessionResp.Backend,
+		ConsoleURL: fmt.Sprintf("%s%s?id=%s", c.baseURL, consolePath, sessionResp.SessionID),
+	}, nil
 }
