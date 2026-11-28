@@ -1,8 +1,10 @@
 package scenarios_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -168,4 +170,61 @@ func TestBulkStartScenario_LeavesLocalRunsToTheLearner(t *testing.T) {
 	var localRuns int64
 	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("user_id = ?", "bulk-local-allowed").Count(&localRuns).Error)
 	assert.Zero(t, localRuns)
+}
+
+func launchWithBody(t *testing.T, db *gorm.DB, userID string, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scenario-sessions/launch", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	setupPersistenceRouter(t, db, userID).ServeHTTP(w, req)
+	return w
+}
+
+// A Local scenario in a browser that cannot run its machine is refused with
+// a code the launcher maps, and leaves nothing behind.
+func TestLaunchScenario_LocalMachineUnavailableRefusesALocalScenario(t *testing.T) {
+	db, userID, scenario, rec := localLaunchFixture(t, true, paymentModels.LocalMachinesAllowed, models.ScenarioMachineLocal)
+
+	w := launchWithBody(t, db, userID, map[string]any{"scenario_id": scenario.ID.String(), "local_machine_unavailable": "browser"})
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body=%s", w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "local_machine_unavailable", body["reason"])
+	assert.Equal(t, 0, rec.calls)
+	var terminals int64
+	require.NoError(t, db.Model(&terminalModels.Terminal{}).Where("user_id = ?", userID).Count(&terminals).Error)
+	assert.Zero(t, terminals)
+}
+
+// The same browser launching a By account scenario gets a container.
+func TestLaunchScenario_LocalMachineUnavailableSendsByAccountToIncus(t *testing.T) {
+	db, userID, scenario, rec := localLaunchFixture(t, true, paymentModels.LocalMachinesByAccountDefault, models.ScenarioMachineByAccount)
+
+	w := launchWithBody(t, db, userID, map[string]any{"scenario_id": scenario.ID.String(), "local_machine_unavailable": "device"})
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	resp := decodeLaunch(t, w.Body.Bytes())
+	assert.Equal(t, models.ScenarioMachineIncus, resp.Machine)
+	assert.Equal(t, 1, rec.calls)
+}
+
+func TestLaunchScenario_LocalMachineUnavailableMustBeAKnownReason(t *testing.T) {
+	db, userID, scenario, _ := localLaunchFixture(t, true, paymentModels.LocalMachinesAllowed, models.ScenarioMachineLocal)
+
+	w := launchWithBody(t, db, userID, map[string]any{"scenario_id": scenario.ID.String(), "local_machine_unavailable": "bogus"})
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body=%s", w.Body.String())
+}
+
+func TestPreviewScenario_LocalMachineUnavailableLikeALaunch(t *testing.T) {
+	db, userID, scenario, rec := localLaunchFixture(t, true, paymentModels.LocalMachinesAllowed, models.ScenarioMachineLocal)
+
+	w := previewScenario(t, db, userID, scenario.ID, map[string]any{"local_machine_unavailable": "memory"})
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body=%s", w.Body.String())
+	assert.Contains(t, w.Body.String(), "local_machine_unavailable")
+	assert.Equal(t, 0, rec.calls)
+
+	w = previewScenario(t, db, userID, scenario.ID, map[string]any{"local_machine_unavailable": "nope"})
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body=%s", w.Body.String())
 }

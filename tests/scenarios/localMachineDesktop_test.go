@@ -116,10 +116,10 @@ func TestRunMachine_DesktopOff_RefusesDesktopScenario(t *testing.T) {
 			setDesktopSwitches(t, db, local, false)
 			desktop, terminal := seedDesktopAndTerminalScenarios(t, db)
 
-			_, err := services.RunMachine(db, &desktop, plan, false)
+			_, err := services.RunMachine(db, &desktop, plan, false, "")
 			require.ErrorIs(t, err, services.ErrScenarioNeedsDesktop)
 
-			_, err = services.RunMachine(db, &terminal, plan, false)
+			_, err = services.RunMachine(db, &terminal, plan, false, "")
 			require.NoError(t, err, "a terminal scenario is unaffected")
 		})
 	}
@@ -130,7 +130,7 @@ func TestRunMachine_BothOn_DesktopScenarioRunsLocally(t *testing.T) {
 	setDesktopSwitches(t, db, true, true)
 	desktop, _ := seedDesktopAndTerminalScenarios(t, db)
 
-	got, err := services.RunMachine(db, &desktop, &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}, false)
+	got, err := services.RunMachine(db, &desktop, &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}, false, "")
 	require.NoError(t, err)
 	assert.Equal(t, models.ScenarioMachineLocal, got)
 }

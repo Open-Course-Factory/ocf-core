@@ -442,6 +442,12 @@ type LaunchScenarioInput struct {
 	// silently serve English anyway — and that belongs with the launcher, which
 	// is where a learner picks.
 	Locale string `json:"locale,omitempty"`
+
+	// LocalMachineUnavailable is why the learner's browser cannot run a
+	// machine: "browser", "memory" or "device"; empty when it can. A By
+	// account scenario then goes to a container, a Local one is refused (422,
+	// reason local_machine_unavailable).
+	LocalMachineUnavailable string `json:"local_machine_unavailable,omitempty"`
 }
 
 // LaunchScenarioResponse - DTO for launch, preview and resume results

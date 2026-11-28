@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"slices"
 
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
@@ -20,10 +21,23 @@ import (
 // more exposed than to a root learner in a container.
 var ErrScenarioNeedsContainer = errors.New("this scenario must run in a container: its checks cannot be trusted on a machine in your browser")
 
-// MachineContext is everything that decides where a run goes.
 // ErrScenarioNeedsDesktop refuses a new run of a desktop scenario while the
 // platform's desktop switch is off.
 var ErrScenarioNeedsDesktop = errors.New("this scenario shows a desktop in your browser, which is not available yet")
+
+// ErrLocalMachineUnavailable refuses a Local scenario launched from a browser
+// that said it cannot run the machine.
+var ErrLocalMachineUnavailable = errors.New("this scenario runs a machine in your browser, which this browser or device cannot run")
+
+// LocalMachineUnavailableReasons are why a tab may say it cannot run a
+// machine: an unsupported browser, too little memory, or the device.
+var LocalMachineUnavailableReasons = []string{"browser", "memory", "device"}
+
+// ValidLocalMachineUnavailable reports whether reason is one a tab may give;
+// empty, the browser can run a machine, is valid.
+func ValidLocalMachineUnavailable(reason string) bool {
+	return reason == "" || slices.Contains(LocalMachineUnavailableReasons, reason)
+}
 
 // LaunchableDisplays drops the scenarios no one may launch because their
 // desktop is switched off: the launcher never offers what RunMachine refuses.
@@ -40,6 +54,7 @@ func LaunchableDisplays(db *gorm.DB, scenarios []models.Scenario) []models.Scena
 	return kept
 }
 
+// MachineContext is everything that decides where a run goes.
 type MachineContext struct {
 	// SwitchOn is the platform switch (LocalMachinesEnabled).
 	SwitchOn bool
@@ -51,6 +66,9 @@ type MachineContext struct {
 	Assigned bool
 	// What the learner could fake if they owned the machine.
 	Exam, CrashTraps bool
+	// LocalMachineUnavailable is why the learner's browser cannot run a
+	// machine (LocalMachineUnavailableReasons); empty when it can.
+	LocalMachineUnavailable string
 }
 
 // ScenarioMachine decides where a run goes: models.ScenarioMachineIncus or
@@ -60,14 +78,25 @@ func ScenarioMachine(ctx MachineContext) (string, error) {
 	if !wantsLocal(ctx) {
 		return models.ScenarioMachineIncus, nil
 	}
-	if ctx.Exam || ctx.CrashTraps {
+	if refusal := localRefusal(ctx); refusal != nil {
 		// By account accepts either machine, so it simply gets the container.
 		if ctx.ScenarioMachine == models.ScenarioMachineByAccount {
 			return models.ScenarioMachineIncus, nil
 		}
-		return "", ErrScenarioNeedsContainer
+		return "", refusal
 	}
 	return models.ScenarioMachineLocal, nil
+}
+
+// localRefusal says why a run that would go local cannot, nil when it can.
+func localRefusal(ctx MachineContext) error {
+	if ctx.Exam || ctx.CrashTraps {
+		return ErrScenarioNeedsContainer
+	}
+	if ctx.LocalMachineUnavailable != "" {
+		return ErrLocalMachineUnavailable
+	}
+	return nil
 }
 
 // wantsLocal is the plan's table, behind the platform switch. A class or
@@ -89,9 +118,10 @@ func wantsLocal(ctx MachineContext) bool {
 
 // RunMachine decides where a new run of scenario goes for a learner on plan
 // (nil: no plan, so off), assigned saying whether a class or organization
-// assignment brought it. A run keeps its machine until it ends: this is for
-// new runs only.
-func RunMachine(db *gorm.DB, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool) (string, error) {
+// assignment brought it, localUnavailable why the learner's browser cannot
+// run a machine ("" when it can, or when no browser asks). A run keeps its
+// machine until it ends: this is for new runs only.
+func RunMachine(db *gorm.DB, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool, localUnavailable string) (string, error) {
 	if scenario.NeedsDesktop() && !terminalServices.LocalMachineDesktopEnabled(db) {
 		return "", ErrScenarioNeedsDesktop
 	}
@@ -100,6 +130,8 @@ func RunMachine(db *gorm.DB, scenario *models.Scenario, plan *paymentModels.Subs
 		ScenarioMachine: scenario.Machine,
 		Assigned:        assigned,
 		CrashTraps:      scenario.CrashTraps,
+
+		LocalMachineUnavailable: localUnavailable,
 	}
 	if plan != nil {
 		ctx.PlanSetting = plan.LocalMachines

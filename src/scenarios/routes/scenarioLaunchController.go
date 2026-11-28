@@ -327,7 +327,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		item.ResolvedSize = provisioning.Size
 		// Where a launch would put the run, by the rule the launch applies.
 		_, assigned := assignedServers[s.ID]
-		if machine, machineErr := services.RunMachine(sc.db, &s, resolvedPlan, assigned); machineErr == nil && machine == models.ScenarioMachineLocal {
+		if machine, machineErr := services.RunMachine(sc.db, &s, resolvedPlan, assigned, ""); machineErr == nil && machine == models.ScenarioMachineLocal {
 			item.LocalMachineMemoryMiB = services.LocalMachineMemoryMiB(s)
 		}
 		if resolveErr != nil {
@@ -389,6 +389,10 @@ const (
 	blockReasonSizeOverPlan         = "size_over_plan"
 	blockReasonSessionExists        = "session_exists"
 	blockReasonNotInPlan            = "not_in_plan"
+
+	// A Local scenario launched from a browser that cannot run its machine.
+	blockReasonLocalMachineUnavailable = "local_machine_unavailable"
+
 	// Resume refusals.
 	reasonRunOver          = "run_over"
 	reasonResumeInProgress = "resume_in_progress"
@@ -624,7 +628,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 	_, assigned := assignedServers[scenarioID]
-	machine, ok := sc.decideMachine(ctx, &scenario, plan, assigned)
+	machine, ok := sc.decideMachine(ctx, &scenario, plan, assigned, input.LocalMachineUnavailable)
 	if !ok {
 		return
 	}
@@ -724,8 +728,20 @@ func (sc *scenarioLaunchController) provisionLocalTerminal(ctx *gin.Context, use
 
 // decideMachine asks services.RunMachine where a new run goes. On a refusal
 // it has answered the request, and reports false.
-func (sc *scenarioLaunchController) decideMachine(ctx *gin.Context, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool) (string, bool) {
-	machine, err := services.RunMachine(sc.db, scenario, plan, assigned)
+func (sc *scenarioLaunchController) decideMachine(ctx *gin.Context, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool, localUnavailable string) (string, bool) {
+	if !services.ValidLocalMachineUnavailable(localUnavailable) {
+		errors.Respond(ctx, http.StatusBadRequest, "Invalid local_machine_unavailable: one of "+strings.Join(services.LocalMachineUnavailableReasons, ", "))
+		return "", false
+	}
+	machine, err := services.RunMachine(sc.db, scenario, plan, assigned, localUnavailable)
+	if stderrors.Is(err, services.ErrLocalMachineUnavailable) {
+		ctx.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error_code":    http.StatusUnprocessableEntity,
+			"error_message": err.Error(),
+			"reason":        blockReasonLocalMachineUnavailable,
+		})
+		return "", false
+	}
 	if stderrors.Is(err, services.ErrScenarioNeedsContainer) || stderrors.Is(err, services.ErrScenarioNeedsDesktop) {
 		errors.Respond(ctx, http.StatusUnprocessableEntity, err.Error())
 		return "", false
@@ -964,6 +980,8 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		Backend        string `json:"backend"`
 		FromStepOrder  *int   `json:"from_step_order"`
 		OrganizationID string `json:"organization_id"`
+		// See dto.LaunchScenarioInput.LocalMachineUnavailable.
+		LocalMachineUnavailable string `json:"local_machine_unavailable"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil && !stderrors.Is(err, io.EOF) {
 		errors.Respond(ctx, http.StatusBadRequest, "Invalid request body")
@@ -1032,7 +1050,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	// A preview builds the same machine the learners will get, so it asks the
 	// same question of the same owner rather than composing one of its own.
 	// The author previews as a learner launching on their own would.
-	machine, ok := sc.decideMachine(ctx, &scenario, planResult.Plan, false)
+	machine, ok := sc.decideMachine(ctx, &scenario, planResult.Plan, false, body.LocalMachineUnavailable)
 	if !ok {
 		return
 	}

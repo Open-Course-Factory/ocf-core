@@ -122,7 +122,7 @@ func TestRunMachine_FlagScenarioRunsLocally(t *testing.T) {
 		CreatedByID: "author", Machine: models.ScenarioMachineLocal, FlagsEnabled: true}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	got, err := services.RunMachine(db, &scenario, &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}, false)
+	got, err := services.RunMachine(db, &scenario, &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}, false, "")
 	require.NoError(t, err)
 	assert.Equal(t, local, got)
 }
@@ -137,21 +137,42 @@ func TestRunMachine_ReadsTheSwitchPlanAndScenario(t *testing.T) {
 	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Do", StepType: "terminal"}).Error)
 	plan := &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}
 
-	got, err := services.RunMachine(db, &scenario, plan, false)
+	got, err := services.RunMachine(db, &scenario, plan, false, "")
 	require.NoError(t, err)
 	assert.Equal(t, incus, got, "no switch row: off")
 
 	require.NoError(t, db.Create(&configModels.Feature{Key: terminalServices.LocalMachinesFeatureKey, Name: "x", Enabled: true}).Error)
-	got, err = services.RunMachine(db, &scenario, plan, false)
+	got, err = services.RunMachine(db, &scenario, plan, false, "")
 	require.NoError(t, err)
 	assert.Equal(t, local, got)
 
-	got, err = services.RunMachine(db, &scenario, nil, false)
+	got, err = services.RunMachine(db, &scenario, nil, false, "")
 	require.NoError(t, err)
 	assert.Equal(t, incus, got, "no plan: off")
 
 	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 2, Title: "Exam",
 		StepType: models.StepTypeQuiz, ShowImmediateFeedback: false}).Error)
-	_, err = services.RunMachine(db, &scenario, plan, false)
+	_, err = services.RunMachine(db, &scenario, plan, false, "")
 	require.ErrorIs(t, err, services.ErrScenarioNeedsContainer, "an exam-mode quiz makes it an exam")
+}
+
+// A browser that cannot run a machine (the tab says why) sends a By account
+// scenario to Incus, which that setting allows, and refuses a Local one.
+func TestScenarioMachine_LocalMachineUnavailable(t *testing.T) {
+	ctx := services.MachineContext{SwitchOn: true, PlanSetting: paymentModels.LocalMachinesByAccountDefault,
+		LocalMachineUnavailable: "memory"}
+
+	ctx.ScenarioMachine = models.ScenarioMachineByAccount
+	got, err := services.ScenarioMachine(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, incus, got)
+
+	ctx.ScenarioMachine = models.ScenarioMachineLocal
+	_, err = services.ScenarioMachine(ctx)
+	require.ErrorIs(t, err, services.ErrLocalMachineUnavailable)
+
+	ctx.ScenarioMachine = models.ScenarioMachineIncus
+	got, err = services.ScenarioMachine(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, incus, got, "an Incus scenario never needed the browser")
 }

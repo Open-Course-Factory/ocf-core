@@ -637,7 +637,7 @@ func (s *TeacherDashboardService) memberMachine(run bulkStartRun, userID string)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve subscription plan: %w", err)
 	}
-	return RunMachine(s.db, &run.scenario, planResult.Plan, true)
+	return RunMachine(s.db, &run.scenario, planResult.Plan, true, "")
 }
 
 // ClassRunOrganization is the organization a class's runs live in: the
