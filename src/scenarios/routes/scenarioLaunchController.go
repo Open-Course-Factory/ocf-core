@@ -319,22 +319,13 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			item.RequiredFeatures = rf
 		}
 
-		// Determine launchability by checking distribution compatibility, on
-		// the host the assignment names when it names one.
-		provisioning, resolveErr := sc.provisioningService.Resolve(s, orgID, resolvedPlan, assignedServers[s.ID])
-		item.Launchable = resolveErr == nil && provisioning.CreatesTerminal()
+		provisioning, blockReason := sc.cardProvisioning(s, orgID, resolvedPlan, assignedServers)
+		item.Launchable = blockReason == "" && provisioning.CreatesTerminal()
+		item.BlockReason = blockReason
 		item.ResolvedDistribution = provisioning.Distribution
 		item.ResolvedSize = provisioning.Size
-		// Where a launch would put the run, by the rule the launch applies.
-		_, assigned := assignedServers[s.ID]
-		if machine, machineErr := services.RunMachine(sc.db, &s, resolvedPlan, assigned, ""); machineErr == nil && machine == models.ScenarioMachineLocal {
+		if provisioning.IsLocal() {
 			item.LocalMachineMemoryMiB = services.LocalMachineMemoryMiB(s)
-		}
-		if resolveErr != nil {
-			// Separate reasons because they need different fixes: a missing
-			// declared image is "install it on this backend", while
-			// no_distribution is "nothing here fits this scenario at all".
-			item.BlockReason = blockReasonFor(resolveErr)
 		}
 
 		// Budget gate: the scenario's required size must fit in the user's
@@ -377,6 +368,44 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, output)
 }
 
+// cardProvisioning is how a launch of s would build its run, judged as the
+// launch judges it: where the run goes (services.RunMachine), then, for a
+// container, which host and image fit, on the host the assignment names when
+// it names one. The block reason says why it cannot be launched, "" when it can.
+func (sc *scenarioLaunchController) cardProvisioning(s models.Scenario, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, assignedServers map[uuid.UUID]string) (services.ScenarioProvisioning, string) {
+	_, assigned := assignedServers[s.ID]
+	machine, err := services.RunMachine(sc.db, &s, plan, assigned, "")
+	if err != nil {
+		if reason := machineBlockReason(err); reason != "" {
+			return services.ScenarioProvisioning{}, reason
+		}
+		slog.Warn("could not decide where a run of the scenario goes; judged as a container", "scenario", s.Name, "err", err)
+	}
+	if machine == models.ScenarioMachineLocal {
+		return services.LocalProvisioning(s), ""
+	}
+	provisioning, err := sc.provisioningService.Resolve(s, orgID, plan, assignedServers[s.ID])
+	if err != nil {
+		// Separate reasons because they need different fixes: a missing
+		// declared image is "install it on this backend", while
+		// no_distribution is "nothing here fits this scenario at all".
+		return provisioning, blockReasonFor(err)
+	}
+	return provisioning, ""
+}
+
+// machineBlockReason is the block reason of a run services.RunMachine
+// refuses, "" for an error that is no refusal.
+func machineBlockReason(err error) string {
+	if stderrors.Is(err, services.ErrScenarioNeedsContainer) {
+		return blockReasonNeedsContainer
+	}
+	if stderrors.Is(err, services.ErrScenarioNeedsDesktop) {
+		return blockReasonDesktopUnavailable
+	}
+	return ""
+}
+
 // Block reasons are a contract with the launcher, which switches its copy on
 // them. Named here so the endpoint that emits one and the endpoint that refuses
 // a launch for the same cause cannot drift apart in spelling.
@@ -392,6 +421,10 @@ const (
 
 	// A Local scenario launched from a browser that cannot run its machine.
 	blockReasonLocalMachineUnavailable = "local_machine_unavailable"
+	// A Local exam or crash-trap scenario: its checks need a container.
+	blockReasonNeedsContainer = "needs_container"
+	// A desktop scenario while the platform's desktop switch is off.
+	blockReasonDesktopUnavailable = "desktop_unavailable"
 
 	// Resume refusals.
 	reasonRunOver          = "run_over"
