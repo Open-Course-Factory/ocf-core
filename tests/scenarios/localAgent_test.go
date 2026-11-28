@@ -211,7 +211,7 @@ func TestLocalAgent_OutputIsCapped(t *testing.T) {
 	require.NoError(t, err)
 	assert.LessOrEqual(t, len(stdout), services.MaxAgentOutput)
 
-	conn2, _ := f.dial(t, f.run.ID, f.learner, "member")
+	conn2, _ := f.dialBoot(t, f.run.ID, f.learner, "member", "boot-2")
 	assert.Equal(t, services.AgentCloseOtherTab, closeCode(t, conn2), "still one agent per run")
 }
 
@@ -552,4 +552,25 @@ func TestMirrorAccess_WantsTheKeyTheConnectedTabAnnounced(t *testing.T) {
 	require.NoError(t, conn.Close())
 	require.Eventually(t, func() bool { return !f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
 	assert.Equal(t, http.StatusForbidden, f.mirrorAccess(t, f.terminal, key), "the tab is gone, its key with it")
+}
+
+// A network change can leave the server holding a half-open socket while the
+// tab's machine reconnects: the same machine takes its run back at once, and
+// the stale connection is closed, instead of being told "another tab".
+func TestLocalAgent_TheSameMachineReplacesItsStaleConnection(t *testing.T) {
+	f := newAgentFixture(t)
+	stale, _ := f.dialBoot(t, f.run.ID, f.learner, "member", "boot-1")
+	require.NotNil(t, stale)
+	require.Eventually(t, func() bool { return f.agents.Connected(f.terminal) }, time.Second, 10*time.Millisecond)
+
+	fresh, _ := f.dialBoot(t, f.run.ID, f.learner, "member", "boot-1")
+	require.NotNil(t, fresh)
+	serveAgent(fresh, func(req agentRequest) any { return map[string]any{"id": req.ID, "exit_code": 0, "stdout": "fresh"} })
+
+	assert.Equal(t, websocket.CloseNormalClosure, closeCode(t, stale), "the stale connection is closed")
+	_, out, _, err := f.machines().ExecInContainer(f.terminal, []string{"true"}, nil, 5)
+	require.NoError(t, err)
+	assert.Equal(t, "fresh", out, "the run is served by the new connection")
+	assert.True(t, f.agents.Connected(f.terminal))
+	assert.Equal(t, terminalModels.StateRunning, f.terminalState(t))
 }

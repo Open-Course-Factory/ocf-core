@@ -138,6 +138,8 @@ func (h *LocalAgents) Connected(terminalID string) bool {
 
 // Admits reports whether the machine boot may serve terminalID: not while
 // another tab serves it, and not when the terminal ran on another machine.
+// The same machine is admitted while its old connection is still held: after
+// a network change the server may not have seen that socket die yet.
 func (h *LocalAgents) Admits(terminalID, boot string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -145,7 +147,7 @@ func (h *LocalAgents) Admits(terminalID, boot string) error {
 }
 
 func (h *LocalAgents) admits(terminalID, boot string) error {
-	if h.agents[terminalID] != nil {
+	if h.agents[terminalID] != nil && h.boots[terminalID] != boot {
 		return ErrAgentAlreadyConnected
 	}
 	if known := h.boots[terminalID]; known != "" && known != boot {
@@ -205,14 +207,24 @@ func (h *LocalAgents) awaitReturn(terminalID string, wait time.Duration) bool {
 	}
 }
 
-// Attach takes conn, from the machine boot, as terminalID's agent. Serve it next.
+// Attach takes conn, from the machine boot, as terminalID's agent, closing
+// that machine's stale connection if one is still held. Serve it next.
 func (h *LocalAgents) Attach(terminalID, boot string, conn *websocket.Conn) (*localAgent, error) {
+	agent, stale, err := h.attach(terminalID, boot, conn)
+	if stale != nil {
+		stale.close(websocket.CloseNormalClosure, "replaced by a new connection of the same machine")
+	}
+	return agent, err
+}
+
+func (h *LocalAgents) attach(terminalID, boot string, conn *websocket.Conn) (agent, stale *localAgent, err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if err := h.admits(terminalID, boot); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	agent := &localAgent{
+	stale = h.agents[terminalID]
+	agent = &localAgent{
 		hub: h, terminalID: terminalID, conn: conn,
 		pending: map[int]chan agentReply{}, done: make(chan struct{}),
 	}
@@ -223,7 +235,7 @@ func (h *LocalAgents) Attach(terminalID, boot string, conn *websocket.Conn) (*lo
 		close(arrived)
 		delete(h.arrivals, terminalID)
 	}
-	return agent, nil
+	return agent, stale, nil
 }
 
 // await returns terminalID's agent. One that never connected is waited for up
