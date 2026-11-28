@@ -82,23 +82,40 @@ type MachineContext struct {
 	// LocalMachineUnavailable is why the learner's browser cannot run a
 	// machine (LocalMachineUnavailableReasons); empty when it can.
 	LocalMachineUnavailable string
+	// ContainerFull: no container of the run fits the learner's CPU/RAM
+	// budget. Read only where it decides (budgetDecides).
+	ContainerFull bool
 }
 
-// ScenarioMachine decides where a run goes: models.ScenarioMachineIncus or
-// models.ScenarioMachineLocal. It is the one place for the rule; RunMachine
-// reads its inputs.
-func ScenarioMachine(ctx MachineContext) (string, error) {
+// MachineReasonQuota: a By account run goes to the browser because no
+// container of it fits the learner's budget (plan rule 3).
+const MachineReasonQuota = "quota"
+
+// MachineDecision is where a run goes, models.ScenarioMachineIncus or
+// models.ScenarioMachineLocal, and why when the plan's table alone does not
+// say (MachineReasonQuota); Reason is empty otherwise.
+type MachineDecision struct {
+	Machine, Reason string
+}
+
+// ScenarioMachine decides where a run goes. It is the one place for the
+// rule; RunMachine reads its inputs.
+func ScenarioMachine(ctx MachineContext) (MachineDecision, error) {
 	if !wantsLocal(ctx) {
-		return models.ScenarioMachineIncus, nil
+		return MachineDecision{Machine: models.ScenarioMachineIncus}, nil
 	}
 	if refusal := localRefusal(ctx); refusal != nil {
 		// By account accepts either machine, so it simply gets the container.
 		if ctx.ScenarioMachine == models.ScenarioMachineByAccount {
-			return models.ScenarioMachineIncus, nil
+			return MachineDecision{Machine: models.ScenarioMachineIncus}, nil
 		}
-		return "", refusal
+		return MachineDecision{}, refusal
 	}
-	return models.ScenarioMachineLocal, nil
+	decision := MachineDecision{Machine: models.ScenarioMachineLocal}
+	if budgetDecides(ctx) {
+		decision.Reason = MachineReasonQuota
+	}
+	return decision, nil
 }
 
 // localRefusal says why a run that would go local cannot, nil when it can.
@@ -124,35 +141,62 @@ func wantsLocal(ctx MachineContext) bool {
 		return ctx.PlanSetting == paymentModels.LocalMachinesAllowed ||
 			ctx.PlanSetting == paymentModels.LocalMachinesByAccountDefault
 	case models.ScenarioMachineByAccount:
-		return !ctx.Assigned && ctx.PlanSetting == paymentModels.LocalMachinesByAccountDefault
+		return (!ctx.Assigned && ctx.PlanSetting == paymentModels.LocalMachinesByAccountDefault) ||
+			(budgetDecides(ctx) && ctx.ContainerFull)
 	}
 	return false
 }
 
-// RunMachine decides where a new run of scenario goes for a learner on plan
-// (nil: no plan, so off), assigned saying whether a class or organization
-// assignment brought it, localUnavailable why the learner's browser cannot
-// run a machine ("" when it can, or when no browser asks). A run keeps its
+// budgetDecides: a By account run on an Allowed plan, outside any assignment,
+// goes to a container while one fits the learner's budget, and to the
+// browser when none does (plan rule 3, 2026-11-28).
+func budgetDecides(ctx MachineContext) bool {
+	return ctx.SwitchOn && ctx.ScenarioMachine == models.ScenarioMachineByAccount && !ctx.Assigned &&
+		ctx.PlanSetting == paymentModels.LocalMachinesAllowed
+}
+
+// RunRequest is what a new run brings to the machine decision.
+type RunRequest struct {
+	// Plan is the learner's plan; nil: no plan, so off.
+	Plan *paymentModels.SubscriptionPlan
+	// Assigned: a class or organization assignment brought the run.
+	Assigned bool
+	// LocalUnavailable is why the learner's browser cannot run a machine;
+	// "" when it can, or when no browser asks.
+	LocalUnavailable string
+	// ContainerFits says whether a container of the run fits the learner's
+	// budget. Asked only when that decides the machine; nil reads as fits.
+	ContainerFits func() (bool, error)
+}
+
+// RunMachine decides where a new run of scenario goes. A run keeps its
 // machine until it ends: this is for new runs only.
-func (sw MachineSwitches) RunMachine(db *gorm.DB, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool, localUnavailable string) (string, error) {
+func (sw MachineSwitches) RunMachine(db *gorm.DB, scenario *models.Scenario, req RunRequest) (MachineDecision, error) {
 	if scenario.NeedsDesktop() && !sw.Desktop {
-		return "", ErrScenarioNeedsDesktop
+		return MachineDecision{}, ErrScenarioNeedsDesktop
 	}
 	ctx := MachineContext{
 		SwitchOn:        sw.Local,
 		ScenarioMachine: scenario.Machine,
-		Assigned:        assigned,
+		Assigned:        req.Assigned,
 		CrashTraps:      scenario.CrashTraps,
 
-		LocalMachineUnavailable: localUnavailable,
+		LocalMachineUnavailable: req.LocalUnavailable,
 	}
-	if plan != nil {
-		ctx.PlanSetting = plan.LocalMachines
+	if req.Plan != nil {
+		ctx.PlanSetting = req.Plan.LocalMachines
+	}
+	if budgetDecides(ctx) && req.ContainerFits != nil {
+		fits, err := req.ContainerFits()
+		if err != nil {
+			return MachineDecision{}, err
+		}
+		ctx.ContainerFull = !fits
 	}
 	if wantsLocal(ctx) {
 		exams, err := ExamScenarios(db, []uuid.UUID{scenario.ID})
 		if err != nil {
-			return "", err
+			return MachineDecision{}, err
 		}
 		ctx.Exam = exams[scenario.ID]
 	}

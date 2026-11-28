@@ -457,6 +457,10 @@ type LaunchScenarioResponse struct {
 	// Machine is where the run runs: "incus", or "local" for a machine the
 	// learner's browser boots.
 	Machine string `json:"machine"`
+	// MachineReason says why the run went where it did when the plan's
+	// table alone does not: "quota", a By account run sent to the browser
+	// because no container of it fits the learner's budget. Absent otherwise.
+	MachineReason     string `json:"machine_reason,omitempty"`
 	Status            string `json:"status"`
 	ProvisioningPhase string `json:"provisioning_phase,omitempty"`
 	// ProvisioningTimeoutSeconds is how long the build may take, set only
@@ -509,6 +513,11 @@ type AvailableScenarioOutput struct {
 	// run would go to a container. The card warns, or refuses a computer too
 	// small, with it.
 	LocalMachineMemoryMiB int `json:"local_machine_memory_mib,omitempty"`
+	// Machine is where a launch would put the run ("incus" or "local") and
+	// MachineReason why, as on LaunchScenarioResponse. Absent when the
+	// launch would be refused before deciding.
+	Machine       string `json:"machine,omitempty"`
+	MachineReason string `json:"machine_reason,omitempty"`
 	IsPublic             bool   `json:"is_public"`
 	AdminOnly            bool   `json:"admin_only,omitempty"`
 	// CanManage says whether the caller may edit this scenario, by the rule

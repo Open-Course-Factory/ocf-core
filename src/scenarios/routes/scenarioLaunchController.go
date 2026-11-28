@@ -257,6 +257,9 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		slog.Warn("could not decide which scenarios the caller runs", "err", runErr)
 	}
 
+	judge := cardJudge{sc: sc, switches: switches, quota: quotaSvc, userID: userID, orgID: orgID,
+		plan: resolvedPlan, assignedServers: assignedServers}
+
 	// Convert to enriched output with launchability info
 	output := make([]dto.AvailableScenarioOutput, 0, len(scenarios))
 	for _, s := range scenarios {
@@ -320,9 +323,10 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			item.RequiredFeatures = rf
 		}
 
-		provisioning, blockReason := sc.cardProvisioning(switches, s, orgID, resolvedPlan, assignedServers)
+		provisioning, decision, blockReason := judge.provisioning(s)
 		item.Launchable = blockReason == "" && provisioning.CreatesTerminal()
 		item.BlockReason = blockReason
+		item.Machine, item.MachineReason = decision.Machine, decision.Reason
 		item.ResolvedDistribution = provisioning.Distribution
 		item.ResolvedSize = provisioning.Size
 		if provisioning.IsLocal() {
@@ -369,30 +373,46 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, output)
 }
 
-// cardProvisioning is how a launch of s would build its run, judged as the
-// launch judges it: where the run goes (services.RunMachine), then, for a
-// container, which host and image fit, on the host the assignment names when
-// it names one. The block reason says why it cannot be launched, "" when it can.
-func (sc *scenarioLaunchController) cardProvisioning(switches services.MachineSwitches, s models.Scenario, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, assignedServers map[uuid.UUID]string) (services.ScenarioProvisioning, string) {
-	_, assigned := assignedServers[s.ID]
-	machine, err := switches.RunMachine(sc.db, &s, plan, assigned, "")
+// cardJudge judges every card of one catalogue request as a launch would.
+type cardJudge struct {
+	sc              *scenarioLaunchController
+	switches        services.MachineSwitches
+	quota           paymentServices.QuotaService // nil without a plan
+	userID          string
+	orgID           *uuid.UUID
+	plan            *paymentModels.SubscriptionPlan
+	assignedServers map[uuid.UUID]string
+}
+
+// provisioning is how a launch of s would build its run, judged as the launch
+// judges it: where the run goes (services.RunMachine), then, for a container,
+// which host and image fit, on the host the assignment names when it names
+// one. The block reason says why it cannot be launched, "" when it can.
+func (j cardJudge) provisioning(s models.Scenario) (services.ScenarioProvisioning, services.MachineDecision, string) {
+	backend, assigned := j.assignedServers[s.ID]
+	req := services.RunRequest{Plan: j.plan, Assigned: assigned}
+	if j.quota != nil {
+		req.ContainerFits = j.sc.containerFits(j.quota, j.userID, s, j.orgID, j.plan, backend)
+	}
+	decision, err := j.switches.RunMachine(j.sc.db, &s, req)
 	if err != nil {
 		if reason := machineBlockReason(err); reason != "" {
-			return services.ScenarioProvisioning{}, reason
+			return services.ScenarioProvisioning{}, services.MachineDecision{}, reason
 		}
 		slog.Warn("could not decide where a run of the scenario goes; judged as a container", "scenario", s.Name, "err", err)
+		decision = services.MachineDecision{Machine: models.ScenarioMachineIncus}
 	}
-	if machine == models.ScenarioMachineLocal {
-		return services.LocalProvisioning(s), ""
+	if decision.Machine == models.ScenarioMachineLocal {
+		return services.LocalProvisioning(s), decision, ""
 	}
-	provisioning, err := sc.provisioningService.Resolve(s, orgID, plan, assignedServers[s.ID])
+	provisioning, err := j.sc.provisioningService.Resolve(s, j.orgID, j.plan, backend)
 	if err != nil {
 		// Separate reasons because they need different fixes: a missing
 		// declared image is "install it on this backend", while
 		// no_distribution is "nothing here fits this scenario at all".
-		return provisioning, blockReasonFor(err)
+		return provisioning, decision, blockReasonFor(err)
 	}
-	return provisioning, ""
+	return provisioning, decision, ""
 }
 
 // machineBlockReason is the block reason of a run services.RunMachine
@@ -664,11 +684,14 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 	_, assigned := assignedServers[scenarioID]
-	machine, ok := sc.decideMachine(ctx, &scenario, plan, assigned, input.LocalMachineUnavailable)
+	decision, ok := sc.decideMachine(ctx, &scenario, services.RunRequest{
+		Plan: plan, Assigned: assigned, LocalUnavailable: input.LocalMachineUnavailable,
+		ContainerFits: sc.containerFits(sc.quotaService(), userID, scenario, orgID, plan, backend),
+	})
 	if !ok {
 		return
 	}
-	provisioning, ok := sc.resolveProvisioning(ctx, scenario, machine, orgID, plan, backend)
+	provisioning, ok := sc.resolveProvisioning(ctx, scenario, decision.Machine, orgID, plan, backend)
 	if !ok {
 		return
 	}
@@ -701,7 +724,9 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, sc.launchResponse(session))
+	resp := sc.launchResponse(session)
+	resp.MachineReason = decision.Reason
+	ctx.JSON(http.StatusOK, resp)
 }
 
 // provisionScenarioTerminal creates the terminal a scenario run is built on:
@@ -764,30 +789,48 @@ func (sc *scenarioLaunchController) provisionLocalTerminal(ctx *gin.Context, use
 
 // decideMachine asks services.RunMachine where a new run goes. On a refusal
 // it has answered the request, and reports false.
-func (sc *scenarioLaunchController) decideMachine(ctx *gin.Context, scenario *models.Scenario, plan *paymentModels.SubscriptionPlan, assigned bool, localUnavailable string) (string, bool) {
-	if !services.ValidLocalMachineUnavailable(localUnavailable) {
+func (sc *scenarioLaunchController) decideMachine(ctx *gin.Context, scenario *models.Scenario, req services.RunRequest) (services.MachineDecision, bool) {
+	if !services.ValidLocalMachineUnavailable(req.LocalUnavailable) {
 		errors.Respond(ctx, http.StatusBadRequest, "Invalid local_machine_unavailable: one of "+strings.Join(services.LocalMachineUnavailableReasons, ", "))
-		return "", false
+		return services.MachineDecision{}, false
 	}
-	machine, err := services.ReadMachineSwitches(sc.db).RunMachine(sc.db, scenario, plan, assigned, localUnavailable)
+	decision, err := services.ReadMachineSwitches(sc.db).RunMachine(sc.db, scenario, req)
 	if stderrors.Is(err, services.ErrLocalMachineUnavailable) {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{
 			"error_code":    http.StatusUnprocessableEntity,
 			"error_message": err.Error(),
 			"reason":        blockReasonLocalMachineUnavailable,
 		})
-		return "", false
+		return services.MachineDecision{}, false
 	}
 	if stderrors.Is(err, services.ErrScenarioNeedsContainer) || stderrors.Is(err, services.ErrScenarioNeedsDesktop) {
 		errors.Respond(ctx, http.StatusUnprocessableEntity, err.Error())
-		return "", false
+		return services.MachineDecision{}, false
 	}
 	if err != nil {
 		slog.Error("failed to decide where a scenario run goes", "scenario", scenario.Name, "err", err)
 		errors.Respond(ctx, http.StatusInternalServerError, "Failed to start the scenario run")
-		return "", false
+		return services.MachineDecision{}, false
 	}
-	return machine, true
+	return decision, true
+}
+
+// containerFits says whether a container of scenario fits userID's CPU/RAM
+// budget, as the launch's own budget check judges it (QuotaService). A
+// container that cannot be placed is not weighed: the launch then reports why.
+func (sc *scenarioLaunchController) containerFits(quota paymentServices.QuotaService, userID string, scenario models.Scenario, orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, backend string) func() (bool, error) {
+	return func() (bool, error) {
+		provisioning, err := sc.provisioningService.Resolve(scenario, orgID, plan, backend)
+		if err != nil || provisioning.Size == "" {
+			return true, nil
+		}
+		return quota.RemainingBudgetFits(userID, nil, plan, provisioning.Size)
+	}
+}
+
+// quotaService is the budget engine the launch's own check uses.
+func (sc *scenarioLaunchController) quotaService() paymentServices.QuotaService {
+	return paymentServices.NewQuotaService(sc.db, paymentServices.NewEffectivePlanService(sc.db))
 }
 
 // resolveProvisioning is how the run's machine is built: in the learner's
@@ -1094,11 +1137,14 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	// A preview builds the same machine the learners will get, so it asks the
 	// same question of the same owner rather than composing one of its own.
 	// The author previews as a learner launching on their own would.
-	machine, ok := sc.decideMachine(ctx, &scenario, planResult.Plan, false, body.LocalMachineUnavailable)
+	decision, ok := sc.decideMachine(ctx, &scenario, services.RunRequest{
+		Plan: planResult.Plan, LocalUnavailable: body.LocalMachineUnavailable,
+		ContainerFits: sc.containerFits(sc.quotaService(), userID, scenario, previewOrgID, planResult.Plan, backend),
+	})
 	if !ok {
 		return
 	}
-	provisioning, ok := sc.resolveProvisioning(ctx, scenario, machine, previewOrgID, planResult.Plan, backend)
+	provisioning, ok := sc.resolveProvisioning(ctx, scenario, decision.Machine, previewOrgID, planResult.Plan, backend)
 	if !ok {
 		return
 	}
@@ -1156,7 +1202,9 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, sc.launchResponse(session))
+	resp := sc.launchResponse(session)
+	resp.MachineReason = decision.Reason
+	ctx.JSON(http.StatusOK, resp)
 }
 
 // refusePreview answers the request and reports true unless the caller may

@@ -50,7 +50,7 @@ func TestScenarioMachine_PlanTable(t *testing.T) {
 				SwitchOn: true, PlanSetting: c.plan, ScenarioMachine: c.scenario,
 			})
 			require.NoError(t, err)
-			assert.Equal(t, c.want, got)
+			assert.Equal(t, c.want, got.Machine)
 		})
 	}
 }
@@ -62,7 +62,7 @@ func TestScenarioMachine_SwitchOffIsIncus(t *testing.T) {
 			PlanSetting: paymentModels.LocalMachinesByAccountDefault, ScenarioMachine: scenario,
 		})
 		require.NoError(t, err)
-		assert.Equal(t, incus, got, scenario)
+		assert.Equal(t, incus, got.Machine, scenario)
 	}
 }
 
@@ -74,12 +74,12 @@ func TestScenarioMachine_AssignmentKeepsByAccountOnIncus(t *testing.T) {
 	ctx.ScenarioMachine = models.ScenarioMachineByAccount
 	got, err := services.ScenarioMachine(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, incus, got)
+	assert.Equal(t, incus, got.Machine)
 
 	ctx.ScenarioMachine = models.ScenarioMachineLocal
 	got, err = services.ScenarioMachine(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, local, got)
+	assert.Equal(t, local, got.Machine)
 }
 
 // Rule 5, and what the learner owning the machine breaks: an exam, and a
@@ -101,7 +101,7 @@ func TestScenarioMachine_RefusesWhatTheLearnerCouldFake(t *testing.T) {
 			ctx.ScenarioMachine = models.ScenarioMachineByAccount
 			got, err := services.ScenarioMachine(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, incus, got)
+			assert.Equal(t, incus, got.Machine)
 		})
 	}
 
@@ -110,7 +110,7 @@ func TestScenarioMachine_RefusesWhatTheLearnerCouldFake(t *testing.T) {
 		SwitchOn: true, PlanSetting: paymentModels.LocalMachinesOff, ScenarioMachine: models.ScenarioMachineLocal, Exam: true,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, incus, got)
+	assert.Equal(t, incus, got.Machine)
 }
 
 // Flag steps run locally (decided 2026-11-25): a step's flag is as readable to
@@ -122,9 +122,9 @@ func TestRunMachine_FlagScenarioRunsLocally(t *testing.T) {
 		CreatedByID: "author", Machine: models.ScenarioMachineLocal, FlagsEnabled: true}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	got, err := services.ReadMachineSwitches(db).RunMachine(db, &scenario, &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}, false, "")
+	got, err := services.ReadMachineSwitches(db).RunMachine(db, &scenario, services.RunRequest{Plan: &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}})
 	require.NoError(t, err)
-	assert.Equal(t, local, got)
+	assert.Equal(t, local, got.Machine)
 }
 
 // The reading from the database: the switch fails closed, a nil plan is off,
@@ -137,22 +137,22 @@ func TestRunMachine_ReadsTheSwitchPlanAndScenario(t *testing.T) {
 	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Do", StepType: "terminal"}).Error)
 	plan := &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}
 
-	got, err := services.ReadMachineSwitches(db).RunMachine(db, &scenario, plan, false, "")
+	got, err := services.ReadMachineSwitches(db).RunMachine(db, &scenario, services.RunRequest{Plan: plan})
 	require.NoError(t, err)
-	assert.Equal(t, incus, got, "no switch row: off")
+	assert.Equal(t, incus, got.Machine, "no switch row: off")
 
 	require.NoError(t, db.Create(&configModels.Feature{Key: terminalServices.LocalMachinesFeatureKey, Name: "x", Enabled: true}).Error)
-	got, err = services.ReadMachineSwitches(db).RunMachine(db, &scenario, plan, false, "")
+	got, err = services.ReadMachineSwitches(db).RunMachine(db, &scenario, services.RunRequest{Plan: plan})
 	require.NoError(t, err)
-	assert.Equal(t, local, got)
+	assert.Equal(t, local, got.Machine)
 
-	got, err = services.ReadMachineSwitches(db).RunMachine(db, &scenario, nil, false, "")
+	got, err = services.ReadMachineSwitches(db).RunMachine(db, &scenario, services.RunRequest{Plan: nil})
 	require.NoError(t, err)
-	assert.Equal(t, incus, got, "no plan: off")
+	assert.Equal(t, incus, got.Machine, "no plan: off")
 
 	require.NoError(t, db.Create(&models.ScenarioStep{ScenarioID: scenario.ID, Order: 2, Title: "Exam",
 		StepType: models.StepTypeQuiz, ShowImmediateFeedback: false}).Error)
-	_, err = services.ReadMachineSwitches(db).RunMachine(db, &scenario, plan, false, "")
+	_, err = services.ReadMachineSwitches(db).RunMachine(db, &scenario, services.RunRequest{Plan: plan})
 	require.ErrorIs(t, err, services.ErrScenarioNeedsContainer, "an exam-mode quiz makes it an exam")
 }
 
@@ -165,7 +165,7 @@ func TestScenarioMachine_LocalMachineUnavailable(t *testing.T) {
 	ctx.ScenarioMachine = models.ScenarioMachineByAccount
 	got, err := services.ScenarioMachine(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, incus, got)
+	assert.Equal(t, incus, got.Machine)
 
 	ctx.ScenarioMachine = models.ScenarioMachineLocal
 	_, err = services.ScenarioMachine(ctx)
@@ -174,5 +174,65 @@ func TestScenarioMachine_LocalMachineUnavailable(t *testing.T) {
 	ctx.ScenarioMachine = models.ScenarioMachineIncus
 	got, err = services.ScenarioMachine(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, incus, got, "an Incus scenario never needed the browser")
+	assert.Equal(t, incus, got.Machine, "an Incus scenario never needed the browser")
+}
+
+// Plan rule 3 (2026-11-28): on an Allowed plan, a By account run goes to a
+// container while one fits the learner's budget, and to the browser when none
+// does, saying why. An assignment, a browser that cannot run it, or what the
+// learner could fake keep it on a container.
+func TestScenarioMachine_ByAccountOnAnAllowedPlanFollowsTheBudget(t *testing.T) {
+	base := services.MachineContext{SwitchOn: true, PlanSetting: paymentModels.LocalMachinesAllowed,
+		ScenarioMachine: models.ScenarioMachineByAccount}
+	cases := map[string]struct {
+		edit func(*services.MachineContext)
+		want services.MachineDecision
+	}{
+		"fits":              {func(*services.MachineContext) {}, services.MachineDecision{Machine: incus}},
+		"full":              {func(c *services.MachineContext) { c.ContainerFull = true }, services.MachineDecision{Machine: local, Reason: services.MachineReasonQuota}},
+		"full but assigned": {func(c *services.MachineContext) { c.ContainerFull, c.Assigned = true, true }, services.MachineDecision{Machine: incus}},
+		"full, browser cannot": {func(c *services.MachineContext) { c.ContainerFull, c.LocalMachineUnavailable = true, "memory" },
+			services.MachineDecision{Machine: incus}},
+		"full, crash traps": {func(c *services.MachineContext) { c.ContainerFull, c.CrashTraps = true, true }, services.MachineDecision{Machine: incus}},
+		"full, Default for By account": {func(c *services.MachineContext) {
+			c.ContainerFull, c.PlanSetting = true, paymentModels.LocalMachinesByAccountDefault
+		}, services.MachineDecision{Machine: local}},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			ctx := base
+			c.edit(&ctx)
+			got, err := services.ScenarioMachine(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, c.want, got)
+		})
+	}
+}
+
+// The budget is weighed only where it decides: never for a Local scenario or
+// on a Default for By account plan.
+func TestRunMachine_AsksTheBudgetOnlyWhenItDecides(t *testing.T) {
+	db := freshTestDB(t)
+	require.NoError(t, db.Create(&configModels.Feature{Key: terminalServices.LocalMachinesFeatureKey, Name: "x", Enabled: true}).Error)
+	scenario := models.Scenario{Name: "weighs", Title: "Weighs", InstanceType: "s", CreatedByID: "author",
+		Machine: models.ScenarioMachineByAccount}
+	require.NoError(t, db.Create(&scenario).Error)
+	asked := 0
+	full := func() (bool, error) { asked++; return false, nil }
+	switches := services.ReadMachineSwitches(db)
+
+	got, err := switches.RunMachine(db, &scenario, services.RunRequest{
+		Plan: &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}, ContainerFits: full})
+	require.NoError(t, err)
+	assert.Equal(t, services.MachineDecision{Machine: local, Reason: services.MachineReasonQuota}, got)
+	assert.Equal(t, 1, asked)
+
+	_, err = switches.RunMachine(db, &scenario, services.RunRequest{
+		Plan: &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesByAccountDefault}, ContainerFits: full})
+	require.NoError(t, err)
+	scenario.Machine = models.ScenarioMachineLocal
+	_, err = switches.RunMachine(db, &scenario, services.RunRequest{
+		Plan: &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}, ContainerFits: full})
+	require.NoError(t, err)
+	assert.Equal(t, 1, asked, "not asked when the plan's table decides")
 }

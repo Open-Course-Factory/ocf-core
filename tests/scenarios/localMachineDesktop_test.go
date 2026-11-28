@@ -116,10 +116,10 @@ func TestRunMachine_DesktopOff_RefusesDesktopScenario(t *testing.T) {
 			setDesktopSwitches(t, db, local, false)
 			desktop, terminal := seedDesktopAndTerminalScenarios(t, db)
 
-			_, err := services.ReadMachineSwitches(db).RunMachine(db, &desktop, plan, false, "")
+			_, err := services.ReadMachineSwitches(db).RunMachine(db, &desktop, services.RunRequest{Plan: plan})
 			require.ErrorIs(t, err, services.ErrScenarioNeedsDesktop)
 
-			_, err = services.ReadMachineSwitches(db).RunMachine(db, &terminal, plan, false, "")
+			_, err = services.ReadMachineSwitches(db).RunMachine(db, &terminal, services.RunRequest{Plan: plan})
 			require.NoError(t, err, "a terminal scenario is unaffected")
 		})
 	}
@@ -130,9 +130,9 @@ func TestRunMachine_BothOn_DesktopScenarioRunsLocally(t *testing.T) {
 	setDesktopSwitches(t, db, true, true)
 	desktop, _ := seedDesktopAndTerminalScenarios(t, db)
 
-	got, err := services.ReadMachineSwitches(db).RunMachine(db, &desktop, &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}, false, "")
+	got, err := services.ReadMachineSwitches(db).RunMachine(db, &desktop, services.RunRequest{Plan: &paymentModels.SubscriptionPlan{LocalMachines: paymentModels.LocalMachinesAllowed}})
 	require.NoError(t, err)
-	assert.Equal(t, models.ScenarioMachineLocal, got)
+	assert.Equal(t, models.ScenarioMachineLocal, got.Machine)
 }
 
 func TestLaunchScenario_DesktopOff_RefusedWithReason(t *testing.T) {

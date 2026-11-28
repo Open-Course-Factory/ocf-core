@@ -271,3 +271,49 @@ func TestLaunchScenario_SecondLocalRunIsRefused(t *testing.T) {
 	require.NoError(t, db.Model(&models.ScenarioSession{}).Where("scenario_id = ?", other.ID).Count(&runs).Error)
 	assert.Zero(t, runs)
 }
+
+// Plan rule 3 (2026-11-28), on an Allowed plan: a By account lab goes to a
+// container while one fits the budget, and to the browser when none does —
+// the launch and the card say so with machine_reason.
+func TestLaunchScenario_ByAccountOnAnAllowedPlanFollowsTheBudget(t *testing.T) {
+	t.Run("fits", func(t *testing.T) {
+		db, userID, scenario, rec := localLaunchFixture(t, true, paymentModels.LocalMachinesAllowed, models.ScenarioMachineByAccount)
+		card := cards(t, db, userID)[0]
+		assert.Equal(t, models.ScenarioMachineIncus, card["machine"])
+		assert.Nil(t, card["machine_reason"])
+
+		w := launchWithBody(t, db, userID, map[string]any{"scenario_id": scenario.ID.String()})
+		require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		assert.Equal(t, models.ScenarioMachineIncus, body["machine"])
+		assert.Nil(t, body["machine_reason"])
+		assert.Equal(t, 1, rec.calls)
+	})
+
+	t.Run("full", func(t *testing.T) {
+		db, userID, scenario, rec := localLaunchFixture(t, true, paymentModels.LocalMachinesAllowed, models.ScenarioMachineByAccount)
+		fillBudget(t, db)
+		card := cards(t, db, userID)[0]
+		assert.Equal(t, true, card["launchable"], "%v", card)
+		assert.Equal(t, models.ScenarioMachineLocal, card["machine"])
+		assert.Equal(t, "quota", card["machine_reason"])
+
+		w := launchWithBody(t, db, userID, map[string]any{"scenario_id": scenario.ID.String()})
+		require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		assert.Equal(t, models.ScenarioMachineLocal, body["machine"])
+		assert.Equal(t, "quota", body["machine_reason"])
+		assert.Equal(t, 0, rec.calls)
+	})
+
+	t.Run("full, and the browser cannot run it", func(t *testing.T) {
+		db, userID, scenario, rec := localLaunchFixture(t, true, paymentModels.LocalMachinesAllowed, models.ScenarioMachineByAccount)
+		fillBudget(t, db)
+
+		w := launchWithBody(t, db, userID, map[string]any{"scenario_id": scenario.ID.String(), "local_machine_unavailable": "memory"})
+		assert.Equal(t, http.StatusForbidden, w.Code, "the budget refusal: body=%s", w.Body.String())
+		assert.Equal(t, 0, rec.calls)
+	})
+}
